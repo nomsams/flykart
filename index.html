@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FlyKart — a fly-trained racer</title>
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="hero">
+        <div>
+          <p class="eyebrow">CONNECTOME-INSPIRED CONTROL LAB</p>
+          <h1>FlyKart</h1>
+          <p class="lede">Train a tiny spiking controller to race a tiny car.</p>
+        </div>
+        <div class="badge">MVP 0.1</div>
+      </header>
+
+      <section class="workspace">
+        <div class="game-card">
+          <div class="canvas-wrap">
+            <canvas id="game" width="960" height="600" aria-label="FlyKart race and training view"></canvas>
+            <div class="canvas-caption"><span id="mode-label">RACE MODE</span><span id="hint-label">Train a brain, then deploy it</span></div>
+          </div>
+          <div class="toolbar">
+            <button id="race-btn" class="primary">Start race</button>
+            <button id="visual-train-btn">Train visually</button>
+            <button id="headless-train-btn">Headless train</button>
+            <button id="stop-btn" class="quiet">Stop</button>
+            <button id="reset-btn" class="quiet">Reset brain</button>
+            <button id="save-btn" class="quiet">Save brain</button>
+            <button id="load-btn" class="quiet">Load brain</button>
+          </div>
+        </div>
+
+        <aside class="control-panel">
+          <section class="panel-section">
+            <div class="section-title"><h2>Training lab</h2><span id="training-status" class="status-dot idle">idle</span></div>
+            <label>Population <input id="population" type="number" min="4" max="80" value="24" /></label>
+            <label>Generations <input id="generations" type="number" min="1" max="10000" value="100" /></label>
+            <p class="microcopy">Visual training evaluates one candidate at a time so you can watch the cars learn. Headless mode runs the same deterministic simulator without rendering.</p>
+          </section>
+
+          <section class="panel-section metrics">
+            <div><span>Generation</span><strong id="generation">0</strong></div>
+            <div><span>Best fitness</span><strong id="fitness">—</strong></div>
+            <div><span>Best lap progress</span><strong id="progress">0%</strong></div>
+            <div><span>Race speed</span><strong id="speed">0.0</strong></div>
+          </section>
+
+          <section class="panel-section">
+            <div class="section-title"><h2>Neural activity</h2><span id="neuron-count">48 LIF cells</span></div>
+            <div id="neural-bars" class="neural-bars" aria-label="Live spiking neuron activity"></div>
+            <p class="microcopy">Blue bars are recent spike activity. The controller receives compact track and opponent sensors, not raw pixels yet.</p>
+          </section>
+
+          <section class="panel-section legend">
+            <div><span class="swatch fly"></span>fly pilot</div>
+            <div><span class="swatch bot"></span>heuristic bots</div>
+            <div><span class="swatch ghost"></span>training candidates</div>
+          </section>
+        </aside>
+      </section>
+
+      <footer>
+        <span>Original environment · deterministic fixed-step simulation</span>
+        <span>Next: richer vision, obstacles, and Colab experiments</span>
+      </footer>
+    </main>
+    <script type="module" src="./src/main.ts"></script>
+  </body>
+</html>

@@ -1,0 +1,162 @@
+import { describe, expect, it } from "vitest";
+import {
+  MAX_TICKS, STEP, TRACK_WIDTH, BrainSnapshot, SpikingNetwork, createNetworkPopulation,
+  evaluate, heuristicAction, nearestTrack, sensorValues, startPosition, stepCar, track,
+} from "./core";
+
+const finiteAction = (action: ReturnType<SpikingNetwork["step"]>) => {
+  expect(action.steer).toBeGreaterThanOrEqual(-1);
+  expect(action.steer).toBeLessThanOrEqual(1);
+  expect(action.throttle).toBeGreaterThanOrEqual(0);
+  expect(action.throttle).toBeLessThanOrEqual(1);
+  expect(action.brake).toBeGreaterThanOrEqual(0);
+  expect(action.brake).toBeLessThanOrEqual(1);
+};
+
+describe("SpikingNetwork", () => {
+  it("is deterministic for the same seed and inputs", () => {
+    const first = new SpikingNetwork(42);
+    const second = new SpikingNetwork(42);
+    const inputs = [0.2, -0.3, 0.1, 0.4, 0.8, 0, -0.2, 0.5, 1];
+    for (let index = 0; index < 20; index += 1) expect(first.step(inputs)).toEqual(second.step(inputs));
+  });
+
+  it("resets hidden state and exposes bounded actions", () => {
+    const network = new SpikingNetwork(7);
+    for (let index = 0; index < 40; index += 1) finiteAction(network.step([1, 1, 1, 1, 1, 1, 1, 1, 1]));
+    network.reset();
+    expect(network.activity().spikes.every((value) => value === 0)).toBe(true);
+    expect(network.activity().outputs).toEqual([0, 0, 0]);
+  });
+
+  it("rejects malformed input vectors", () => {
+    const network = new SpikingNetwork(1);
+    expect(() => network.step([0, 1])).toThrow("invalid neural input vector");
+    expect(() => network.step([NaN, 0, 0, 0, 0, 0, 0, 0, 0])).toThrow("invalid neural input vector");
+  });
+
+  it("clones weights without sharing mutable neural state", () => {
+    const original = new SpikingNetwork(3);
+    const clone = original.clone();
+    expect(clone.toJSON()).toEqual(original.toJSON());
+    original.step([1, 0, 0, 0, 0, 0, 0, 0, 1]);
+    expect(clone.activity().spikes.every((value) => value === 0)).toBe(true);
+  });
+
+  it("mutates deterministically and preserves dimensions", () => {
+    const original = new SpikingNetwork(3);
+    const a = original.mutate(0.15, 0.2, 99).toJSON();
+    const b = original.mutate(0.15, 0.2, 99).toJSON();
+    expect(a).toEqual(b);
+    expect(a.inputWeights).toHaveLength(48 * 9);
+    expect(a.recurrentWeights).toHaveLength(48 * 48);
+    expect(a.outputWeights).toHaveLength(48 * 3);
+    expect(a.bias).toHaveLength(48);
+  });
+
+  it("round-trips a checkpoint and rejects bad dimensions", () => {
+    const source = new SpikingNetwork(12);
+    const snapshot = source.toJSON();
+    expect(SpikingNetwork.fromJSON(snapshot).toJSON()).toEqual(snapshot);
+    const malformed = { ...snapshot, inputWeights: snapshot.inputWeights.slice(1) } as BrainSnapshot;
+    expect(() => SpikingNetwork.fromJSON(malformed)).toThrow("checkpoint dimensions are invalid");
+    expect(() => SpikingNetwork.fromJSON({ ...snapshot, version: 9 } as unknown as BrainSnapshot)).toThrow("checkpoint format");
+  });
+});
+
+describe("track geometry and sensors", () => {
+  it("keeps the start point on the centerline", () => {
+    const car = startPosition();
+    const nearest = nearestTrack(car.position);
+    expect(nearest.distance).toBeLessThan(0.001);
+    expect(nearest.progress).toBeCloseTo(0, 4);
+  });
+
+  it("produces a finite, bounded sensor vector", () => {
+    const car = startPosition();
+    const sensors = sensorValues(car, [car, startPosition(1)]);
+    expect(sensors).toHaveLength(9);
+    sensors.forEach((value) => expect(Number.isFinite(value)).toBe(true));
+    expect(sensors.every((value) => value >= -1 && value <= 1)).toBe(true);
+  });
+
+  it("does not mutate the track when sensing", () => {
+    const before = JSON.stringify(track);
+    sensorValues(startPosition(), [startPosition()]);
+    expect(JSON.stringify(track)).toBe(before);
+  });
+});
+
+describe("vehicle physics and fitness", () => {
+  it("advances a car with throttle and fixed simulation steps", () => {
+    const car = startPosition();
+    const initial = { ...car.position };
+    for (let index = 0; index < 30; index += 1) stepCar(car, { steer: 0, throttle: 1, brake: 0 }, [car]);
+    expect(car.ticks).toBe(30);
+    expect(car.speed).toBeGreaterThan(0);
+    expect(Math.hypot(car.position.x - initial.x, car.position.y - initial.y)).toBeGreaterThan(0);
+    expect(STEP).toBeCloseTo(1 / 30);
+  });
+
+  it("does not reward reverse travel as forward progress", () => {
+    const car = startPosition();
+    for (let index = 0; index < 90; index += 1) stepCar(car, { steer: 0, throttle: 0, brake: 0 }, [car]);
+    expect(car.totalProgress).toBe(0);
+  });
+
+  it("counts collisions and applies off-track penalties", () => {
+    const first = startPosition();
+    const second = startPosition();
+    const initialScore = first.score;
+    stepCar(first, { steer: 0, throttle: 1, brake: 0 }, [first, second]);
+    expect(first.collisions).toBeGreaterThan(0);
+    expect(first.score).toBeLessThanOrEqual(initialScore + first.speed * 0.2);
+    const offTrack = startPosition(); offTrack.position.x += TRACK_WIDTH * 2;
+    stepCar(offTrack, { steer: 0, throttle: 0, brake: 0 }, [offTrack]);
+    expect(offTrack.offTrackTicks).toBe(1);
+  });
+
+  it("keeps evaluation finite and bounded in time", () => {
+    const result = evaluate(new SpikingNetwork(21));
+    expect(Number.isFinite(result.fitness)).toBe(true);
+    expect(Number.isFinite(result.progress)).toBe(true);
+    expect(result.ticks).toBeGreaterThan(0);
+    expect(result.ticks).toBeLessThanOrEqual(MAX_TICKS);
+  });
+
+  it("creates the requested deterministic population", () => {
+    const first = createNetworkPopulation(5).map((network) => network.toJSON());
+    const second = createNetworkPopulation(5).map((network) => network.toJSON());
+    expect(first).toEqual(second);
+    expect(() => createNetworkPopulation(0)).toThrow("population size");
+    expect(() => createNetworkPopulation(1.5)).toThrow("population size");
+  });
+
+  it("keeps the heuristic driver outputs safe", () => {
+    const car = startPosition();
+    finiteAction(heuristicAction(car, [car, startPosition(1)]));
+  });
+
+  it("is repeatable for the same evaluated network", () => {
+    const first = evaluate(new SpikingNetwork(31));
+    const second = evaluate(new SpikingNetwork(31));
+    expect(second).toEqual(first);
+  });
+
+  it("keeps cars in separate lanes at the starting grid", () => {
+    const center = startPosition(0);
+    const left = startPosition(-1);
+    const right = startPosition(1);
+    expect(Math.hypot(center.position.x - left.position.x, center.position.y - left.position.y)).toBeGreaterThan(20);
+    expect(Math.hypot(center.position.x - right.position.x, center.position.y - right.position.y)).toBeGreaterThan(20);
+  });
+
+  it("does not move a crashed car", () => {
+    const car = startPosition();
+    car.crashed = true;
+    const before = { ...car.position };
+    stepCar(car, { steer: 1, throttle: 1, brake: 0 }, [car]);
+    expect(car.position).toEqual(before);
+    expect(car.ticks).toBe(0);
+  });
+});
