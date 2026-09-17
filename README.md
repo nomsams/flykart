@@ -22,7 +22,7 @@ The project uses relative Vite asset paths, so the built `dist` directory works 
 
 ## GitHub Pages troubleshooting
 
-In the repository settings, set **Pages → Build and deployment → Source** to **GitHub Actions**. The workflow publishes `dist`; the repository-root `index.html` is source code and intentionally points at `src/main.ts`, which GitHub Pages cannot execute directly. The deployed app shows a startup screen while its bundle loads and reports a clear error if the page is stale or serving the source tree instead of the Vite artifact.
+This repository is configured with **Pages → Build and deployment → Source → GitHub Actions**. If you fork it, select that same source. The workflow publishes `dist`; the repository-root `index.html` is source code and intentionally points at `src/main.ts`, which GitHub Pages cannot execute directly. The deployed app shows a startup screen while its bundle loads and reports a clear error if the page is stale or serving the source tree instead of the Vite artifact.
 
 ## Training modes
 
