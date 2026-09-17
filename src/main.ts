@@ -1,7 +1,7 @@
 import "./style.css";
 import {
-  BrainSnapshot, Car, MAX_TICKS, STEP, TAU, TRACK_WIDTH, SpikingNetwork, clamp, createNetworkPopulation,
-  evaluate, heuristicAction, sensorValues, startPosition, stepCar, track,
+  BrainSnapshot, Car, DEFAULT_REWARD_CONFIG, DEFAULT_TRACK, MAX_TICKS, RewardConfig, STEP, TAU, TRACKS, TrackDefinition,
+  SpikingNetwork, clamp, createNetworkPopulation, evaluateGeneralist, heuristicAction, resolveTrack, sensorValues, startLine, startPosition, stepCar,
 } from "./core";
 
 const WIDTH = 960;
@@ -24,9 +24,13 @@ const ui = {
   headlessButton: required<HTMLButtonElement>("#headless-train-btn"), stopButton: required<HTMLButtonElement>("#stop-btn"),
   resetButton: required<HTMLButtonElement>("#reset-btn"), saveButton: required<HTMLButtonElement>("#save-btn"), loadButton: required<HTMLButtonElement>("#load-btn"),
   population: required<HTMLInputElement>("#population"), generations: required<HTMLInputElement>("#generations"),
+  trackSelect: required<HTMLSelectElement>("#track-select"),
+  rewardProgress: required<HTMLInputElement>("#reward-progress"), rewardDirection: required<HTMLInputElement>("#reward-direction"), rewardMoving: required<HTMLInputElement>("#reward-moving"),
+  rewardStanding: required<HTMLInputElement>("#reward-standing"), rewardWrong: required<HTMLInputElement>("#reward-wrong"), rewardReverse: required<HTMLInputElement>("#reward-reverse"),
+  rewardOffTrack: required<HTMLInputElement>("#reward-offtrack"), rewardCollision: required<HTMLInputElement>("#reward-collision"), rewardCrash: required<HTMLInputElement>("#reward-crash"), rewardFinish: required<HTMLInputElement>("#reward-finish"),
   mode: required<HTMLElement>("#mode-label"), hint: required<HTMLElement>("#hint-label"), status: required<HTMLElement>("#training-status"),
   generation: required<HTMLElement>("#generation"), fitness: required<HTMLElement>("#fitness"), progress: required<HTMLElement>("#progress"),
-  speed: required<HTMLElement>("#speed"), bars: required<HTMLElement>("#neural-bars"),
+  speed: required<HTMLElement>("#speed"), reward: required<HTMLElement>("#reward"), direction: required<HTMLElement>("#direction"), penalties: required<HTMLElement>("#penalties"), bars: required<HTMLElement>("#neural-bars"),
   runState: required<HTMLElement>("#run-state"), runDetail: required<HTMLElement>("#run-detail"),
   runProgressTrack: required<HTMLElement>("#run-progress-track"), runProgressBar: required<HTMLElement>("#run-progress-bar"),
   runProgressText: required<HTMLElement>("#run-progress-text"), runStepText: required<HTMLElement>("#run-step-text"),
@@ -47,10 +51,17 @@ let trainingPopulation: Car[] = [];
 let trainingIndex = 0;
 let trainingGeneration = 0;
 let trainingNetworks: SpikingNetwork[] = [];
+let trainingTracks: TrackDefinition[] = [DEFAULT_TRACK];
+let trainingScores: number[] = [];
+let trainingProgresses: number[] = [];
+let trainingTrackIndex = 0;
 let visualTimer: number | undefined;
 let trainingSession = 0;
 let trainingPopulationSize = 0;
 let requestedGenerations = 0;
+let rewardConfig: RewardConfig = { ...DEFAULT_REWARD_CONFIG };
+let activeTrack: TrackDefinition = DEFAULT_TRACK;
+let flyFinishAnnounced = false;
 let runStartedAt: number | undefined;
 let raceAccumulator = 0;
 let lastFrameTime = performance.now();
@@ -111,16 +122,58 @@ function readInteger(input: HTMLInputElement, fallback: number, min: number, max
   input.value = `${safe}`; return safe;
 }
 
+function readNumber(input: HTMLInputElement, fallback: number, min: number, max: number): number {
+  const parsed = Number.parseFloat(input.value); const value = Number.isFinite(parsed) ? parsed : fallback; const safe = Math.max(min, Math.min(max, value));
+  input.value = `${safe}`; return safe;
+}
+
+function readRewardConfig(): RewardConfig {
+  rewardConfig = {
+    progressPerSecond: readNumber(ui.rewardProgress, DEFAULT_REWARD_CONFIG.progressPerSecond, 0, 100),
+    correctDirectionPerSecond: readNumber(ui.rewardDirection, DEFAULT_REWARD_CONFIG.correctDirectionPerSecond, 0, 20),
+    movementPerSecond: readNumber(ui.rewardMoving, DEFAULT_REWARD_CONFIG.movementPerSecond, 0, 20),
+    standingStillPerSecond: readNumber(ui.rewardStanding, DEFAULT_REWARD_CONFIG.standingStillPerSecond, 0, 20),
+    wrongDirectionPerSecond: readNumber(ui.rewardWrong, DEFAULT_REWARD_CONFIG.wrongDirectionPerSecond, 0, 30),
+    reverseProgressPerSecond: readNumber(ui.rewardReverse, DEFAULT_REWARD_CONFIG.reverseProgressPerSecond, 0, 30),
+    offTrackPerSecond: readNumber(ui.rewardOffTrack, DEFAULT_REWARD_CONFIG.offTrackPerSecond, 0, 30),
+    collision: readNumber(ui.rewardCollision, DEFAULT_REWARD_CONFIG.collision, 0, 100),
+    crash: readNumber(ui.rewardCrash, DEFAULT_REWARD_CONFIG.crash, 0, 200),
+    finish: readNumber(ui.rewardFinish, DEFAULT_REWARD_CONFIG.finish, 0, 1000),
+  };
+  return rewardConfig;
+}
+
+function selectedTracks(): TrackDefinition[] {
+  if (ui.trackSelect.value === "all") return [...TRACKS];
+  return [resolveTrack(ui.trackSelect.value as TrackDefinition["id"] )];
+}
+
+function selectedTrackLabel(): string {
+  return ui.trackSelect.value === "all" ? "all track types" : resolveTrack(ui.trackSelect.value as TrackDefinition["id"]).name;
+}
+
+function updateRewardTelemetry(car: Car | undefined): void {
+  if (!car) return;
+  const breakdown = car.rewardBreakdown;
+  const penalty = breakdown.standingStill + breakdown.wrongDirection + breakdown.reverseProgress + breakdown.offTrack + breakdown.collision + breakdown.crash;
+  ui.reward.textContent = car.lastReward.toFixed(2);
+  ui.direction.textContent = `${Math.round(clamp((car.forwardAlignment + 1) * 50, 0, 100))}%`;
+  ui.penalties.textContent = `-${penalty.toFixed(2)}`;
+}
+
 function setBusy(value: boolean): void {
   [ui.raceButton, ui.visualButton, ui.headlessButton, ui.resetButton, ui.saveButton, ui.loadButton].forEach((button) => { button.disabled = value; });
+  [ui.trackSelect, ui.rewardProgress, ui.rewardDirection, ui.rewardMoving, ui.rewardStanding, ui.rewardWrong, ui.rewardReverse, ui.rewardOffTrack, ui.rewardCollision, ui.rewardCrash, ui.rewardFinish].forEach((input) => { input.disabled = value; });
   ui.stopButton.disabled = !(value || running);
 }
 
 function launchRace(): void {
-  training = false; running = true; visualTraining = false; trainingPopulation = []; raceAccumulator = 0; runStartedAt = performance.now();
-  fly = startPosition(); fly.color = "#74c0ff"; fly.name = "fly"; fly.isFly = true; fly.network = bestNetwork?.clone() ?? new SpikingNetwork(77);
-  raceCars = [fly, ...[-1, 1, -2].map((lane, index) => { const car = startPosition(lane); car.position.x += index * 15; car.color = ["#f19a69", "#e9d26d", "#b48cff"][index]; car.name = `bot ${index + 1}`; return car; })];
-  const detail = bestNetwork ? "best trained fly pilot deployed against three heuristic bots" : "demo brain deployed — train a controller to improve it";
+  training = false; running = true; visualTraining = false; trainingPopulation = []; raceAccumulator = 0; runStartedAt = performance.now(); flyFinishAnnounced = false;
+  activeTrack = ui.trackSelect.value === "all" ? DEFAULT_TRACK : resolveTrack(ui.trackSelect.value as TrackDefinition["id"]);
+  rewardConfig = readRewardConfig();
+  fly = startPosition(0, activeTrack); fly.color = "#74c0ff"; fly.name = "fly"; fly.isFly = true; fly.network = bestNetwork?.clone() ?? new SpikingNetwork(77);
+  raceCars = [fly, ...[-1, 1, -2].map((lane, index) => { const car = startPosition(lane, activeTrack); car.color = ["#f19a69", "#e9d26d", "#b48cff"][index]; car.name = `bot ${index + 1}`; return car; })];
+  const detail = bestNetwork ? `best trained fly pilot deployed on ${activeTrack.name} against three heuristic bots` : `demo brain deployed on ${activeTrack.name} — train a controller to improve it`;
   setRunState("Racing", detail, "running", "RACE MODE");
   setProgress(0, "lap 0%", "fixed 30 Hz simulator · press Stop to pause");
   appendEvent("race started · fly pilot and three bots are on the track");
@@ -161,13 +214,16 @@ function loadBrain(): void {
 
 function renderTrack(): void {
   context.save(); context.translate(WIDTH / 2, HEIGHT / 2); context.fillStyle = "#111a1c"; context.fillRect(-WIDTH / 2, -HEIGHT / 2, WIDTH, HEIGHT); context.lineJoin = "round"; context.lineCap = "round";
-  const drawPath = () => { context.beginPath(); track.forEach((point, index) => index === 0 ? context.moveTo(point.x, point.y) : context.lineTo(point.x, point.y)); context.closePath(); };
-  drawPath(); context.strokeStyle = "#38454b"; context.lineWidth = TRACK_WIDTH + 14; context.stroke(); drawPath(); context.strokeStyle = "#18272b"; context.lineWidth = TRACK_WIDTH; context.stroke();
+  const drawPath = () => { context.beginPath(); activeTrack.points.forEach((point, index) => index === 0 ? context.moveTo(point.x, point.y) : context.lineTo(point.x, point.y)); context.closePath(); };
+  drawPath(); context.strokeStyle = "#38454b"; context.lineWidth = activeTrack.width + 14; context.stroke(); drawPath(); context.strokeStyle = "#18272b"; context.lineWidth = activeTrack.width; context.stroke();
   drawPath(); context.strokeStyle = "#5a6c67"; context.lineWidth = 2; context.setLineDash([12, 12]); context.stroke(); context.setLineDash([]);
-  const start = track[0]; context.strokeStyle = "#9ed5ff"; context.lineWidth = 5; context.beginPath(); context.moveTo(start.x, start.y - 28); context.lineTo(start.x, start.y + 28); context.stroke();
-  for (let index = 0; index < track.length; index += 2) { const marker = track[index]; context.fillStyle = "#7aa18c"; context.globalAlpha = 0.28; context.beginPath(); context.arc(marker.x, marker.y, 3, 0, TAU); context.fill(); }
+  const line = startLine(activeTrack); const lineOffset = activeTrack.width / 2 + 7; const startA = addCanvasPoint(line.point, { x: line.normal.x * lineOffset, y: line.normal.y * lineOffset }); const startB = addCanvasPoint(line.point, { x: -line.normal.x * lineOffset, y: -line.normal.y * lineOffset });
+  context.strokeStyle = "#9ed5ff"; context.lineWidth = 5; context.beginPath(); context.moveTo(startA.x, startA.y); context.lineTo(startB.x, startB.y); context.stroke();
+  for (let index = 0; index < activeTrack.points.length; index += 2) { const marker = activeTrack.points[index]; context.fillStyle = "#7aa18c"; context.globalAlpha = 0.28; context.beginPath(); context.arc(marker.x, marker.y, 3, 0, TAU); context.fill(); }
   context.restore();
 }
+
+function addCanvasPoint(point: { x: number; y: number }, offset: { x: number; y: number }): { x: number; y: number } { return { x: point.x + offset.x, y: point.y + offset.y }; }
 
 function drawCar(car: Car, alpha = 1): void {
   context.save(); context.translate(WIDTH / 2 + car.position.x, HEIGHT / 2 + car.position.y); context.rotate(car.heading); context.globalAlpha = alpha;
@@ -182,48 +238,68 @@ function updateNeural(network: SpikingNetwork | undefined): void {
 }
 
 function render(): void {
-  context.clearRect(0, 0, WIDTH, HEIGHT); renderTrack(); trainingPopulation.forEach((car) => drawCar(car, 0.18)); raceCars.forEach((car) => drawCar(car));
-  if (training && trainingPopulation[trainingIndex]) drawCar(trainingPopulation[trainingIndex], 0.9); updateNeural(fly?.network ?? trainingPopulation[trainingIndex]?.network);
+  context.clearRect(0, 0, WIDTH, HEIGHT); renderTrack(); trainingPopulation.filter((car) => car.trackId === activeTrack.id).forEach((car) => drawCar(car, 0.18)); raceCars.forEach((car) => drawCar(car));
+  if (training && trainingPopulation[trainingIndex]) drawCar(trainingPopulation[trainingIndex], 0.9); updateRewardTelemetry(fly ?? trainingPopulation[trainingIndex]); updateNeural(fly?.network ?? trainingPopulation[trainingIndex]?.network);
 }
 
 function updateRace(): void {
   if (!running || training) return;
-  raceCars.forEach((car) => { const action = car.isFly && car.network ? car.network.step(sensorValues(car, raceCars)) : heuristicAction(car, raceCars); car.action = action; stepCar(car, action, raceCars); });
+  raceCars.forEach((car) => { const action = car.isFly && car.network ? car.network.step(sensorValues(car, raceCars, activeTrack)) : heuristicAction(car, raceCars); car.action = action; stepCar(car, action, raceCars, activeTrack, rewardConfig); });
   if (fly) {
     const lapPercent = Math.round(fly.progress * 100);
     ui.progress.textContent = `${lapPercent}%`;
     ui.speed.textContent = fly.speed.toFixed(1);
-    setProgress(fly.progress, `lap ${lapPercent}%`, `speed ${fly.speed.toFixed(1)} · collisions ${fly.collisions}`);
+    updateRewardTelemetry(fly);
+    if (!fly.finished) setProgress(fly.progress, `lap ${lapPercent}%`, `speed ${fly.speed.toFixed(1)} · collisions ${fly.collisions}`);
+    if (fly.finished && !flyFinishAnnounced) {
+      flyFinishAnnounced = true;
+      setRunState("Finish line crossed", `Fly pilot completed a lap on ${activeTrack.name} with reward ${fly.score.toFixed(1)}.`, "ready", "FINISH");
+      setProgress(1, "100% · lap complete", "finish reward applied · press Start race to run again");
+      appendEvent(`finish line crossed on ${activeTrack.name} · lap reward ${rewardConfig.finish.toFixed(1)}`);
+    }
   }
 }
 
-function makeTrainingCar(network: SpikingNetwork, lane = 0): Car { const car = startPosition(lane); car.network = network; car.color = "#8191aa"; car.isFly = true; return car; }
+function makeTrainingCar(network: SpikingNetwork, lane = 0, route: TrackDefinition = activeTrack): Car { network.reset(); const car = startPosition(lane, route); car.network = network; car.color = "#8191aa"; car.isFly = true; return car; }
 
 function trainPopulationStep(): void {
   const car = trainingPopulation[trainingIndex]; if (!car?.network) return;
-  const cars = [car, ...trainingPopulation.filter((other) => other !== car)]; car.action = car.network.step(sensorValues(car, cars)); stepCar(car, car.action, cars);
-  const totalCandidates = Math.max(1, trainingPopulationSize * requestedGenerations);
-  const completedCandidates = (trainingGeneration - 1) * trainingPopulationSize + trainingIndex;
+  const cars = [car]; car.action = car.network.step(sensorValues(car, cars, trainingTracks[trainingTrackIndex])); stepCar(car, car.action, cars, trainingTracks[trainingTrackIndex], rewardConfig);
+  updateRewardTelemetry(car);
+  const episodeCount = Math.max(1, trainingTracks.length); const totalEpisodes = Math.max(1, trainingPopulationSize * episodeCount * requestedGenerations);
+  const completedEpisodes = (trainingGeneration - 1) * trainingPopulationSize * episodeCount + trainingIndex * episodeCount + trainingTrackIndex;
   const candidateFraction = car.ticks / MAX_TICKS;
-  setProgress((completedCandidates + candidateFraction) / totalCandidates, `generation ${trainingGeneration}/${requestedGenerations} · candidate ${trainingIndex + 1}/${trainingPopulationSize}`, `visual · tick ${car.ticks}/${MAX_TICKS} · candidate progress ${Math.round(car.progress * 100)}%`);
-  if (car.crashed || car.ticks >= MAX_TICKS) {
-    appendEvent(`candidate ${trainingIndex + 1}/${trainingPopulationSize} finished · fitness ${car.score.toFixed(1)}${car.crashed ? " · crashed" : ""}`);
-    trainingIndex += 1;
-    if (trainingIndex >= trainingPopulation.length) finishVisualGeneration();
+  const route = trainingTracks[trainingTrackIndex];
+  setProgress((completedEpisodes + candidateFraction) / totalEpisodes, `generation ${trainingGeneration}/${requestedGenerations} · candidate ${trainingIndex + 1}/${trainingPopulationSize} · ${route.name}`, `visual · tick ${car.ticks}/${MAX_TICKS} · direction ${Math.round(clamp((car.forwardAlignment + 1) * 50, 0, 100))}%`);
+  if (car.crashed || car.finished || car.ticks >= MAX_TICKS) {
+    trainingScores[trainingIndex] += car.score;
+    trainingProgresses[trainingIndex] += car.totalProgress;
+    appendEvent(`candidate ${trainingIndex + 1}/${trainingPopulationSize} finished ${route.name} · fitness ${car.score.toFixed(1)}${car.finished ? " · finish line" : car.crashed ? " · crashed" : ""}`);
+    if (trainingTrackIndex + 1 < trainingTracks.length) {
+      trainingTrackIndex += 1; activeTrack = trainingTracks[trainingTrackIndex];
+      trainingPopulation[trainingIndex] = makeTrainingCar(car.network, (trainingIndex % 3) - 1, trainingTracks[trainingTrackIndex]);
+      setProgress((completedEpisodes + 1) / totalEpisodes, `generation ${trainingGeneration}/${requestedGenerations} · candidate ${trainingIndex + 1}/${trainingPopulationSize} · ${trainingTracks[trainingTrackIndex].name}`, "visual · switching track episode");
+    } else {
+      car.score = trainingScores[trainingIndex] / trainingTracks.length; car.totalProgress = trainingProgresses[trainingIndex] / trainingTracks.length;
+      trainingIndex += 1; trainingTrackIndex = 0;
+      if (trainingIndex >= trainingPopulation.length) finishVisualGeneration();
+    }
   }
 }
 
 function startVisualGeneration(): void {
-  trainingPopulation = trainingNetworks.map((network, index) => makeTrainingCar(network, (index % 3) - 1));
+  trainingTrackIndex = 0; activeTrack = trainingTracks[0]; trainingScores = trainingNetworks.map(() => 0); trainingProgresses = trainingNetworks.map(() => 0);
+  trainingPopulation = trainingNetworks.map((network, index) => makeTrainingCar(network, (index % 3) - 1, trainingTracks[0]));
   trainingIndex = 0;
   trainingPopulation.forEach((car) => car.network?.reset());
-  setProgress(((trainingGeneration - 1) * trainingPopulationSize) / Math.max(1, trainingPopulationSize * requestedGenerations), `generation ${trainingGeneration}/${requestedGenerations} · candidate 1/${trainingPopulationSize}`, "visual · preparing candidate");
+  const episodeCount = Math.max(1, trainingTracks.length);
+  setProgress(((trainingGeneration - 1) * trainingPopulationSize * episodeCount) / Math.max(1, trainingPopulationSize * episodeCount * requestedGenerations), `generation ${trainingGeneration}/${requestedGenerations} · candidate 1/${trainingPopulationSize} · ${trainingTracks[0].name}`, "visual · preparing candidate");
 }
 
 function breed(): void {
   const ranked = [...trainingNetworks].map((network, index) => ({ network, score: trainingPopulation[index]?.score ?? -Infinity })).sort((a, b) => b.score - a.score);
   const eliteCount = Math.max(2, Math.floor(ranked.length * 0.2)); bestNetwork = ranked[0].network.clone(); bestFitness = ranked[0].score; generation = trainingGeneration;
-  ui.generation.textContent = `${generation}`; ui.fitness.textContent = bestFitness.toFixed(1); ui.progress.textContent = `${Math.round((trainingPopulation.find((car) => car.network === ranked[0].network)?.progress ?? 0) * 100)}%`;
+  const winner = trainingPopulation.find((car) => car.network === ranked[0].network); ui.generation.textContent = `${generation}`; ui.fitness.textContent = bestFitness.toFixed(1); ui.progress.textContent = `${Math.round((winner?.totalProgress ?? winner?.progress ?? 0) * 100)}%`;
   appendEvent(`generation ${trainingGeneration} complete · best fitness ${bestFitness.toFixed(1)} · breeding ${ranked.length - eliteCount} mutations`);
   trainingNetworks = ranked.map((entry, index) => index < eliteCount ? entry.network.clone() : ranked[index % eliteCount].network.mutate(0.12, 0.22, generation * 1000 + index));
 }
@@ -232,28 +308,29 @@ function finishVisualGeneration(): void { breed(); if (trainingGeneration >= req
 
 async function runHeadless(): Promise<void> {
   const session = ++trainingSession; clearVisualTimer(); training = true; running = false; visualTraining = false; trainingGeneration = 1;
-  trainingPopulationSize = readInteger(ui.population, 24, 4, 80); requestedGenerations = readInteger(ui.generations, 100, 1, 10000); trainingNetworks = createNetworkPopulation(trainingPopulationSize);
-  beginRun("Headless training", `Evaluating ${trainingPopulationSize} controllers across ${requestedGenerations} generations. The browser is yielding between candidates so this page stays responsive.`, "HEADLESS TRAINING");
+  trainingPopulationSize = readInteger(ui.population, 24, 4, 80); requestedGenerations = readInteger(ui.generations, 100, 1, 10000); trainingTracks = selectedTracks(); rewardConfig = readRewardConfig(); activeTrack = trainingTracks[0]; trainingNetworks = createNetworkPopulation(trainingPopulationSize);
+  beginRun("Headless training", `Evaluating ${trainingPopulationSize} controllers across ${requestedGenerations} generations on ${selectedTrackLabel()}.`, "HEADLESS TRAINING");
   setBusy(true); ui.generation.textContent = "0"; ui.fitness.textContent = "—";
   try {
     for (; trainingGeneration <= requestedGenerations && training && trainingSession === session; trainingGeneration += 1) {
-      trainingPopulation = trainingNetworks.map((network) => makeTrainingCar(network));
+      trainingPopulation = trainingNetworks.map((network) => makeTrainingCar(network, 0, trainingTracks[0]));
       trainingIndex = 0;
-      setRunState("Headless training", `Generation ${trainingGeneration}/${requestedGenerations}: evaluating candidate controllers without drawing each simulation step.`, "running", "HEADLESS TRAINING");
+      setRunState("Headless training", `Generation ${trainingGeneration}/${requestedGenerations}: evaluating each candidate across ${trainingTracks.length} track${trainingTracks.length === 1 ? "" : "s"}.`, "running", "HEADLESS TRAINING");
       for (const [index, car] of trainingPopulation.entries()) {
         if (!training || trainingSession !== session) return;
         trainingIndex = index;
         const totalCandidates = Math.max(1, trainingPopulationSize * requestedGenerations);
         const startedCandidates = (trainingGeneration - 1) * trainingPopulationSize + index;
-        setProgress(startedCandidates / totalCandidates, `generation ${trainingGeneration}/${requestedGenerations} · candidate ${index + 1}/${trainingPopulationSize}`, "headless · evaluating deterministic simulator…");
+        setProgress(startedCandidates / totalCandidates, `generation ${trainingGeneration}/${requestedGenerations} · candidate ${index + 1}/${trainingPopulationSize}`, `headless · ${trainingTracks.length} track${trainingTracks.length === 1 ? "" : "s"} · evaluating…`);
         await new Promise<void>((resolve) => setTimeout(resolve, 0));
-        const result = evaluate(car.network as SpikingNetwork); car.score = result.fitness; car.progress = result.progress;
+        const result = evaluateGeneralist(car.network as SpikingNetwork, trainingTracks, rewardConfig); car.score = result.fitness; car.progress = result.progress; car.totalProgress = result.progress; car.finished = result.finished; car.laps = result.laps; car.rewardTotals = result.rewardTotals; car.rewardBreakdown = result.rewardTotals; car.lastReward = 0; car.forwardAlignment = 0;
         trainingIndex = index + 1;
         const completedCandidates = (trainingGeneration - 1) * trainingPopulationSize + trainingIndex;
         ui.fitness.textContent = result.fitness.toFixed(1);
         ui.progress.textContent = `${Math.round(result.progress * 100)}%`;
-        setProgress(completedCandidates / totalCandidates, `generation ${trainingGeneration}/${requestedGenerations} · candidate ${trainingIndex}/${trainingPopulationSize}`, `headless · ${result.ticks} simulator ticks · fitness ${result.fitness.toFixed(1)}`);
-        if (index === 0 || index === trainingPopulation.length - 1 || (index + 1) % Math.max(1, Math.floor(trainingPopulationSize / 4)) === 0) appendEvent(`generation ${trainingGeneration}: candidate ${index + 1}/${trainingPopulationSize} scored ${result.fitness.toFixed(1)}`);
+        setProgress(completedCandidates / totalCandidates, `generation ${trainingGeneration}/${requestedGenerations} · candidate ${trainingIndex}/${trainingPopulationSize}`, `headless · ${result.ticks} ticks across ${result.episodes.length} track${result.episodes.length === 1 ? "" : "s"} · fitness ${result.fitness.toFixed(1)}`);
+        updateRewardTelemetry(car);
+        if (index === 0 || index === trainingPopulation.length - 1 || (index + 1) % Math.max(1, Math.floor(trainingPopulationSize / 4)) === 0) appendEvent(`generation ${trainingGeneration}: candidate ${index + 1}/${trainingPopulationSize} scored ${result.fitness.toFixed(1)} across ${result.episodes.length} tracks`);
         await new Promise<void>((resolve) => setTimeout(resolve, 0));
       }
       breed();
@@ -264,8 +341,8 @@ async function runHeadless(): Promise<void> {
 
 function startVisualTraining(): void {
   const session = ++trainingSession; clearVisualTimer(); training = true; running = false; visualTraining = true; trainingGeneration = 1;
-  trainingPopulationSize = readInteger(ui.population, 24, 4, 80); requestedGenerations = readInteger(ui.generations, 100, 1, 10000); trainingNetworks = createNetworkPopulation(trainingPopulationSize);
-  beginRun("Visual training", `Watching ${trainingPopulationSize} candidates drive one at a time across ${requestedGenerations} generations.`, "VISUAL TRAINING");
+  trainingPopulationSize = readInteger(ui.population, 24, 4, 80); requestedGenerations = readInteger(ui.generations, 100, 1, 10000); trainingTracks = selectedTracks(); rewardConfig = readRewardConfig(); activeTrack = trainingTracks[0]; trainingNetworks = createNetworkPopulation(trainingPopulationSize);
+  beginRun("Visual training", `Watching ${trainingPopulationSize} candidates drive across ${requestedGenerations} generations on ${selectedTrackLabel()}.`, "VISUAL TRAINING");
   setBusy(true); ui.generation.textContent = "0"; ui.fitness.textContent = "—"; startVisualGeneration(); scheduleVisualBatch(session);
 }
 
@@ -311,6 +388,10 @@ ui.stopButton.addEventListener("click", () => safely(stopAll));
 ui.resetButton.addEventListener("click", () => safely(resetBrain));
 ui.saveButton.addEventListener("click", () => safely(saveBrain));
 ui.loadButton.addEventListener("click", () => safely(loadBrain));
+ui.trackSelect.addEventListener("change", () => { if (!training) safely(launchRace); });
+[ui.rewardProgress, ui.rewardDirection, ui.rewardMoving, ui.rewardStanding, ui.rewardWrong, ui.rewardReverse, ui.rewardOffTrack, ui.rewardCollision, ui.rewardCrash, ui.rewardFinish].forEach((input) => {
+  input.addEventListener("change", () => { rewardConfig = readRewardConfig(); appendEvent("reward settings updated · new weights apply immediately"); });
+});
 window.addEventListener("error", (event) => { if (event.error) failApplication(event.error); });
 window.addEventListener("unhandledrejection", (event) => { failApplication(event.reason); });
 

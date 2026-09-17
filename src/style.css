@@ -8,13 +8,14 @@
 
 * { box-sizing: border-box; }
 body { margin: 0; min-width: 320px; background: radial-gradient(circle at 20% 0%, #1b2940 0, #10131a 42rem); }
-button, input { font: inherit; }
+button, input, select { font: inherit; }
 button { cursor: pointer; color: #e9edf5; background: #242b38; border: 1px solid #3a4659; border-radius: 8px; padding: 0.62rem 0.82rem; transition: 120ms ease; }
 button:hover { transform: translateY(-1px); border-color: #6ea8ff; }
 button:disabled { cursor: not-allowed; opacity: 0.42; transform: none; }
 button.primary { color: #08101d; background: #72b8ff; border-color: #72b8ff; font-weight: 750; }
 button.quiet { background: transparent; color: #aab5c6; }
-input { width: 82px; padding: 0.48rem 0.55rem; color: #e9edf5; background: #151a23; border: 1px solid #354052; border-radius: 7px; text-align: right; }
+input, select { width: 82px; padding: 0.48rem 0.55rem; color: #e9edf5; background: #151a23; border: 1px solid #354052; border-radius: 7px; text-align: right; }
+select { width: 170px; text-align: left; }
 .app-shell { width: min(1400px, calc(100% - 32px)); margin: 0 auto; padding: 38px 0 24px; }
 .hero { display: flex; justify-content: space-between; align-items: start; margin-bottom: 24px; }
 .eyebrow { margin: 0 0 8px; color: #79a9dd; font-size: 0.7rem; letter-spacing: 0.16em; font-weight: 800; }
@@ -48,6 +49,14 @@ canvas { display: block; width: 100%; height: auto; image-rendering: auto; }
 h2 { margin: 0 0 13px; font-size: .85rem; letter-spacing: .03em; }
 label { display: flex; justify-content: space-between; align-items: center; margin-top: 9px; color: #c4cedd; font-size: .82rem; }
 .microcopy { margin: 13px 0 0; color: #7f8ca0; line-height: 1.5; font-size: .72rem; }
+.reward-settings summary { display: flex; justify-content: space-between; align-items: center; cursor: pointer; list-style: none; color: #91a5bd; font-size: .68rem; text-transform: uppercase; letter-spacing: .08em; }
+.reward-settings summary::-webkit-details-marker { display: none; }
+.reward-settings summary::before { content: "▸"; margin-right: 7px; color: #72b8ff; }
+.reward-settings[open] summary::before { content: "▾"; }
+.reward-settings summary h2 { flex: 1; margin: 0; color: #e9edf5; font-size: .85rem; letter-spacing: .03em; text-transform: none; }
+.reward-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 0 9px; margin-top: 9px; }
+.reward-fields label { gap: 5px; align-items: start; flex-direction: column; color: #9cabc0; font-size: .68rem; }
+.reward-fields input { width: 100%; text-align: right; }
 .status-dot { display: inline-flex; align-items: center; gap: 5px; color: #8995a7; font-size: .7rem; text-transform: uppercase; letter-spacing: .08em; }
 .status-dot::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: #647086; }
 .status-dot.running::before { background: #7cf0b6; box-shadow: 0 0 10px #7cf0b6; }

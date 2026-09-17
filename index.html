@@ -74,14 +74,42 @@
             <div class="section-title"><h2>Training lab</h2><span id="training-status" class="status-dot idle">idle</span></div>
             <label>Population <input id="population" type="number" min="4" max="80" value="24" /></label>
             <label>Generations <input id="generations" type="number" min="1" max="10000" value="100" /></label>
-            <p class="microcopy">Visual training evaluates one candidate at a time so you can watch the cars learn. Headless mode runs the same deterministic simulator without rendering. The live console below the canvas reports every phase and candidate.</p>
+            <label>Track set
+              <select id="track-select">
+                <option value="all">Generalist · all tracks</option>
+                <option value="grand-loop">Grand loop</option>
+                <option value="switchback">Switchback</option>
+                <option value="zigzag">Zigzag</option>
+              </select>
+            </label>
+            <p class="microcopy">Generalist training evaluates every candidate on all three layouts and averages the result. A single track is useful for quick experiments; all tracks is the robust default.</p>
           </section>
+
+          <details class="panel-section reward-settings" open>
+            <summary><h2>Reward shaping</h2><span>live settings</span></summary>
+            <div class="reward-fields">
+              <label>Progress / sec <input id="reward-progress" type="number" min="0" max="100" step="0.5" value="12" /></label>
+              <label>Right direction / sec <input id="reward-direction" type="number" min="0" max="20" step="0.05" value="0.45" /></label>
+              <label>Moving / sec <input id="reward-moving" type="number" min="0" max="20" step="0.05" value="0.12" /></label>
+              <label>Standing still / sec <input id="reward-standing" type="number" min="0" max="20" step="0.05" value="0.55" /></label>
+              <label>Wrong direction / sec <input id="reward-wrong" type="number" min="0" max="30" step="0.05" value="1.25" /></label>
+              <label>Reverse progress / sec <input id="reward-reverse" type="number" min="0" max="30" step="0.05" value="1.5" /></label>
+              <label>Outside track / sec <input id="reward-offtrack" type="number" min="0" max="30" step="0.05" value="1.1" /></label>
+              <label>Collision penalty <input id="reward-collision" type="number" min="0" max="100" step="0.5" value="7" /></label>
+              <label>Crash penalty <input id="reward-crash" type="number" min="0" max="200" step="1" value="25" /></label>
+              <label>Finish reward <input id="reward-finish" type="number" min="0" max="1000" step="5" value="250" /></label>
+            </div>
+            <p class="microcopy">Progress is measured along the current track and normalized per second. Direction uses the car’s heading versus the local track tangent. Penalties are applied every simulation second or at the event.</p>
+          </details>
 
           <section class="panel-section metrics">
             <div><span>Generation</span><strong id="generation">0</strong></div>
             <div><span>Best fitness</span><strong id="fitness">—</strong></div>
             <div><span>Best lap progress</span><strong id="progress">0%</strong></div>
             <div><span>Race speed</span><strong id="speed">0.0</strong></div>
+            <div><span>Last reward</span><strong id="reward">0.0</strong></div>
+            <div><span>Direction</span><strong id="direction">100%</strong></div>
+            <div><span>Penalty / tick</span><strong id="penalties">0.0</strong></div>
           </section>
 
           <section class="panel-section">

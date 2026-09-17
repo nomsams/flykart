@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  MAX_TICKS, STEP, TRACK_WIDTH, BrainSnapshot, SpikingNetwork, createNetworkPopulation,
-  evaluate, heuristicAction, nearestTrack, sensorValues, startPosition, stepCar, track,
+  DEFAULT_TRACK, MAX_TICKS, STEP, TRACKS, TRACK_WIDTH, BrainSnapshot, SpikingNetwork, createNetworkPopulation,
+  evaluate, evaluateGeneralist, heuristicAction, nearestTrack, sensorValues, startPosition, stepCar, track,
 } from "./core";
 
 const finiteAction = (action: ReturnType<SpikingNetwork["step"]>) => {
@@ -85,6 +85,19 @@ describe("track geometry and sensors", () => {
     sensorValues(startPosition(), [startPosition()]);
     expect(JSON.stringify(track)).toBe(before);
   });
+
+  it("supports independent track geometries with a valid start line", () => {
+    expect(TRACKS).toHaveLength(3);
+    expect(new Set(TRACKS.map((route) => route.id)).size).toBe(TRACKS.length);
+    TRACKS.forEach((route) => {
+      const car = startPosition(0, route);
+      const nearest = nearestTrack(car.position, route);
+      expect(nearest.distance).toBeLessThan(0.001);
+      expect(nearest.progress).toBeCloseTo(0, 4);
+      expect(car.trackId).toBe(route.id);
+      expect(route.length).toBeGreaterThan(500);
+    });
+  });
 });
 
 describe("vehicle physics and fitness", () => {
@@ -158,5 +171,54 @@ describe("vehicle physics and fitness", () => {
     stepCar(car, { steer: 1, throttle: 1, brake: 0 }, [car]);
     expect(car.position).toEqual(before);
     expect(car.ticks).toBe(0);
+  });
+
+  it("rewards forward progress and correct heading", () => {
+    const car = startPosition();
+    stepCar(car, { steer: 0, throttle: 1, brake: 0 }, [car]);
+    expect(car.rewardBreakdown.progress).toBeGreaterThan(0);
+    expect(car.rewardBreakdown.direction).toBeGreaterThan(0);
+    expect(car.rewardBreakdown.total).toBe(car.lastReward);
+  });
+
+  it("penalizes standing still and facing against the track", () => {
+    const car = startPosition();
+    car.heading += Math.PI;
+    stepCar(car, { steer: 0, throttle: 0, brake: 0 }, [car]);
+    expect(car.rewardBreakdown.standingStill).toBeGreaterThan(0);
+    expect(car.rewardBreakdown.wrongDirection).toBeGreaterThan(0);
+    expect(car.lastReward).toBeLessThan(0);
+  });
+
+  it("penalizes time spent outside the track", () => {
+    const car = startPosition();
+    car.position.x += TRACK_WIDTH * 2;
+    stepCar(car, { steer: 0, throttle: 0, brake: 0 }, [car]);
+    expect(car.rewardBreakdown.offTrack).toBeGreaterThan(0);
+    expect(car.offTrackTicks).toBe(1);
+  });
+
+  it("detects a forward finish-line crossing exactly once", () => {
+    const car = startPosition(0, DEFAULT_TRACK);
+    const last = DEFAULT_TRACK.points[DEFAULT_TRACK.points.length - 1];
+    const start = DEFAULT_TRACK.points[0];
+    const blend = 0.995;
+    car.position = { x: last.x + (start.x - last.x) * blend, y: last.y + (start.y - last.y) * blend };
+    car.heading = Math.atan2(start.y - last.y, start.x - last.x);
+    car.speed = 40;
+    car.progress = nearestTrack(car.position, DEFAULT_TRACK).progress;
+    stepCar(car, { steer: 0, throttle: 0, brake: 0 }, [car], DEFAULT_TRACK);
+    expect(car.finished).toBe(true);
+    expect(car.laps).toBe(1);
+    expect(car.rewardBreakdown.finish).toBeGreaterThan(0);
+  });
+
+  it("evaluates a controller across every track for a generalist score", () => {
+    const result = evaluateGeneralist(new SpikingNetwork(44), TRACKS);
+    expect(result.episodes.map((episode) => episode.trackId)).toEqual(TRACKS.map((route) => route.id));
+    expect(result.episodes).toHaveLength(TRACKS.length);
+    expect(Number.isFinite(result.fitness)).toBe(true);
+    expect(Number.isFinite(result.rewardTotals.total)).toBe(true);
+    expect(result.ticks).toBeGreaterThan(0);
   });
 });

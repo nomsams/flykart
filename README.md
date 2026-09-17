@@ -30,8 +30,10 @@ This repository is configured with **Pages → Build and deployment → Source �
 - **Headless train** runs the same deterministic evaluator without rendering each step. It yields periodically so the browser stays responsive and updates the generation/best-fitness counters.
 - **Start race** deploys the best network found so far against heuristic bot racers.
 - **Save brain / Load brain** stores a validated model checkpoint in browser local storage, including generation and fitness metadata.
+- **Track set** can be one layout for fast experiments or **Generalist · all tracks**, which evaluates each controller across the Grand loop, Switchback, and Zigzag layouts and averages the result.
+- **Reward shaping** exposes progress-per-second, correct-direction, moving, standing-still, wrong-direction, reverse-progress, off-track, collision, crash, and finish-line weights. The live telemetry shows the last reward, heading alignment, and current penalty total.
 
-The current evolutionary trainer uses elite selection plus mutation. It is a deliberately small baseline so we can compare it later against CEM, PPO, and a connectome-derived controller. Colab becomes useful when we add larger populations, many randomized tracks, pixel observations, or PyTorch/JAX experiments.
+The current evolutionary trainer uses elite selection plus mutation. It is a deliberately small baseline so we can compare it later against CEM, PPO, and a connectome-derived controller. Each car receives reward from local track progress, so standing still, driving against the tangent, reversing, leaving the track, colliding, or crashing cannot improve fitness. A forward crossing of the actual start/finish boundary completes a lap and awards the configurable finish reward. Colab becomes useful when we add larger populations, many randomized tracks, pixel observations, or PyTorch/JAX experiments.
 
 ## Suggested milestones
 

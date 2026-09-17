@@ -1,18 +1,105 @@
 export type Vec = { x: number; y: number };
 export type Action = { steer: number; throttle: number; brake: number };
 export type Sensors = number[];
+export type TrackId = "grand-loop" | "switchback" | "zigzag";
+export type TrackRef = TrackDefinition | TrackId;
+
+export type TrackDefinition = {
+  id: TrackId;
+  name: string;
+  points: Vec[];
+  width: number;
+  segmentLengths: number[];
+  cumulativeLengths: number[];
+  length: number;
+};
 
 export const TRACK_WIDTH = 112;
 export const STEP = 1 / 30;
 export const MAX_TICKS = 1500;
 export const TAU = Math.PI * 2;
 
-export const track: Vec[] = [
-  { x: -310, y: -100 }, { x: -205, y: -165 }, { x: -30, y: -185 },
-  { x: 170, y: -155 }, { x: 305, y: -65 }, { x: 315, y: 70 },
-  { x: 195, y: 155 }, { x: 5, y: 180 }, { x: -190, y: 145 },
-  { x: -315, y: 50 },
+function createTrack(id: TrackId, name: string, points: Vec[], width = TRACK_WIDTH): TrackDefinition {
+  const segmentLengths = points.map((point, index) => Math.hypot(point.x - points[(index + 1) % points.length].x, point.y - points[(index + 1) % points.length].y));
+  const cumulativeLengths: number[] = [0];
+  segmentLengths.forEach((segmentLength) => cumulativeLengths.push(cumulativeLengths[cumulativeLengths.length - 1] + segmentLength));
+  return { id, name, points, width, segmentLengths, cumulativeLengths, length: cumulativeLengths[cumulativeLengths.length - 1] };
+}
+
+export const TRACKS: TrackDefinition[] = [
+  createTrack("grand-loop", "Grand loop", [
+    { x: -310, y: -100 }, { x: -205, y: -165 }, { x: -30, y: -185 },
+    { x: 170, y: -155 }, { x: 305, y: -65 }, { x: 315, y: 70 },
+    { x: 195, y: 155 }, { x: 5, y: 180 }, { x: -190, y: 145 },
+    { x: -315, y: 50 },
+  ]),
+  createTrack("switchback", "Switchback", [
+    { x: -325, y: -120 }, { x: -205, y: -185 }, { x: 45, y: -185 },
+    { x: 300, y: -120 }, { x: 330, y: -20 }, { x: 90, y: 20 },
+    { x: -160, y: 30 }, { x: -285, y: 105 }, { x: -130, y: 180 },
+    { x: 135, y: 175 }, { x: 320, y: 105 }, { x: 275, y: 20 },
+    { x: 30, y: -20 }, { x: -220, y: -35 },
+  ]),
+  createTrack("zigzag", "Zigzag", [
+    { x: -325, y: -80 }, { x: -245, y: -175 }, { x: -40, y: -135 },
+    { x: 100, y: -205 }, { x: 290, y: -135 }, { x: 325, y: -10 },
+    { x: 180, y: 55 }, { x: 300, y: 150 }, { x: 115, y: 190 },
+    { x: -65, y: 125 }, { x: -210, y: 190 }, { x: -330, y: 95 },
+  ]),
 ];
+
+export const DEFAULT_TRACK = TRACKS[0];
+// Kept as a point array for the original public API and existing experiments.
+export const track: Vec[] = DEFAULT_TRACK.points;
+
+export function resolveTrack(trackRef: TrackRef = DEFAULT_TRACK): TrackDefinition {
+  if (typeof trackRef !== "string") return trackRef;
+  const result = TRACKS.find((candidate) => candidate.id === trackRef);
+  if (!result) throw new Error(`unknown track id: ${trackRef}`);
+  return result;
+}
+
+export type RewardConfig = {
+  progressPerSecond: number;
+  correctDirectionPerSecond: number;
+  movementPerSecond: number;
+  standingStillPerSecond: number;
+  wrongDirectionPerSecond: number;
+  reverseProgressPerSecond: number;
+  offTrackPerSecond: number;
+  collision: number;
+  crash: number;
+  finish: number;
+};
+
+export const DEFAULT_REWARD_CONFIG: RewardConfig = {
+  progressPerSecond: 12,
+  correctDirectionPerSecond: 0.45,
+  movementPerSecond: 0.12,
+  standingStillPerSecond: 0.55,
+  wrongDirectionPerSecond: 1.25,
+  reverseProgressPerSecond: 1.5,
+  offTrackPerSecond: 1.1,
+  collision: 7,
+  crash: 25,
+  finish: 250,
+};
+
+export type RewardBreakdown = {
+  progress: number;
+  direction: number;
+  movement: number;
+  standingStill: number;
+  wrongDirection: number;
+  reverseProgress: number;
+  offTrack: number;
+  collision: number;
+  crash: number;
+  finish: number;
+  total: number;
+};
+
+export type RewardTotals = RewardBreakdown;
 
 export const clamp = (value: number, min: number, max: number): number => Math.max(min, Math.min(max, value));
 export const dist = (a: Vec, b: Vec): number => Math.hypot(a.x - b.x, a.y - b.y);
@@ -131,30 +218,53 @@ export class SpikingNetwork {
 
 export type Car = {
   position: Vec; heading: number; speed: number; progress: number; totalProgress: number; laps: number; bestProgress: number;
-  nearestDistance: number; offTrackTicks: number; collisions: number; ticks: number; score: number; crashed: boolean;
+  trackId: TrackId; distanceAlong: number; nearestDistance: number; offTrackTicks: number; collisions: number; ticks: number; score: number;
+  crashed: boolean; finished: boolean; stationaryTicks: number; wrongDirectionTicks: number; forwardAlignment: number; lastReward: number;
+  rewardBreakdown: RewardBreakdown; rewardTotals: RewardTotals;
   color: string; name: string; network?: SpikingNetwork; action: Action; trail: Vec[]; isFly: boolean;
 };
 
-export function startPosition(lane = 0): Car {
-  const point = track[0]; const tangent = normalize(sub(track[1], point)); const normal = { x: -tangent.y, y: tangent.x };
-  return { position: add(point, scale(normal, lane * 23)), heading: Math.atan2(tangent.y, tangent.x), speed: 0, progress: 0,
-    totalProgress: 0, laps: 0, bestProgress: 0, nearestDistance: 0, offTrackTicks: 0, collisions: 0, ticks: 0, score: 0,
-    crashed: false, color: "#f19a69", name: "bot", action: { steer: 0, throttle: 1, brake: 0 }, trail: [], isFly: false };
+function emptyRewards(): RewardBreakdown {
+  return { progress: 0, direction: 0, movement: 0, standingStill: 0, wrongDirection: 0, reverseProgress: 0, offTrack: 0, collision: 0, crash: 0, finish: 0, total: 0 };
 }
 
-export function nearestTrack(position: Vec): { point: Vec; tangent: Vec; distance: number; progress: number } {
-  let best = { point: track[0], tangent: normalize(sub(track[1], track[0])), distance: Infinity, progress: 0 };
-  for (let index = 0; index < track.length; index += 1) {
-    const a = track[index]; const b = track[(index + 1) % track.length]; const segment = sub(b, a);
+function addRewards(target: RewardTotals, current: RewardBreakdown): void {
+  (Object.keys(target) as (keyof RewardBreakdown)[]).forEach((key) => { target[key] += current[key]; });
+}
+
+export type StartLine = { point: Vec; tangent: Vec; normal: Vec };
+
+export function startLine(trackRef: TrackRef = DEFAULT_TRACK): StartLine {
+  const route = resolveTrack(trackRef); const point = route.points[0]; const tangent = normalize(sub(route.points[1], point));
+  return { point, tangent, normal: { x: -tangent.y, y: tangent.x } };
+}
+
+export function startPosition(lane = 0, trackRef: TrackRef = DEFAULT_TRACK): Car {
+  const route = resolveTrack(trackRef); const line = startLine(route); const point = add(line.point, scale(line.normal, lane * 23));
+  const rewardBreakdown = emptyRewards();
+  return { position: point, heading: Math.atan2(line.tangent.y, line.tangent.x), speed: 0, progress: 0, distanceAlong: 0,
+    totalProgress: 0, laps: 0, bestProgress: 0, trackId: route.id, nearestDistance: 0, offTrackTicks: 0, collisions: 0, ticks: 0, score: 0,
+    crashed: false, finished: false, stationaryTicks: 0, wrongDirectionTicks: 0, forwardAlignment: 1, lastReward: 0,
+    rewardBreakdown, rewardTotals: { ...rewardBreakdown }, color: "#f19a69", name: "bot", action: { steer: 0, throttle: 1, brake: 0 }, trail: [], isFly: false };
+}
+
+export function nearestTrack(position: Vec, trackRef: TrackRef = DEFAULT_TRACK): { point: Vec; tangent: Vec; distance: number; progress: number; distanceAlong: number; segmentIndex: number; segmentT: number } {
+  const route = resolveTrack(trackRef);
+  let best = { point: route.points[0], tangent: normalize(sub(route.points[1], route.points[0])), distance: Infinity, progress: 0, distanceAlong: 0, segmentIndex: 0, segmentT: 0 };
+  for (let index = 0; index < route.points.length; index += 1) {
+    const a = route.points[index]; const b = route.points[(index + 1) % route.points.length]; const segment = sub(b, a);
     const t = clamp(dot(sub(position, a), segment) / Math.max(1, dot(segment, segment)), 0, 1);
     const point = add(a, scale(segment, t)); const distance = dist(position, point);
-    if (distance < best.distance) best = { point, tangent: normalize(segment), distance, progress: (index + t) / track.length };
+    if (distance < best.distance) {
+      const distanceAlong = route.cumulativeLengths[index] + route.segmentLengths[index] * t;
+      best = { point, tangent: normalize(segment), distance, progress: distanceAlong / route.length, distanceAlong, segmentIndex: index, segmentT: t };
+    }
   }
   return best;
 }
 
-export function sensorValues(car: Car, others: Car[]): Sensors {
-  const closest = nearestTrack(car.position); const next = track[Math.floor((closest.progress * track.length + 2) % track.length)];
+export function sensorValues(car: Car, others: Car[], trackRef?: TrackRef): Sensors {
+  const route = resolveTrack(trackRef ?? car.trackId); const closest = nearestTrack(car.position, route); const next = route.points[Math.floor((closest.progress * route.points.length + 2) % route.points.length)];
   const desiredHeading = Math.atan2(next.y - car.position.y, next.x - car.position.x);
   const headingError = wrapAngle(desiredHeading - car.heading) / Math.PI;
   const tangentHeading = Math.atan2(closest.tangent.y, closest.tangent.x); const curvature = wrapAngle(tangentHeading - car.heading) / Math.PI;
@@ -163,8 +273,8 @@ export function sensorValues(car: Car, others: Car[]): Sensors {
     const offset = sub(other.position, car.position); const distance = Math.hypot(offset.x, offset.y); const direction = normalize(offset);
     return { distance, forward: dot(direction, forward), side: dot(direction, side) };
   }).filter((item) => item.distance < 180 && item.forward > 0).sort((a, b) => a.distance - b.distance)[0];
-  return [clamp(headingError, -1, 1), clamp(curvature, -1, 1), clamp(closest.distance / (TRACK_WIDTH / 2), -1, 1),
-    clamp(car.speed / 95, 0, 1), clamp(1 - closest.distance / (TRACK_WIDTH / 2), -1, 1),
+  return [clamp(headingError, -1, 1), clamp(curvature, -1, 1), clamp(closest.distance / (route.width / 2), -1, 1),
+    clamp(car.speed / 95, 0, 1), clamp(1 - closest.distance / (route.width / 2), -1, 1),
     opponent ? clamp(1 - opponent.distance / 180, 0, 1) : 0, opponent ? clamp(opponent.side, -1, 1) : 0,
     Math.sin(car.ticks * 0.025), 1];
 }
@@ -174,31 +284,64 @@ export function heuristicAction(car: Car, others: Car[]): Action {
   return { steer, throttle: clamp(1 - Math.abs(steer) * 0.45, 0.35, 1), brake: Math.abs(steer) > 0.85 ? 0.12 : 0 };
 }
 
-export function stepCar(car: Car, action: Action, others: Car[]): void {
+export function stepCar(car: Car, action: Action, others: Car[], trackRef?: TrackRef, rewardConfig: RewardConfig = DEFAULT_REWARD_CONFIG): void {
   if (car.crashed) return;
-  const nearby = nearestTrack(car.position); const offTrack = nearby.distance > TRACK_WIDTH / 2; const grip = offTrack ? 0.35 : 1;
-  car.heading += action.steer * (0.65 + car.speed / 150) * grip * STEP;
-  car.speed = clamp(car.speed + (action.throttle * 55 - action.brake * 75 - car.speed * 0.23) * STEP, 0, 90);
+  const route = resolveTrack(trackRef ?? car.trackId); const nearby = nearestTrack(car.position, route); const offTrackBefore = nearby.distance > route.width / 2; const grip = offTrackBefore ? 0.35 : 1;
+  car.heading += clamp(action.steer, -1, 1) * (0.65 + car.speed / 150) * grip * STEP;
+  car.speed = clamp(car.speed + (clamp(action.throttle, 0, 1) * 55 - clamp(action.brake, 0, 1) * 75 - car.speed * 0.23) * STEP, 0, 90);
   car.position = add(car.position, { x: Math.cos(car.heading) * car.speed * STEP, y: Math.sin(car.heading) * car.speed * STEP });
-  const updated = nearestTrack(car.position); const rawDelta = updated.progress - car.progress; let forwardDelta = rawDelta;
-  if (rawDelta < -0.5) { forwardDelta += 1; car.laps += 1; } else if (rawDelta > 0.5) forwardDelta -= 1;
-  if (forwardDelta > 0) car.totalProgress += forwardDelta; car.progress = updated.progress; car.bestProgress = Math.max(car.bestProgress, car.progress);
-  car.nearestDistance = updated.distance; if (offTrack) car.offTrackTicks += 1;
+  const updated = nearestTrack(car.position, route); const rawDelta = updated.progress - car.progress; let localDelta = rawDelta;
+  if (localDelta < -0.5) localDelta += 1; else if (localDelta > 0.5) localDelta -= 1;
+  const forward = { x: Math.cos(car.heading), y: Math.sin(car.heading) }; const alignment = dot(forward, updated.tangent);
+  const lapCrossed = rawDelta < -0.5 && alignment > 0.15 && car.speed > 2;
+  const firstFinish = lapCrossed && !car.finished;
+  const continuousDelta = localDelta + (lapCrossed ? 1 : 0);
+  const validForwardDelta = continuousDelta > 0 && alignment > -0.35 ? continuousDelta : 0;
+  if (lapCrossed) { car.laps += 1; car.finished = true; }
+  car.totalProgress += validForwardDelta; car.progress = updated.progress; car.distanceAlong = updated.distanceAlong; car.bestProgress = Math.max(car.bestProgress, car.progress);
+  car.nearestDistance = updated.distance; const offTrack = updated.distance > route.width / 2; if (offTrack) car.offTrackTicks += 1;
   car.ticks += 1; if (car.ticks % 8 === 0) car.trail.push({ ...car.position }); if (car.trail.length > 38) car.trail.shift();
+  const collisionsBefore = car.collisions;
   if (others.some((other) => other !== car && dist(car.position, other.position) < 21)) { car.speed *= 0.55; car.collisions += 1; }
-  car.score = car.totalProgress * 1000 + car.speed * 0.2 - car.offTrackTicks * 0.08 - car.collisions * 7;
-  if (car.ticks > MAX_TICKS || (car.nearestDistance > TRACK_WIDTH * 1.25 && car.speed < 2)) car.crashed = true;
+  const collisionDelta = car.collisions - collisionsBefore;
+  const standingStill = car.speed < 3; if (standingStill) car.stationaryTicks += 1; if (alignment < -0.25) car.wrongDirectionTicks += 1;
+  if (car.ticks >= MAX_TICKS || (car.nearestDistance > route.width * 1.25 && car.speed < 2)) car.crashed = true;
+  const reward = emptyRewards();
+  reward.progress = (validForwardDelta / STEP) * rewardConfig.progressPerSecond;
+  reward.direction = Math.max(0, alignment) * rewardConfig.correctDirectionPerSecond * STEP;
+  reward.movement = offTrack ? 0 : clamp(car.speed / 60, 0, 1) * rewardConfig.movementPerSecond * STEP;
+  reward.standingStill = standingStill ? rewardConfig.standingStillPerSecond * STEP : 0;
+  reward.wrongDirection = Math.max(0, -alignment) * rewardConfig.wrongDirectionPerSecond * STEP;
+  reward.reverseProgress = (Math.max(0, -localDelta) / STEP) * rewardConfig.reverseProgressPerSecond;
+  reward.offTrack = offTrack ? rewardConfig.offTrackPerSecond * STEP : 0;
+  reward.collision = collisionDelta * rewardConfig.collision;
+  reward.crash = car.crashed ? rewardConfig.crash : 0;
+  reward.finish = firstFinish ? rewardConfig.finish : 0;
+  reward.total = reward.progress + reward.direction + reward.movement + reward.finish - reward.standingStill - reward.wrongDirection - reward.reverseProgress - reward.offTrack - reward.collision - reward.crash;
+  car.forwardAlignment = alignment; car.lastReward = reward.total; car.rewardBreakdown = reward; addRewards(car.rewardTotals, reward); car.score += reward.total;
 }
 
-export function evaluate(network: SpikingNetwork): { fitness: number; progress: number; ticks: number } {
-  const car = startPosition(); car.network = network; network.reset();
-  const obstacles = [startPosition(-1), startPosition(1)]; obstacles[0].position = add(obstacles[0].position, { x: 55, y: 25 }); obstacles[1].position = add(obstacles[1].position, { x: 115, y: -35 });
+export type EvaluationResult = { fitness: number; progress: number; ticks: number; laps: number; finished: boolean; trackId: TrackId; rewardTotals: RewardTotals };
+
+export function evaluate(network: SpikingNetwork, trackRef: TrackRef = DEFAULT_TRACK, rewardConfig: RewardConfig = DEFAULT_REWARD_CONFIG): EvaluationResult {
+  const route = resolveTrack(trackRef); const car = startPosition(0, route); car.network = network; network.reset();
+  const line = startLine(route); const obstacles = [startPosition(-1, route), startPosition(1, route)]; obstacles[0].position = add(obstacles[0].position, scale(line.tangent, 55)); obstacles[1].position = add(obstacles[1].position, scale(line.tangent, 115));
   const cars = [car, ...obstacles];
-  for (let tick = 0; tick < MAX_TICKS && !car.crashed; tick += 1) {
-    stepCar(car, network.step(sensorValues(car, cars)), cars);
-    obstacles.forEach((bot) => stepCar(bot, heuristicAction(bot, cars), cars));
+  for (let tick = 0; tick < MAX_TICKS && !car.crashed && !car.finished; tick += 1) {
+    stepCar(car, network.step(sensorValues(car, cars, route)), cars, route, rewardConfig);
+    obstacles.forEach((bot) => stepCar(bot, heuristicAction(bot, cars), cars, route, rewardConfig));
   }
-  return { fitness: car.score - (car.crashed ? 25 : 0), progress: car.totalProgress, ticks: car.ticks };
+  return { fitness: car.score, progress: car.totalProgress, ticks: car.ticks, laps: car.laps, finished: car.finished, trackId: route.id, rewardTotals: { ...car.rewardTotals } };
+}
+
+export type GeneralistEvaluation = { fitness: number; progress: number; ticks: number; laps: number; finished: boolean; rewardTotals: RewardTotals; episodes: EvaluationResult[] };
+
+export function evaluateGeneralist(network: SpikingNetwork, trackRefs: TrackRef[] = TRACKS, rewardConfig: RewardConfig = DEFAULT_REWARD_CONFIG): GeneralistEvaluation {
+  const routes = trackRefs.length > 0 ? trackRefs.map(resolveTrack) : [DEFAULT_TRACK]; const episodes = routes.map((route) => evaluate(network, route, rewardConfig));
+  const average = (selector: (episode: EvaluationResult) => number): number => episodes.reduce((sum, episode) => sum + selector(episode), 0) / episodes.length;
+  const rewardTotals = emptyRewards();
+  (Object.keys(rewardTotals) as (keyof RewardBreakdown)[]).forEach((key) => { rewardTotals[key] = average((episode) => episode.rewardTotals[key]); });
+  return { fitness: average((episode) => episode.fitness), progress: average((episode) => episode.progress), ticks: episodes.reduce((sum, episode) => sum + episode.ticks, 0), laps: episodes.reduce((sum, episode) => sum + episode.laps, 0), finished: episodes.every((episode) => episode.finished), rewardTotals, episodes };
 }
 
 export function createNetworkPopulation(size: number): SpikingNetwork[] {
