@@ -45,12 +45,17 @@
           </div>
           <div class="toolbar">
             <button id="race-btn" class="primary" title="Run a race with the current fly controller">Start race</button>
+            <button id="drive-btn" title="Drive the fly with the arrow keys or WASD">Drive manually</button>
             <button id="visual-train-btn" title="Train one controller at a time and watch each candidate">Train visually</button>
+            <button id="evolve-five-btn" title="Race five brains together and breed the best one into the next generation">Evolve 5 brains</button>
             <button id="headless-train-btn" title="Train without drawing every simulation step">Headless train</button>
             <button id="stop-btn" class="quiet" title="Pause the current race or training run">Stop</button>
             <button id="reset-btn" class="quiet" title="Forget the current controller and start over">Reset brain</button>
             <button id="save-btn" class="quiet" title="Save the best controller in this browser">Save brain</button>
             <button id="load-btn" class="quiet" title="Load the saved controller from this browser">Load brain</button>
+            <button id="export-btn" class="quiet" title="Download the best controller as a JSON checkpoint">Download brain</button>
+            <button id="import-btn" class="quiet" title="Load a JSON checkpoint downloaded earlier">Import brain</button>
+            <input id="import-file" type="file" accept="application/json,.json" hidden />
           </div>
           <section class="run-console" aria-label="Live run status">
             <div class="run-console-header">
@@ -82,7 +87,7 @@
                 <option value="zigzag">Zigzag</option>
               </select>
             </label>
-            <p class="microcopy">Generalist training evaluates every candidate on all three layouts and averages the result. A single track is useful for quick experiments; all tracks is the robust default.</p>
+            <p class="microcopy">Generalist training evaluates every candidate on all three layouts and averages the result. “Evolve 5 brains” puts five flies on the same track, keeps the highest-fitness brain, then breeds deterministic mutations for the next generation.</p>
           </section>
 
           <details class="panel-section reward-settings" open>
@@ -95,11 +100,12 @@
               <label>Wrong direction / sec <input id="reward-wrong" type="number" min="0" max="30" step="0.05" value="1.25" /></label>
               <label>Reverse progress / sec <input id="reward-reverse" type="number" min="0" max="30" step="0.05" value="1.5" /></label>
               <label>Outside track / sec <input id="reward-offtrack" type="number" min="0" max="30" step="0.05" value="1.1" /></label>
+              <label>Centerline / sec <input id="reward-centerline" type="number" min="0" max="20" step="0.05" value="0.18" /></label>
               <label>Collision penalty <input id="reward-collision" type="number" min="0" max="100" step="0.5" value="7" /></label>
               <label>Crash penalty <input id="reward-crash" type="number" min="0" max="200" step="1" value="25" /></label>
               <label>Finish reward <input id="reward-finish" type="number" min="0" max="1000" step="5" value="250" /></label>
             </div>
-            <p class="microcopy">Progress is measured along the current track and normalized per second. Direction uses the car’s heading versus the local track tangent. Penalties are applied every simulation second or at the event.</p>
+            <p class="microcopy">Progress is measured along the current track and normalized per second. Direction uses the car’s heading versus the local track tangent. The centerline bonus fades to zero at the road edge. Penalties are applied every simulation second or at the event.</p>
           </details>
 
           <section class="panel-section metrics">
@@ -109,13 +115,14 @@
             <div><span>Race speed</span><strong id="speed">0.0</strong></div>
             <div><span>Last reward</span><strong id="reward">0.0</strong></div>
             <div><span>Direction</span><strong id="direction">100%</strong></div>
+            <div><span>Centerline</span><strong id="centerline">0%</strong></div>
             <div><span>Penalty / tick</span><strong id="penalties">0.0</strong></div>
           </section>
 
           <section class="panel-section">
             <div class="section-title"><h2>Neural activity</h2><span id="neuron-count">48 LIF cells</span></div>
             <div id="neural-bars" class="neural-bars" aria-label="Live spiking neuron activity"></div>
-            <p class="microcopy">Blue bars are recent spike activity. The controller receives compact track and opponent sensors, not raw pixels yet.</p>
+            <p class="microcopy">Blue bars are recent spike activity. The controller receives compact track and opponent sensors, not raw pixels yet. Manual mode: arrows or WASD; Space brakes.</p>
           </section>
 
           <section class="panel-section legend">

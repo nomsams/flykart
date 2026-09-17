@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  DEFAULT_TRACK, MAX_TICKS, STEP, TRACKS, TRACK_WIDTH, BrainSnapshot, SpikingNetwork, createNetworkPopulation,
-  evaluate, evaluateGeneralist, heuristicAction, nearestTrack, sensorValues, startPosition, stepCar, track,
+  CAR_COLLISION_DIAMETER, DEFAULT_REWARD_CONFIG, DEFAULT_TRACK, MAX_TICKS, STEP, TRACKS, TRACK_WIDTH, BrainSnapshot, SpikingNetwork, createNetworkPopulation,
+  evaluate, evaluateGeneralist, heuristicAction, nearestTrack, pointAtDistance, sensorValues, startPosition, stepCar, track,
 } from "./core";
 
 const finiteAction = (action: ReturnType<SpikingNetwork["step"]>) => {
@@ -98,6 +98,16 @@ describe("track geometry and sensors", () => {
       expect(route.length).toBeGreaterThan(500);
     });
   });
+
+  it("wraps distance samples around every track", () => {
+    TRACKS.forEach((route) => {
+      const start = pointAtDistance(0, route);
+      const wrapped = pointAtDistance(route.length, route);
+      expect(wrapped.point.x).toBeCloseTo(start.point.x, 5);
+      expect(wrapped.point.y).toBeCloseTo(start.point.y, 5);
+      expect(Math.hypot(wrapped.tangent.x, wrapped.tangent.y)).toBeCloseTo(1, 5);
+    });
+  });
 });
 
 describe("vehicle physics and fitness", () => {
@@ -117,6 +127,16 @@ describe("vehicle physics and fitness", () => {
     expect(car.totalProgress).toBe(0);
   });
 
+  it("supports deliberate reverse driving without creating forward progress", () => {
+    const car = startPosition(); const initial = { ...car.position }; const tangent = { x: Math.cos(car.heading), y: Math.sin(car.heading) };
+    for (let index = 0; index < 60; index += 1) stepCar(car, { steer: 0, throttle: 0, reverse: 1, brake: 0 }, [car]);
+    const displacement = { x: car.position.x - initial.x, y: car.position.y - initial.y };
+    expect(car.speed).toBeLessThan(0);
+    expect(displacement.x * tangent.x + displacement.y * tangent.y).toBeLessThan(0);
+    expect(car.totalProgress).toBe(0);
+    expect(car.crashed).toBe(false);
+  });
+
   it("counts collisions and applies off-track penalties", () => {
     const first = startPosition();
     const second = startPosition();
@@ -127,6 +147,32 @@ describe("vehicle physics and fitness", () => {
     const offTrack = startPosition(); offTrack.position.x += TRACK_WIDTH * 2;
     stepCar(offTrack, { steer: 0, throttle: 0, brake: 0 }, [offTrack]);
     expect(offTrack.offTrackTicks).toBe(1);
+  });
+
+  it("separates overlapping car footprints instead of leaving them stacked", () => {
+    const first = startPosition(); const second = startPosition();
+    stepCar(first, { steer: 0, throttle: 0, brake: 0 }, [first, second]);
+    expect(first.collisions).toBe(1);
+    expect(Math.hypot(first.position.x - second.position.x, first.position.y - second.position.y)).toBeGreaterThanOrEqual(CAR_COLLISION_DIAMETER);
+    expect(first.speed).toBe(0);
+  });
+
+  it("recovers a car from a far edge excursion without killing it", () => {
+    const car = startPosition(); car.position.x += TRACK_WIDTH * 2;
+    const before = nearestTrack(car.position).distance;
+    for (let index = 0; index < 12; index += 1) stepCar(car, heuristicAction(car, [car]), [car]);
+    expect(car.crashed).toBe(false);
+    expect(car.offTrackTicks).toBeGreaterThan(0);
+    expect(car.nearestDistance).toBeLessThan(before);
+  });
+
+  it("gives the centerline a larger bonus than an edge lane", () => {
+    const center = startPosition(0); const edge = startPosition(1);
+    stepCar(center, { steer: 0, throttle: 0, brake: 0 }, [center]);
+    stepCar(edge, { steer: 0, throttle: 0, brake: 0 }, [edge]);
+    expect(center.rewardBreakdown.centerline).toBeGreaterThan(edge.rewardBreakdown.centerline);
+    expect(center.rewardBreakdown.centerline).toBeGreaterThan(0);
+    expect(DEFAULT_REWARD_CONFIG.centerlinePerSecond).toBeGreaterThan(0);
   });
 
   it("keeps evaluation finite and bounded in time", () => {

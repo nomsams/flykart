@@ -1,5 +1,5 @@
 export type Vec = { x: number; y: number };
-export type Action = { steer: number; throttle: number; brake: number };
+export type Action = { steer: number; throttle: number; brake: number; reverse?: number };
 export type Sensors = number[];
 export type TrackId = "grand-loop" | "switchback" | "zigzag";
 export type TrackRef = TrackDefinition | TrackId;
@@ -15,6 +15,10 @@ export type TrackDefinition = {
 };
 
 export const TRACK_WIDTH = 112;
+export const CAR_LENGTH = 24;
+export const CAR_WIDTH = 14;
+export const CAR_COLLISION_DIAMETER = Math.hypot(CAR_LENGTH, CAR_WIDTH) * 0.78;
+export const LANE_SPACING = 32;
 export const STEP = 1 / 30;
 export const MAX_TICKS = 1500;
 export const TAU = Math.PI * 2;
@@ -67,6 +71,7 @@ export type RewardConfig = {
   wrongDirectionPerSecond: number;
   reverseProgressPerSecond: number;
   offTrackPerSecond: number;
+  centerlinePerSecond?: number;
   collision: number;
   crash: number;
   finish: number;
@@ -80,6 +85,7 @@ export const DEFAULT_REWARD_CONFIG: RewardConfig = {
   wrongDirectionPerSecond: 1.25,
   reverseProgressPerSecond: 1.5,
   offTrackPerSecond: 1.1,
+  centerlinePerSecond: 0.18,
   collision: 7,
   crash: 25,
   finish: 250,
@@ -93,6 +99,7 @@ export type RewardBreakdown = {
   wrongDirection: number;
   reverseProgress: number;
   offTrack: number;
+  centerline: number;
   collision: number;
   crash: number;
   finish: number;
@@ -220,12 +227,13 @@ export type Car = {
   position: Vec; heading: number; speed: number; progress: number; totalProgress: number; laps: number; bestProgress: number;
   trackId: TrackId; distanceAlong: number; nearestDistance: number; offTrackTicks: number; collisions: number; ticks: number; score: number;
   crashed: boolean; finished: boolean; stationaryTicks: number; wrongDirectionTicks: number; forwardAlignment: number; lastReward: number;
+  lateralOffset: number; collisionCooldown: number;
   rewardBreakdown: RewardBreakdown; rewardTotals: RewardTotals;
   color: string; name: string; network?: SpikingNetwork; action: Action; trail: Vec[]; isFly: boolean;
 };
 
 function emptyRewards(): RewardBreakdown {
-  return { progress: 0, direction: 0, movement: 0, standingStill: 0, wrongDirection: 0, reverseProgress: 0, offTrack: 0, collision: 0, crash: 0, finish: 0, total: 0 };
+  return { progress: 0, direction: 0, movement: 0, standingStill: 0, wrongDirection: 0, reverseProgress: 0, offTrack: 0, centerline: 0, collision: 0, crash: 0, finish: 0, total: 0 };
 }
 
 function addRewards(target: RewardTotals, current: RewardBreakdown): void {
@@ -240,12 +248,31 @@ export function startLine(trackRef: TrackRef = DEFAULT_TRACK): StartLine {
 }
 
 export function startPosition(lane = 0, trackRef: TrackRef = DEFAULT_TRACK): Car {
-  const route = resolveTrack(trackRef); const line = startLine(route); const point = add(line.point, scale(line.normal, lane * 23));
+  const route = resolveTrack(trackRef); const line = startLine(route); const point = add(line.point, scale(line.normal, lane * LANE_SPACING));
   const rewardBreakdown = emptyRewards();
   return { position: point, heading: Math.atan2(line.tangent.y, line.tangent.x), speed: 0, progress: 0, distanceAlong: 0,
     totalProgress: 0, laps: 0, bestProgress: 0, trackId: route.id, nearestDistance: 0, offTrackTicks: 0, collisions: 0, ticks: 0, score: 0,
-    crashed: false, finished: false, stationaryTicks: 0, wrongDirectionTicks: 0, forwardAlignment: 1, lastReward: 0,
+    crashed: false, finished: false, stationaryTicks: 0, wrongDirectionTicks: 0, forwardAlignment: 1, lastReward: 0, lateralOffset: 0, collisionCooldown: 0,
     rewardBreakdown, rewardTotals: { ...rewardBreakdown }, color: "#f19a69", name: "bot", action: { steer: 0, throttle: 1, brake: 0 }, trail: [], isFly: false };
+}
+
+export function pointAtDistance(distanceAlong: number, trackRef: TrackRef = DEFAULT_TRACK): { point: Vec; tangent: Vec; distanceAlong: number } {
+  const route = resolveTrack(trackRef);
+  const wrapped = ((distanceAlong % route.length) + route.length) % route.length;
+  let segmentIndex = route.segmentLengths.length - 1;
+  for (let index = 0; index < route.segmentLengths.length; index += 1) {
+    if (wrapped <= route.cumulativeLengths[index + 1]) { segmentIndex = index; break; }
+  }
+  const segmentLength = Math.max(1, route.segmentLengths[segmentIndex]);
+  const t = clamp((wrapped - route.cumulativeLengths[segmentIndex]) / segmentLength, 0, 1);
+  const a = route.points[segmentIndex]; const b = route.points[(segmentIndex + 1) % route.points.length];
+  return { point: add(a, scale(sub(b, a), t)), tangent: normalize(sub(b, a)), distanceAlong: wrapped };
+}
+
+function cross(a: Vec, b: Vec): number { return a.x * b.y - a.y * b.x; }
+
+function lateralOffset(position: Vec, closest: { point: Vec; tangent: Vec }, route: TrackDefinition): number {
+  return clamp(cross(closest.tangent, sub(position, closest.point)) / Math.max(1, route.width / 2), -1.5, 1.5);
 }
 
 export function nearestTrack(position: Vec, trackRef: TrackRef = DEFAULT_TRACK): { point: Vec; tangent: Vec; distance: number; progress: number; distanceAlong: number; segmentIndex: number; segmentT: number } {
@@ -264,33 +291,52 @@ export function nearestTrack(position: Vec, trackRef: TrackRef = DEFAULT_TRACK):
 }
 
 export function sensorValues(car: Car, others: Car[], trackRef?: TrackRef): Sensors {
-  const route = resolveTrack(trackRef ?? car.trackId); const closest = nearestTrack(car.position, route); const next = route.points[Math.floor((closest.progress * route.points.length + 2) % route.points.length)];
-  const desiredHeading = Math.atan2(next.y - car.position.y, next.x - car.position.x);
+  const route = resolveTrack(trackRef ?? car.trackId); const closest = nearestTrack(car.position, route);
+  const lookahead = pointAtDistance(closest.distanceAlong + 86, route); const desiredHeading = Math.atan2(lookahead.point.y - car.position.y, lookahead.point.x - car.position.x);
   const headingError = wrapAngle(desiredHeading - car.heading) / Math.PI;
-  const tangentHeading = Math.atan2(closest.tangent.y, closest.tangent.x); const curvature = wrapAngle(tangentHeading - car.heading) / Math.PI;
+  const tangentHeading = Math.atan2(lookahead.tangent.y, lookahead.tangent.x); const curvature = wrapAngle(tangentHeading - car.heading) / Math.PI;
   const forward = { x: Math.cos(car.heading), y: Math.sin(car.heading) }; const side = { x: -forward.y, y: forward.x };
   const opponent = others.filter((other) => other !== car).map((other) => {
     const offset = sub(other.position, car.position); const distance = Math.hypot(offset.x, offset.y); const direction = normalize(offset);
     return { distance, forward: dot(direction, forward), side: dot(direction, side) };
   }).filter((item) => item.distance < 180 && item.forward > 0).sort((a, b) => a.distance - b.distance)[0];
-  return [clamp(headingError, -1, 1), clamp(curvature, -1, 1), clamp(closest.distance / (route.width / 2), -1, 1),
-    clamp(car.speed / 95, 0, 1), clamp(1 - closest.distance / (route.width / 2), -1, 1),
+  const signedLateral = lateralOffset(car.position, closest, route);
+  return [clamp(headingError, -1, 1), clamp(curvature, -1, 1), clamp(signedLateral, -1, 1),
+    clamp(car.speed / 90, -1, 1), clamp(1 - Math.abs(signedLateral), -1, 1),
     opponent ? clamp(1 - opponent.distance / 180, 0, 1) : 0, opponent ? clamp(opponent.side, -1, 1) : 0,
     Math.sin(car.ticks * 0.025), 1];
 }
 
-export function heuristicAction(car: Car, others: Car[]): Action {
-  const sensors = sensorValues(car, others); const steer = clamp(sensors[0] * 1.8 + sensors[1] * 0.8 + sensors[2] * 1.2, -1, 1);
-  return { steer, throttle: clamp(1 - Math.abs(steer) * 0.45, 0.35, 1), brake: Math.abs(steer) > 0.85 ? 0.12 : 0 };
+export function heuristicAction(car: Car, others: Car[], trackRef?: TrackRef): Action {
+  const sensors = sensorValues(car, others, trackRef); const lateral = sensors[2]; const opponentPressure = sensors[5];
+  const avoid = opponentPressure > 0 ? -sensors[6] * opponentPressure * 1.35 : 0;
+  const steer = clamp(sensors[0] * 1.55 + sensors[1] * 0.7 - lateral * 1.85 + avoid, -1, 1);
+  const targetSpeed = clamp(82 - Math.abs(sensors[1]) * 44 - Math.abs(lateral) * 30 - opponentPressure * 17, 22, 82);
+  const brake = car.speed > targetSpeed + 5 ? clamp((car.speed - targetSpeed) / 35, 0, 1) : Math.abs(steer) > 0.94 ? 0.18 : 0;
+  const reverse = Math.abs(lateral) > 1.05 && car.speed < 6 && sensors[0] * car.forwardAlignment < -0.2 ? 0.32 : 0;
+  return { steer, throttle: reverse > 0 ? 0 : clamp(0.45 + (targetSpeed - Math.max(0, car.speed)) / 85, 0.38, 1), brake, reverse };
 }
 
 export function stepCar(car: Car, action: Action, others: Car[], trackRef?: TrackRef, rewardConfig: RewardConfig = DEFAULT_REWARD_CONFIG): void {
   if (car.crashed) return;
   const route = resolveTrack(trackRef ?? car.trackId); const nearby = nearestTrack(car.position, route); const offTrackBefore = nearby.distance > route.width / 2; const grip = offTrackBefore ? 0.35 : 1;
-  car.heading += clamp(action.steer, -1, 1) * (0.65 + car.speed / 150) * grip * STEP;
-  car.speed = clamp(car.speed + (clamp(action.throttle, 0, 1) * 55 - clamp(action.brake, 0, 1) * 75 - car.speed * 0.23) * STEP, 0, 90);
+  const steeringDirection = car.speed < -0.5 ? -1 : 1;
+  car.heading += clamp(action.steer, -1, 1) * (0.65 + Math.abs(car.speed) / 150) * grip * steeringDirection * STEP;
+  const forwardThrottle = clamp(action.throttle, 0, 1); const reverseThrottle = clamp(action.reverse ?? 0, 0, 1); const brake = clamp(action.brake, 0, 1);
+  let acceleration = forwardThrottle * 55 - reverseThrottle * 45 - car.speed * 0.23;
+  if (car.speed > 0) acceleration -= brake * 75; else if (car.speed < 0) acceleration += brake * 75;
+  car.speed = clamp(car.speed + acceleration * STEP, -48, 90);
   car.position = add(car.position, { x: Math.cos(car.heading) * car.speed * STEP, y: Math.sin(car.heading) * car.speed * STEP });
-  const updated = nearestTrack(car.position, route); const rawDelta = updated.progress - car.progress; let localDelta = rawDelta;
+  let updated = nearestTrack(car.position, route); const wasOffTrack = updated.distance > route.width / 2;
+  if (wasOffTrack) {
+    const offset = sub(car.position, updated.point); const offsetDirection = normalize(offset);
+    const safeCenterDistance = route.width / 2 - CAR_WIDTH * 0.65;
+    const pull = clamp((updated.distance - safeCenterDistance) * (updated.distance > route.width * 1.25 ? 0.5 : 0.2), 1.5, 18);
+    car.position = sub(car.position, scale(offsetDirection, pull));
+    if (updated.distance > route.width * 1.25) car.speed *= 0.55;
+    updated = nearestTrack(car.position, route);
+  }
+  const rawDelta = updated.progress - car.progress; let localDelta = rawDelta;
   if (localDelta < -0.5) localDelta += 1; else if (localDelta > 0.5) localDelta -= 1;
   const forward = { x: Math.cos(car.heading), y: Math.sin(car.heading) }; const alignment = dot(forward, updated.tangent);
   const lapCrossed = rawDelta < -0.5 && alignment > 0.15 && car.speed > 2;
@@ -299,13 +345,33 @@ export function stepCar(car: Car, action: Action, others: Car[], trackRef?: Trac
   const validForwardDelta = continuousDelta > 0 && alignment > -0.35 ? continuousDelta : 0;
   if (lapCrossed) { car.laps += 1; car.finished = true; }
   car.totalProgress += validForwardDelta; car.progress = updated.progress; car.distanceAlong = updated.distanceAlong; car.bestProgress = Math.max(car.bestProgress, car.progress);
-  car.nearestDistance = updated.distance; const offTrack = updated.distance > route.width / 2; if (offTrack) car.offTrackTicks += 1;
+  car.nearestDistance = updated.distance; const offTrack = wasOffTrack || updated.distance > route.width / 2; if (offTrack) car.offTrackTicks += 1;
+  car.lateralOffset = lateralOffset(car.position, updated, route);
   car.ticks += 1; if (car.ticks % 8 === 0) car.trail.push({ ...car.position }); if (car.trail.length > 38) car.trail.shift();
   const collisionsBefore = car.collisions;
-  if (others.some((other) => other !== car && dist(car.position, other.position) < 21)) { car.speed *= 0.55; car.collisions += 1; }
+  let contact = false;
+  const carIndex = others.indexOf(car);
+  others.forEach((other, otherIndex) => {
+    if (other === car || other.crashed || other.trackId !== car.trackId) return;
+    const offset = sub(car.position, other.position); const distance = Math.hypot(offset.x, offset.y);
+    if (distance >= CAR_COLLISION_DIAMETER) return;
+    contact = true;
+    const tangent = updated.tangent; const fallback = { x: -tangent.y, y: tangent.x };
+    const direction = distance > 0.0001 ? scale(offset, 1 / distance) : scale(fallback, carIndex < otherIndex ? 1 : -1);
+    const separation = (CAR_COLLISION_DIAMETER - distance) + 0.75;
+    car.position = add(car.position, scale(direction, separation));
+  });
+  if (contact) {
+    car.speed *= 0.38;
+    if (car.collisionCooldown <= 0) car.collisions += 1;
+    car.collisionCooldown = 6;
+    const afterContact = nearestTrack(car.position, route);
+    const maxCenterDistance = route.width / 2 - CAR_WIDTH * 0.65;
+    if (afterContact.distance > maxCenterDistance) car.position = add(afterContact.point, scale(normalize(sub(car.position, afterContact.point)), maxCenterDistance));
+  } else car.collisionCooldown = Math.max(0, car.collisionCooldown - 1);
   const collisionDelta = car.collisions - collisionsBefore;
   const standingStill = car.speed < 3; if (standingStill) car.stationaryTicks += 1; if (alignment < -0.25) car.wrongDirectionTicks += 1;
-  if (car.ticks >= MAX_TICKS || (car.nearestDistance > route.width * 1.25 && car.speed < 2)) car.crashed = true;
+  if (car.ticks >= MAX_TICKS) car.crashed = true;
   const reward = emptyRewards();
   reward.progress = (validForwardDelta / STEP) * rewardConfig.progressPerSecond;
   reward.direction = Math.max(0, alignment) * rewardConfig.correctDirectionPerSecond * STEP;
@@ -314,10 +380,11 @@ export function stepCar(car: Car, action: Action, others: Car[], trackRef?: Trac
   reward.wrongDirection = Math.max(0, -alignment) * rewardConfig.wrongDirectionPerSecond * STEP;
   reward.reverseProgress = (Math.max(0, -localDelta) / STEP) * rewardConfig.reverseProgressPerSecond;
   reward.offTrack = offTrack ? rewardConfig.offTrackPerSecond * STEP : 0;
+  reward.centerline = Math.max(0, 1 - Math.abs(car.lateralOffset)) * (rewardConfig.centerlinePerSecond ?? 0) * STEP;
   reward.collision = collisionDelta * rewardConfig.collision;
   reward.crash = car.crashed ? rewardConfig.crash : 0;
   reward.finish = firstFinish ? rewardConfig.finish : 0;
-  reward.total = reward.progress + reward.direction + reward.movement + reward.finish - reward.standingStill - reward.wrongDirection - reward.reverseProgress - reward.offTrack - reward.collision - reward.crash;
+  reward.total = reward.progress + reward.direction + reward.movement + reward.centerline + reward.finish - reward.standingStill - reward.wrongDirection - reward.reverseProgress - reward.offTrack - reward.collision - reward.crash;
   car.forwardAlignment = alignment; car.lastReward = reward.total; car.rewardBreakdown = reward; addRewards(car.rewardTotals, reward); car.score += reward.total;
 }
 
