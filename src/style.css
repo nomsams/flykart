@@ -48,6 +48,10 @@ canvas { display: block; width: 100%; height: auto; image-rendering: auto; }
 .section-title { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 h2 { margin: 0 0 13px; font-size: .85rem; letter-spacing: .03em; }
 label { display: flex; justify-content: space-between; align-items: center; margin-top: 9px; color: #c4cedd; font-size: .82rem; }
+.check-row { justify-content: flex-start; gap: 8px; cursor: pointer; }
+.check-row input { width: auto; accent-color: #72b8ff; }
+.check-row span { display: flex; flex-direction: column; gap: 2px; }
+.check-row small { color: #7f8ca0; font-size: .68rem; }
 .microcopy { margin: 13px 0 0; color: #7f8ca0; line-height: 1.5; font-size: .72rem; }
 .reward-settings summary { display: flex; justify-content: space-between; align-items: center; cursor: pointer; list-style: none; color: #91a5bd; font-size: .68rem; text-transform: uppercase; letter-spacing: .08em; }
 .reward-settings summary::-webkit-details-marker { display: none; }

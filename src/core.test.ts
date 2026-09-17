@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  CAR_COLLISION_DIAMETER, DEFAULT_REWARD_CONFIG, DEFAULT_TRACK, MAX_TICKS, STEP, TRACKS, TRACK_WIDTH, BrainSnapshot, SpikingNetwork, createNetworkPopulation,
+  CAR_COLLISION_DIAMETER, DEFAULT_PHYSICS_CONFIG, DEFAULT_REWARD_CONFIG, DEFAULT_TRACK, MAX_TICKS, STEP, TRACKS, TRACK_WIDTH, BrainSnapshot, SpikingNetwork, createNetworkPopulation,
   evaluate, evaluateGeneralist, heuristicAction, nearestTrack, pointAtDistance, sensorValues, startPosition, stepCar, track,
 } from "./core";
 
@@ -253,10 +253,50 @@ describe("vehicle physics and fitness", () => {
     car.heading = Math.atan2(start.y - last.y, start.x - last.x);
     car.speed = 40;
     car.progress = nearestTrack(car.position, DEFAULT_TRACK).progress;
+    car.totalProgress = car.progress;
     stepCar(car, { steer: 0, throttle: 0, brake: 0 }, [car], DEFAULT_TRACK);
     expect(car.finished).toBe(true);
     expect(car.laps).toBe(1);
     expect(car.rewardBreakdown.finish).toBeGreaterThan(0);
+  });
+
+  it("does not award a lap for a tiny start-line loop", () => {
+    const car = startPosition(0, DEFAULT_TRACK);
+    car.position = { x: DEFAULT_TRACK.points[0].x - 2, y: DEFAULT_TRACK.points[0].y };
+    car.heading = startPosition(0, DEFAULT_TRACK).heading;
+    car.speed = 20;
+    car.progress = nearestTrack(car.position, DEFAULT_TRACK).progress;
+    stepCar(car, { steer: 0, throttle: 0, brake: 0 }, [car], DEFAULT_TRACK);
+    expect(car.finished).toBe(false);
+    expect(car.laps).toBe(0);
+    expect(car.rewardBreakdown.finish).toBe(0);
+    expect(car.totalProgress).toBeLessThan(0.95);
+  });
+
+  it("requires nearly a complete lap before a directed finish crossing", () => {
+    const car = startPosition(0, DEFAULT_TRACK);
+    const last = DEFAULT_TRACK.points[DEFAULT_TRACK.points.length - 1];
+    const start = DEFAULT_TRACK.points[0];
+    const blend = 0.995;
+    car.position = { x: last.x + (start.x - last.x) * blend, y: last.y + (start.y - last.y) * blend };
+    car.heading = Math.atan2(start.y - last.y, start.x - last.x);
+    car.speed = 40;
+    car.progress = nearestTrack(car.position, DEFAULT_TRACK).progress;
+    car.totalProgress = 0.90;
+    stepCar(car, { steer: 0, throttle: 0, brake: 0 }, [car], DEFAULT_TRACK);
+    expect(car.finished).toBe(false);
+    expect(car.laps).toBe(0);
+    expect(car.rewardBreakdown.finish).toBe(0);
+  });
+
+  it("lets an open-track car leave the road without wall recovery", () => {
+    const car = startPosition();
+    car.position.x += TRACK_WIDTH * 1.5;
+    stepCar(car, { steer: 0, throttle: 0, brake: 0 }, [car], DEFAULT_TRACK, DEFAULT_REWARD_CONFIG, { wallsEnabled: false });
+    expect(car.crashed).toBe(false);
+    expect(car.offTrackTicks).toBeGreaterThan(0);
+    expect(car.nearestDistance).toBeGreaterThan(DEFAULT_TRACK.width / 2);
+    expect(DEFAULT_PHYSICS_CONFIG.wallsEnabled).toBe(true);
   });
 
   it("evaluates a controller across every track for a generalist score", () => {

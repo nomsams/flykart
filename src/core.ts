@@ -3,6 +3,7 @@ export type Action = { steer: number; throttle: number; brake: number; reverse?:
 export type Sensors = number[];
 export type TrackId = "grand-loop" | "switchback" | "zigzag";
 export type TrackRef = TrackDefinition | TrackId;
+export type PhysicsConfig = { wallsEnabled: boolean };
 
 export type TrackDefinition = {
   id: TrackId;
@@ -22,6 +23,7 @@ export const LANE_SPACING = 32;
 export const STEP = 1 / 30;
 export const MAX_TICKS = 1500;
 export const TAU = Math.PI * 2;
+export const DEFAULT_PHYSICS_CONFIG: PhysicsConfig = { wallsEnabled: true };
 
 function createTrack(id: TrackId, name: string, points: Vec[], width = TRACK_WIDTH): TrackDefinition {
   const segmentLengths = points.map((point, index) => Math.hypot(point.x - points[(index + 1) % points.length].x, point.y - points[(index + 1) % points.length].y));
@@ -317,7 +319,7 @@ export function heuristicAction(car: Car, others: Car[], trackRef?: TrackRef): A
   return { steer, throttle: reverse > 0 ? 0 : clamp(0.45 + (targetSpeed - Math.max(0, car.speed)) / 85, 0.38, 1), brake, reverse };
 }
 
-export function stepCar(car: Car, action: Action, others: Car[], trackRef?: TrackRef, rewardConfig: RewardConfig = DEFAULT_REWARD_CONFIG): void {
+export function stepCar(car: Car, action: Action, others: Car[], trackRef?: TrackRef, rewardConfig: RewardConfig = DEFAULT_REWARD_CONFIG, physicsConfig: PhysicsConfig = DEFAULT_PHYSICS_CONFIG): void {
   if (car.crashed) return;
   const route = resolveTrack(trackRef ?? car.trackId); const nearby = nearestTrack(car.position, route); const offTrackBefore = nearby.distance > route.width / 2; const grip = offTrackBefore ? 0.35 : 1;
   const steeringDirection = car.speed < -0.5 ? -1 : 1;
@@ -326,9 +328,10 @@ export function stepCar(car: Car, action: Action, others: Car[], trackRef?: Trac
   let acceleration = forwardThrottle * 55 - reverseThrottle * 45 - car.speed * 0.23;
   if (car.speed > 0) acceleration -= brake * 75; else if (car.speed < 0) acceleration += brake * 75;
   car.speed = clamp(car.speed + acceleration * STEP, -48, 90);
+  const previousPosition = { ...car.position };
   car.position = add(car.position, { x: Math.cos(car.heading) * car.speed * STEP, y: Math.sin(car.heading) * car.speed * STEP });
   let updated = nearestTrack(car.position, route); const wasOffTrack = updated.distance > route.width / 2;
-  if (wasOffTrack) {
+  if (wasOffTrack && physicsConfig.wallsEnabled) {
     const offset = sub(car.position, updated.point); const offsetDirection = normalize(offset);
     const safeCenterDistance = route.width / 2 - CAR_WIDTH * 0.65;
     const pull = clamp((updated.distance - safeCenterDistance) * (updated.distance > route.width * 1.25 ? 0.5 : 0.2), 1.5, 18);
@@ -339,7 +342,16 @@ export function stepCar(car: Car, action: Action, others: Car[], trackRef?: Trac
   const rawDelta = updated.progress - car.progress; let localDelta = rawDelta;
   if (localDelta < -0.5) localDelta += 1; else if (localDelta > 0.5) localDelta -= 1;
   const forward = { x: Math.cos(car.heading), y: Math.sin(car.heading) }; const alignment = dot(forward, updated.tangent);
-  const lapCrossed = rawDelta < -0.5 && alignment > 0.15 && car.speed > 2;
+  const line = startLine(route); const previousLineSide = dot(sub(previousPosition, line.point), line.tangent); const currentLineSide = dot(sub(car.position, line.point), line.tangent);
+  const previousLineOffset = Math.abs(dot(sub(previousPosition, line.point), line.normal)); const currentLineOffset = Math.abs(dot(sub(car.position, line.point), line.normal));
+  // Use a small approach tolerance because a simulation step can begin very
+  // close to the line. The total-progress guard below is what prevents a car
+  // from farming the finish by making a tiny loop around the start.
+  const directedStartCross = previousLineSide < -0.25 && currentLineSide >= -1 && dot(sub(car.position, previousPosition), line.tangent) > 0.01 && previousLineOffset <= route.width * 0.5 + 10 && currentLineOffset <= route.width * 0.5 + 10;
+  // A start-line crossing only completes a lap after the car has covered
+  // essentially the entire route. This blocks short loops and spatial
+  // shortcuts near the finish while allowing for simulation-step rounding.
+  const lapCrossed = directedStartCross && car.totalProgress >= 0.95 && alignment > 0.15 && car.speed > 2;
   const firstFinish = lapCrossed && !car.finished;
   const continuousDelta = localDelta + (lapCrossed ? 1 : 0);
   const validForwardDelta = continuousDelta > 0 && alignment > -0.35 ? continuousDelta : 0;
@@ -390,21 +402,21 @@ export function stepCar(car: Car, action: Action, others: Car[], trackRef?: Trac
 
 export type EvaluationResult = { fitness: number; progress: number; ticks: number; laps: number; finished: boolean; trackId: TrackId; rewardTotals: RewardTotals };
 
-export function evaluate(network: SpikingNetwork, trackRef: TrackRef = DEFAULT_TRACK, rewardConfig: RewardConfig = DEFAULT_REWARD_CONFIG): EvaluationResult {
+export function evaluate(network: SpikingNetwork, trackRef: TrackRef = DEFAULT_TRACK, rewardConfig: RewardConfig = DEFAULT_REWARD_CONFIG, physicsConfig: PhysicsConfig = DEFAULT_PHYSICS_CONFIG): EvaluationResult {
   const route = resolveTrack(trackRef); const car = startPosition(0, route); car.network = network; network.reset();
   const line = startLine(route); const obstacles = [startPosition(-1, route), startPosition(1, route)]; obstacles[0].position = add(obstacles[0].position, scale(line.tangent, 55)); obstacles[1].position = add(obstacles[1].position, scale(line.tangent, 115));
   const cars = [car, ...obstacles];
   for (let tick = 0; tick < MAX_TICKS && !car.crashed && !car.finished; tick += 1) {
-    stepCar(car, network.step(sensorValues(car, cars, route)), cars, route, rewardConfig);
-    obstacles.forEach((bot) => stepCar(bot, heuristicAction(bot, cars), cars, route, rewardConfig));
+    stepCar(car, network.step(sensorValues(car, cars, route)), cars, route, rewardConfig, physicsConfig);
+    obstacles.forEach((bot) => stepCar(bot, heuristicAction(bot, cars, route), cars, route, rewardConfig, physicsConfig));
   }
   return { fitness: car.score, progress: car.totalProgress, ticks: car.ticks, laps: car.laps, finished: car.finished, trackId: route.id, rewardTotals: { ...car.rewardTotals } };
 }
 
 export type GeneralistEvaluation = { fitness: number; progress: number; ticks: number; laps: number; finished: boolean; rewardTotals: RewardTotals; episodes: EvaluationResult[] };
 
-export function evaluateGeneralist(network: SpikingNetwork, trackRefs: TrackRef[] = TRACKS, rewardConfig: RewardConfig = DEFAULT_REWARD_CONFIG): GeneralistEvaluation {
-  const routes = trackRefs.length > 0 ? trackRefs.map(resolveTrack) : [DEFAULT_TRACK]; const episodes = routes.map((route) => evaluate(network, route, rewardConfig));
+export function evaluateGeneralist(network: SpikingNetwork, trackRefs: TrackRef[] = TRACKS, rewardConfig: RewardConfig = DEFAULT_REWARD_CONFIG, physicsConfig: PhysicsConfig = DEFAULT_PHYSICS_CONFIG): GeneralistEvaluation {
+  const routes = trackRefs.length > 0 ? trackRefs.map(resolveTrack) : [DEFAULT_TRACK]; const episodes = routes.map((route) => evaluate(network, route, rewardConfig, physicsConfig));
   const average = (selector: (episode: EvaluationResult) => number): number => episodes.reduce((sum, episode) => sum + selector(episode), 0) / episodes.length;
   const rewardTotals = emptyRewards();
   (Object.keys(rewardTotals) as (keyof RewardBreakdown)[]).forEach((key) => { rewardTotals[key] = average((episode) => episode.rewardTotals[key]); });
