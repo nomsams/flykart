@@ -4,8 +4,29 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>FlyKart — a fly-trained racer</title>
+    <style>
+      /* Keep the boot state useful even if the application bundle or its CSS fails to load. */
+      #boot-screen { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; padding: 24px; color: #e9edf5; background: #10131a; font: 16px/1.5 system-ui, sans-serif; transition: opacity 180ms ease; }
+      #boot-screen[hidden] { display: none; }
+      #boot-screen[data-error="true"] { background: #24171b; }
+      .boot-card { width: min(520px, 100%); padding: 28px; border: 1px solid #354052; border-radius: 16px; background: #151a23; box-shadow: 0 18px 60px rgba(0,0,0,.35); }
+      .boot-card h1 { margin: 0 0 8px; font-size: 2rem; }
+      .boot-card p { margin: 8px 0 0; color: #aab6c7; }
+      .boot-spinner { width: 24px; height: 24px; margin-bottom: 18px; border: 3px solid #354052; border-top-color: #72b8ff; border-radius: 50%; animation: flykart-spin .8s linear infinite; }
+      #boot-screen[data-error="true"] .boot-spinner { display: none; }
+      .boot-detail { margin-top: 16px; color: #7f8ca0; font-size: .82rem; }
+      @keyframes flykart-spin { to { transform: rotate(360deg); } }
+    </style>
   </head>
   <body>
+    <div id="boot-screen" role="status" aria-live="polite">
+      <div class="boot-card">
+        <div class="boot-spinner" aria-hidden="true"></div>
+        <h1 id="boot-title">Loading FlyKart</h1>
+        <p id="boot-message">Downloading the simulation and neural controller…</p>
+        <p id="boot-detail" class="boot-detail">If this takes longer than a few seconds, the deployed page may still be updating.</p>
+      </div>
+    </div>
     <main class="app-shell">
       <header class="hero">
         <div>
@@ -23,14 +44,29 @@
             <div class="canvas-caption"><span id="mode-label">RACE MODE</span><span id="hint-label">Train a brain, then deploy it</span></div>
           </div>
           <div class="toolbar">
-            <button id="race-btn" class="primary">Start race</button>
-            <button id="visual-train-btn">Train visually</button>
-            <button id="headless-train-btn">Headless train</button>
-            <button id="stop-btn" class="quiet">Stop</button>
-            <button id="reset-btn" class="quiet">Reset brain</button>
-            <button id="save-btn" class="quiet">Save brain</button>
-            <button id="load-btn" class="quiet">Load brain</button>
+            <button id="race-btn" class="primary" title="Run a race with the current fly controller">Start race</button>
+            <button id="visual-train-btn" title="Train one controller at a time and watch each candidate">Train visually</button>
+            <button id="headless-train-btn" title="Train without drawing every simulation step">Headless train</button>
+            <button id="stop-btn" class="quiet" title="Pause the current race or training run">Stop</button>
+            <button id="reset-btn" class="quiet" title="Forget the current controller and start over">Reset brain</button>
+            <button id="save-btn" class="quiet" title="Save the best controller in this browser">Save brain</button>
+            <button id="load-btn" class="quiet" title="Load the saved controller from this browser">Load brain</button>
           </div>
+          <section class="run-console" aria-label="Live run status">
+            <div class="run-console-header">
+              <div>
+                <span class="console-kicker">LIVE RUN CONSOLE</span>
+                <strong id="run-state">Ready</strong>
+              </div>
+              <span id="run-elapsed" class="run-elapsed">00:00</span>
+            </div>
+            <p id="run-detail">Choose Start race, Train visually, or Headless train.</p>
+            <div id="run-progress-track" class="progress-track" role="progressbar" aria-label="Run progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+              <span id="run-progress-bar"></span>
+            </div>
+            <div class="run-meta"><span id="run-progress-text">0% · waiting for a command</span><span id="run-step-text">fixed 30 Hz simulator</span></div>
+            <ol id="event-log" class="event-log" aria-label="Recent events"></ol>
+          </section>
         </div>
 
         <aside class="control-panel">
@@ -38,7 +74,7 @@
             <div class="section-title"><h2>Training lab</h2><span id="training-status" class="status-dot idle">idle</span></div>
             <label>Population <input id="population" type="number" min="4" max="80" value="24" /></label>
             <label>Generations <input id="generations" type="number" min="1" max="10000" value="100" /></label>
-            <p class="microcopy">Visual training evaluates one candidate at a time so you can watch the cars learn. Headless mode runs the same deterministic simulator without rendering.</p>
+            <p class="microcopy">Visual training evaluates one candidate at a time so you can watch the cars learn. Headless mode runs the same deterministic simulator without rendering. The live console below the canvas reports every phase and candidate.</p>
           </section>
 
           <section class="panel-section metrics">
@@ -67,6 +103,29 @@
         <span>Next: richer vision, obstacles, and Colab experiments</span>
       </footer>
     </main>
+    <noscript>
+      <p style="padding: 24px; color: #f3b5b5; background: #24171b; font: 16px/1.5 system-ui, sans-serif;">FlyKart needs JavaScript enabled to run the simulation.</p>
+    </noscript>
+    <script>
+      (() => {
+        const screen = document.querySelector("#boot-screen");
+        const title = document.querySelector("#boot-title");
+        const message = document.querySelector("#boot-message");
+        const detail = document.querySelector("#boot-detail");
+        let ready = false;
+        window.addEventListener("flykart:ready", () => {
+          ready = true;
+          screen?.setAttribute("hidden", "");
+        }, { once: true });
+        window.setTimeout(() => {
+          if (ready || !screen) return;
+          screen.dataset.error = "true";
+          if (title) title.textContent = "FlyKart did not finish loading";
+          if (message) message.textContent = "The page is visible, but its JavaScript bundle did not start.";
+          if (detail) detail.textContent = "Refresh once. If this persists, wait for the GitHub Pages deployment to finish; the site must serve the Vite build from dist, not src/main.ts.";
+        }, 9000);
+      })();
+    </script>
     <script type="module" src="./src/main.ts"></script>
   </body>
 </html>
