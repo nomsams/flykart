@@ -104,19 +104,20 @@
                 <option value="zigzag">Zigzag</option>
                 <option value="hairpin">Hairpin</option>
                 <option value="oval-sprint">Oval sprint</option>
+                <option value="sharp-turn">Sharp turn · corner test</option>
               </select>
             </label>
             <label class="check-row"><input id="walls-toggle" type="checkbox" checked /> <span>Track walls <small>recovery clamp (turn off for open track)</small></span></label>
             <label class="check-row"><input id="adaptive-time-toggle" type="checkbox" checked /> <span>Adaptive time limit <small>extends while reward rate is viable and improving</small></span></label>
             <label>Max adaptive extensions <input id="adaptive-extensions" type="number" min="0" max="6" value="4" /></label>
             <label>Checkpoint gates <input id="checkpoint-count" type="number" min="2" max="64" value="8" /></label>
-            <label class="check-row"><input id="ghost-evolution-toggle" type="checkbox" /> <span>Ghost evolution <small>optional: candidates are isolated and cannot collide</small></span></label>
+            <label class="check-row"><input id="ghost-evolution-toggle" type="checkbox" /> <span>Ghost evolution <small>simultaneous candidates do not see, collide with, or influence one another</small></span></label>
             <label class="check-row"><input id="obstacle-toggle" type="checkbox" /> <span>Random road objects <small>stalled cars are added to avoidance training</small></span></label>
             <label>Object count <input id="obstacle-count" type="number" min="0" max="64" value="6" /></label>
             <label class="check-row"><input id="plateau-exploration-toggle" type="checkbox" checked /> <span>Plateau exploration <small>adds high-variance scouts and random immigrant brains</small></span></label>
             <label>Plateau patience <input id="plateau-patience" type="number" min="1" max="20" value="3" /></label>
             <label class="check-row"><input id="curriculum-toggle" type="checkbox" /> <span>Progressive hazards <small>ramps stalled road objects from easy to full difficulty</small></span></label>
-            <p class="microcopy">The population button runs all configured brains simultaneously when Ghost evolution is off, including 10+ cars. Turn Ghost evolution on for independent candidate worlds. The current best remains candidate 1; lower-scoring generations are rejected. Candidates share the same deterministic world per run, so fitness comparisons are fair.</p>
+            <p class="microcopy">The population button runs all configured brains simultaneously, including 10+ cars. Turn Ghost evolution on for independent candidate worlds: every brain gets its own candidate and road-object physics, so candidate traffic cannot change the score of another. The current best remains candidate 1; lower-scoring generations are rejected.</p>
           </section>
 
           <details class="panel-section reward-settings" open>

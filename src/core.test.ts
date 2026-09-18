@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   CAR_COLLISION_DIAMETER, CHECKPOINT_COUNT, CLOSE_PROXIMITY_DISTANCE, DEFAULT_PHYSICS_CONFIG, DEFAULT_REWARD_CONFIG, DEFAULT_TRACK, MAX_TICKS, STEP, TRACKS, TRACK_WIDTH, BrainSnapshot, SpikingNetwork, createMutationPopulation, createNetworkPopulation, createRoadObstacles,
-  evaluate, evaluateGeneralist, heuristicAction, nearestTrack, pointAtDistance, resolveTrack, sensorValues, startPosition, stepCar, track, trackCheckpoint,
+  evaluate, evaluateGeneralist, heuristicAction, nearestTrack, pointAtDistance, resolveTrack, sensorValues, startLine, startPosition, stepCar, track, trackCheckpoint,
 } from "./core";
 
 const finiteAction = (action: ReturnType<SpikingNetwork["step"]>) => {
@@ -127,7 +127,7 @@ describe("track geometry and sensors", () => {
   });
 
   it("supports independent track geometries with a valid start line", () => {
-    expect(TRACKS).toHaveLength(5);
+    expect(TRACKS).toHaveLength(6);
     expect(new Set(TRACKS.map((route) => route.id)).size).toBe(TRACKS.length);
     TRACKS.forEach((route) => {
       const car = startPosition(0, route);
@@ -328,6 +328,28 @@ describe("vehicle physics and fitness", () => {
     stepCar(near, { steer: 0, throttle: 0, brake: 0 }, [near], DEFAULT_TRACK, DEFAULT_REWARD_CONFIG, { wallsEnabled: false });
     stepCar(far, { steer: 0, throttle: 0, brake: 0 }, [far], DEFAULT_TRACK, DEFAULT_REWARD_CONFIG, { wallsEnabled: false });
     expect(far.rewardBreakdown.offTrack).toBeGreaterThan(near.rewardBreakdown.offTrack);
+  });
+
+  it("cuts outside-track speed roughly in half and slows farther excursions more", () => {
+    const sample = pointAtDistance(200, DEFAULT_TRACK); const normal = { x: -sample.tangent.y, y: sample.tangent.x };
+    const onRoad = startPosition(); const near = startPosition(); const far = startPosition();
+    onRoad.position = sample.point; near.position = { x: sample.point.x + normal.x * (DEFAULT_TRACK.width / 2 + 4), y: sample.point.y + normal.y * (DEFAULT_TRACK.width / 2 + 4) }; far.position = { x: sample.point.x + normal.x * (DEFAULT_TRACK.width * 2), y: sample.point.y + normal.y * (DEFAULT_TRACK.width * 2) };
+    [onRoad, near, far].forEach((car) => { car.heading = Math.atan2(sample.tangent.y, sample.tangent.x); car.speed = 60; stepCar(car, { steer: 0, throttle: 0, brake: 0 }, [car], DEFAULT_TRACK, DEFAULT_REWARD_CONFIG, { wallsEnabled: false }); });
+    expect(onRoad.speed).toBeGreaterThan(50);
+    expect(near.speed).toBeLessThan(onRoad.speed * 0.6);
+    expect(far.speed).toBeLessThan(near.speed);
+    expect(Number.isFinite(far.speed)).toBe(true);
+  });
+
+  it("uses normalized gate directions around sharp turns", () => {
+    const route = resolveTrack("sharp-turn"); const line = startLine(route);
+    expect(Math.hypot(line.tangent.x, line.tangent.y)).toBeCloseTo(1, 5);
+    expect(Math.hypot(line.normal.x, line.normal.y)).toBeCloseTo(1, 5);
+    for (let index = 0; index < 16; index += 1) {
+      const checkpoint = trackCheckpoint(index, route, 16);
+      expect(Math.hypot(checkpoint.tangent.x, checkpoint.tangent.y)).toBeCloseTo(1, 5);
+      expect(Math.hypot(checkpoint.normal.x, checkpoint.normal.y)).toBeCloseTo(1, 5);
+    }
   });
 
   it("penalizes the road edge while rewarding the centerline", () => {

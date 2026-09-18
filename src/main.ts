@@ -63,6 +63,10 @@ let ghostEvolution = false;
 let manualMode = false;
 let trainingPopulation: Car[] = [];
 let trainingObstacles: Car[] = [];
+// Ghost population evolution gets a separate obstacle world per candidate as
+// well, so a collision with a stalled road object cannot change another
+// candidate's sensors or physics.
+let trainingGhostObstacles: Car[][] = [];
 let trainingIndex = 0;
 let trainingGeneration = 0;
 let trainingNetworks: SpikingNetwork[] = [];
@@ -347,6 +351,11 @@ function recordEvolutionPoint(candidateFitness: number, progress: number): void 
 
 function refreshTrainingObstacles(route: TrackDefinition, seed: number): void {
   trainingObstacles = randomObjectsEnabled ? createRoadObstacles(trainingObstacleCount(), route, seed) : [];
+  trainingGhostObstacles = ghostEvolution && fiveBrainEvolution
+    // Each candidate gets independent object instances, but the same seeded
+    // layout, so isolation does not introduce a hidden fitness advantage.
+    ? Array.from({ length: trainingPopulationSize }, () => randomObjectsEnabled ? createRoadObstacles(trainingObstacleCount(), route, seed) : [])
+    : [];
 }
 
 function selectedTracks(): TrackDefinition[] {
@@ -409,7 +418,7 @@ function createGridCar(lane: number, distanceAlong: number, color: string, name:
 }
 
 function launchRace(manual = false): void {
-  training = false; running = true; visualTraining = false; fiveBrainEvolution = false; manualMode = manual; trainingPopulation = []; trainingObstacles = []; trainingHistory = []; raceAccumulator = 0; runStartedAt = performance.now(); flyFinishAnnounced = false;
+  training = false; running = true; visualTraining = false; fiveBrainEvolution = false; ghostEvolution = false; manualMode = manual; trainingPopulation = []; trainingObstacles = []; trainingGhostObstacles = []; trainingHistory = []; raceAccumulator = 0; runStartedAt = performance.now(); flyFinishAnnounced = false;
   activeTrack = ui.trackSelect.value === "all" ? DEFAULT_TRACK : resolveTrack(ui.trackSelect.value as TrackDefinition["id"]);
   activateStoredContextForRace();
   rewardConfig = readRewardConfig(); physicsConfig = readPhysicsConfig(); readRoadObjectConfig();
@@ -511,13 +520,15 @@ function renderTrack(): void {
   context.fillStyle = "#b7d8a2"; context.globalAlpha = 0.8; context.font = "600 11px system-ui"; context.fillText("CENTERLINE · +REWARD", -WIDTH / 2 + 18, -HEIGHT / 2 + 24); context.globalAlpha = 1;
   const checkpointCount = physicsConfig.checkpointCount ?? CHECKPOINT_COUNT;
   for (let index = 1; index < checkpointCount; index += 1) {
-    const checkpoint = trackCheckpoint(index, activeTrack, checkpointCount); const gateOffset = activeTrack.width * 0.46;
+    const checkpoint = trackCheckpoint(index, activeTrack, checkpointCount); const gateOffset = activeTrack.width / 2 + CAR_WIDTH;
     const gateA = addCanvasPoint(checkpoint.point, { x: checkpoint.normal.x * gateOffset, y: checkpoint.normal.y * gateOffset });
     const gateB = addCanvasPoint(checkpoint.point, { x: -checkpoint.normal.x * gateOffset, y: -checkpoint.normal.y * gateOffset });
     context.strokeStyle = "#e7bd72"; context.globalAlpha = 0.72; context.lineWidth = 2; context.setLineDash([6, 6]); context.beginPath(); context.moveTo(gateA.x, gateA.y); context.lineTo(gateB.x, gateB.y); context.stroke(); context.setLineDash([]);
+    context.globalAlpha = 0.9; context.strokeStyle = "#f7dfaa"; context.lineWidth = 1.5; context.beginPath(); context.moveTo(checkpoint.point.x - checkpoint.tangent.x * 9, checkpoint.point.y - checkpoint.tangent.y * 9); context.lineTo(checkpoint.point.x + checkpoint.tangent.x * 9, checkpoint.point.y + checkpoint.tangent.y * 9); context.stroke();
+    context.beginPath(); context.moveTo(checkpoint.point.x + checkpoint.tangent.x * 9, checkpoint.point.y + checkpoint.tangent.y * 9); context.lineTo(checkpoint.point.x + checkpoint.tangent.x * 3 - checkpoint.normal.x * 4, checkpoint.point.y + checkpoint.tangent.y * 3 - checkpoint.normal.y * 4); context.moveTo(checkpoint.point.x + checkpoint.tangent.x * 9, checkpoint.point.y + checkpoint.tangent.y * 9); context.lineTo(checkpoint.point.x + checkpoint.tangent.x * 3 + checkpoint.normal.x * 4, checkpoint.point.y + checkpoint.tangent.y * 3 + checkpoint.normal.y * 4); context.stroke();
     context.fillStyle = "#f1d28f"; context.font = "600 10px system-ui"; context.fillText(`CP${index}`, checkpoint.point.x + 6, checkpoint.point.y - 6);
   }
-  const line = startLine(activeTrack); const lineOffset = activeTrack.width / 2 + 7; const startA = addCanvasPoint(line.point, { x: line.normal.x * lineOffset, y: line.normal.y * lineOffset }); const startB = addCanvasPoint(line.point, { x: -line.normal.x * lineOffset, y: -line.normal.y * lineOffset });
+  const line = startLine(activeTrack); const lineOffset = activeTrack.width / 2 + CAR_WIDTH; const startA = addCanvasPoint(line.point, { x: line.normal.x * lineOffset, y: line.normal.y * lineOffset }); const startB = addCanvasPoint(line.point, { x: -line.normal.x * lineOffset, y: -line.normal.y * lineOffset });
   context.strokeStyle = "#9ed5ff"; context.lineWidth = 5; context.beginPath(); context.moveTo(startA.x, startA.y); context.lineTo(startB.x, startB.y); context.stroke();
   for (let index = 0; index < activeTrack.points.length; index += 2) { const marker = activeTrack.points[index]; context.fillStyle = "#7aa18c"; context.globalAlpha = 0.28; context.beginPath(); context.arc(marker.x, marker.y, 3, 0, TAU); context.fill(); }
   context.restore();
@@ -555,10 +566,11 @@ function render(): void {
   context.clearRect(0, 0, WIDTH, HEIGHT); renderTrack();
   if (training) {
     drawTrainingHistory();
-    if (fiveBrainEvolution && !ghostEvolution) {
+    if (fiveBrainEvolution) {
       const leader = [...trainingPopulation].sort((a, b) => b.score - a.score)[0];
       trainingPopulation.filter((car) => car.trackId === activeTrack.id).forEach((car) => drawCar(car, car === leader ? 1 : 0.62));
-      trainingObstacles.filter((car) => car.trackId === activeTrack.id).forEach((car) => drawCar(car, 0.9));
+      const visibleObstacles = ghostEvolution ? (trainingGhostObstacles[0] ?? trainingObstacles) : trainingObstacles;
+      visibleObstacles.filter((car) => car.trackId === activeTrack.id).forEach((car) => drawCar(car, 0.9));
       updateRewardTelemetry(leader); updateNeural(leader?.network);
     } else {
       const activeCandidate = trainingPopulation[trainingIndex];
@@ -622,9 +634,11 @@ function ensureWorkingCheckpoint(): void {
 
 function trainFiveBrainStep(): void {
   const route = trainingTracks[trainingTrackIndex];
-  const simulationCars = [...trainingPopulation, ...trainingObstacles];
-  trainingPopulation.forEach((car) => {
+  const sharedSimulationCars = [...trainingPopulation, ...trainingObstacles];
+  trainingPopulation.forEach((car, index) => {
     if (!car.network || car.crashed || car.finished || car.timedOut) return;
+    const candidateObstacles = ghostEvolution ? (trainingGhostObstacles[index] ?? []) : trainingObstacles;
+    const simulationCars = ghostEvolution ? [car, ...candidateObstacles] : sharedSimulationCars;
     const previousTimeLimit = car.timeLimit;
     car.action = car.network.step(sensorValues(car, simulationCars, route));
     stepCar(car, car.action, simulationCars, route, rewardConfig, physicsConfig);
@@ -664,7 +678,7 @@ function trainFiveBrainStep(): void {
 }
 
 function trainPopulationStep(): void {
-  if (fiveBrainEvolution && !ghostEvolution) { trainFiveBrainStep(); return; }
+  if (fiveBrainEvolution) { trainFiveBrainStep(); return; }
   const car = trainingPopulation[trainingIndex]; if (!car?.network) return;
   const cars = [car, ...trainingObstacles]; const previousTimeLimit = car.timeLimit; car.action = car.network.step(sensorValues(car, cars, trainingTracks[trainingTrackIndex])); stepCar(car, car.action, cars, trainingTracks[trainingTrackIndex], rewardConfig, physicsConfig);
   if (car.timeLimit > previousTimeLimit) appendEvent(`candidate ${trainingIndex + 1} earned adaptive extension ${car.timeExtensions}/${physicsConfig.maxAdaptiveExtensions ?? MAX_ADAPTIVE_EXTENSIONS} · new limit ${car.timeLimit} ticks`);
@@ -787,7 +801,7 @@ function startVisualTraining(): void {
 function startFiveBrainEvolution(): void {
   const session = ++trainingSession; clearVisualTimer(); training = true; running = false; visualTraining = true; fiveBrainEvolution = true; ghostEvolution = ui.ghostEvolutionToggle.checked; manualMode = false; trainingHistory = []; trainingGeneration = 1;
   trainingPopulationSize = readInteger(ui.population, 5, 2, 80); requestedGenerations = readInteger(ui.generations, 100, 1, 10000); trainingTracks = selectedTracks(); rewardConfig = readRewardConfig(); physicsConfig = readPhysicsConfig(); readRoadObjectConfig(); readEvolutionConfig(); activeTrack = trainingTracks[0]; prepareTrainingContext(); trainingWorldSeed = 9000; plateauStreak = 0; mutationRate = DEFAULT_MUTATION_RATE; mutationAmount = DEFAULT_MUTATION_AMOUNT; previousGenerationProgress = 0; resetEvolutionHistory(); trainingNetworks = createMutationPopulation(trainingPopulationSize, bestNetwork, trainingWorldSeed); ensureWorkingCheckpoint(); updateEvolutionTelemetry();
-  const mode = ghostEvolution ? "isolated ghost worlds" : "a shared physical track";
+  const mode = ghostEvolution ? "isolated ghost worlds (no candidate sensing, collisions, or influence)" : "a shared physical track";
   beginRun("Population evolution", `Racing ${trainingPopulationSize} brains simultaneously in ${mode} for ${requestedGenerations} generations on ${selectedTrackLabel()}${randomObjectsEnabled ? ` with ${randomObjectCount} road objects` : ""}.`, "POPULATION EVOLUTION");
   setBusy(true); ui.generation.textContent = "0"; ui.fitness.textContent = "—"; startVisualGeneration(); scheduleVisualBatch(session);
 }
@@ -800,19 +814,19 @@ function scheduleVisualBatch(session: number): void {
 }
 
 function finishTraining(): void {
-  training = false; visualTraining = false; fiveBrainEvolution = false; clearVisualTimer(); trainingPopulation = []; setBusy(false); launchRace();
+  training = false; visualTraining = false; fiveBrainEvolution = false; clearVisualTimer(); trainingPopulation = []; trainingGhostObstacles = []; setBusy(false); launchRace();
   const detail = `training complete — best fitness ${bestFitness.toFixed(1)} at generation ${generation}; the trained fly is now racing`;
   setRunState("Training complete", detail, "ready", "RACE MODE"); setProgress(1, "100% · complete", "trained controller deployed in race mode"); appendEvent(detail);
 }
 
 function failTraining(error: unknown): void {
-  training = false; visualTraining = false; fiveBrainEvolution = false; clearVisualTimer(); trainingPopulation = []; setBusy(false);
+  training = false; visualTraining = false; fiveBrainEvolution = false; clearVisualTimer(); trainingPopulation = []; trainingGhostObstacles = []; setBusy(false);
   const detail = error instanceof Error ? error.message : "unknown training error";
   setRunState("Training error", detail, "error", "TRAINING ERROR"); appendEvent(`training failed: ${detail}`); console.error("FlyKart training failed", error);
 }
 
 function stopAll(): void {
-  trainingSession += 1; const wasTraining = training; training = false; visualTraining = false; fiveBrainEvolution = false; running = false; clearVisualTimer(); trainingPopulation = []; setBusy(false);
+  trainingSession += 1; const wasTraining = training; training = false; visualTraining = false; fiveBrainEvolution = false; running = false; clearVisualTimer(); trainingPopulation = []; trainingGhostObstacles = []; setBusy(false);
   const detail = wasTraining ? "training stopped before completion; the best controller found so far is kept" : "race paused; press Start race or train again to continue";
   setRunState("Paused", detail, "paused", "PAUSED"); appendEvent(wasTraining ? "training stopped by user" : "race paused by user");
 }
@@ -820,7 +834,7 @@ function stopAll(): void {
 function describeError(error: unknown): string { return error instanceof Error ? error.message : typeof error === "string" ? error : "unknown application error"; }
 
 function failApplication(error: unknown): void {
-  trainingSession += 1; training = false; visualTraining = false; fiveBrainEvolution = false; running = false; clearVisualTimer(); trainingPopulation = []; setBusy(false);
+  trainingSession += 1; training = false; visualTraining = false; fiveBrainEvolution = false; running = false; clearVisualTimer(); trainingPopulation = []; trainingGhostObstacles = []; setBusy(false);
   const detail = describeError(error);
   setRunState("Application error", `${detail} Refresh the page and try again.`, "error", "APPLICATION ERROR"); appendEvent(`error: ${detail}`); console.error("FlyKart application error", error);
 }
@@ -845,7 +859,7 @@ ui.wallsToggle.addEventListener("change", () => { physicsConfig = readPhysicsCon
 ui.adaptiveTimeToggle.addEventListener("change", () => { physicsConfig = readPhysicsConfig(); appendEvent(physicsConfig.adaptiveTimeLimit ? `adaptive time enabled · up to ${physicsConfig.maxAdaptiveExtensions} evidence-based extensions` : "adaptive time disabled · candidates stop at the base tick limit"); });
 ui.adaptiveExtensions.addEventListener("change", () => { physicsConfig = readPhysicsConfig(); appendEvent(`adaptive extension limit set to ${physicsConfig.maxAdaptiveExtensions}`); });
 ui.checkpointCount.addEventListener("change", () => { physicsConfig = readPhysicsConfig(); appendEvent(`checkpoint gate count set to ${physicsConfig.checkpointCount}; ordered gates will be rebuilt on the next run`); });
-ui.ghostEvolutionToggle.addEventListener("change", () => { ghostEvolution = ui.ghostEvolutionToggle.checked; appendEvent(ghostEvolution ? "ghost evolution enabled · candidates cannot see or collide with one another" : "shared-track evolution enabled · candidates now learn traffic interactions"); });
+ui.ghostEvolutionToggle.addEventListener("change", () => { ghostEvolution = ui.ghostEvolutionToggle.checked; appendEvent(ghostEvolution ? "ghost evolution enabled · candidates run simultaneously but cannot see, collide with, or influence one another" : "shared-track evolution enabled · candidates now learn traffic interactions"); });
 ui.obstacleToggle.addEventListener("change", () => { readRoadObjectConfig(); appendEvent(randomObjectsEnabled ? `random road objects enabled · ${randomObjectCount} stalled objects per episode` : "random road objects disabled"); });
 ui.obstacleCount.addEventListener("change", () => { readRoadObjectConfig(); appendEvent(`random road object count set to ${randomObjectCount}`); });
 ui.plateauExplorationToggle.addEventListener("change", () => { readEvolutionConfig(); updateEvolutionTelemetry(); appendEvent(plateauExplorationEnabled ? `plateau exploration enabled · patience ${plateauPatience} generations` : "plateau exploration disabled · mutation stays local"); });

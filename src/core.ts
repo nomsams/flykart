@@ -1,7 +1,7 @@
 export type Vec = { x: number; y: number };
 export type Action = { steer: number; throttle: number; brake: number; reverse?: number };
 export type Sensors = number[];
-export type TrackId = "grand-loop" | "switchback" | "zigzag" | "hairpin" | "oval-sprint";
+export type TrackId = "grand-loop" | "switchback" | "zigzag" | "hairpin" | "oval-sprint" | "sharp-turn";
 export type TrackRef = TrackDefinition | TrackId;
 export type PhysicsConfig = { wallsEnabled: boolean; adaptiveTimeLimit?: boolean; maxAdaptiveExtensions?: number; checkpointCount?: number };
 
@@ -64,6 +64,10 @@ export const TRACKS: TrackDefinition[] = [
   createTrack("oval-sprint", "Oval sprint", [
     { x: -325, y: -125 }, { x: -235, y: -190 }, { x: 160, y: -190 }, { x: 315, y: -105 },
     { x: 325, y: 95 }, { x: 215, y: 180 }, { x: -180, y: 180 }, { x: -325, y: 90 },
+  ]),
+  createTrack("sharp-turn", "Sharp turn", [
+    { x: -330, y: -145 }, { x: 225, y: -145 }, { x: 295, y: -90 }, { x: 295, y: 125 },
+    { x: 240, y: 165 }, { x: -285, y: 165 }, { x: -345, y: 105 }, { x: -345, y: -85 },
   ]),
 ];
 
@@ -329,7 +333,7 @@ function addRewards(target: RewardTotals, current: RewardBreakdown): void {
 export type StartLine = { point: Vec; tangent: Vec; normal: Vec };
 
 export function startLine(trackRef: TrackRef = DEFAULT_TRACK): StartLine {
-  const route = resolveTrack(trackRef); const point = route.points[0]; const tangent = normalize(sub(route.points[1], point));
+  const route = resolveTrack(trackRef); const point = route.points[0]; const tangent = gateTangentAtDistance(0, route);
   return { point, tangent, normal: { x: -tangent.y, y: tangent.x } };
 }
 
@@ -370,12 +374,25 @@ export function pointAtDistance(distanceAlong: number, trackRef: TrackRef = DEFA
   return { point: add(a, scale(sub(b, a), t)), tangent: normalize(sub(b, a)), distanceAlong: wrapped };
 }
 
+function gateTangentAtDistance(distanceAlong: number, route: TrackDefinition): Vec {
+  const sample = pointAtDistance(distanceAlong, route);
+  // A checkpoint can land exactly on a polygon corner. Averaging a short
+  // sample on either side makes the gate bisect that corner instead of using
+  // whichever segment happened to win the boundary comparison.
+  const blendDistance = Math.min(22, Math.max(4, route.width * 0.18));
+  const before = pointAtDistance(distanceAlong - blendDistance, route);
+  const after = pointAtDistance(distanceAlong + blendDistance, route);
+  const blended = add(before.tangent, after.tangent);
+  return Math.hypot(blended.x, blended.y) > 0.2 ? normalize(blended) : sample.tangent;
+}
+
 export type TrackCheckpoint = { index: number; progress: number; point: Vec; tangent: Vec; normal: Vec };
 
 export function trackCheckpoint(index: number, trackRef: TrackRef = DEFAULT_TRACK, checkpointCount = CHECKPOINT_COUNT): TrackCheckpoint {
   const route = resolveTrack(trackRef); const count = clamp(Math.floor(checkpointCount), 2, 64); const safeIndex = ((Math.round(index) % count) + count) % count;
   const sample = pointAtDistance(route.length * safeIndex / count, route);
-  return { index: safeIndex, progress: safeIndex / count, point: sample.point, tangent: sample.tangent, normal: { x: -sample.tangent.y, y: sample.tangent.x } };
+  const tangent = gateTangentAtDistance(sample.distanceAlong, route);
+  return { index: safeIndex, progress: safeIndex / count, point: sample.point, tangent, normal: { x: -tangent.y, y: tangent.x } };
 }
 
 function cross(a: Vec, b: Vec): number { return a.x * b.y - a.y * b.x; }
@@ -459,8 +476,19 @@ export function stepCar(car: Car, action: Action, others: Car[], trackRef?: Trac
     const safeCenterDistance = route.width / 2 - CAR_WIDTH * 0.65;
     const pull = clamp((updated.distance - safeCenterDistance) * (updated.distance > route.width * 1.25 ? 0.5 : 0.2), 1.5, 18);
     car.position = sub(car.position, scale(offsetDirection, pull));
-    if (updated.distance > route.width * 1.25) car.speed *= 0.55;
     updated = nearestTrack(car.position, route);
+  }
+  // Leaving the road should be survivable, but it must be an unattractive
+  // strategy. The first pixels outside the asphalt cut speed to about half;
+  // deeper excursions apply progressively stronger drag. Use the largest
+  // observed distance this tick so wall recovery cannot erase the consequence
+  // of an excursion before the vehicle's dynamics are updated.
+  const outsideDistance = Math.max(nearby.distance, rawOffTrackDistance, updated.distance);
+  const outsideDepth = Math.max(0, outsideDistance - route.width / 2);
+  if (outsideDepth > 0) {
+    const outsideRatio = outsideDepth / Math.max(1, route.width / 2);
+    const outsideSpeedFactor = clamp(0.5 / (1 + outsideRatio * 0.75), 0.08, 0.5);
+    car.speed *= outsideSpeedFactor;
   }
   const rawDelta = updated.progress - car.progress; let localDelta = rawDelta;
   if (localDelta < -0.5) localDelta += 1; else if (localDelta > 0.5) localDelta -= 1;
@@ -493,7 +521,7 @@ export function stepCar(car: Car, action: Action, others: Car[], trackRef?: Trac
   const validForwardDelta = localDelta > 0 && alignment > -0.35 ? localDelta : 0;
   if (lapCrossed) { car.laps += 1; car.finished = true; }
   car.totalProgress += validForwardDelta; car.progress = updated.progress; car.distanceAlong = updated.distanceAlong; car.bestProgress = Math.max(car.bestProgress, car.progress);
-  car.nearestDistance = updated.distance; const offTrackDistance = Math.max(nearby.distance, rawOffTrackDistance, updated.distance); const offTrack = offTrackDistance > route.width / 2; if (offTrack) car.offTrackTicks += 1;
+  car.nearestDistance = updated.distance; const offTrackDistance = outsideDistance; const offTrack = offTrackDistance > route.width / 2; if (offTrack) car.offTrackTicks += 1;
   const offTrackSeverity = offTrack ? 1 + clamp((offTrackDistance - route.width / 2) / Math.max(1, route.width / 2), 0, 3) : 0;
   car.lateralOffset = lateralOffset(car.position, updated, route);
   car.ticks += 1; if (car.ticks % 8 === 0) car.trail.push({ ...car.position }); if (car.trail.length > 38) car.trail.shift();
