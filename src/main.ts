@@ -45,7 +45,7 @@ const ui = {
   runProgressTrack: required<HTMLElement>("#run-progress-track"), runProgressBar: required<HTMLElement>("#run-progress-bar"),
   runProgressText: required<HTMLElement>("#run-progress-text"), runStepText: required<HTMLElement>("#run-step-text"),
   runElapsed: required<HTMLElement>("#run-elapsed"), eventLog: required<HTMLOListElement>("#event-log"), copyLogButton: required<HTMLButtonElement>("#copy-log-btn"),
-  plotSummary: required<HTMLElement>("#plot-summary"),
+  plotSummary: required<HTMLElement>("#plot-summary"), plotTooltip: required<HTMLElement>("#plot-tooltip"),
 };
 const bars = Array.from({ length: 16 }, () => document.createElement("i"));
 bars.forEach((bar) => ui.bars.appendChild(bar));
@@ -105,6 +105,8 @@ let runStartedAt: number | undefined;
 let eventHistory: string[] = [];
 type EvolutionPoint = { generation: number; bestFitness: number; candidateFitness: number; progress: number; plateauStreak: number; mutationRate: number; mutationAmount: number };
 let evolutionHistory: EvolutionPoint[] = [];
+let hoveredEvolutionIndex: number | undefined;
+let hoveredEvolutionRatio = 0;
 let raceAccumulator = 0;
 let lastFrameTime = performance.now();
 const pressedKeys = new Set<string>();
@@ -298,45 +300,67 @@ function updateEvolutionTelemetry(): void {
 
 function renderEvolutionChart(): void {
   const width = evolutionChart.width; const height = evolutionChart.height;
-  const left = 44; const right = 42; const top = 18; const bottom = 27; const plotWidth = width - left - right; const plotHeight = height - top - bottom;
+  const left = 62; const right = 58; const top = 28; const bottom = 36; const plotWidth = width - left - right; const plotHeight = height - top - bottom;
   evolutionContext.clearRect(0, 0, width, height); evolutionContext.fillStyle = "#0c131b"; evolutionContext.fillRect(0, 0, width, height);
   evolutionContext.font = "10px system-ui"; evolutionContext.lineWidth = 1;
+  ui.plotTooltip.setAttribute("aria-hidden", "true");
+  ui.plotTooltip.hidden = true;
   if (evolutionHistory.length === 0) {
     evolutionContext.fillStyle = "#7f8ca0"; evolutionContext.fillText("Start training to populate the evolution trend", left, top + plotHeight / 2);
     evolutionContext.strokeStyle = "rgba(113, 145, 181, .18)"; evolutionContext.strokeRect(left, top, plotWidth, plotHeight);
-    evolutionContext.fillStyle = "#8c9bb0"; evolutionContext.fillText("reward / fitness", 5, top + 4); evolutionContext.fillText("progress", width - 37, top + 4);
-    ui.plotSummary.textContent = "No generations recorded yet. Start training to plot reward and forward progress.";
+    evolutionContext.fillStyle = "#8c9bb0"; evolutionContext.fillText("fitness / reward", 6, top - 9); evolutionContext.fillText("lap coverage", width - 64, top - 9);
+    ui.plotSummary.textContent = "No generations recorded yet. Hover a point later to inspect the exact candidate, incumbent, progress, plateau, and mutation values.";
     return;
   }
-  const minFitness = Math.min(...evolutionHistory.map((point) => point.bestFitness)); const maxFitness = Math.max(...evolutionHistory.map((point) => point.bestFitness));
-  const fitnessPadding = Math.max(1, (maxFitness - minFitness) * 0.12); const fitnessMin = minFitness - fitnessPadding; const fitnessMax = maxFitness + fitnessPadding;
+  const fitnessValues = evolutionHistory.flatMap((point) => [point.bestFitness, point.candidateFitness]);
+  const rawMin = Math.min(...fitnessValues); const rawMax = Math.max(...fitnessValues);
+  const fitnessPadding = Math.max(1, (rawMax - rawMin) * 0.14); const fitnessMin = rawMin - fitnessPadding; const fitnessMax = rawMax + fitnessPadding;
   const xAt = (index: number): number => left + (evolutionHistory.length === 1 ? plotWidth / 2 : (index / (evolutionHistory.length - 1)) * plotWidth);
   const rewardY = (fitness: number): number => top + (1 - (fitness - fitnessMin) / Math.max(1, fitnessMax - fitnessMin)) * plotHeight;
   const progressY = (progress: number): number => top + (1 - clamp(progress, 0, 1)) * plotHeight;
-  evolutionContext.strokeStyle = "rgba(113, 145, 181, .18)"; evolutionContext.setLineDash([3, 5]);
-  for (let row = 0; row <= 4; row += 1) { const y = top + (row / 4) * plotHeight; evolutionContext.beginPath(); evolutionContext.moveTo(left, y); evolutionContext.lineTo(left + plotWidth, y); evolutionContext.stroke(); }
-  evolutionContext.setLineDash([]); evolutionContext.strokeStyle = "rgba(113, 145, 181, .42)"; evolutionContext.strokeRect(left, top, plotWidth, plotHeight);
-  evolutionContext.fillStyle = "#8c9bb0"; evolutionContext.fillText(fitnessMax.toFixed(1), 4, top + 4); evolutionContext.fillText(fitnessMin.toFixed(1), 4, top + plotHeight); evolutionContext.fillText("100%", width - 36, top + 4); evolutionContext.fillText("0%", width - 24, top + plotHeight);
+  evolutionContext.fillStyle = "#8c9bb0"; evolutionContext.font = "600 10px system-ui"; evolutionContext.fillText("fitness / reward", 6, top - 10); evolutionContext.fillText("forward progress", width - 82, top - 10);
+  evolutionContext.strokeStyle = "rgba(113, 145, 181, .2)"; evolutionContext.setLineDash([3, 5]);
+  for (let row = 0; row <= 4; row += 1) {
+    const fraction = row / 4; const y = top + fraction * plotHeight;
+    evolutionContext.beginPath(); evolutionContext.moveTo(left, y); evolutionContext.lineTo(left + plotWidth, y); evolutionContext.stroke();
+    const fitnessLabel = (fitnessMax - fraction * (fitnessMax - fitnessMin)).toFixed(0);
+    const progressLabel = `${Math.round((1 - fraction) * 100)}%`;
+    evolutionContext.fillStyle = "#8c9bb0"; evolutionContext.fillText(fitnessLabel, 8, y + 3); evolutionContext.fillText(progressLabel, width - 42, y + 3);
+  }
+  evolutionContext.setLineDash([]); evolutionContext.strokeStyle = "rgba(113, 145, 181, .48)"; evolutionContext.strokeRect(left, top, plotWidth, plotHeight);
   evolutionHistory.forEach((point, index) => {
     if (point.plateauStreak <= 0) return;
-    const startX = index === 0 ? xAt(index) : xAt(index - 1); const endX = xAt(index);
-    evolutionContext.fillStyle = point.plateauStreak >= plateauPatience ? "rgba(255, 140, 140, .16)" : "rgba(255, 140, 140, .07)";
+    const startX = index === 0 ? left : xAt(index - 1); const endX = xAt(index);
+    evolutionContext.fillStyle = point.plateauStreak >= plateauPatience ? "rgba(255, 140, 140, .18)" : "rgba(255, 140, 140, .07)";
     evolutionContext.fillRect(startX, top, Math.max(2, endX - startX), plotHeight);
   });
-  const drawSeries = (valueAt: (point: EvolutionPoint) => number, yAt: (value: number) => number, color: string): void => {
-    evolutionContext.strokeStyle = color; evolutionContext.lineWidth = 2; evolutionContext.beginPath();
+  const drawSeries = (valueAt: (point: EvolutionPoint) => number, yAt: (value: number) => number, color: string, dash: number[] = []): void => {
+    evolutionContext.strokeStyle = color; evolutionContext.lineWidth = 2.2; evolutionContext.setLineDash(dash); evolutionContext.beginPath();
     evolutionHistory.forEach((point, index) => { const x = xAt(index); const y = yAt(valueAt(point)); if (index === 0) evolutionContext.moveTo(x, y); else evolutionContext.lineTo(x, y); });
-    evolutionContext.stroke();
+    evolutionContext.stroke(); evolutionContext.setLineDash([]);
   };
-  drawSeries((point) => point.bestFitness, rewardY, "#7cf0b6"); drawSeries((point) => point.progress, progressY, "#72b8ff");
-  const latest = evolutionHistory[evolutionHistory.length - 1]; const previous = evolutionHistory[evolutionHistory.length - 2];
+  drawSeries((point) => point.bestFitness, rewardY, "#7cf0b6");
+  drawSeries((point) => point.candidateFitness, rewardY, "#f3c96b", [6, 4]);
+  // A lightly filled progress area makes small forward gains visible even
+  // when fitness values are orders of magnitude larger.
+  evolutionContext.beginPath(); evolutionHistory.forEach((point, index) => { const x = xAt(index); const y = progressY(point.progress); if (index === 0) evolutionContext.moveTo(x, y); else evolutionContext.lineTo(x, y); }); evolutionContext.lineTo(xAt(evolutionHistory.length - 1), top + plotHeight); evolutionContext.lineTo(left, top + plotHeight); evolutionContext.closePath(); evolutionContext.fillStyle = "rgba(114, 184, 255, .08)"; evolutionContext.fill();
+  drawSeries((point) => point.progress, progressY, "#72b8ff");
   evolutionHistory.forEach((point, index) => {
-    if (point.plateauStreak < plateauPatience) return;
-    evolutionContext.fillStyle = "#ff8c8c"; evolutionContext.beginPath(); evolutionContext.arc(xAt(index), rewardY(point.bestFitness), 3, 0, TAU); evolutionContext.fill();
+    const x = xAt(index); const radius = index === hoveredEvolutionIndex ? 4 : 2.5;
+    evolutionContext.fillStyle = "#7cf0b6"; evolutionContext.beginPath(); evolutionContext.arc(x, rewardY(point.bestFitness), radius, 0, TAU); evolutionContext.fill();
+    evolutionContext.fillStyle = "#72b8ff"; evolutionContext.beginPath(); evolutionContext.arc(x, progressY(point.progress), radius, 0, TAU); evolutionContext.fill();
+    if (point.plateauStreak >= plateauPatience) { evolutionContext.fillStyle = "#ff8c8c"; evolutionContext.beginPath(); evolutionContext.arc(x, rewardY(point.bestFitness), 3.5, 0, TAU); evolutionContext.fill(); }
   });
-  evolutionContext.fillStyle = "#dbe8f7"; evolutionContext.font = "600 10px system-ui"; evolutionContext.fillText(`G${latest.generation}`, Math.max(left, xAt(evolutionHistory.length - 1) - 10), height - 8);
+  const latest = evolutionHistory[evolutionHistory.length - 1]; const previous = evolutionHistory[evolutionHistory.length - 2];
   const rewardDelta = previous ? latest.bestFitness - previous.bestFitness : 0; const progressDelta = previous ? (latest.progress - previous.progress) * 100 : latest.progress * 100;
-  ui.plotSummary.textContent = `G${latest.generation} · best reward ${latest.bestFitness.toFixed(1)} · candidate ${latest.candidateFitness.toFixed(1)} · Δ reward ${rewardDelta >= 0 ? "+" : ""}${rewardDelta.toFixed(1)} · forward ${(latest.progress * 100).toFixed(1)}% (${progressDelta >= 0 ? "+" : ""}${progressDelta.toFixed(1)} pp) · plateau ${latest.plateauStreak}/${plateauPatience} · mutation ${(latest.mutationRate * 100).toFixed(0)}% / ${latest.mutationAmount.toFixed(2)}`;
+  const xLabels = evolutionHistory.length === 1 ? [0] : [0, Math.floor((evolutionHistory.length - 1) / 2), evolutionHistory.length - 1];
+  evolutionContext.fillStyle = "#8c9bb0"; evolutionContext.font = "10px system-ui"; xLabels.forEach((index) => { const label = `G${evolutionHistory[index].generation}`; evolutionContext.fillText(label, Math.max(left, Math.min(width - right - 22, xAt(index) - 10)), height - 10); });
+  if (hoveredEvolutionIndex !== undefined && evolutionHistory[hoveredEvolutionIndex]) {
+    const point = evolutionHistory[hoveredEvolutionIndex]; const x = xAt(hoveredEvolutionIndex);
+    evolutionContext.strokeStyle = "rgba(238, 245, 255, .65)"; evolutionContext.setLineDash([2, 3]); evolutionContext.beginPath(); evolutionContext.moveTo(x, top); evolutionContext.lineTo(x, top + plotHeight); evolutionContext.stroke(); evolutionContext.setLineDash([]);
+    ui.plotTooltip.hidden = false; ui.plotTooltip.setAttribute("aria-hidden", "false"); ui.plotTooltip.style.left = `${clamp(hoveredEvolutionRatio * evolutionChart.clientWidth + 12, 6, Math.max(6, evolutionChart.clientWidth - 188))}px`; ui.plotTooltip.textContent = `G${point.generation} · best ${point.bestFitness.toFixed(1)} · candidate ${point.candidateFitness.toFixed(1)} · forward ${(point.progress * 100).toFixed(1)}% · plateau ${point.plateauStreak}/${plateauPatience} · mutation ${(point.mutationRate * 100).toFixed(0)}% / ${point.mutationAmount.toFixed(2)}`;
+  }
+  ui.plotSummary.textContent = `G${latest.generation} · incumbent ${latest.bestFitness.toFixed(1)} · candidate ${latest.candidateFitness.toFixed(1)} · Δ incumbent ${rewardDelta >= 0 ? "+" : ""}${rewardDelta.toFixed(1)} · forward ${(latest.progress * 100).toFixed(1)}% (${progressDelta >= 0 ? "+" : ""}${progressDelta.toFixed(1)} pp) · plateau ${latest.plateauStreak}/${plateauPatience} · mutation ${(latest.mutationRate * 100).toFixed(0)}% / ${latest.mutationAmount.toFixed(2)}`;
 }
 
 function resetEvolutionHistory(): void {
@@ -348,6 +372,14 @@ function recordEvolutionPoint(candidateFitness: number, progress: number): void 
   if (evolutionHistory.length > 1000) evolutionHistory.shift();
   renderEvolutionChart();
 }
+
+evolutionChart.addEventListener("pointermove", (event) => {
+  if (evolutionHistory.length === 0) return;
+  const bounds = evolutionChart.getBoundingClientRect(); const chartX = (event.clientX - bounds.left) * (evolutionChart.width / Math.max(1, bounds.width));
+  const left = 62; const right = 58; const ratio = clamp((chartX - left) / Math.max(1, evolutionChart.width - left - right), 0, 1);
+  hoveredEvolutionRatio = ratio; hoveredEvolutionIndex = Math.round(ratio * (evolutionHistory.length - 1)); renderEvolutionChart();
+});
+evolutionChart.addEventListener("pointerleave", () => { hoveredEvolutionIndex = undefined; renderEvolutionChart(); });
 
 function refreshTrainingObstacles(route: TrackDefinition, seed: number): void {
   trainingObstacles = randomObjectsEnabled ? createRoadObstacles(trainingObstacleCount(), route, seed) : [];

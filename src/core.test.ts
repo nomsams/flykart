@@ -127,7 +127,7 @@ describe("track geometry and sensors", () => {
   });
 
   it("supports independent track geometries with a valid start line", () => {
-    expect(TRACKS).toHaveLength(6);
+    expect(TRACKS).toHaveLength(11);
     expect(new Set(TRACKS.map((route) => route.id)).size).toBe(TRACKS.length);
     TRACKS.forEach((route) => {
       const car = startPosition(0, route);
@@ -350,6 +350,17 @@ describe("vehicle physics and fitness", () => {
       expect(Math.hypot(checkpoint.tangent.x, checkpoint.tangent.y)).toBeCloseTo(1, 5);
       expect(Math.hypot(checkpoint.normal.x, checkpoint.normal.y)).toBeCloseTo(1, 5);
     }
+  });
+
+  it("keeps every ordered gate physically crossable, including both hairpins", () => {
+    TRACKS.forEach((route) => {
+      for (let index = 1; index < CHECKPOINT_COUNT; index += 1) {
+        const gate = trackCheckpoint(index, route); const before = pointAtDistance(gate.distanceAlong - 1.3, route); const car = startPosition(0, route);
+        car.position = before.point; car.heading = Math.atan2(gate.tangent.y, gate.tangent.x); car.speed = 90; car.progress = before.distanceAlong / route.length; car.distanceAlong = before.distanceAlong; car.totalProgress = car.progress; car.nextCheckpoint = index; car.checkpointsPassed = index - 1;
+        stepCar(car, { steer: 0, throttle: 0, brake: 0 }, [car], route, DEFAULT_REWARD_CONFIG, { ...DEFAULT_PHYSICS_CONFIG, wallsEnabled: false });
+        expect(car.checkpointsPassed, `${route.id} CP${index}`).toBe(index);
+      }
+    });
   });
 
   it("penalizes the road edge while rewarding the centerline", () => {

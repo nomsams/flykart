@@ -1,7 +1,7 @@
 export type Vec = { x: number; y: number };
 export type Action = { steer: number; throttle: number; brake: number; reverse?: number };
 export type Sensors = number[];
-export type TrackId = "grand-loop" | "switchback" | "zigzag" | "hairpin" | "oval-sprint" | "sharp-turn";
+export type TrackId = "grand-loop" | "switchback" | "zigzag" | "hairpin" | "oval-sprint" | "sharp-turn" | "deep-hairpin" | "chicane" | "corkscrew" | "mountain-pass" | "tight-corners";
 export type TrackRef = TrackDefinition | TrackId;
 export type PhysicsConfig = { wallsEnabled: boolean; adaptiveTimeLimit?: boolean; maxAdaptiveExtensions?: number; checkpointCount?: number };
 
@@ -57,9 +57,11 @@ export const TRACKS: TrackDefinition[] = [
     { x: -65, y: 125 }, { x: -210, y: 190 }, { x: -330, y: 95 },
   ]),
   createTrack("hairpin", "Hairpin", [
-    { x: -320, y: -165 }, { x: 250, y: -165 }, { x: 325, y: -95 }, { x: 250, y: -25 },
-    { x: -195, y: -25 }, { x: -265, y: 45 }, { x: -195, y: 125 }, { x: 300, y: 125 },
-    { x: 330, y: 175 }, { x: -320, y: 175 },
+    { x: -205, y: -155 }, { x: 180, y: -155 }, { x: 230, y: -145 }, { x: 270, y: -115 },
+    { x: 300, y: -70 }, { x: 315, y: -15 }, { x: 310, y: 40 }, { x: 285, y: 90 },
+    { x: 245, y: 125 }, { x: 185, y: 150 }, { x: -180, y: 150 }, { x: -235, y: 135 },
+    { x: -280, y: 105 }, { x: -310, y: 60 }, { x: -325, y: 5 }, { x: -320, y: -50 },
+    { x: -295, y: -100 }, { x: -250, y: -135 },
   ]),
   createTrack("oval-sprint", "Oval sprint", [
     { x: -325, y: -125 }, { x: -235, y: -190 }, { x: 160, y: -190 }, { x: 315, y: -105 },
@@ -68,6 +70,41 @@ export const TRACKS: TrackDefinition[] = [
   createTrack("sharp-turn", "Sharp turn", [
     { x: -330, y: -145 }, { x: 225, y: -145 }, { x: 295, y: -90 }, { x: 295, y: 125 },
     { x: 240, y: 165 }, { x: -285, y: 165 }, { x: -345, y: 105 }, { x: -345, y: -85 },
+  ]),
+  createTrack("deep-hairpin", "Deep hairpin", [
+    { x: -210, y: -150 }, { x: 170, y: -150 }, { x: 235, y: -145 }, { x: 285, y: -120 },
+    { x: 320, y: -65 }, { x: 325, y: 5 }, { x: 300, y: 70 }, { x: 245, y: 120 },
+    { x: 170, y: 145 }, { x: 95, y: 120 }, { x: -190, y: 100 }, { x: -245, y: 95 },
+    { x: -295, y: 65 }, { x: -325, y: 10 }, { x: -325, y: -55 }, { x: -295, y: -110 },
+    { x: -245, y: -145 },
+  ]),
+  createTrack("chicane", "Chicane", [
+    { x: -340, y: -160 }, { x: -270, y: -205 }, { x: -150, y: -190 }, { x: -50, y: -115 },
+    { x: 50, y: -60 }, { x: 150, y: -95 }, { x: 250, y: -170 }, { x: 325, y: -105 },
+    { x: 340, y: -15 }, { x: 285, y: 55 }, { x: 190, y: 35 }, { x: 100, y: 90 },
+    { x: 20, y: 180 }, { x: -100, y: 205 }, { x: -210, y: 155 }, { x: -300, y: 190 },
+    { x: -350, y: 110 }, { x: -300, y: 30 }, { x: -345, y: -25 },
+  ]),
+  createTrack("corkscrew", "Corkscrew", [
+    { x: -315, y: -125 }, { x: -250, y: -195 }, { x: -105, y: -215 }, { x: 20, y: -165 },
+    { x: 80, y: -75 }, { x: 190, y: -35 }, { x: 300, y: -80 }, { x: 335, y: 10 },
+    { x: 285, y: 90 }, { x: 200, y: 70 }, { x: 140, y: 125 }, { x: 185, y: 195 },
+    { x: 70, y: 215 }, { x: -30, y: 165 }, { x: -115, y: 100 }, { x: -210, y: 145 },
+    { x: -325, y: 95 }, { x: -340, y: 10 }, { x: -275, y: -45 },
+  ]),
+  createTrack("mountain-pass", "Mountain pass", [
+    { x: -340, y: -120 }, { x: -285, y: -195 }, { x: -180, y: -145 }, { x: -80, y: -215 },
+    { x: 30, y: -150 }, { x: 130, y: -215 }, { x: 260, y: -160 }, { x: 335, y: -75 },
+    { x: 280, y: -10 }, { x: 335, y: 65 }, { x: 255, y: 145 }, { x: 320, y: 190 },
+    { x: 185, y: 215 }, { x: 85, y: 155 }, { x: -20, y: 215 }, { x: -135, y: 155 },
+    { x: -255, y: 205 }, { x: -340, y: 135 }, { x: -290, y: 55 }, { x: -350, y: 10 },
+  ]),
+  createTrack("tight-corners", "Tight corners", [
+    { x: -315, y: -170 }, { x: -70, y: -170 }, { x: -15, y: -125 }, { x: 55, y: -170 },
+    { x: 250, y: -170 }, { x: 325, y: -100 }, { x: 315, y: -25 }, { x: 250, y: 25 },
+    { x: 315, y: 85 }, { x: 280, y: 165 }, { x: 80, y: 165 }, { x: 20, y: 110 },
+    { x: -55, y: 165 }, { x: -275, y: 165 }, { x: -345, y: 95 }, { x: -330, y: 20 },
+    { x: -270, y: -25 }, { x: -330, y: -95 },
   ]),
 ];
 
@@ -330,11 +367,11 @@ function addRewards(target: RewardTotals, current: RewardBreakdown): void {
   (Object.keys(target) as (keyof RewardBreakdown)[]).forEach((key) => { target[key] += current[key]; });
 }
 
-export type StartLine = { point: Vec; tangent: Vec; normal: Vec };
+export type StartLine = { point: Vec; tangent: Vec; normal: Vec; distanceAlong: number };
 
 export function startLine(trackRef: TrackRef = DEFAULT_TRACK): StartLine {
   const route = resolveTrack(trackRef); const point = route.points[0]; const tangent = gateTangentAtDistance(0, route);
-  return { point, tangent, normal: { x: -tangent.y, y: tangent.x } };
+  return { point, tangent, normal: { x: -tangent.y, y: tangent.x }, distanceAlong: 0 };
 }
 
 export function startPosition(lane = 0, trackRef: TrackRef = DEFAULT_TRACK): Car {
@@ -386,13 +423,13 @@ function gateTangentAtDistance(distanceAlong: number, route: TrackDefinition): V
   return Math.hypot(blended.x, blended.y) > 0.2 ? normalize(blended) : sample.tangent;
 }
 
-export type TrackCheckpoint = { index: number; progress: number; point: Vec; tangent: Vec; normal: Vec };
+export type TrackCheckpoint = { index: number; progress: number; point: Vec; tangent: Vec; normal: Vec; distanceAlong: number };
 
 export function trackCheckpoint(index: number, trackRef: TrackRef = DEFAULT_TRACK, checkpointCount = CHECKPOINT_COUNT): TrackCheckpoint {
   const route = resolveTrack(trackRef); const count = clamp(Math.floor(checkpointCount), 2, 64); const safeIndex = ((Math.round(index) % count) + count) % count;
   const sample = pointAtDistance(route.length * safeIndex / count, route);
   const tangent = gateTangentAtDistance(sample.distanceAlong, route);
-  return { index: safeIndex, progress: safeIndex / count, point: sample.point, tangent, normal: { x: -tangent.y, y: tangent.x } };
+  return { index: safeIndex, progress: safeIndex / count, point: sample.point, tangent, normal: { x: -tangent.y, y: tangent.x }, distanceAlong: sample.distanceAlong };
 }
 
 function cross(a: Vec, b: Vec): number { return a.x * b.y - a.y * b.x; }
@@ -494,15 +531,25 @@ export function stepCar(car: Car, action: Action, others: Car[], trackRef?: Trac
   if (localDelta < -0.5) localDelta += 1; else if (localDelta > 0.5) localDelta -= 1;
   const forward = { x: Math.cos(car.heading), y: Math.sin(car.heading) }; const alignment = dot(forward, updated.tangent);
   const line = startLine(route); const movement = sub(car.position, previousPosition);
-  const crossesGate = (gate: { point: Vec; tangent: Vec; normal: Vec }): boolean => {
+  const crossesGate = (gate: { point: Vec; tangent: Vec; normal: Vec; distanceAlong?: number }): boolean => {
     const previousSide = dot(sub(previousPosition, gate.point), gate.tangent); const currentSide = dot(sub(car.position, gate.point), gate.tangent);
     if (!(previousSide < 0 && currentSide >= 0 && dot(movement, gate.tangent) > 0.01)) return false;
     const denominator = previousSide - currentSide; const crossingFraction = clamp(previousSide / denominator, 0, 1);
     const crossingPoint = add(previousPosition, scale(movement, crossingFraction));
     const crossingOffset = Math.abs(dot(sub(crossingPoint, gate.point), gate.normal));
+    // A wide gate at a hairpin can geometrically reach a nearby parallel
+    // section of road. Confirm that the crossing point is also near the gate's
+    // intended arc-length position, otherwise a car on the return lane could
+    // collect a checkpoint by crossing the wrong physical lane.
+    if (gate.distanceAlong !== undefined) {
+      const crossingTrack = nearestTrack(crossingPoint, route);
+      const directError = Math.abs(crossingTrack.distanceAlong - gate.distanceAlong);
+      const wrappedError = Math.min(directError, route.length - directError);
+      if (wrappedError > Math.max(route.width * 0.8, CAR_LENGTH * 3)) return false;
+    }
     return crossingOffset <= route.width * 0.5 + CAR_WIDTH;
   };
-  const directedStartCross = crossesGate({ point: line.point, tangent: line.tangent, normal: line.normal });
+  const directedStartCross = crossesGate(line);
   const expectedCheckpoint = car.nextCheckpoint;
   const expectedGate = trackCheckpoint(expectedCheckpoint, route, checkpointCount);
   const intermediateCheckpointCrossed = expectedCheckpoint > 0 && crossesGate(expectedGate) && alignment > 0.15 && car.speed > 2;
