@@ -20,6 +20,14 @@ function required<T extends Element>(selector: string): T {
   return element;
 }
 
+const evolutionChart = required<HTMLCanvasElement>("#evolution-chart");
+function evolutionChartContext(): CanvasRenderingContext2D {
+  const chartContext = evolutionChart.getContext("2d");
+  if (!chartContext) throw new Error("Evolution chart rendering is unavailable");
+  return chartContext;
+}
+const evolutionContext = evolutionChartContext();
+
 const ui = {
   raceButton: required<HTMLButtonElement>("#race-btn"), driveButton: required<HTMLButtonElement>("#drive-btn"), visualButton: required<HTMLButtonElement>("#visual-train-btn"), evolveFiveButton: required<HTMLButtonElement>("#evolve-five-btn"),
   headlessButton: required<HTMLButtonElement>("#headless-train-btn"), stopButton: required<HTMLButtonElement>("#stop-btn"),
@@ -37,6 +45,7 @@ const ui = {
   runProgressTrack: required<HTMLElement>("#run-progress-track"), runProgressBar: required<HTMLElement>("#run-progress-bar"),
   runProgressText: required<HTMLElement>("#run-progress-text"), runStepText: required<HTMLElement>("#run-step-text"),
   runElapsed: required<HTMLElement>("#run-elapsed"), eventLog: required<HTMLOListElement>("#event-log"), copyLogButton: required<HTMLButtonElement>("#copy-log-btn"),
+  plotSummary: required<HTMLElement>("#plot-summary"),
 };
 const bars = Array.from({ length: 16 }, () => document.createElement("i"));
 bars.forEach((bar) => ui.bars.appendChild(bar));
@@ -85,6 +94,8 @@ let activeTrack: TrackDefinition = DEFAULT_TRACK;
 let flyFinishAnnounced = false;
 let runStartedAt: number | undefined;
 let eventHistory: string[] = [];
+type EvolutionPoint = { generation: number; bestFitness: number; candidateFitness: number; progress: number; plateauStreak: number; mutationRate: number; mutationAmount: number };
+let evolutionHistory: EvolutionPoint[] = [];
 let raceAccumulator = 0;
 let lastFrameTime = performance.now();
 const pressedKeys = new Set<string>();
@@ -243,6 +254,59 @@ function updateEvolutionTelemetry(): void {
   ui.strategy.className = exploring ? "metric-negative" : "metric-neutral";
 }
 
+function renderEvolutionChart(): void {
+  const width = evolutionChart.width; const height = evolutionChart.height;
+  const left = 44; const right = 42; const top = 18; const bottom = 27; const plotWidth = width - left - right; const plotHeight = height - top - bottom;
+  evolutionContext.clearRect(0, 0, width, height); evolutionContext.fillStyle = "#0c131b"; evolutionContext.fillRect(0, 0, width, height);
+  evolutionContext.font = "10px system-ui"; evolutionContext.lineWidth = 1;
+  if (evolutionHistory.length === 0) {
+    evolutionContext.fillStyle = "#7f8ca0"; evolutionContext.fillText("Start training to populate the evolution trend", left, top + plotHeight / 2);
+    evolutionContext.strokeStyle = "rgba(113, 145, 181, .18)"; evolutionContext.strokeRect(left, top, plotWidth, plotHeight);
+    evolutionContext.fillStyle = "#8c9bb0"; evolutionContext.fillText("reward / fitness", 5, top + 4); evolutionContext.fillText("progress", width - 37, top + 4);
+    ui.plotSummary.textContent = "No generations recorded yet. Start training to plot reward and forward progress.";
+    return;
+  }
+  const minFitness = Math.min(...evolutionHistory.map((point) => point.bestFitness)); const maxFitness = Math.max(...evolutionHistory.map((point) => point.bestFitness));
+  const fitnessPadding = Math.max(1, (maxFitness - minFitness) * 0.12); const fitnessMin = minFitness - fitnessPadding; const fitnessMax = maxFitness + fitnessPadding;
+  const xAt = (index: number): number => left + (evolutionHistory.length === 1 ? plotWidth / 2 : (index / (evolutionHistory.length - 1)) * plotWidth);
+  const rewardY = (fitness: number): number => top + (1 - (fitness - fitnessMin) / Math.max(1, fitnessMax - fitnessMin)) * plotHeight;
+  const progressY = (progress: number): number => top + (1 - clamp(progress, 0, 1)) * plotHeight;
+  evolutionContext.strokeStyle = "rgba(113, 145, 181, .18)"; evolutionContext.setLineDash([3, 5]);
+  for (let row = 0; row <= 4; row += 1) { const y = top + (row / 4) * plotHeight; evolutionContext.beginPath(); evolutionContext.moveTo(left, y); evolutionContext.lineTo(left + plotWidth, y); evolutionContext.stroke(); }
+  evolutionContext.setLineDash([]); evolutionContext.strokeStyle = "rgba(113, 145, 181, .42)"; evolutionContext.strokeRect(left, top, plotWidth, plotHeight);
+  evolutionContext.fillStyle = "#8c9bb0"; evolutionContext.fillText(fitnessMax.toFixed(1), 4, top + 4); evolutionContext.fillText(fitnessMin.toFixed(1), 4, top + plotHeight); evolutionContext.fillText("100%", width - 36, top + 4); evolutionContext.fillText("0%", width - 24, top + plotHeight);
+  evolutionHistory.forEach((point, index) => {
+    if (point.plateauStreak <= 0) return;
+    const startX = index === 0 ? xAt(index) : xAt(index - 1); const endX = xAt(index);
+    evolutionContext.fillStyle = point.plateauStreak >= plateauPatience ? "rgba(255, 140, 140, .16)" : "rgba(255, 140, 140, .07)";
+    evolutionContext.fillRect(startX, top, Math.max(2, endX - startX), plotHeight);
+  });
+  const drawSeries = (valueAt: (point: EvolutionPoint) => number, yAt: (value: number) => number, color: string): void => {
+    evolutionContext.strokeStyle = color; evolutionContext.lineWidth = 2; evolutionContext.beginPath();
+    evolutionHistory.forEach((point, index) => { const x = xAt(index); const y = yAt(valueAt(point)); if (index === 0) evolutionContext.moveTo(x, y); else evolutionContext.lineTo(x, y); });
+    evolutionContext.stroke();
+  };
+  drawSeries((point) => point.bestFitness, rewardY, "#7cf0b6"); drawSeries((point) => point.progress, progressY, "#72b8ff");
+  const latest = evolutionHistory[evolutionHistory.length - 1]; const previous = evolutionHistory[evolutionHistory.length - 2];
+  evolutionHistory.forEach((point, index) => {
+    if (point.plateauStreak < plateauPatience) return;
+    evolutionContext.fillStyle = "#ff8c8c"; evolutionContext.beginPath(); evolutionContext.arc(xAt(index), rewardY(point.bestFitness), 3, 0, TAU); evolutionContext.fill();
+  });
+  evolutionContext.fillStyle = "#dbe8f7"; evolutionContext.font = "600 10px system-ui"; evolutionContext.fillText(`G${latest.generation}`, Math.max(left, xAt(evolutionHistory.length - 1) - 10), height - 8);
+  const rewardDelta = previous ? latest.bestFitness - previous.bestFitness : 0; const progressDelta = previous ? (latest.progress - previous.progress) * 100 : latest.progress * 100;
+  ui.plotSummary.textContent = `G${latest.generation} · best reward ${latest.bestFitness.toFixed(1)} · candidate ${latest.candidateFitness.toFixed(1)} · Δ reward ${rewardDelta >= 0 ? "+" : ""}${rewardDelta.toFixed(1)} · forward ${(latest.progress * 100).toFixed(1)}% (${progressDelta >= 0 ? "+" : ""}${progressDelta.toFixed(1)} pp) · plateau ${latest.plateauStreak}/${plateauPatience} · mutation ${(latest.mutationRate * 100).toFixed(0)}% / ${latest.mutationAmount.toFixed(2)}`;
+}
+
+function resetEvolutionHistory(): void {
+  evolutionHistory = []; renderEvolutionChart();
+}
+
+function recordEvolutionPoint(candidateFitness: number, progress: number): void {
+  evolutionHistory.push({ generation: trainingGeneration, bestFitness, candidateFitness, progress: clamp(progress, 0, 1), plateauStreak, mutationRate, mutationAmount });
+  if (evolutionHistory.length > 1000) evolutionHistory.shift();
+  renderEvolutionChart();
+}
+
 function refreshTrainingObstacles(route: TrackDefinition, seed: number): void {
   trainingObstacles = randomObjectsEnabled ? createRoadObstacles(trainingObstacleCount(), route, seed) : [];
 }
@@ -322,7 +386,7 @@ function launchRace(manual = false): void {
 }
 
 function resetBrain(): void {
-  bestNetwork = undefined; bestFitness = -Infinity; generation = 0; ui.generation.textContent = "0"; ui.fitness.textContent = "—"; ui.progress.textContent = "0%";
+  bestNetwork = undefined; bestFitness = -Infinity; generation = 0; ui.generation.textContent = "0"; ui.fitness.textContent = "—"; ui.progress.textContent = "0%"; plateauStreak = 0; resetEvolutionHistory(); updateEvolutionTelemetry();
   appendEvent("controller reset; returning to demo brain"); launchRace();
 }
 
@@ -625,6 +689,7 @@ function breed(): void {
   const exploring = plateauExplorationEnabled && plateauStreak >= plateauPatience;
   updateEvolutionTelemetry();
   ui.generation.textContent = `${generation}`; ui.fitness.textContent = bestFitness.toFixed(1); ui.progress.textContent = `${Math.round(winnerProgress * 100)}%`;
+  recordEvolutionPoint(candidate.score, winnerProgress);
   const result = improved ? `accepted new incumbent ${bestFitness.toFixed(1)}` : `rejected candidate ${candidate.score.toFixed(1)}; incumbent remains ${bestFitness.toFixed(1)}`;
   const reason = progressStalled ? "progress stalled" : improved ? "progress improved" : "fitness did not improve";
   appendEvent(`generation ${trainingGeneration} complete · ${result} · ${reason} · plateau ${plateauStreak}/${plateauPatience} · ${exploring ? "exploration burst with random immigrants" : "local mutations"} · mutation ${(mutationRate * 100).toFixed(0)}% / ${(mutationAmount).toFixed(2)} · next generation keeps parent at slot 1 and tries ${Math.max(0, ranked.length - 1)} variants`);
@@ -636,7 +701,7 @@ function finishVisualGeneration(): void { breed(); if (trainingGeneration >= req
 
 async function runHeadless(): Promise<void> {
   const session = ++trainingSession; clearVisualTimer(); training = true; running = false; visualTraining = false; fiveBrainEvolution = false; ghostEvolution = ui.ghostEvolutionToggle.checked; manualMode = false; trainingGeneration = 1;
-  trainingPopulationSize = readInteger(ui.population, 5, 2, 80); requestedGenerations = readInteger(ui.generations, 100, 1, 10000); trainingTracks = selectedTracks(); rewardConfig = readRewardConfig(); physicsConfig = readPhysicsConfig(); readRoadObjectConfig(); readEvolutionConfig(); activeTrack = trainingTracks[0]; trainingWorldSeed = 7000; plateauStreak = 0; mutationRate = DEFAULT_MUTATION_RATE; mutationAmount = DEFAULT_MUTATION_AMOUNT; previousGenerationProgress = 0; trainingNetworks = createMutationPopulation(trainingPopulationSize, bestNetwork, trainingWorldSeed); ensureWorkingCheckpoint(); updateEvolutionTelemetry();
+  trainingPopulationSize = readInteger(ui.population, 5, 2, 80); requestedGenerations = readInteger(ui.generations, 100, 1, 10000); trainingTracks = selectedTracks(); rewardConfig = readRewardConfig(); physicsConfig = readPhysicsConfig(); readRoadObjectConfig(); readEvolutionConfig(); activeTrack = trainingTracks[0]; trainingWorldSeed = 7000; plateauStreak = 0; mutationRate = DEFAULT_MUTATION_RATE; mutationAmount = DEFAULT_MUTATION_AMOUNT; previousGenerationProgress = 0; resetEvolutionHistory(); trainingNetworks = createMutationPopulation(trainingPopulationSize, bestNetwork, trainingWorldSeed); ensureWorkingCheckpoint(); updateEvolutionTelemetry();
   beginRun("Headless training", `Evaluating ${trainingPopulationSize} controllers across ${requestedGenerations} generations on ${selectedTrackLabel()}${ghostEvolution ? " in isolated ghost worlds" : " with traffic bots"}${randomObjectsEnabled ? ` and ${trainingObstacleCount()} road objects` : ""}${curriculumEnabled ? " on a progressive hazard curriculum" : ""}.`, "HEADLESS TRAINING");
   setBusy(true); ui.generation.textContent = "0"; ui.fitness.textContent = "—";
   try {
@@ -669,14 +734,14 @@ async function runHeadless(): Promise<void> {
 
 function startVisualTraining(): void {
   const session = ++trainingSession; clearVisualTimer(); training = true; running = false; visualTraining = true; fiveBrainEvolution = false; manualMode = false; trainingHistory = []; trainingGeneration = 1;
-  trainingPopulationSize = readInteger(ui.population, 5, 2, 80); requestedGenerations = readInteger(ui.generations, 100, 1, 10000); trainingTracks = selectedTracks(); rewardConfig = readRewardConfig(); physicsConfig = readPhysicsConfig(); readRoadObjectConfig(); readEvolutionConfig(); activeTrack = trainingTracks[0]; trainingWorldSeed = 5000; plateauStreak = 0; mutationRate = DEFAULT_MUTATION_RATE; mutationAmount = DEFAULT_MUTATION_AMOUNT; previousGenerationProgress = 0; trainingNetworks = createMutationPopulation(trainingPopulationSize, bestNetwork, trainingWorldSeed); ensureWorkingCheckpoint(); updateEvolutionTelemetry();
+  trainingPopulationSize = readInteger(ui.population, 5, 2, 80); requestedGenerations = readInteger(ui.generations, 100, 1, 10000); trainingTracks = selectedTracks(); rewardConfig = readRewardConfig(); physicsConfig = readPhysicsConfig(); readRoadObjectConfig(); readEvolutionConfig(); activeTrack = trainingTracks[0]; trainingWorldSeed = 5000; plateauStreak = 0; mutationRate = DEFAULT_MUTATION_RATE; mutationAmount = DEFAULT_MUTATION_AMOUNT; previousGenerationProgress = 0; resetEvolutionHistory(); trainingNetworks = createMutationPopulation(trainingPopulationSize, bestNetwork, trainingWorldSeed); ensureWorkingCheckpoint(); updateEvolutionTelemetry();
   beginRun("Visual training", `Watching ${trainingPopulationSize} candidates drive across ${requestedGenerations} generations on ${selectedTrackLabel()}${randomObjectsEnabled ? ` with ${trainingObstacleCount()} road objects` : ""}${curriculumEnabled ? " on a progressive hazard curriculum" : ""}.`, "VISUAL TRAINING");
   setBusy(true); ui.generation.textContent = "0"; ui.fitness.textContent = "—"; startVisualGeneration(); scheduleVisualBatch(session);
 }
 
 function startFiveBrainEvolution(): void {
   const session = ++trainingSession; clearVisualTimer(); training = true; running = false; visualTraining = true; fiveBrainEvolution = true; ghostEvolution = ui.ghostEvolutionToggle.checked; manualMode = false; trainingHistory = []; trainingGeneration = 1;
-  trainingPopulationSize = readInteger(ui.population, 5, 2, 80); requestedGenerations = readInteger(ui.generations, 100, 1, 10000); trainingTracks = selectedTracks(); rewardConfig = readRewardConfig(); physicsConfig = readPhysicsConfig(); readRoadObjectConfig(); readEvolutionConfig(); activeTrack = trainingTracks[0]; trainingWorldSeed = 9000; plateauStreak = 0; mutationRate = DEFAULT_MUTATION_RATE; mutationAmount = DEFAULT_MUTATION_AMOUNT; previousGenerationProgress = 0; trainingNetworks = createMutationPopulation(trainingPopulationSize, bestNetwork, trainingWorldSeed); ensureWorkingCheckpoint(); updateEvolutionTelemetry();
+  trainingPopulationSize = readInteger(ui.population, 5, 2, 80); requestedGenerations = readInteger(ui.generations, 100, 1, 10000); trainingTracks = selectedTracks(); rewardConfig = readRewardConfig(); physicsConfig = readPhysicsConfig(); readRoadObjectConfig(); readEvolutionConfig(); activeTrack = trainingTracks[0]; trainingWorldSeed = 9000; plateauStreak = 0; mutationRate = DEFAULT_MUTATION_RATE; mutationAmount = DEFAULT_MUTATION_AMOUNT; previousGenerationProgress = 0; resetEvolutionHistory(); trainingNetworks = createMutationPopulation(trainingPopulationSize, bestNetwork, trainingWorldSeed); ensureWorkingCheckpoint(); updateEvolutionTelemetry();
   const mode = ghostEvolution ? "isolated ghost worlds" : "a shared physical track";
   beginRun("Population evolution", `Racing ${trainingPopulationSize} brains simultaneously in ${mode} for ${requestedGenerations} generations on ${selectedTrackLabel()}${randomObjectsEnabled ? ` with ${randomObjectCount} road objects` : ""}.`, "POPULATION EVOLUTION");
   setBusy(true); ui.generation.textContent = "0"; ui.fitness.textContent = "—"; startVisualGeneration(); scheduleVisualBatch(session);
@@ -760,7 +825,7 @@ function frame(now: number): void {
 }
 
 try {
-  readEvolutionConfig(); updateEvolutionTelemetry();
+  readEvolutionConfig(); updateEvolutionTelemetry(); resetEvolutionHistory();
   launchRace();
   setRunState("Ready to race", "The demo brain is driving now. Choose a training mode to evolve a better fly pilot.", "ready", "RACE MODE");
   appendEvent("application ready · choose a command to begin");

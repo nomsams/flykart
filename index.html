@@ -76,6 +76,19 @@
               <button id="copy-log-btn" class="quiet" type="button" title="Copy the complete event log">Copy all log</button>
             </div>
           </section>
+          <section class="evolution-plot" aria-labelledby="evolution-plot-title">
+            <div class="run-console-header">
+              <div>
+                <span class="console-kicker">EVOLUTION TREND</span>
+                <strong id="evolution-plot-title">Reward and forward progress</strong>
+              </div>
+              <span class="plot-scale-note">generation timeline</span>
+            </div>
+            <canvas id="evolution-chart" width="760" height="220" role="img" aria-label="Evolution chart showing best reward and forward progress by generation"></canvas>
+            <div class="plot-legend"><span><i class="plot-swatch reward"></i>best reward / fitness</span><span><i class="plot-swatch progress"></i>forward progress</span><span><i class="plot-swatch plateau"></i>plateau / exploration</span></div>
+            <p id="plot-summary" class="plot-summary">No generations recorded yet. Start training to plot reward and forward progress.</p>
+            <p class="plot-note">Read a plateau as no new incumbent for the patience value, especially when forward-progress gain is &lt;2% per generation. Green reward and blue progress should rise; a red region means exploration mutations are active.</p>
+          </section>
         </div>
 
         <aside class="control-panel">

@@ -44,6 +44,16 @@ canvas { display: block; width: 100%; height: auto; image-rendering: auto; }
 .event-log li { padding-left: 2px; }
 .event-actions { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: 8px; color: #73839a; font-size: .66rem; }
 .event-actions button { padding: .38rem .58rem; font-size: .68rem; white-space: nowrap; }
+.evolution-plot { margin: 14px 2px 0; padding: 13px 14px 12px; border: 1px solid #2f3d50; border-radius: 10px; background: rgba(14, 20, 29, .78); }
+.plot-scale-note { color: #7f8ca0; font-size: .68rem; }
+#evolution-chart { display: block; width: 100%; height: auto; margin-top: 10px; border: 1px solid rgba(113, 145, 181, .16); border-radius: 7px; background: #0c131b; }
+.plot-legend { display: flex; flex-wrap: wrap; gap: 5px 13px; margin-top: 8px; color: #8c9bb0; font-size: .66rem; }
+.plot-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.plot-swatch { display: inline-block; width: 14px; height: 3px; border-radius: 999px; background: #7cf0b6; }
+.plot-swatch.progress { background: #72b8ff; }
+.plot-swatch.plateau { height: 9px; border: 1px solid #ff8c8c; background: rgba(255, 140, 140, .45); }
+.plot-summary, .plot-note { margin: 8px 0 0; color: #aab6c7; font-size: .7rem; line-height: 1.4; font-variant-numeric: tabular-nums; }
+.plot-note { color: #7f8ca0; }
 .control-panel { padding: 0 16px; }
 .panel-section { padding: 17px 0; border-bottom: 1px solid #293241; }
 .panel-section:last-child { border-bottom: 0; }
