@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  CAR_COLLISION_DIAMETER, CHECKPOINT_COUNT, CLOSE_PROXIMITY_DISTANCE, DEFAULT_PHYSICS_CONFIG, DEFAULT_REWARD_CONFIG, DEFAULT_TRACK, MAX_TICKS, STEP, TRACKS, TRACK_WIDTH, BrainSnapshot, SpikingNetwork, createNetworkPopulation,
+  CAR_COLLISION_DIAMETER, CHECKPOINT_COUNT, CLOSE_PROXIMITY_DISTANCE, DEFAULT_PHYSICS_CONFIG, DEFAULT_REWARD_CONFIG, DEFAULT_TRACK, MAX_TICKS, STEP, TRACKS, TRACK_WIDTH, BrainSnapshot, SpikingNetwork, createNetworkPopulation, createRoadObstacles,
   evaluate, evaluateGeneralist, heuristicAction, nearestTrack, pointAtDistance, sensorValues, startPosition, stepCar, track, trackCheckpoint,
 } from "./core";
 
@@ -113,7 +113,7 @@ describe("track geometry and sensors", () => {
   });
 
   it("supports independent track geometries with a valid start line", () => {
-    expect(TRACKS).toHaveLength(3);
+    expect(TRACKS).toHaveLength(5);
     expect(new Set(TRACKS.map((route) => route.id)).size).toBe(TRACKS.length);
     TRACKS.forEach((route) => {
       const car = startPosition(0, route);
@@ -133,6 +133,24 @@ describe("track geometry and sensors", () => {
       expect(wrapped.point.y).toBeCloseTo(start.point.y, 5);
       expect(Math.hypot(wrapped.tangent.x, wrapped.tangent.y)).toBeCloseTo(1, 5);
     });
+  });
+
+  it("creates deterministic stalled road objects on every track", () => {
+    TRACKS.forEach((route) => {
+      const first = createRoadObstacles(6, route, 11); const second = createRoadObstacles(6, route, 11);
+      expect(first.map((car) => car.position)).toEqual(second.map((car) => car.position));
+      expect(first).toHaveLength(6);
+      expect(first.every((car) => car.isObstacle && car.speed === 0 && car.trackId === route.id)).toBe(true);
+    });
+  });
+
+  it("supports more than the default eight ordered checkpoint gates", () => {
+    const checkpoint = trackCheckpoint(15, DEFAULT_TRACK, 16);
+    expect(checkpoint.index).toBe(15);
+    expect(checkpoint.progress).toBeCloseTo(15 / 16, 5);
+    const car = startPosition();
+    stepCar(car, { steer: 0, throttle: 0, brake: 0 }, [car], DEFAULT_TRACK, DEFAULT_REWARD_CONFIG, { ...DEFAULT_PHYSICS_CONFIG, checkpointCount: 16 });
+    expect(car.nextCheckpoint).toBe(1);
   });
 });
 
@@ -353,6 +371,18 @@ describe("vehicle physics and fitness", () => {
     expect(stalled.timeExtensions).toBe(0);
     expect(stalled.timedOut).toBe(true);
     expect(stalled.crashed).toBe(false);
+  });
+
+  it("allows adaptive time to extend beyond the old two-extension limit", () => {
+    const adaptive = { wallsEnabled: true, adaptiveTimeLimit: true, maxAdaptiveExtensions: 4 };
+    const car = startPosition();
+    for (let extension = 0; extension < 3; extension += 1) {
+      car.ticks = car.timeLimit - 1; car.rewardWindowTicks = 299; car.rewardWindowScore = extension * 10; car.previousRewardRate = extension === 0 ? 0 : extension - 1;
+      stepCar(car, { steer: 0, throttle: 0, brake: 0 }, [car], DEFAULT_TRACK, DEFAULT_REWARD_CONFIG, adaptive);
+      expect(car.timedOut).toBe(false);
+      expect(car.timeExtensions).toBe(extension + 1);
+    }
+    expect(car.timeLimit).toBe(MAX_TICKS * 8);
   });
 
   it("detects a forward finish-line crossing exactly once", () => {

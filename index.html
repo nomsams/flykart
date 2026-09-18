@@ -47,7 +47,7 @@
             <button id="race-btn" class="primary" title="Run a race with the current fly controller">Start race</button>
             <button id="drive-btn" title="Drive the fly with the arrow keys or WASD">Drive manually</button>
             <button id="visual-train-btn" title="Train one controller at a time and watch each candidate">Train visually</button>
-            <button id="evolve-five-btn" title="Evolve the configured population and keep the best incumbent">Evolve population</button>
+            <button id="evolve-five-btn" title="Race the configured population simultaneously and keep the best incumbent">Evolve 5+ brains</button>
             <button id="headless-train-btn" title="Train without drawing every simulation step">Headless train</button>
             <button id="stop-btn" class="quiet" title="Pause the current race or training run">Stop</button>
             <button id="reset-btn" class="quiet" title="Forget the current controller and start over">Reset brain</button>
@@ -71,47 +71,58 @@
             </div>
             <div class="run-meta"><span id="run-progress-text">0% · waiting for a command</span><span id="run-step-text">fixed 30 Hz simulator</span></div>
             <ol id="event-log" class="event-log" aria-label="Recent events"></ol>
+            <div class="event-actions">
+              <span>Full history stays available while this page is open.</span>
+              <button id="copy-log-btn" class="quiet" type="button" title="Copy the complete event log">Copy all log</button>
+            </div>
           </section>
         </div>
 
         <aside class="control-panel">
           <section class="panel-section">
             <div class="section-title"><h2>Training lab</h2><span id="training-status" class="status-dot idle">idle</span></div>
-            <label>Population <input id="population" type="number" min="2" max="80" value="24" /></label>
+            <label>Population <input id="population" type="number" min="2" max="80" value="5" /></label>
             <label>Generations <input id="generations" type="number" min="1" max="10000" value="100" /></label>
             <label>Track set
               <select id="track-select">
+                <option value="grand-loop" selected>Grand loop · default</option>
                 <option value="all">Generalist · all tracks</option>
-                <option value="grand-loop">Grand loop</option>
                 <option value="switchback">Switchback</option>
                 <option value="zigzag">Zigzag</option>
+                <option value="hairpin">Hairpin</option>
+                <option value="oval-sprint">Oval sprint</option>
               </select>
             </label>
             <label class="check-row"><input id="walls-toggle" type="checkbox" checked /> <span>Track walls <small>recovery clamp (turn off for open track)</small></span></label>
-            <label class="check-row"><input id="adaptive-time-toggle" type="checkbox" checked /> <span>Adaptive time limit <small>up to two evidence-based extensions</small></span></label>
-            <label class="check-row"><input id="ghost-evolution-toggle" type="checkbox" checked /> <span>Ghost evolution <small>each brain gets an isolated world; no candidate collisions</small></span></label>
-            <p class="microcopy">Set any population size up to 80. The evolution button keeps the current best brain as candidate 1 and only accepts a new incumbent when its averaged fitness improves. Ghost evolution evaluates each brain independently; turn it off to watch candidates share a physical track and learn traffic avoidance.</p>
+            <label class="check-row"><input id="adaptive-time-toggle" type="checkbox" checked /> <span>Adaptive time limit <small>extends while reward rate is viable and improving</small></span></label>
+            <label>Max adaptive extensions <input id="adaptive-extensions" type="number" min="0" max="6" value="4" /></label>
+            <label>Checkpoint gates <input id="checkpoint-count" type="number" min="2" max="64" value="8" /></label>
+            <label class="check-row"><input id="ghost-evolution-toggle" type="checkbox" /> <span>Ghost evolution <small>optional: candidates are isolated and cannot collide</small></span></label>
+            <label class="check-row"><input id="obstacle-toggle" type="checkbox" /> <span>Random road objects <small>stalled cars are added to avoidance training</small></span></label>
+            <label>Object count <input id="obstacle-count" type="number" min="0" max="64" value="6" /></label>
+            <p class="microcopy">The population button runs all configured brains simultaneously when Ghost evolution is off, including 10+ cars. Turn Ghost evolution on for independent candidate worlds. The current best remains candidate 1; lower-scoring generations are rejected, and stalled progress automatically increases mutation strength.</p>
           </section>
 
           <details class="panel-section reward-settings" open>
             <summary><h2>Reward shaping</h2><span>live settings</span></summary>
+            <div class="reward-legend"><span class="reward-positive">+ green = reward</span><span class="reward-negative">− red = penalty</span><span>values are applied per second unless marked otherwise</span></div>
             <div class="reward-fields">
-              <label>Progress / sec <input id="reward-progress" type="number" min="0" max="100" step="0.5" value="14" /></label>
-              <label>Right direction / sec <input id="reward-direction" type="number" min="0" max="20" step="0.05" value="1.25" /></label>
-              <label>Moving / sec <input id="reward-moving" type="number" min="0" max="20" step="0.05" value="0.2" /></label>
-              <label>Standing still / sec <input id="reward-standing" type="number" min="0" max="20" step="0.05" value="0.85" /></label>
-              <label>Wrong direction / sec <input id="reward-wrong" type="number" min="0" max="30" step="0.05" value="2.5" /></label>
-              <label>Reverse progress / sec <input id="reward-reverse" type="number" min="0" max="30" step="0.05" value="3" /></label>
-              <label>Outside track / sec <input id="reward-offtrack" type="number" min="0" max="200" step="0.5" value="24" /></label>
-              <label>Near edge / sec <input id="reward-edge" type="number" min="0" max="20" step="0.05" value="1.2" /></label>
-              <label>Close traffic / sec <input id="reward-proximity" type="number" min="0" max="100" step="0.5" value="10" /></label>
-              <label>Centerline / sec <input id="reward-centerline" type="number" min="0" max="20" step="0.05" value="0.35" /></label>
-              <label>Collision penalty <input id="reward-collision" type="number" min="0" max="100" step="0.5" value="10" /></label>
-              <label>Crash penalty <input id="reward-crash" type="number" min="0" max="200" step="1" value="75" /></label>
-              <label>Checkpoint reward <input id="reward-checkpoint" type="number" min="0" max="1000" step="5" value="100" /></label>
-              <label>Finish reward <input id="reward-finish" type="number" min="0" max="1000" step="5" value="300" /></label>
+              <label><span class="reward-positive">+ Progress / sec</span><input id="reward-progress" type="number" min="0" max="100" step="0.5" value="14" /></label>
+              <label><span class="reward-positive">+ Right direction / sec</span><input id="reward-direction" type="number" min="0" max="20" step="0.05" value="1.25" /></label>
+              <label><span class="reward-positive">+ Moving / sec</span><input id="reward-moving" type="number" min="0" max="20" step="0.05" value="0.2" /></label>
+              <label><span class="reward-negative">− Standing still / sec</span><input id="reward-standing" type="number" min="0" max="20" step="0.05" value="0.85" /></label>
+              <label><span class="reward-negative">− Wrong direction / sec</span><input id="reward-wrong" type="number" min="0" max="30" step="0.05" value="2.5" /></label>
+              <label><span class="reward-negative">− Reverse progress / sec</span><input id="reward-reverse" type="number" min="0" max="30" step="0.05" value="3" /></label>
+              <label><span class="reward-negative">− Outside track / sec</span><input id="reward-offtrack" type="number" min="0" max="200" step="0.5" value="24" /></label>
+              <label><span class="reward-negative">− Near edge / sec</span><input id="reward-edge" type="number" min="0" max="20" step="0.05" value="1.2" /></label>
+              <label><span class="reward-negative">− Close traffic / sec</span><input id="reward-proximity" type="number" min="0" max="100" step="0.5" value="10" /></label>
+              <label><span class="reward-positive">+ Centerline / sec</span><input id="reward-centerline" type="number" min="0" max="20" step="0.05" value="0.35" /></label>
+              <label><span class="reward-negative">− Collision</span><input id="reward-collision" type="number" min="0" max="100" step="0.5" value="10" /></label>
+              <label><span class="reward-negative">− Crash</span><input id="reward-crash" type="number" min="0" max="200" step="1" value="75" /></label>
+              <label><span class="reward-positive">+ Checkpoint</span><input id="reward-checkpoint" type="number" min="0" max="1000" step="5" value="100" /></label>
+              <label><span class="reward-positive">+ Finish</span><input id="reward-finish" type="number" min="0" max="1000" step="5" value="300" /></label>
             </div>
-            <p class="microcopy">Green items add reward; red items subtract it. Close-traffic penalty ramps up smoothly inside roughly 2.75 car diameters and peaks at contact. Cars sense nearby traffic, road-edge clearance, travel direction, and can learn a separate reverse action. Ordered checkpoints pay once and the finish only pays after a valid lap.</p>
+            <p class="microcopy">The live “This tick” chips show the exact terms that changed the score. Progress, direction, movement, centerline, checkpoints, and finish are positive. Standing still, wrong direction, reverse progress, edge/off-track time, close traffic, collisions, and crashes are negative. Close-traffic risk rises before contact so the controller learns to avoid pileups.</p>
           </details>
 
           <section class="panel-section metrics">

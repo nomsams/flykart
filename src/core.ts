@@ -1,9 +1,9 @@
 export type Vec = { x: number; y: number };
 export type Action = { steer: number; throttle: number; brake: number; reverse?: number };
 export type Sensors = number[];
-export type TrackId = "grand-loop" | "switchback" | "zigzag";
+export type TrackId = "grand-loop" | "switchback" | "zigzag" | "hairpin" | "oval-sprint";
 export type TrackRef = TrackDefinition | TrackId;
-export type PhysicsConfig = { wallsEnabled: boolean; adaptiveTimeLimit?: boolean; maxAdaptiveExtensions?: number };
+export type PhysicsConfig = { wallsEnabled: boolean; adaptiveTimeLimit?: boolean; maxAdaptiveExtensions?: number; checkpointCount?: number };
 
 export type TrackDefinition = {
   id: TrackId;
@@ -25,7 +25,7 @@ export const MAX_TICKS = 1500;
 export const TAU = Math.PI * 2;
 export const CHECKPOINT_COUNT = 8;
 export const ADAPTIVE_REWARD_WINDOW_TICKS = 300;
-export const MAX_ADAPTIVE_EXTENSIONS = 2;
+export const MAX_ADAPTIVE_EXTENSIONS = 6;
 export const CLOSE_PROXIMITY_DISTANCE = CAR_COLLISION_DIAMETER * 2.75;
 export const DEFAULT_PHYSICS_CONFIG: PhysicsConfig = { wallsEnabled: true, adaptiveTimeLimit: false, maxAdaptiveExtensions: MAX_ADAPTIVE_EXTENSIONS };
 
@@ -55,6 +55,15 @@ export const TRACKS: TrackDefinition[] = [
     { x: 100, y: -205 }, { x: 290, y: -135 }, { x: 325, y: -10 },
     { x: 180, y: 55 }, { x: 300, y: 150 }, { x: 115, y: 190 },
     { x: -65, y: 125 }, { x: -210, y: 190 }, { x: -330, y: 95 },
+  ]),
+  createTrack("hairpin", "Hairpin", [
+    { x: -320, y: -165 }, { x: 250, y: -165 }, { x: 325, y: -95 }, { x: 250, y: -25 },
+    { x: -195, y: -25 }, { x: -265, y: 45 }, { x: -195, y: 125 }, { x: 300, y: 125 },
+    { x: 330, y: 175 }, { x: -320, y: 175 },
+  ]),
+  createTrack("oval-sprint", "Oval sprint", [
+    { x: -325, y: -125 }, { x: -235, y: -190 }, { x: 160, y: -190 }, { x: 315, y: -105 },
+    { x: 325, y: 95 }, { x: 215, y: 180 }, { x: -180, y: 180 }, { x: -325, y: 90 },
   ]),
 ];
 
@@ -253,7 +262,7 @@ export type Car = {
   crashed: boolean; timedOut: boolean; finished: boolean; timeLimit: number; timeExtensions: number; rewardWindowScore: number; rewardWindowTicks: number; previousRewardRate: number; nextCheckpoint: number; checkpointsPassed: number; stationaryTicks: number; wrongDirectionTicks: number; forwardAlignment: number; lastReward: number;
   lateralOffset: number; collisionCooldown: number;
   rewardBreakdown: RewardBreakdown; rewardTotals: RewardTotals; nearestOpponentDistance: number;
-  color: string; name: string; network?: SpikingNetwork; action: Action; trail: Vec[]; isFly: boolean;
+  color: string; name: string; network?: SpikingNetwork; action: Action; trail: Vec[]; isFly: boolean; isObstacle: boolean;
 };
 
 function emptyRewards(): RewardBreakdown {
@@ -277,7 +286,22 @@ export function startPosition(lane = 0, trackRef: TrackRef = DEFAULT_TRACK): Car
   return { position: point, heading: Math.atan2(line.tangent.y, line.tangent.x), speed: 0, progress: 0, distanceAlong: 0,
     totalProgress: 0, laps: 0, bestProgress: 0, trackId: route.id, nearestDistance: 0, offTrackTicks: 0, collisions: 0, ticks: 0, score: 0,
     crashed: false, timedOut: false, finished: false, timeLimit: MAX_TICKS, timeExtensions: 0, rewardWindowScore: 0, rewardWindowTicks: 0, previousRewardRate: 0, nextCheckpoint: 1, checkpointsPassed: 0, stationaryTicks: 0, wrongDirectionTicks: 0, forwardAlignment: 1, lastReward: 0, lateralOffset: 0, collisionCooldown: 0, nearestOpponentDistance: Infinity,
-    rewardBreakdown, rewardTotals: { ...rewardBreakdown }, color: "#f19a69", name: "bot", action: { steer: 0, throttle: 1, brake: 0 }, trail: [], isFly: false };
+    rewardBreakdown, rewardTotals: { ...rewardBreakdown }, color: "#f19a69", name: "bot", action: { steer: 0, throttle: 1, brake: 0 }, trail: [], isFly: false, isObstacle: false };
+}
+
+export function createRoadObstacles(count: number, trackRef: TrackRef = DEFAULT_TRACK, seed = 1): Car[] {
+  const route = resolveTrack(trackRef); const safeCount = clamp(Math.floor(count), 0, 64); const obstacles: Car[] = [];
+  for (let index = 0; index < safeCount; index += 1) {
+    const distanceSeed = hash(seed * 17.31 + index * 7.19); const laneSeed = hash(seed * 3.71 + index * 11.47);
+    const distance = 120 + distanceSeed * Math.max(80, route.length - 260); const lane = Math.floor(laneSeed * 3) - 1;
+    const sample = pointAtDistance(distance, route); const normal = { x: -sample.tangent.y, y: sample.tangent.x };
+    const car = startPosition(lane * 0.92, route);
+    car.position = add(sample.point, scale(normal, lane * LANE_SPACING * 0.92)); car.heading = Math.atan2(sample.tangent.y, sample.tangent.x);
+    const nearest = nearestTrack(car.position, route); car.progress = nearest.progress; car.distanceAlong = nearest.distanceAlong; car.bestProgress = nearest.progress;
+    car.speed = 0; car.action = { steer: 0, throttle: 0, brake: 1, reverse: 0 }; car.color = "#d07c72"; car.name = `road object ${index + 1}`; car.isObstacle = true;
+    obstacles.push(car);
+  }
+  return obstacles;
 }
 
 export function pointAtDistance(distanceAlong: number, trackRef: TrackRef = DEFAULT_TRACK): { point: Vec; tangent: Vec; distanceAlong: number } {
@@ -295,10 +319,10 @@ export function pointAtDistance(distanceAlong: number, trackRef: TrackRef = DEFA
 
 export type TrackCheckpoint = { index: number; progress: number; point: Vec; tangent: Vec; normal: Vec };
 
-export function trackCheckpoint(index: number, trackRef: TrackRef = DEFAULT_TRACK): TrackCheckpoint {
-  const route = resolveTrack(trackRef); const safeIndex = ((Math.round(index) % CHECKPOINT_COUNT) + CHECKPOINT_COUNT) % CHECKPOINT_COUNT;
-  const sample = pointAtDistance(route.length * safeIndex / CHECKPOINT_COUNT, route);
-  return { index: safeIndex, progress: safeIndex / CHECKPOINT_COUNT, point: sample.point, tangent: sample.tangent, normal: { x: -sample.tangent.y, y: sample.tangent.x } };
+export function trackCheckpoint(index: number, trackRef: TrackRef = DEFAULT_TRACK, checkpointCount = CHECKPOINT_COUNT): TrackCheckpoint {
+  const route = resolveTrack(trackRef); const count = clamp(Math.floor(checkpointCount), 2, 64); const safeIndex = ((Math.round(index) % count) + count) % count;
+  const sample = pointAtDistance(route.length * safeIndex / count, route);
+  return { index: safeIndex, progress: safeIndex / count, point: sample.point, tangent: sample.tangent, normal: { x: -sample.tangent.y, y: sample.tangent.x } };
 }
 
 function cross(a: Vec, b: Vec): number { return a.x * b.y - a.y * b.x; }
@@ -367,7 +391,7 @@ export function heuristicAction(car: Car, others: Car[], trackRef?: TrackRef): A
 
 export function stepCar(car: Car, action: Action, others: Car[], trackRef?: TrackRef, rewardConfig: RewardConfig = DEFAULT_REWARD_CONFIG, physicsConfig: PhysicsConfig = DEFAULT_PHYSICS_CONFIG): void {
   if (car.crashed || car.finished || car.timedOut) return;
-  const route = resolveTrack(trackRef ?? car.trackId); const nearby = nearestTrack(car.position, route); const offTrackBefore = nearby.distance > route.width / 2; const grip = offTrackBefore ? 0.35 : 1;
+  const route = resolveTrack(trackRef ?? car.trackId); const checkpointCount = clamp(Math.floor(physicsConfig.checkpointCount ?? CHECKPOINT_COUNT), 2, 64); const nearby = nearestTrack(car.position, route); const offTrackBefore = nearby.distance > route.width / 2; const grip = offTrackBefore ? 0.35 : 1;
   const steeringDirection = car.speed < -0.5 ? -1 : 1;
   car.heading += clamp(action.steer, -1, 1) * (0.65 + Math.abs(car.speed) / 150) * grip * steeringDirection * STEP;
   const forwardThrottle = clamp(action.throttle, 0, 1); const reverseThrottle = clamp(action.reverse ?? 0, 0, 1); const brake = clamp(action.brake, 0, 1);
@@ -396,8 +420,8 @@ export function stepCar(car: Car, action: Action, others: Car[], trackRef?: Trac
   };
   const directedStartCross = crossesGate({ point: line.point, tangent: line.tangent, normal: line.normal });
   const expectedCheckpoint = car.nextCheckpoint;
-  const expectedGate = trackCheckpoint(expectedCheckpoint, route);
-  const expectedProgress = expectedCheckpoint / CHECKPOINT_COUNT;
+  const expectedGate = trackCheckpoint(expectedCheckpoint, route, checkpointCount);
+  const expectedProgress = expectedCheckpoint / checkpointCount;
   const crossedExpectedProgress = expectedCheckpoint > 0 && car.progress < expectedProgress && updated.progress >= expectedProgress && localDelta > 0 && localDelta < 0.25;
   const intermediateCheckpointCrossed = expectedCheckpoint > 0 && crossedExpectedProgress && crossesGate(expectedGate) && alignment > 0.15 && car.speed > 2;
   // The start gate is also the finish gate, but it is only valid after all
@@ -406,10 +430,10 @@ export function stepCar(car: Car, action: Action, others: Car[], trackRef?: Trac
   const checkpointCrossed = intermediateCheckpointCrossed || lapCrossed;
   if (intermediateCheckpointCrossed) {
     car.checkpointsPassed += 1;
-    car.nextCheckpoint = expectedCheckpoint === CHECKPOINT_COUNT - 1 ? 0 : expectedCheckpoint + 1;
+    car.nextCheckpoint = expectedCheckpoint === checkpointCount - 1 ? 0 : expectedCheckpoint + 1;
   } else if (lapCrossed) {
     car.checkpointsPassed += 1;
-    car.nextCheckpoint = CHECKPOINT_COUNT;
+    car.nextCheckpoint = checkpointCount;
   }
   const firstFinish = lapCrossed && !car.finished;
   const validForwardDelta = localDelta > 0 && alignment > -0.35 ? localDelta : 0;
@@ -512,23 +536,24 @@ export function stepCar(car: Car, action: Action, others: Car[], trackRef?: Trac
 
 export type EvaluationResult = { fitness: number; progress: number; ticks: number; laps: number; finished: boolean; trackId: TrackId; rewardTotals: RewardTotals };
 
-export function evaluate(network: SpikingNetwork, trackRef: TrackRef = DEFAULT_TRACK, rewardConfig: RewardConfig = DEFAULT_REWARD_CONFIG, physicsConfig: PhysicsConfig = DEFAULT_PHYSICS_CONFIG, ghost = false): EvaluationResult {
+export function evaluate(network: SpikingNetwork, trackRef: TrackRef = DEFAULT_TRACK, rewardConfig: RewardConfig = DEFAULT_REWARD_CONFIG, physicsConfig: PhysicsConfig = DEFAULT_PHYSICS_CONFIG, ghost = false, obstacleCount = 0, obstacleSeed = 1): EvaluationResult {
   const route = resolveTrack(trackRef); const car = startPosition(0, route); car.network = network; network.reset();
   const line = startLine(route); const obstacles = [startPosition(-1, route), startPosition(1, route)]; obstacles[0].position = add(obstacles[0].position, scale(line.tangent, 55)); obstacles[1].position = add(obstacles[1].position, scale(line.tangent, 115));
-  const cars = ghost ? [car] : [car, ...obstacles];
+  const roadObjects = createRoadObstacles(obstacleCount, route, obstacleSeed);
+  const cars = ghost ? [car, ...roadObjects] : [car, ...obstacles, ...roadObjects];
   const maxExtensions = clamp(Math.floor(physicsConfig.maxAdaptiveExtensions ?? MAX_ADAPTIVE_EXTENSIONS), 0, MAX_ADAPTIVE_EXTENSIONS);
   const simulationLimit = MAX_TICKS * (physicsConfig.adaptiveTimeLimit === true ? 2 ** maxExtensions : 1);
   for (let tick = 0; tick < simulationLimit && !car.crashed && !car.finished && !car.timedOut; tick += 1) {
     stepCar(car, network.step(sensorValues(car, cars, route)), cars, route, rewardConfig, physicsConfig);
-    obstacles.forEach((bot) => stepCar(bot, heuristicAction(bot, cars, route), cars, route, rewardConfig, physicsConfig));
+    if (!ghost) obstacles.forEach((bot) => stepCar(bot, heuristicAction(bot, cars, route), cars, route, rewardConfig, physicsConfig));
   }
   return { fitness: car.score, progress: car.totalProgress, ticks: car.ticks, laps: car.laps, finished: car.finished, trackId: route.id, rewardTotals: { ...car.rewardTotals } };
 }
 
 export type GeneralistEvaluation = { fitness: number; progress: number; ticks: number; laps: number; finished: boolean; rewardTotals: RewardTotals; episodes: EvaluationResult[] };
 
-export function evaluateGeneralist(network: SpikingNetwork, trackRefs: TrackRef[] = TRACKS, rewardConfig: RewardConfig = DEFAULT_REWARD_CONFIG, physicsConfig: PhysicsConfig = DEFAULT_PHYSICS_CONFIG, ghost = false): GeneralistEvaluation {
-  const routes = trackRefs.length > 0 ? trackRefs.map(resolveTrack) : [DEFAULT_TRACK]; const episodes = routes.map((route) => evaluate(network, route, rewardConfig, physicsConfig, ghost));
+export function evaluateGeneralist(network: SpikingNetwork, trackRefs: TrackRef[] = TRACKS, rewardConfig: RewardConfig = DEFAULT_REWARD_CONFIG, physicsConfig: PhysicsConfig = DEFAULT_PHYSICS_CONFIG, ghost = false, obstacleCount = 0, obstacleSeed = 1): GeneralistEvaluation {
+  const routes = trackRefs.length > 0 ? trackRefs.map(resolveTrack) : [DEFAULT_TRACK]; const episodes = routes.map((route, index) => evaluate(network, route, rewardConfig, physicsConfig, ghost, obstacleCount, obstacleSeed + index * 97));
   const average = (selector: (episode: EvaluationResult) => number): number => episodes.reduce((sum, episode) => sum + selector(episode), 0) / episodes.length;
   const rewardTotals = emptyRewards();
   (Object.keys(rewardTotals) as (keyof RewardBreakdown)[]).forEach((key) => { rewardTotals[key] = average((episode) => episode.rewardTotals[key]); });
