@@ -28,7 +28,7 @@ Useful overrides are passed as `section.key=value` arguments:
 ./puffer eval flykart --eval_episodes=5 env.track_set=2
 ```
 
-`track_set=3` samples all three FlyKart layouts between episodes (`0`, `1`, and `2` select Grand loop, Switchback, and Zigzag). The observation vector is nine normalized values matching the browser sensor contract: look-ahead heading error, local curvature, signed centerline offset, signed speed, centerline proximity, opponent proximity, opponent side, a phase signal, and a bias. The native single-agent environment leaves the opponent channels at zero; the browser evolution mode remains the place to race five independent brains together.
+`track_set=3` samples all three FlyKart layouts between episodes (`0`, `1`, and `2` select Grand loop, Switchback, and Zigzag). The observation vector is nine normalized values matching the browser sensor contract: look-ahead heading error, local curvature, signed centerline offset, signed speed, centerline proximity, forward-opponent proximity, forward-opponent side, road-edge clearance, and travel alignment. The native single-agent environment leaves the opponent channels at zero; the browser evolution mode remains the place to race five independent brains together.
 
 Actions are a small discrete control set:
 
@@ -40,7 +40,7 @@ Actions are a small discrete control set:
 | 3 | reverse |
 | 4 | brake |
 
-The C environment includes the same monotonic progress reward, direction reward, centerline bonus, standing-still/wrong-direction/reverse/off-track/collision/crash penalties, fixed finish reward, and off-track recovery used by the browser simulator. Its optional `puf_render` draws the track and car for native evaluation; Colab training should stay headless for throughput.
+The C environment includes the same monotonic progress reward, direction reward, centerline bonus, ordered eight-gate checkpoint rewards, near-edge penalty, distance-scaled off-track penalty, standing-still/wrong-direction/reverse/collision/crash penalties, fixed finish reward, and off-track recovery used by the browser simulator. A time-limit termination is reported separately from a crash. Its optional `puf_render` draws the track and car for native evaluation; Colab training should stay headless for throughput.
 
 ## Moving a trained policy back to FlyKart
 

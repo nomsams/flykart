@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  CAR_COLLISION_DIAMETER, DEFAULT_PHYSICS_CONFIG, DEFAULT_REWARD_CONFIG, DEFAULT_TRACK, MAX_TICKS, STEP, TRACKS, TRACK_WIDTH, BrainSnapshot, SpikingNetwork, createNetworkPopulation,
-  evaluate, evaluateGeneralist, heuristicAction, nearestTrack, pointAtDistance, sensorValues, startPosition, stepCar, track,
+  CAR_COLLISION_DIAMETER, CHECKPOINT_COUNT, DEFAULT_PHYSICS_CONFIG, DEFAULT_REWARD_CONFIG, DEFAULT_TRACK, MAX_TICKS, STEP, TRACKS, TRACK_WIDTH, BrainSnapshot, SpikingNetwork, createNetworkPopulation,
+  evaluate, evaluateGeneralist, heuristicAction, nearestTrack, pointAtDistance, sensorValues, startPosition, stepCar, track, trackCheckpoint,
 } from "./core";
 
 const finiteAction = (action: ReturnType<SpikingNetwork["step"]>) => {
@@ -78,6 +78,15 @@ describe("track geometry and sensors", () => {
     expect(sensors).toHaveLength(9);
     sensors.forEach((value) => expect(Number.isFinite(value)).toBe(true));
     expect(sensors.every((value) => value >= -1 && value <= 1)).toBe(true);
+  });
+
+  it("exposes forward cars, edge clearance, and travel alignment to the controller", () => {
+    const car = startPosition(); const obstacle = startPosition(); const sample = pointAtDistance(80, DEFAULT_TRACK);
+    obstacle.position = sample.point; obstacle.heading = Math.atan2(sample.tangent.y, sample.tangent.x);
+    const sensors = sensorValues(car, [car, obstacle]);
+    expect(sensors[5]).toBeGreaterThan(0);
+    expect(sensors[7]).toBeGreaterThan(0.9);
+    expect(sensors[8]).toBeGreaterThan(0.5);
   });
 
   it("does not mutate the track when sensing", () => {
@@ -244,6 +253,51 @@ describe("vehicle physics and fitness", () => {
     expect(car.offTrackTicks).toBe(1);
   });
 
+  it("uses a stronger penalty the farther a car leaves the road", () => {
+    const sample = pointAtDistance(200, DEFAULT_TRACK); const normal = { x: -sample.tangent.y, y: sample.tangent.x }; const near = startPosition(); const far = startPosition();
+    near.position = { x: sample.point.x + normal.x * (DEFAULT_TRACK.width / 2 + 4), y: sample.point.y + normal.y * (DEFAULT_TRACK.width / 2 + 4) };
+    far.position = { x: sample.point.x + normal.x * (DEFAULT_TRACK.width * 2), y: sample.point.y + normal.y * (DEFAULT_TRACK.width * 2) };
+    stepCar(near, { steer: 0, throttle: 0, brake: 0 }, [near], DEFAULT_TRACK, DEFAULT_REWARD_CONFIG, { wallsEnabled: false });
+    stepCar(far, { steer: 0, throttle: 0, brake: 0 }, [far], DEFAULT_TRACK, DEFAULT_REWARD_CONFIG, { wallsEnabled: false });
+    expect(far.rewardBreakdown.offTrack).toBeGreaterThan(near.rewardBreakdown.offTrack);
+  });
+
+  it("penalizes the road edge while rewarding the centerline", () => {
+    const sample = pointAtDistance(200, DEFAULT_TRACK); const normal = { x: -sample.tangent.y, y: sample.tangent.x }; const center = startPosition(); const edge = startPosition();
+    edge.position = { x: sample.point.x + normal.x * DEFAULT_TRACK.width * 0.45, y: sample.point.y + normal.y * DEFAULT_TRACK.width * 0.45 };
+    stepCar(center, { steer: 0, throttle: 0, brake: 0 }, [center]);
+    stepCar(edge, { steer: 0, throttle: 0, brake: 0 }, [edge]);
+    expect(edge.rewardBreakdown.edge).toBeGreaterThan(0);
+    expect(center.rewardBreakdown.centerline).toBeGreaterThan(edge.rewardBreakdown.centerline);
+  });
+
+  it("rewards each ordered checkpoint and rejects a wrong-direction crossing", () => {
+    const distance = DEFAULT_TRACK.length / CHECKPOINT_COUNT; const checkpoint = trackCheckpoint(1, DEFAULT_TRACK);
+    const before = pointAtDistance(distance - 0.7, DEFAULT_TRACK); const car = startPosition();
+    car.position = before.point; car.heading = Math.atan2(checkpoint.tangent.y, checkpoint.tangent.x); car.speed = 40; car.progress = before.distanceAlong / DEFAULT_TRACK.length; car.totalProgress = car.progress;
+    stepCar(car, { steer: 0, throttle: 0, brake: 0 }, [car], DEFAULT_TRACK);
+    expect(car.checkpointsPassed).toBe(1);
+    expect(car.nextCheckpoint).toBe(2);
+    expect(car.rewardBreakdown.checkpoint).toBe(DEFAULT_REWARD_CONFIG.checkpoint);
+
+    const wrongWay = startPosition(); const after = pointAtDistance(distance + 0.7, DEFAULT_TRACK);
+    wrongWay.position = after.point; wrongWay.heading = Math.atan2(checkpoint.tangent.y, checkpoint.tangent.x) + Math.PI; wrongWay.speed = 40; wrongWay.progress = after.distanceAlong / DEFAULT_TRACK.length;
+    stepCar(wrongWay, { steer: 0, throttle: 0, brake: 0 }, [wrongWay], DEFAULT_TRACK);
+    expect(wrongWay.checkpointsPassed).toBe(0);
+    expect(wrongWay.nextCheckpoint).toBe(1);
+    expect(wrongWay.rewardBreakdown.checkpoint).toBe(0);
+  });
+
+  it("times out without mislabeling a non-crashed car as crashed", () => {
+    const car = startPosition(); car.ticks = MAX_TICKS - 1;
+    stepCar(car, { steer: 0, throttle: 0, brake: 0 }, [car]);
+    expect(car.timedOut).toBe(true);
+    expect(car.crashed).toBe(false);
+    const position = { ...car.position };
+    stepCar(car, { steer: 1, throttle: 1, brake: 0 }, [car]);
+    expect(car.position).toEqual(position);
+  });
+
   it("detects a forward finish-line crossing exactly once", () => {
     const car = startPosition(0, DEFAULT_TRACK);
     const last = DEFAULT_TRACK.points[DEFAULT_TRACK.points.length - 1];
@@ -254,6 +308,8 @@ describe("vehicle physics and fitness", () => {
     car.speed = 40;
     car.progress = nearestTrack(car.position, DEFAULT_TRACK).progress;
     car.totalProgress = car.progress;
+    car.checkpointsPassed = CHECKPOINT_COUNT - 1;
+    car.nextCheckpoint = 0;
     stepCar(car, { steer: 0, throttle: 0, brake: 0 }, [car], DEFAULT_TRACK);
     expect(car.finished).toBe(true);
     expect(car.laps).toBe(1);

@@ -24,6 +24,7 @@ export const STEP = 1 / 30;
 export const MAX_TICKS = 1500;
 export const TAU = Math.PI * 2;
 export const DEFAULT_PHYSICS_CONFIG: PhysicsConfig = { wallsEnabled: true };
+export const CHECKPOINT_COUNT = 8;
 
 function createTrack(id: TrackId, name: string, points: Vec[], width = TRACK_WIDTH): TrackDefinition {
   const segmentLengths = points.map((point, index) => Math.hypot(point.x - points[(index + 1) % points.length].x, point.y - points[(index + 1) % points.length].y));
@@ -73,24 +74,28 @@ export type RewardConfig = {
   wrongDirectionPerSecond: number;
   reverseProgressPerSecond: number;
   offTrackPerSecond: number;
+  edgePenaltyPerSecond: number;
   centerlinePerSecond?: number;
   collision: number;
   crash: number;
+  checkpoint: number;
   finish: number;
 };
 
 export const DEFAULT_REWARD_CONFIG: RewardConfig = {
-  progressPerSecond: 12,
-  correctDirectionPerSecond: 0.45,
-  movementPerSecond: 0.12,
-  standingStillPerSecond: 0.55,
-  wrongDirectionPerSecond: 1.25,
-  reverseProgressPerSecond: 1.5,
-  offTrackPerSecond: 1.1,
-  centerlinePerSecond: 0.18,
-  collision: 7,
-  crash: 25,
-  finish: 250,
+  progressPerSecond: 14,
+  correctDirectionPerSecond: 1.25,
+  movementPerSecond: 0.2,
+  standingStillPerSecond: 0.85,
+  wrongDirectionPerSecond: 2.5,
+  reverseProgressPerSecond: 3,
+  offTrackPerSecond: 24,
+  edgePenaltyPerSecond: 1.2,
+  centerlinePerSecond: 0.35,
+  collision: 10,
+  crash: 75,
+  checkpoint: 100,
+  finish: 300,
 };
 
 export type RewardBreakdown = {
@@ -101,9 +106,11 @@ export type RewardBreakdown = {
   wrongDirection: number;
   reverseProgress: number;
   offTrack: number;
+  edge: number;
   centerline: number;
   collision: number;
   crash: number;
+  checkpoint: number;
   finish: number;
   total: number;
 };
@@ -228,14 +235,14 @@ export class SpikingNetwork {
 export type Car = {
   position: Vec; heading: number; speed: number; progress: number; totalProgress: number; laps: number; bestProgress: number;
   trackId: TrackId; distanceAlong: number; nearestDistance: number; offTrackTicks: number; collisions: number; ticks: number; score: number;
-  crashed: boolean; finished: boolean; stationaryTicks: number; wrongDirectionTicks: number; forwardAlignment: number; lastReward: number;
+  crashed: boolean; timedOut: boolean; finished: boolean; nextCheckpoint: number; checkpointsPassed: number; stationaryTicks: number; wrongDirectionTicks: number; forwardAlignment: number; lastReward: number;
   lateralOffset: number; collisionCooldown: number;
   rewardBreakdown: RewardBreakdown; rewardTotals: RewardTotals;
   color: string; name: string; network?: SpikingNetwork; action: Action; trail: Vec[]; isFly: boolean;
 };
 
 function emptyRewards(): RewardBreakdown {
-  return { progress: 0, direction: 0, movement: 0, standingStill: 0, wrongDirection: 0, reverseProgress: 0, offTrack: 0, centerline: 0, collision: 0, crash: 0, finish: 0, total: 0 };
+  return { progress: 0, direction: 0, movement: 0, standingStill: 0, wrongDirection: 0, reverseProgress: 0, offTrack: 0, edge: 0, centerline: 0, collision: 0, crash: 0, checkpoint: 0, finish: 0, total: 0 };
 }
 
 function addRewards(target: RewardTotals, current: RewardBreakdown): void {
@@ -254,7 +261,7 @@ export function startPosition(lane = 0, trackRef: TrackRef = DEFAULT_TRACK): Car
   const rewardBreakdown = emptyRewards();
   return { position: point, heading: Math.atan2(line.tangent.y, line.tangent.x), speed: 0, progress: 0, distanceAlong: 0,
     totalProgress: 0, laps: 0, bestProgress: 0, trackId: route.id, nearestDistance: 0, offTrackTicks: 0, collisions: 0, ticks: 0, score: 0,
-    crashed: false, finished: false, stationaryTicks: 0, wrongDirectionTicks: 0, forwardAlignment: 1, lastReward: 0, lateralOffset: 0, collisionCooldown: 0,
+    crashed: false, timedOut: false, finished: false, nextCheckpoint: 1, checkpointsPassed: 0, stationaryTicks: 0, wrongDirectionTicks: 0, forwardAlignment: 1, lastReward: 0, lateralOffset: 0, collisionCooldown: 0,
     rewardBreakdown, rewardTotals: { ...rewardBreakdown }, color: "#f19a69", name: "bot", action: { steer: 0, throttle: 1, brake: 0 }, trail: [], isFly: false };
 }
 
@@ -269,6 +276,14 @@ export function pointAtDistance(distanceAlong: number, trackRef: TrackRef = DEFA
   const t = clamp((wrapped - route.cumulativeLengths[segmentIndex]) / segmentLength, 0, 1);
   const a = route.points[segmentIndex]; const b = route.points[(segmentIndex + 1) % route.points.length];
   return { point: add(a, scale(sub(b, a), t)), tangent: normalize(sub(b, a)), distanceAlong: wrapped };
+}
+
+export type TrackCheckpoint = { index: number; progress: number; point: Vec; tangent: Vec; normal: Vec };
+
+export function trackCheckpoint(index: number, trackRef: TrackRef = DEFAULT_TRACK): TrackCheckpoint {
+  const route = resolveTrack(trackRef); const safeIndex = ((Math.round(index) % CHECKPOINT_COUNT) + CHECKPOINT_COUNT) % CHECKPOINT_COUNT;
+  const sample = pointAtDistance(route.length * safeIndex / CHECKPOINT_COUNT, route);
+  return { index: safeIndex, progress: safeIndex / CHECKPOINT_COUNT, point: sample.point, tangent: sample.tangent, normal: { x: -sample.tangent.y, y: sample.tangent.x } };
 }
 
 function cross(a: Vec, b: Vec): number { return a.x * b.y - a.y * b.x; }
@@ -303,10 +318,13 @@ export function sensorValues(car: Car, others: Car[], trackRef?: TrackRef): Sens
     return { distance, forward: dot(direction, forward), side: dot(direction, side) };
   }).filter((item) => item.distance < 180 && item.forward > 0).sort((a, b) => a.distance - b.distance)[0];
   const signedLateral = lateralOffset(car.position, closest, route);
+  const centerlineProximity = clamp(1 - Math.abs(signedLateral), -1, 1);
+  const edgeClearance = clamp(1 - closest.distance / Math.max(1, route.width / 2), -1, 1);
+  const forwardAlignment = dot(forward, closest.tangent);
   return [clamp(headingError, -1, 1), clamp(curvature, -1, 1), clamp(signedLateral, -1, 1),
-    clamp(car.speed / 90, -1, 1), clamp(1 - Math.abs(signedLateral), -1, 1),
+    clamp(car.speed / 90, -1, 1), centerlineProximity,
     opponent ? clamp(1 - opponent.distance / 180, 0, 1) : 0, opponent ? clamp(opponent.side, -1, 1) : 0,
-    Math.sin(car.ticks * 0.025), 1];
+    edgeClearance, clamp(forwardAlignment, -1, 1)];
 }
 
 export function heuristicAction(car: Car, others: Car[], trackRef?: TrackRef): Action {
@@ -320,7 +338,7 @@ export function heuristicAction(car: Car, others: Car[], trackRef?: TrackRef): A
 }
 
 export function stepCar(car: Car, action: Action, others: Car[], trackRef?: TrackRef, rewardConfig: RewardConfig = DEFAULT_REWARD_CONFIG, physicsConfig: PhysicsConfig = DEFAULT_PHYSICS_CONFIG): void {
-  if (car.crashed) return;
+  if (car.crashed || car.finished || car.timedOut) return;
   const route = resolveTrack(trackRef ?? car.trackId); const nearby = nearestTrack(car.position, route); const offTrackBefore = nearby.distance > route.width / 2; const grip = offTrackBefore ? 0.35 : 1;
   const steeringDirection = car.speed < -0.5 ? -1 : 1;
   car.heading += clamp(action.steer, -1, 1) * (0.65 + Math.abs(car.speed) / 150) * grip * steeringDirection * STEP;
@@ -330,7 +348,7 @@ export function stepCar(car: Car, action: Action, others: Car[], trackRef?: Trac
   car.speed = clamp(car.speed + acceleration * STEP, -48, 90);
   const previousPosition = { ...car.position };
   car.position = add(car.position, { x: Math.cos(car.heading) * car.speed * STEP, y: Math.sin(car.heading) * car.speed * STEP });
-  let updated = nearestTrack(car.position, route); const wasOffTrack = updated.distance > route.width / 2;
+  let updated = nearestTrack(car.position, route); const rawOffTrackDistance = updated.distance; const wasOffTrack = rawOffTrackDistance > route.width / 2;
   if (wasOffTrack && physicsConfig.wallsEnabled) {
     const offset = sub(car.position, updated.point); const offsetDirection = normalize(offset);
     const safeCenterDistance = route.width / 2 - CAR_WIDTH * 0.65;
@@ -342,22 +360,35 @@ export function stepCar(car: Car, action: Action, others: Car[], trackRef?: Trac
   const rawDelta = updated.progress - car.progress; let localDelta = rawDelta;
   if (localDelta < -0.5) localDelta += 1; else if (localDelta > 0.5) localDelta -= 1;
   const forward = { x: Math.cos(car.heading), y: Math.sin(car.heading) }; const alignment = dot(forward, updated.tangent);
-  const line = startLine(route); const previousLineSide = dot(sub(previousPosition, line.point), line.tangent); const currentLineSide = dot(sub(car.position, line.point), line.tangent);
-  const previousLineOffset = Math.abs(dot(sub(previousPosition, line.point), line.normal)); const currentLineOffset = Math.abs(dot(sub(car.position, line.point), line.normal));
-  // Use a small approach tolerance because a simulation step can begin very
-  // close to the line. The total-progress guard below is what prevents a car
-  // from farming the finish by making a tiny loop around the start.
-  const directedStartCross = previousLineSide < -0.25 && currentLineSide >= -1 && dot(sub(car.position, previousPosition), line.tangent) > 0.01 && previousLineOffset <= route.width * 0.5 + 10 && currentLineOffset <= route.width * 0.5 + 10;
-  // A start-line crossing only completes a lap after the car has covered
-  // essentially the entire route. This blocks short loops and spatial
-  // shortcuts near the finish while allowing for simulation-step rounding.
-  const lapCrossed = directedStartCross && car.totalProgress >= 0.95 && alignment > 0.15 && car.speed > 2;
+  const line = startLine(route); const movement = sub(car.position, previousPosition);
+  const crossesGate = (gate: { point: Vec; tangent: Vec; normal: Vec }): boolean => {
+    const previousSide = dot(sub(previousPosition, gate.point), gate.tangent); const currentSide = dot(sub(car.position, gate.point), gate.tangent);
+    const previousOffset = Math.abs(dot(sub(previousPosition, gate.point), gate.normal)); const currentOffset = Math.abs(dot(sub(car.position, gate.point), gate.normal));
+    return previousSide < -0.25 && currentSide >= -1 && dot(movement, gate.tangent) > 0.01 && previousOffset <= route.width * 0.5 + 10 && currentOffset <= route.width * 0.5 + 10;
+  };
+  const directedStartCross = crossesGate({ point: line.point, tangent: line.tangent, normal: line.normal });
+  const expectedCheckpoint = car.nextCheckpoint;
+  const expectedGate = trackCheckpoint(expectedCheckpoint, route);
+  const expectedProgress = expectedCheckpoint / CHECKPOINT_COUNT;
+  const crossedExpectedProgress = expectedCheckpoint > 0 && car.progress < expectedProgress && updated.progress >= expectedProgress && localDelta > 0 && localDelta < 0.25;
+  const intermediateCheckpointCrossed = expectedCheckpoint > 0 && crossedExpectedProgress && crossesGate(expectedGate) && alignment > 0.15 && car.speed > 2;
+  // The start gate is also the finish gate, but it is only valid after all
+  // intermediate gates were crossed in order and nearly one full lap elapsed.
+  const lapCrossed = expectedCheckpoint === 0 && directedStartCross && car.totalProgress >= 0.95 && alignment > 0.15 && car.speed > 2;
+  const checkpointCrossed = intermediateCheckpointCrossed || lapCrossed;
+  if (intermediateCheckpointCrossed) {
+    car.checkpointsPassed += 1;
+    car.nextCheckpoint = expectedCheckpoint === CHECKPOINT_COUNT - 1 ? 0 : expectedCheckpoint + 1;
+  } else if (lapCrossed) {
+    car.checkpointsPassed += 1;
+    car.nextCheckpoint = CHECKPOINT_COUNT;
+  }
   const firstFinish = lapCrossed && !car.finished;
-  const continuousDelta = localDelta + (lapCrossed ? 1 : 0);
-  const validForwardDelta = continuousDelta > 0 && alignment > -0.35 ? continuousDelta : 0;
+  const validForwardDelta = localDelta > 0 && alignment > -0.35 ? localDelta : 0;
   if (lapCrossed) { car.laps += 1; car.finished = true; }
   car.totalProgress += validForwardDelta; car.progress = updated.progress; car.distanceAlong = updated.distanceAlong; car.bestProgress = Math.max(car.bestProgress, car.progress);
-  car.nearestDistance = updated.distance; const offTrack = wasOffTrack || updated.distance > route.width / 2; if (offTrack) car.offTrackTicks += 1;
+  car.nearestDistance = updated.distance; const offTrackDistance = Math.max(nearby.distance, rawOffTrackDistance, updated.distance); const offTrack = offTrackDistance > route.width / 2; if (offTrack) car.offTrackTicks += 1;
+  const offTrackSeverity = offTrack ? 1 + clamp((offTrackDistance - route.width / 2) / Math.max(1, route.width / 2), 0, 3) : 0;
   car.lateralOffset = lateralOffset(car.position, updated, route);
   car.ticks += 1; if (car.ticks % 8 === 0) car.trail.push({ ...car.position }); if (car.trail.length > 38) car.trail.shift();
   const collisionsBefore = car.collisions;
@@ -383,7 +414,7 @@ export function stepCar(car: Car, action: Action, others: Car[], trackRef?: Trac
   } else car.collisionCooldown = Math.max(0, car.collisionCooldown - 1);
   const collisionDelta = car.collisions - collisionsBefore;
   const standingStill = car.speed < 3; if (standingStill) car.stationaryTicks += 1; if (alignment < -0.25) car.wrongDirectionTicks += 1;
-  if (car.ticks >= MAX_TICKS) car.crashed = true;
+  if (car.ticks >= MAX_TICKS && !car.finished) car.timedOut = true;
   const reward = emptyRewards();
   reward.progress = (validForwardDelta / STEP) * rewardConfig.progressPerSecond;
   reward.direction = Math.max(0, alignment) * rewardConfig.correctDirectionPerSecond * STEP;
@@ -391,12 +422,15 @@ export function stepCar(car: Car, action: Action, others: Car[], trackRef?: Trac
   reward.standingStill = standingStill ? rewardConfig.standingStillPerSecond * STEP : 0;
   reward.wrongDirection = Math.max(0, -alignment) * rewardConfig.wrongDirectionPerSecond * STEP;
   reward.reverseProgress = (Math.max(0, -localDelta) / STEP) * rewardConfig.reverseProgressPerSecond;
-  reward.offTrack = offTrack ? rewardConfig.offTrackPerSecond * STEP : 0;
+  reward.offTrack = offTrack ? rewardConfig.offTrackPerSecond * offTrackSeverity * STEP : 0;
+  const edgeRisk = clamp((Math.abs(car.lateralOffset) - 0.55) / 0.45, 0, 1);
+  reward.edge = edgeRisk * rewardConfig.edgePenaltyPerSecond * STEP;
   reward.centerline = Math.max(0, 1 - Math.abs(car.lateralOffset)) * (rewardConfig.centerlinePerSecond ?? 0) * STEP;
   reward.collision = collisionDelta * rewardConfig.collision;
   reward.crash = car.crashed ? rewardConfig.crash : 0;
+  reward.checkpoint = checkpointCrossed ? rewardConfig.checkpoint : 0;
   reward.finish = firstFinish ? rewardConfig.finish : 0;
-  reward.total = reward.progress + reward.direction + reward.movement + reward.centerline + reward.finish - reward.standingStill - reward.wrongDirection - reward.reverseProgress - reward.offTrack - reward.collision - reward.crash;
+  reward.total = reward.progress + reward.direction + reward.movement + reward.centerline + reward.checkpoint + reward.finish - reward.standingStill - reward.wrongDirection - reward.reverseProgress - reward.offTrack - reward.edge - reward.collision - reward.crash;
   car.forwardAlignment = alignment; car.lastReward = reward.total; car.rewardBreakdown = reward; addRewards(car.rewardTotals, reward); car.score += reward.total;
 }
 

@@ -1,7 +1,7 @@
 import "./style.css";
 import {
-  BrainSnapshot, CAR_WIDTH, LANE_SPACING, Car, DEFAULT_PHYSICS_CONFIG, DEFAULT_REWARD_CONFIG, DEFAULT_TRACK, MAX_TICKS, PhysicsConfig, RewardConfig, STEP, TAU, TRACKS, TrackDefinition, Vec,
-  SpikingNetwork, clamp, evaluateGeneralist, heuristicAction, nearestTrack, pointAtDistance, resolveTrack, sensorValues, startLine, startPosition, stepCar,
+  BrainSnapshot, CAR_WIDTH, CHECKPOINT_COUNT, LANE_SPACING, Car, DEFAULT_PHYSICS_CONFIG, DEFAULT_REWARD_CONFIG, DEFAULT_TRACK, MAX_TICKS, PhysicsConfig, RewardConfig, STEP, TAU, TRACKS, TrackDefinition, Vec,
+  SpikingNetwork, clamp, evaluateGeneralist, heuristicAction, nearestTrack, pointAtDistance, resolveTrack, sensorValues, startLine, startPosition, stepCar, trackCheckpoint,
 } from "./core";
 
 const WIDTH = 960;
@@ -29,7 +29,7 @@ const ui = {
   trackSelect: required<HTMLSelectElement>("#track-select"), wallsToggle: required<HTMLInputElement>("#walls-toggle"),
   rewardProgress: required<HTMLInputElement>("#reward-progress"), rewardDirection: required<HTMLInputElement>("#reward-direction"), rewardMoving: required<HTMLInputElement>("#reward-moving"),
   rewardStanding: required<HTMLInputElement>("#reward-standing"), rewardWrong: required<HTMLInputElement>("#reward-wrong"), rewardReverse: required<HTMLInputElement>("#reward-reverse"),
-  rewardOffTrack: required<HTMLInputElement>("#reward-offtrack"), rewardCenterline: required<HTMLInputElement>("#reward-centerline"), rewardCollision: required<HTMLInputElement>("#reward-collision"), rewardCrash: required<HTMLInputElement>("#reward-crash"), rewardFinish: required<HTMLInputElement>("#reward-finish"),
+  rewardOffTrack: required<HTMLInputElement>("#reward-offtrack"), rewardEdge: required<HTMLInputElement>("#reward-edge"), rewardCenterline: required<HTMLInputElement>("#reward-centerline"), rewardCollision: required<HTMLInputElement>("#reward-collision"), rewardCrash: required<HTMLInputElement>("#reward-crash"), rewardCheckpoint: required<HTMLInputElement>("#reward-checkpoint"), rewardFinish: required<HTMLInputElement>("#reward-finish"),
   mode: required<HTMLElement>("#mode-label"), hint: required<HTMLElement>("#hint-label"), status: required<HTMLElement>("#training-status"),
   generation: required<HTMLElement>("#generation"), fitness: required<HTMLElement>("#fitness"), progress: required<HTMLElement>("#progress"),
   speed: required<HTMLElement>("#speed"), reward: required<HTMLElement>("#reward"), direction: required<HTMLElement>("#direction"), centerline: required<HTMLElement>("#centerline"), penalties: required<HTMLElement>("#penalties"), bars: required<HTMLElement>("#neural-bars"),
@@ -143,10 +143,12 @@ function readRewardConfig(): RewardConfig {
     standingStillPerSecond: readNumber(ui.rewardStanding, DEFAULT_REWARD_CONFIG.standingStillPerSecond, 0, 20),
     wrongDirectionPerSecond: readNumber(ui.rewardWrong, DEFAULT_REWARD_CONFIG.wrongDirectionPerSecond, 0, 30),
     reverseProgressPerSecond: readNumber(ui.rewardReverse, DEFAULT_REWARD_CONFIG.reverseProgressPerSecond, 0, 30),
-    offTrackPerSecond: readNumber(ui.rewardOffTrack, DEFAULT_REWARD_CONFIG.offTrackPerSecond, 0, 30),
+    offTrackPerSecond: readNumber(ui.rewardOffTrack, DEFAULT_REWARD_CONFIG.offTrackPerSecond, 0, 200),
+    edgePenaltyPerSecond: readNumber(ui.rewardEdge, DEFAULT_REWARD_CONFIG.edgePenaltyPerSecond, 0, 20),
     centerlinePerSecond: readNumber(ui.rewardCenterline, DEFAULT_REWARD_CONFIG.centerlinePerSecond ?? 0, 0, 20),
     collision: readNumber(ui.rewardCollision, DEFAULT_REWARD_CONFIG.collision, 0, 100),
     crash: readNumber(ui.rewardCrash, DEFAULT_REWARD_CONFIG.crash, 0, 200),
+    checkpoint: readNumber(ui.rewardCheckpoint, DEFAULT_REWARD_CONFIG.checkpoint, 0, 1000),
     finish: readNumber(ui.rewardFinish, DEFAULT_REWARD_CONFIG.finish, 0, 1000),
   };
   return rewardConfig;
@@ -169,7 +171,7 @@ function selectedTrackLabel(): string {
 function updateRewardTelemetry(car: Car | undefined): void {
   if (!car) return;
   const breakdown = car.rewardBreakdown;
-  const penalty = breakdown.standingStill + breakdown.wrongDirection + breakdown.reverseProgress + breakdown.offTrack + breakdown.collision + breakdown.crash;
+  const penalty = breakdown.standingStill + breakdown.wrongDirection + breakdown.reverseProgress + breakdown.offTrack + breakdown.edge + breakdown.collision + breakdown.crash;
   ui.reward.textContent = car.lastReward.toFixed(2);
   ui.direction.textContent = `${Math.round(clamp((car.forwardAlignment + 1) * 50, 0, 100))}%`;
   ui.centerline.textContent = `${Math.round(clamp(1 - Math.abs(car.lateralOffset), 0, 1) * 100)}%`;
@@ -178,7 +180,7 @@ function updateRewardTelemetry(car: Car | undefined): void {
 
 function setBusy(value: boolean): void {
   [ui.raceButton, ui.driveButton, ui.visualButton, ui.evolveFiveButton, ui.headlessButton, ui.resetButton, ui.saveButton, ui.loadButton, ui.exportButton, ui.importButton].forEach((button) => { button.disabled = value; });
-  [ui.trackSelect, ui.wallsToggle, ui.rewardProgress, ui.rewardDirection, ui.rewardMoving, ui.rewardStanding, ui.rewardWrong, ui.rewardReverse, ui.rewardOffTrack, ui.rewardCenterline, ui.rewardCollision, ui.rewardCrash, ui.rewardFinish].forEach((input) => { input.disabled = value; });
+  [ui.trackSelect, ui.wallsToggle, ui.rewardProgress, ui.rewardDirection, ui.rewardMoving, ui.rewardStanding, ui.rewardWrong, ui.rewardReverse, ui.rewardOffTrack, ui.rewardEdge, ui.rewardCenterline, ui.rewardCollision, ui.rewardCrash, ui.rewardCheckpoint, ui.rewardFinish].forEach((input) => { input.disabled = value; });
   ui.stopButton.disabled = !(value || running);
 }
 
@@ -187,6 +189,7 @@ function createGridCar(lane: number, distanceAlong: number, color: string, name:
   const start = { x: sample.point.x + normal.x * lane * LANE_SPACING, y: sample.point.y + normal.y * lane * LANE_SPACING };
   car.position = start; car.heading = Math.atan2(sample.tangent.y, sample.tangent.x); car.color = color; car.name = name;
   const nearest = nearestTrack(car.position, route); car.progress = nearest.progress; car.distanceAlong = nearest.distanceAlong; car.bestProgress = nearest.progress;
+  car.checkpointsPassed = Math.min(CHECKPOINT_COUNT - 1, Math.floor(nearest.progress * CHECKPOINT_COUNT)); car.nextCheckpoint = car.checkpointsPassed >= CHECKPOINT_COUNT - 1 ? 0 : car.checkpointsPassed + 1;
   return car;
 }
 
@@ -273,6 +276,13 @@ function renderTrack(): void {
   drawPath(); context.strokeStyle = "#38454b"; context.lineWidth = activeTrack.width + 14; context.stroke(); drawPath(); context.strokeStyle = "#18272b"; context.lineWidth = activeTrack.width; context.stroke();
   drawPath(); context.strokeStyle = "#7b968b"; context.lineWidth = 2; context.setLineDash([16, 14]); context.stroke(); context.setLineDash([]);
   context.fillStyle = "#b7d8a2"; context.globalAlpha = 0.8; context.font = "600 11px system-ui"; context.fillText("CENTERLINE · +REWARD", -WIDTH / 2 + 18, -HEIGHT / 2 + 24); context.globalAlpha = 1;
+  for (let index = 1; index < CHECKPOINT_COUNT; index += 1) {
+    const checkpoint = trackCheckpoint(index, activeTrack); const gateOffset = activeTrack.width * 0.46;
+    const gateA = addCanvasPoint(checkpoint.point, { x: checkpoint.normal.x * gateOffset, y: checkpoint.normal.y * gateOffset });
+    const gateB = addCanvasPoint(checkpoint.point, { x: -checkpoint.normal.x * gateOffset, y: -checkpoint.normal.y * gateOffset });
+    context.strokeStyle = "#e7bd72"; context.globalAlpha = 0.72; context.lineWidth = 2; context.setLineDash([6, 6]); context.beginPath(); context.moveTo(gateA.x, gateA.y); context.lineTo(gateB.x, gateB.y); context.stroke(); context.setLineDash([]);
+    context.fillStyle = "#f1d28f"; context.font = "600 10px system-ui"; context.fillText(`CP${index}`, checkpoint.point.x + 6, checkpoint.point.y - 6);
+  }
   const line = startLine(activeTrack); const lineOffset = activeTrack.width / 2 + 7; const startA = addCanvasPoint(line.point, { x: line.normal.x * lineOffset, y: line.normal.y * lineOffset }); const startB = addCanvasPoint(line.point, { x: -line.normal.x * lineOffset, y: -line.normal.y * lineOffset });
   context.strokeStyle = "#9ed5ff"; context.lineWidth = 5; context.beginPath(); context.moveTo(startA.x, startA.y); context.lineTo(startB.x, startB.y); context.stroke();
   for (let index = 0; index < activeTrack.points.length; index += 2) { const marker = activeTrack.points[index]; context.fillStyle = "#7aa18c"; context.globalAlpha = 0.28; context.beginPath(); context.arc(marker.x, marker.y, 3, 0, TAU); context.fill(); }
@@ -343,12 +353,17 @@ function updateRace(): void {
     ui.progress.textContent = `${lapPercent}%`;
     ui.speed.textContent = fly.speed.toFixed(1);
     updateRewardTelemetry(fly);
-    if (!fly.finished) setProgress(fly.progress, `lap ${lapPercent}%`, `speed ${fly.speed.toFixed(1)} · collisions ${fly.collisions}`);
+    if (!fly.finished) setProgress(fly.progress, `lap ${lapPercent}%`, `speed ${fly.speed.toFixed(1)} · checkpoints ${fly.checkpointsPassed}/${CHECKPOINT_COUNT} · collisions ${fly.collisions}`);
     if (fly.finished && !flyFinishAnnounced) {
       flyFinishAnnounced = true;
       setRunState("Finish line crossed", `Fly pilot completed a lap on ${activeTrack.name} with reward ${fly.score.toFixed(1)}.`, "ready", "FINISH");
       setProgress(1, "100% · lap complete", "finish reward applied · press Start race to run again");
       appendEvent(`finish line crossed on ${activeTrack.name} · lap reward ${rewardConfig.finish.toFixed(1)}`);
+    }
+    if (fly.timedOut && !fly.finished && !flyFinishAnnounced) {
+      flyFinishAnnounced = true;
+      setRunState("Time limit", `Fly pilot reached the ${MAX_TICKS}-tick limit without completing the lap.`, "paused", "TIME LIMIT");
+      appendEvent(`time limit reached on ${activeTrack.name} · no crash recorded`);
     }
   }
 }
@@ -370,7 +385,7 @@ function createMutationPopulation(size: number, parent: SpikingNetwork | undefin
 function trainFiveBrainStep(): void {
   const route = trainingTracks[trainingTrackIndex];
   trainingPopulation.forEach((car) => {
-    if (!car.network || car.crashed || car.finished) return;
+    if (!car.network || car.crashed || car.finished || car.timedOut) return;
     car.action = car.network.step(sensorValues(car, trainingPopulation, route));
     stepCar(car, car.action, trainingPopulation, route, rewardConfig, physicsConfig);
   });
@@ -379,9 +394,9 @@ function trainFiveBrainStep(): void {
   const generationEpisodes = trainingPopulationSize * episodesPerGeneration;
   const completedEpisodes = (trainingGeneration - 1) * generationEpisodes + trainingTrackIndex * trainingPopulationSize;
   const liveFraction = tick / MAX_TICKS;
-  setProgress((completedEpisodes + liveFraction * trainingPopulationSize) / Math.max(1, requestedGenerations * generationEpisodes), `generation ${trainingGeneration}/${requestedGenerations} · five brains racing · ${route.name}`, `visual race · ${tick}/${MAX_TICKS} ticks · winner is ranked by averaged fitness`);
-  const finished = trainingPopulation.every((car) => car.crashed || car.finished || car.ticks >= MAX_TICKS);
   const leader = [...trainingPopulation].sort((a, b) => b.score - a.score)[0];
+  setProgress((completedEpisodes + liveFraction * trainingPopulationSize) / Math.max(1, requestedGenerations * generationEpisodes), `generation ${trainingGeneration}/${requestedGenerations} · five brains racing · ${route.name}`, `visual race · ${tick}/${MAX_TICKS} ticks · leader checkpoints ${leader?.checkpointsPassed ?? 0}/${CHECKPOINT_COUNT} · winner is ranked by averaged fitness`);
+  const finished = trainingPopulation.every((car) => car.crashed || car.finished || car.timedOut || car.ticks >= MAX_TICKS);
   if (leader) {
     updateRewardTelemetry(leader);
     ui.fitness.textContent = leader.score.toFixed(1);
@@ -414,12 +429,13 @@ function trainPopulationStep(): void {
   const completedEpisodes = (trainingGeneration - 1) * trainingPopulationSize * episodeCount + trainingIndex * episodeCount + trainingTrackIndex;
   const candidateFraction = car.ticks / MAX_TICKS;
   const route = trainingTracks[trainingTrackIndex];
-  setProgress((completedEpisodes + candidateFraction) / totalEpisodes, `generation ${trainingGeneration}/${requestedGenerations} · candidate ${trainingIndex + 1}/${trainingPopulationSize} · ${route.name}`, `visual · tick ${car.ticks}/${MAX_TICKS} · direction ${Math.round(clamp((car.forwardAlignment + 1) * 50, 0, 100))}%`);
+  setProgress((completedEpisodes + candidateFraction) / totalEpisodes, `generation ${trainingGeneration}/${requestedGenerations} · candidate ${trainingIndex + 1}/${trainingPopulationSize} · ${route.name}`, `visual · tick ${car.ticks}/${MAX_TICKS} · checkpoints ${car.checkpointsPassed}/${CHECKPOINT_COUNT} · direction ${Math.round(clamp((car.forwardAlignment + 1) * 50, 0, 100))}%`);
   if (car.crashed || car.finished || car.ticks >= MAX_TICKS) {
     recordTrainingTrace(car);
     trainingScores[trainingIndex] += car.score;
     trainingProgresses[trainingIndex] += car.totalProgress;
-    appendEvent(`candidate ${trainingIndex + 1}/${trainingPopulationSize} finished ${route.name} · fitness ${car.score.toFixed(1)}${car.finished ? " · finish line" : car.crashed ? " · crashed" : ""}`);
+    const terminalReason = car.finished ? " · finish line" : car.crashed ? " · crashed" : car.timedOut ? " · time limit" : "";
+    appendEvent(`candidate ${trainingIndex + 1}/${trainingPopulationSize} finished ${route.name} · fitness ${car.score.toFixed(1)}${terminalReason}`);
     if (trainingTrackIndex + 1 < trainingTracks.length) {
       trainingTrackIndex += 1; activeTrack = trainingTracks[trainingTrackIndex];
       trainingPopulation[trainingIndex] = makeTrainingCar(car.network, (trainingIndex % 3) - 1, trainingTracks[trainingTrackIndex]);
@@ -553,7 +569,7 @@ ui.importButton.addEventListener("click", () => ui.importFile.click());
 ui.importFile.addEventListener("change", () => { const file = ui.importFile.files?.[0]; if (file) void importBrain(file); });
 ui.trackSelect.addEventListener("change", () => { if (!training) safely(launchRace); });
 ui.wallsToggle.addEventListener("change", () => { physicsConfig = readPhysicsConfig(); appendEvent(physicsConfig.wallsEnabled ? "track walls enabled · off-track recovery is active" : "track walls disabled · cars may leave the road and only receive off-track penalties"); });
-[ui.rewardProgress, ui.rewardDirection, ui.rewardMoving, ui.rewardStanding, ui.rewardWrong, ui.rewardReverse, ui.rewardOffTrack, ui.rewardCenterline, ui.rewardCollision, ui.rewardCrash, ui.rewardFinish].forEach((input) => {
+[ui.rewardProgress, ui.rewardDirection, ui.rewardMoving, ui.rewardStanding, ui.rewardWrong, ui.rewardReverse, ui.rewardOffTrack, ui.rewardEdge, ui.rewardCenterline, ui.rewardCollision, ui.rewardCrash, ui.rewardCheckpoint, ui.rewardFinish].forEach((input) => {
   input.addEventListener("change", () => { rewardConfig = readRewardConfig(); appendEvent("reward settings updated · new weights apply immediately"); });
 });
 window.addEventListener("keydown", (event) => {

@@ -20,6 +20,7 @@ typedef float obs_t;
 #define FK_BRAKE 4
 #define FK_TRACKS 3
 #define FK_MAX_POINTS 14
+#define FK_CHECKPOINT_COUNT 8
 #define FK_PI 3.14159265358979323846f
 #define FK_TAU (2.0f * FK_PI)
 #define FK_STEP (1.0f / 30.0f)
@@ -53,6 +54,7 @@ struct Log {
     float episode_length;
     float finished;
     float crashed;
+    float timed_out;
     float n;
 };
 
@@ -87,9 +89,11 @@ struct Env {
     float wrong_direction_per_second;
     float reverse_progress_per_second;
     float off_track_per_second;
+    float edge_penalty_per_second;
     float centerline_per_second;
     float collision_penalty;
     float crash_penalty;
+    float checkpoint_reward;
     float finish_reward;
 
     FkVec position;
@@ -102,6 +106,9 @@ struct Env {
     float episode_return;
     int finished;
     int crashed;
+    int timed_out;
+    int next_checkpoint;
+    int checkpoints_passed;
 };
 typedef Env FlyKart;
 
@@ -148,7 +155,7 @@ static void fk_nearest(FlyKart* env, FkVec position, FkNearest* result) {
             result->point = point;
             result->tangent = fk_normalize(segment);
             result->distance = distance;
-            result->progress = distance_along / fmaxf(1.0f, length);
+            result->progress = (distance_along + sqrtf(segment_length_sq) * t) / fmaxf(1.0f, length);
         }
         distance_along += sqrtf(segment_length_sq);
     }
@@ -171,6 +178,19 @@ static void fk_point_at(FlyKart* env, float requested_distance, FkVec* point, Fk
     *point = fk_point(env->track_id, 0); *tangent = fk_normalize(fk_sub(fk_point(env->track_id, 1), *point));
 }
 
+static void fk_checkpoint(FlyKart* env, int index, FkVec* point, FkVec* tangent, FkVec* normal) {
+    int safe_index = ((index % FK_CHECKPOINT_COUNT) + FK_CHECKPOINT_COUNT) % FK_CHECKPOINT_COUNT;
+    fk_point_at(env, fk_track_length(env->track_id) * (float)safe_index / (float)FK_CHECKPOINT_COUNT, point, tangent);
+    *normal = (FkVec){-tangent->y, tangent->x};
+}
+
+static int fk_crosses_gate(FkVec previous, FkVec current, FkVec point, FkVec tangent, FkVec normal, int track_width) {
+    FkVec movement = fk_sub(current, previous);
+    float previous_side = fk_dot(fk_sub(previous, point), tangent); float current_side = fk_dot(fk_sub(current, point), tangent);
+    float previous_offset = fabsf(fk_dot(fk_sub(previous, point), normal)); float current_offset = fabsf(fk_dot(fk_sub(current, point), normal));
+    return previous_side < -0.25f && current_side >= -1.0f && fk_dot(movement, tangent) > 0.01f && previous_offset <= track_width * 0.5f + 10.0f && current_offset <= track_width * 0.5f + 10.0f;
+}
+
 static float fk_lateral(FkVec position, FkNearest nearest, int track_width) {
     return fk_clamp(fk_cross(nearest.tangent, fk_sub(position, nearest.point)) / fmaxf(1.0f, track_width * 0.5f), -1.5f, 1.5f);
 }
@@ -190,8 +210,8 @@ static void fk_observations(FlyKart* env) {
     obs[4] = fk_clamp(1.0f - fabsf(env->lateral_offset), -1.0f, 1.0f);
     obs[5] = 0.0f;
     obs[6] = 0.0f;
-    obs[7] = sinf((float)env->tick * 0.025f);
-    obs[8] = 1.0f;
+    obs[7] = fk_clamp(1.0f - nearest.distance / fmaxf(1.0f, env->track_width * 0.5f), -1.0f, 1.0f);
+    obs[8] = fk_clamp(fk_dot((FkVec){cosf(env->heading), sinf(env->heading)}, nearest.tangent), -1.0f, 1.0f);
 }
 
 static void fk_add_log(FlyKart* env) {
@@ -202,6 +222,7 @@ static void fk_add_log(FlyKart* env) {
     env->log.perf += env->total_progress / fmaxf(1.0f, length) + (env->finished ? 1.0f : 0.0f);
     env->log.finished += env->finished ? 1.0f : 0.0f;
     env->log.crashed += env->crashed ? 1.0f : 0.0f;
+    env->log.timed_out += env->timed_out ? 1.0f : 0.0f;
     env->log.n += 1.0f;
 }
 
@@ -242,7 +263,7 @@ void puf_reset(FlyKart* env) {
     FkVec start = fk_point(env->track_id, 0); FkVec next = fk_point(env->track_id, 1);
     env->position = start; env->heading = atan2f(next.y - start.y, next.x - start.x); env->speed = 0.0f;
     env->progress = 0.0f; env->distance_along = 0.0f; env->total_progress = 0.0f; env->lateral_offset = 0.0f;
-    env->episode_return = 0.0f; env->finished = 0; env->crashed = 0; env->tick = 0;
+    env->episode_return = 0.0f; env->finished = 0; env->crashed = 0; env->timed_out = 0; env->next_checkpoint = 1; env->checkpoints_passed = 0; env->tick = 0;
     fk_observations(env);
 }
 
@@ -251,13 +272,14 @@ static float fk_frame(FlyKart* env, int action) {
     float reverse = action == FK_REVERSE ? 1.0f : 0.0f; float brake = action == FK_BRAKE ? 1.0f : 0.0f;
     FkNearest before; fk_nearest(env, env->position, &before); int was_off_track = before.distance > env->track_width * 0.5f;
     float grip = was_off_track ? 0.35f : 1.0f; float steering_direction = env->speed < -0.5f ? -1.0f : 1.0f;
+    FkVec previous_position = env->position;
     env->heading += steer * (env->steer_rate + fabsf(env->speed) / 150.0f) * grip * steering_direction * FK_STEP;
     float acceleration = 55.0f - reverse * 45.0f - env->speed * 0.23f;
     if (env->speed > 0.0f) acceleration -= brake * 75.0f; else if (env->speed < 0.0f) acceleration += brake * 75.0f;
     env->speed = fk_clamp(env->speed + acceleration * FK_STEP, -env->reverse_speed, env->max_speed);
     env->position.x += cosf(env->heading) * env->speed * FK_STEP; env->position.y += sinf(env->heading) * env->speed * FK_STEP;
 
-    FkNearest nearest; fk_nearest(env, env->position, &nearest); int off_track = nearest.distance > env->track_width * 0.5f;
+    FkNearest nearest; fk_nearest(env, env->position, &nearest); float raw_off_track_distance = nearest.distance; int off_track = raw_off_track_distance > env->track_width * 0.5f;
     if (off_track) {
         FkVec offset = fk_sub(env->position, nearest.point); float distance = fk_length(offset);
         float safe_distance = env->track_width * 0.5f - 14.0f * 0.65f;
@@ -270,13 +292,20 @@ static float fk_frame(FlyKart* env, int action) {
     float raw_delta = nearest.progress - env->progress; float local_delta = raw_delta;
     if (local_delta < -0.5f) local_delta += 1.0f; else if (local_delta > 0.5f) local_delta -= 1.0f;
     FkVec forward = {cosf(env->heading), sinf(env->heading)}; float alignment = fk_dot(forward, nearest.tangent);
-    int lap_crossed = raw_delta < -0.5f && alignment > 0.15f && env->speed > 2.0f;
+    FkVec gate_point, gate_tangent, gate_normal; fk_checkpoint(env, env->next_checkpoint, &gate_point, &gate_tangent, &gate_normal);
+    float expected_progress = (float)env->next_checkpoint / (float)FK_CHECKPOINT_COUNT;
+    int crossed_expected_progress = env->next_checkpoint > 0 && env->progress < expected_progress && nearest.progress >= expected_progress && local_delta > 0.0f && local_delta < 0.25f;
+    int expected_checkpoint_crossed = env->next_checkpoint > 0 && crossed_expected_progress && fk_crosses_gate(previous_position, env->position, gate_point, gate_tangent, gate_normal, env->track_width) && alignment > 0.15f && env->speed > 2.0f;
+    fk_checkpoint(env, 0, &gate_point, &gate_tangent, &gate_normal);
+    int lap_crossed = env->next_checkpoint == 0 && env->total_progress >= 0.95f && fk_crosses_gate(previous_position, env->position, gate_point, gate_tangent, gate_normal, env->track_width) && alignment > 0.15f && env->speed > 2.0f;
+    int checkpoint_crossed = expected_checkpoint_crossed || lap_crossed;
+    if (expected_checkpoint_crossed) { env->checkpoints_passed += 1; env->next_checkpoint = env->next_checkpoint == FK_CHECKPOINT_COUNT - 1 ? 0 : env->next_checkpoint + 1; }
+    else if (lap_crossed) { env->checkpoints_passed += 1; env->next_checkpoint = FK_CHECKPOINT_COUNT; }
     int first_finish = lap_crossed && !env->finished; if (lap_crossed) env->finished = 1;
-    float continuous_delta = local_delta + (lap_crossed ? 1.0f : 0.0f);
-    float valid_delta = continuous_delta > 0.0f && alignment > -0.35f ? continuous_delta : 0.0f;
+    float valid_delta = local_delta > 0.0f && alignment > -0.35f ? local_delta : 0.0f;
     env->total_progress += valid_delta; env->progress = nearest.progress; env->distance_along = nearest.progress * fk_track_length(env->track_id);
     env->lateral_offset = fk_lateral(env->position, nearest, env->track_width); env->tick += 1;
-    if (env->tick >= env->max_ticks) env->crashed = 1;
+    if (env->tick >= env->max_ticks && !env->finished) env->timed_out = 1;
 
     float reward = (valid_delta / FK_STEP) * env->progress_per_second;
     reward += fmaxf(0.0f, alignment) * env->direction_per_second * FK_STEP;
@@ -284,8 +313,13 @@ static float fk_frame(FlyKart* env, int action) {
     if (fabsf(env->speed) < 3.0f) reward -= env->standing_per_second * FK_STEP;
     reward -= fmaxf(0.0f, -alignment) * env->wrong_direction_per_second * FK_STEP;
     reward -= fmaxf(0.0f, -local_delta) / FK_STEP * env->reverse_progress_per_second;
-    if (off_track || was_off_track) reward -= env->off_track_per_second * FK_STEP;
+    float off_track_distance = fmaxf(fmaxf(before.distance, raw_off_track_distance), nearest.distance);
+    float off_track_severity = off_track_distance > env->track_width * 0.5f ? 1.0f + fk_clamp((off_track_distance - env->track_width * 0.5f) / fmaxf(1.0f, env->track_width * 0.5f), 0.0f, 3.0f) : 0.0f;
+    if (off_track_severity > 0.0f) reward -= env->off_track_per_second * off_track_severity * FK_STEP;
+    float edge_risk = fk_clamp((fabsf(env->lateral_offset) - 0.55f) / 0.45f, 0.0f, 1.0f);
+    reward -= edge_risk * env->edge_penalty_per_second * FK_STEP;
     reward += fmaxf(0.0f, 1.0f - fabsf(env->lateral_offset)) * env->centerline_per_second * FK_STEP;
+    if (checkpoint_crossed) reward += env->checkpoint_reward;
     if (first_finish) reward += env->finish_reward;
     if (env->crashed) reward -= env->crash_penalty;
     env->episode_return += reward;
@@ -297,7 +331,7 @@ void puf_step(FlyKart* env) {
     int action = (int)fk_clamp(env->agents[0].actions[0], 0.0f, 4.0f); float reward = 0.0f; int done = 0;
     for (int frame = 0; frame < env->frameskip; frame++) {
         reward += fk_frame(env, action);
-        if (env->finished || env->crashed) { done = 1; break; }
+        if (env->finished || env->crashed || env->timed_out) { done = 1; break; }
     }
     env->agents[0].rewards[0] = reward; env->agents[0].terminals[0] = done ? 1.0f : 0.0f;
     if (done) { fk_add_log(env); puf_reset(env); }
@@ -306,7 +340,7 @@ void puf_step(FlyKart* env) {
 
 void puf_log(Log* log, Dict* out) {
     dict_set(out, "perf", log->perf); dict_set(out, "score", log->score); dict_set(out, "episode_return", log->episode_return);
-    dict_set(out, "episode_length", log->episode_length); dict_set(out, "finished", log->finished); dict_set(out, "crashed", log->crashed); dict_set(out, "n", log->n);
+    dict_set(out, "episode_length", log->episode_length); dict_set(out, "finished", log->finished); dict_set(out, "crashed", log->crashed); dict_set(out, "timed_out", log->timed_out); dict_set(out, "n", log->n);
 }
 
 void puf_init(Env* env, Dict* kwargs) {
@@ -315,7 +349,7 @@ void puf_init(Env* env, Dict* kwargs) {
     env->frameskip = dict_get(kwargs, "frameskip"); env->lookahead = dict_get(kwargs, "lookahead"); env->max_speed = dict_get(kwargs, "max_speed"); env->reverse_speed = dict_get(kwargs, "reverse_speed"); env->steer_rate = dict_get(kwargs, "steer_rate");
     env->progress_per_second = dict_get(kwargs, "progress_per_second"); env->direction_per_second = dict_get(kwargs, "direction_per_second"); env->movement_per_second = dict_get(kwargs, "movement_per_second");
     env->standing_per_second = dict_get(kwargs, "standing_per_second"); env->wrong_direction_per_second = dict_get(kwargs, "wrong_direction_per_second"); env->reverse_progress_per_second = dict_get(kwargs, "reverse_progress_per_second");
-    env->off_track_per_second = dict_get(kwargs, "off_track_per_second"); env->centerline_per_second = dict_get(kwargs, "centerline_per_second"); env->collision_penalty = dict_get(kwargs, "collision_penalty");
-    env->crash_penalty = dict_get(kwargs, "crash_penalty"); env->finish_reward = dict_get(kwargs, "finish_reward"); env->agents[0].action_mask = NULL; env->agents[0].policy = 0;
+    env->off_track_per_second = dict_get(kwargs, "off_track_per_second"); env->edge_penalty_per_second = dict_get(kwargs, "edge_penalty_per_second"); env->centerline_per_second = dict_get(kwargs, "centerline_per_second"); env->collision_penalty = dict_get(kwargs, "collision_penalty");
+    env->crash_penalty = dict_get(kwargs, "crash_penalty"); env->checkpoint_reward = dict_get(kwargs, "checkpoint_reward"); env->finish_reward = dict_get(kwargs, "finish_reward"); env->agents[0].action_mask = NULL; env->agents[0].policy = 0;
     memset(&env->log, 0, sizeof(env->log));
 }

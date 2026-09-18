@@ -88,25 +88,27 @@
               </select>
             </label>
             <label class="check-row"><input id="walls-toggle" type="checkbox" checked /> <span>Track walls <small>recovery clamp (turn off for open track)</small></span></label>
-            <p class="microcopy">Generalist training evaluates every candidate on all three layouts and averages the result. “Evolve 5 brains” puts five flies on the same track, keeps the highest-fitness brain, then breeds deterministic mutations for the next generation.</p>
+            <p class="microcopy">Generalist training evaluates every candidate on all three layouts and averages the result. “Evolve 5 brains” puts five flies on the same track, keeps the highest-fitness brain, then breeds deterministic mutations for the next generation. Cars receive route-progress and ordered checkpoint rewards; checkpoint gates are shown on the track.</p>
           </section>
 
           <details class="panel-section reward-settings" open>
             <summary><h2>Reward shaping</h2><span>live settings</span></summary>
             <div class="reward-fields">
-              <label>Progress / sec <input id="reward-progress" type="number" min="0" max="100" step="0.5" value="12" /></label>
-              <label>Right direction / sec <input id="reward-direction" type="number" min="0" max="20" step="0.05" value="0.45" /></label>
-              <label>Moving / sec <input id="reward-moving" type="number" min="0" max="20" step="0.05" value="0.12" /></label>
-              <label>Standing still / sec <input id="reward-standing" type="number" min="0" max="20" step="0.05" value="0.55" /></label>
-              <label>Wrong direction / sec <input id="reward-wrong" type="number" min="0" max="30" step="0.05" value="1.25" /></label>
-              <label>Reverse progress / sec <input id="reward-reverse" type="number" min="0" max="30" step="0.05" value="1.5" /></label>
-              <label>Outside track / sec <input id="reward-offtrack" type="number" min="0" max="30" step="0.05" value="1.1" /></label>
-              <label>Centerline / sec <input id="reward-centerline" type="number" min="0" max="20" step="0.05" value="0.18" /></label>
-              <label>Collision penalty <input id="reward-collision" type="number" min="0" max="100" step="0.5" value="7" /></label>
-              <label>Crash penalty <input id="reward-crash" type="number" min="0" max="200" step="1" value="25" /></label>
-              <label>Finish reward <input id="reward-finish" type="number" min="0" max="1000" step="5" value="250" /></label>
+              <label>Progress / sec <input id="reward-progress" type="number" min="0" max="100" step="0.5" value="14" /></label>
+              <label>Right direction / sec <input id="reward-direction" type="number" min="0" max="20" step="0.05" value="1.25" /></label>
+              <label>Moving / sec <input id="reward-moving" type="number" min="0" max="20" step="0.05" value="0.2" /></label>
+              <label>Standing still / sec <input id="reward-standing" type="number" min="0" max="20" step="0.05" value="0.85" /></label>
+              <label>Wrong direction / sec <input id="reward-wrong" type="number" min="0" max="30" step="0.05" value="2.5" /></label>
+              <label>Reverse progress / sec <input id="reward-reverse" type="number" min="0" max="30" step="0.05" value="3" /></label>
+              <label>Outside track / sec <input id="reward-offtrack" type="number" min="0" max="200" step="0.5" value="24" /></label>
+              <label>Near edge / sec <input id="reward-edge" type="number" min="0" max="20" step="0.05" value="1.2" /></label>
+              <label>Centerline / sec <input id="reward-centerline" type="number" min="0" max="20" step="0.05" value="0.35" /></label>
+              <label>Collision penalty <input id="reward-collision" type="number" min="0" max="100" step="0.5" value="10" /></label>
+              <label>Crash penalty <input id="reward-crash" type="number" min="0" max="200" step="1" value="75" /></label>
+              <label>Checkpoint reward <input id="reward-checkpoint" type="number" min="0" max="1000" step="5" value="100" /></label>
+              <label>Finish reward <input id="reward-finish" type="number" min="0" max="1000" step="5" value="300" /></label>
             </div>
-            <p class="microcopy">Progress is measured along the current track and normalized per second. Direction uses the car’s heading versus the local track tangent. The centerline bonus fades to zero at the road edge. Penalties are applied every simulation second or at the event.</p>
+            <p class="microcopy">Progress is measured along the current track and normalized per second. Cars see heading, curvature, centerline, speed, forward opponents, road-edge clearance, and travel alignment. Near-edge risk is penalized, being outside scales to a severe distance-based penalty, and each ordered checkpoint pays its reward once.</p>
           </details>
 
           <section class="panel-section metrics">
