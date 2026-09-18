@@ -205,6 +205,17 @@ export class SpikingNetwork {
     return result;
   }
 
+  crossover(partner: SpikingNetwork, seed: number, partnerProbability = 0.5): SpikingNetwork {
+    const result = this.clone(); let cursor = seed;
+    const choose = (first: number, second: number): number => { cursor += 1; return hash(cursor) < partnerProbability ? second : first; };
+    const combine = (target: number[], first: number[], second: number[]): void => target.forEach((_, index) => { target[index] = choose(first[index], second[index]); });
+    combine(result.inputWeights, this.inputWeights, partner.inputWeights);
+    combine(result.recurrentWeights, this.recurrentWeights, partner.recurrentWeights);
+    combine(result.outputWeights, this.outputWeights, partner.outputWeights);
+    combine(result.bias, this.bias, partner.bias);
+    result.reset(); return result;
+  }
+
   reset(): void {
     this.voltage.fill(0); this.spikes.fill(0); this.snapshot.spikes.fill(0); this.snapshot.outputs.fill(0);
   }
@@ -260,6 +271,7 @@ export type MutationPopulationOptions = {
   plateauStreak?: number;
   plateauPatience?: number;
   immigrantFraction?: number;
+  breedingPool?: SpikingNetwork[];
 };
 
 /**
@@ -278,10 +290,17 @@ export function createMutationPopulation(size: number, parent: SpikingNetwork | 
   const immigrantFraction = clamp(options.immigrantFraction ?? 0.2, 0, 1);
   const immigrantCount = exploring ? Math.min(safeSize - 1, Math.max(1, Math.floor((safeSize - 1) * immigrantFraction))) : 0;
   const immigrantStart = safeSize - immigrantCount;
+  const breedingPool = (options.breedingPool ?? []).filter((network) => network instanceof SpikingNetwork);
   const children: SpikingNetwork[] = [stableParent];
   for (let index = 1; index < safeSize; index += 1) {
     if (exploring && index >= immigrantStart) {
       children.push(new SpikingNetwork(seed + 90000 + index * 17));
+      continue;
+    }
+    if (breedingPool.length > 1 && index <= Math.min(2, safeSize - 1)) {
+      const partner = breedingPool[index % breedingPool.length];
+      const crossed = stableParent.crossover(partner, seed + 30000 + index * 19, 0.5);
+      children.push(crossed.mutate(clamp(rate * 0.75, 0, 0.95), clamp(amount * 0.75, 0, 2), seed + index + 1));
       continue;
     }
     const scoutMultiplier = exploring ? 1.25 + (index % 3) * 0.2 : 1;
@@ -449,15 +468,16 @@ export function stepCar(car: Car, action: Action, others: Car[], trackRef?: Trac
   const line = startLine(route); const movement = sub(car.position, previousPosition);
   const crossesGate = (gate: { point: Vec; tangent: Vec; normal: Vec }): boolean => {
     const previousSide = dot(sub(previousPosition, gate.point), gate.tangent); const currentSide = dot(sub(car.position, gate.point), gate.tangent);
-    const previousOffset = Math.abs(dot(sub(previousPosition, gate.point), gate.normal)); const currentOffset = Math.abs(dot(sub(car.position, gate.point), gate.normal));
-    return previousSide < -0.25 && currentSide >= -1 && dot(movement, gate.tangent) > 0.01 && previousOffset <= route.width * 0.5 + 10 && currentOffset <= route.width * 0.5 + 10;
+    if (!(previousSide < 0 && currentSide >= 0 && dot(movement, gate.tangent) > 0.01)) return false;
+    const denominator = previousSide - currentSide; const crossingFraction = clamp(previousSide / denominator, 0, 1);
+    const crossingPoint = add(previousPosition, scale(movement, crossingFraction));
+    const crossingOffset = Math.abs(dot(sub(crossingPoint, gate.point), gate.normal));
+    return crossingOffset <= route.width * 0.5 + CAR_WIDTH;
   };
   const directedStartCross = crossesGate({ point: line.point, tangent: line.tangent, normal: line.normal });
   const expectedCheckpoint = car.nextCheckpoint;
   const expectedGate = trackCheckpoint(expectedCheckpoint, route, checkpointCount);
-  const expectedProgress = expectedCheckpoint / checkpointCount;
-  const crossedExpectedProgress = expectedCheckpoint > 0 && car.progress < expectedProgress && updated.progress >= expectedProgress && localDelta > 0 && localDelta < 0.25;
-  const intermediateCheckpointCrossed = expectedCheckpoint > 0 && crossedExpectedProgress && crossesGate(expectedGate) && alignment > 0.15 && car.speed > 2;
+  const intermediateCheckpointCrossed = expectedCheckpoint > 0 && crossesGate(expectedGate) && alignment > 0.15 && car.speed > 2;
   // The start gate is also the finish gate, but it is only valid after all
   // intermediate gates were crossed in order and nearly one full lap elapsed.
   const lapCrossed = expectedCheckpoint === 0 && directedStartCross && car.totalProgress >= 0.95 && alignment > 0.15 && car.speed > 2;

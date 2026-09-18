@@ -85,6 +85,11 @@ let plateauPatience = 3;
 let plateauStreak = 0;
 let curriculumEnabled = false;
 let trainingWorldSeed = 0;
+type TrainingContextKey = TrackDefinition["id"] | "all";
+let activeTrainingContext: TrainingContextKey = DEFAULT_TRACK.id;
+const contextNetworks = new Map<TrainingContextKey, SpikingNetwork>();
+const contextFitness = new Map<TrainingContextKey, number>();
+const contextGenerations = new Map<TrainingContextKey, number>();
 const DEFAULT_MUTATION_RATE = 0.12;
 const DEFAULT_MUTATION_AMOUNT = 0.22;
 let mutationRate = DEFAULT_MUTATION_RATE;
@@ -239,6 +244,39 @@ function readEvolutionConfig(): void {
   curriculumEnabled = ui.curriculumToggle.checked;
 }
 
+function selectedTrainingContext(): TrainingContextKey {
+  return ui.trackSelect.value === "all" ? "all" : resolveTrack(ui.trackSelect.value as TrackDefinition["id"]).id;
+}
+
+function updateBestMetrics(): void {
+  ui.generation.textContent = `${generation}`;
+  ui.fitness.textContent = Number.isFinite(bestFitness) ? bestFitness.toFixed(1) : "—";
+}
+
+function prepareTrainingContext(): void {
+  activeTrainingContext = selectedTrainingContext();
+  const stored = contextNetworks.get(activeTrainingContext);
+  if (stored) {
+    bestNetwork = stored.clone(); bestFitness = contextFitness.get(activeTrainingContext) ?? -Infinity; generation = contextGenerations.get(activeTrainingContext) ?? 0;
+  } else {
+    // Reuse the current brain as a warm-start, but never compare its old
+    // track score against this track's first generation.
+    bestFitness = -Infinity; generation = 0;
+  }
+  updateBestMetrics();
+}
+
+function rememberTrainingContext(): void {
+  if (!bestNetwork || !Number.isFinite(bestFitness)) return;
+  contextNetworks.set(activeTrainingContext, bestNetwork.clone()); contextFitness.set(activeTrainingContext, bestFitness); contextGenerations.set(activeTrainingContext, generation);
+}
+
+function activateStoredContextForRace(): void {
+  const context = selectedTrainingContext(); const stored = contextNetworks.get(context);
+  if (!stored) return;
+  activeTrainingContext = context; bestNetwork = stored.clone(); bestFitness = contextFitness.get(context) ?? bestFitness; generation = contextGenerations.get(context) ?? generation; updateBestMetrics();
+}
+
 function trainingObstacleCount(): number {
   if (!randomObjectsEnabled || randomObjectCount <= 0) return 0;
   if (!curriculumEnabled || requestedGenerations <= 1) return randomObjectCount;
@@ -373,6 +411,7 @@ function createGridCar(lane: number, distanceAlong: number, color: string, name:
 function launchRace(manual = false): void {
   training = false; running = true; visualTraining = false; fiveBrainEvolution = false; manualMode = manual; trainingPopulation = []; trainingObstacles = []; trainingHistory = []; raceAccumulator = 0; runStartedAt = performance.now(); flyFinishAnnounced = false;
   activeTrack = ui.trackSelect.value === "all" ? DEFAULT_TRACK : resolveTrack(ui.trackSelect.value as TrackDefinition["id"]);
+  activateStoredContextForRace();
   rewardConfig = readRewardConfig(); physicsConfig = readPhysicsConfig(); readRoadObjectConfig();
   fly = startPosition(0, activeTrack); fly.color = "#74c0ff"; fly.name = "fly"; fly.isFly = true; fly.network = bestNetwork?.clone() ?? new SpikingNetwork(77);
   const roadObjects = randomObjectsEnabled ? createRoadObstacles(randomObjectCount, activeTrack, generation + 77) : [];
@@ -386,7 +425,7 @@ function launchRace(manual = false): void {
 }
 
 function resetBrain(): void {
-  bestNetwork = undefined; bestFitness = -Infinity; generation = 0; ui.generation.textContent = "0"; ui.fitness.textContent = "—"; ui.progress.textContent = "0%"; plateauStreak = 0; resetEvolutionHistory(); updateEvolutionTelemetry();
+  bestNetwork = undefined; bestFitness = -Infinity; generation = 0; contextNetworks.clear(); contextFitness.clear(); contextGenerations.clear(); ui.generation.textContent = "0"; ui.fitness.textContent = "—"; ui.progress.textContent = "0%"; plateauStreak = 0; resetEvolutionHistory(); updateEvolutionTelemetry();
   appendEvent("controller reset; returning to demo brain"); launchRace();
 }
 
@@ -397,7 +436,8 @@ function checkpointNetwork(): SpikingNetwork | undefined {
 function persistBestBrain(): void {
   const network = checkpointNetwork(); if (!network) return;
   try {
-    localStorage.setItem(MODEL_STORAGE_KEY, JSON.stringify({ fitness: Number.isFinite(bestFitness) ? bestFitness : 0, generation, network: network.toJSON() }));
+    if (!bestNetwork) bestNetwork = network.clone(); rememberTrainingContext();
+    localStorage.setItem(MODEL_STORAGE_KEY, JSON.stringify({ fitness: Number.isFinite(bestFitness) ? bestFitness : 0, generation, track: activeTrainingContext, network: network.toJSON() }));
   } catch (error) { console.warn("FlyKart could not persist the current brain", error); }
 }
 
@@ -414,9 +454,9 @@ function saveBrain(): void {
   }
 }
 
-function checkpointObject(): { format: string; version: number; savedAt: string; fitness: number; generation: number; network: BrainSnapshot } {
+function checkpointObject(): { format: string; version: number; savedAt: string; fitness: number; generation: number; track: TrainingContextKey; network: BrainSnapshot } {
   const network = checkpointNetwork(); if (!network) throw new Error("start training before exporting a checkpoint");
-  return { format: "flykart-brain", version: CHECKPOINT_VERSION, savedAt: new Date().toISOString(), fitness: Number.isFinite(bestFitness) ? bestFitness : 0, generation, network: network.toJSON() };
+  return { format: "flykart-brain", version: CHECKPOINT_VERSION, savedAt: new Date().toISOString(), fitness: Number.isFinite(bestFitness) ? bestFitness : 0, generation, track: activeTrainingContext, network: network.toJSON() };
 }
 
 function exportBrain(): void {
@@ -432,13 +472,14 @@ function exportBrain(): void {
 
 async function importBrain(file: File): Promise<void> {
   try {
-    const parsed = JSON.parse(await file.text()) as { format?: unknown; version?: unknown; fitness?: unknown; generation?: unknown; network?: BrainSnapshot };
+    const parsed = JSON.parse(await file.text()) as { format?: unknown; version?: unknown; fitness?: unknown; generation?: unknown; track?: unknown; network?: BrainSnapshot };
     if (parsed.format !== undefined && parsed.format !== "flykart-brain") throw new Error("this file is not a FlyKart brain checkpoint");
     if (!parsed.network) throw new Error("checkpoint is missing its network weights");
     const network = SpikingNetwork.fromJSON(parsed.network);
     bestNetwork = network; bestFitness = typeof parsed.fitness === "number" && Number.isFinite(parsed.fitness) ? parsed.fitness : -Infinity;
     generation = typeof parsed.generation === "number" && Number.isInteger(parsed.generation) && parsed.generation >= 0 ? parsed.generation : 0;
-    ui.generation.textContent = `${generation}`; ui.fitness.textContent = Number.isFinite(bestFitness) ? bestFitness.toFixed(1) : "—"; launchRace();
+    activeTrainingContext = selectedTrainingContext(); contextNetworks.set(activeTrainingContext, network.clone()); if (Number.isFinite(bestFitness)) contextFitness.set(activeTrainingContext, bestFitness); contextGenerations.set(activeTrainingContext, generation);
+    updateBestMetrics(); launchRace();
     const detail = `checkpoint imported from ${file.name}; generation ${generation} is ready to race`;
     setRunState("Checkpoint imported", detail, "ready", "RACE MODE"); appendEvent(detail);
   } catch (error) {
@@ -449,10 +490,11 @@ async function importBrain(file: File): Promise<void> {
 function loadBrain(): void {
   try {
     const raw = localStorage.getItem(MODEL_STORAGE_KEY); if (!raw) { setRunState("No checkpoint", "No saved controller was found in this browser.", "paused", "RACE MODE"); appendEvent("load skipped: no checkpoint found"); return; }
-    const saved = JSON.parse(raw) as { fitness?: unknown; generation?: unknown; network?: BrainSnapshot }; if (!saved.network) throw new Error("saved checkpoint is incomplete");
+    const saved = JSON.parse(raw) as { fitness?: unknown; generation?: unknown; track?: unknown; network?: BrainSnapshot }; if (!saved.network) throw new Error("saved checkpoint is incomplete");
     bestNetwork = SpikingNetwork.fromJSON(saved.network); bestFitness = typeof saved.fitness === "number" && Number.isFinite(saved.fitness) ? saved.fitness : -Infinity;
     generation = typeof saved.generation === "number" && Number.isInteger(saved.generation) && saved.generation >= 0 ? saved.generation : 0;
-    ui.generation.textContent = `${generation}`; ui.fitness.textContent = Number.isFinite(bestFitness) ? bestFitness.toFixed(1) : "—"; launchRace();
+    activeTrainingContext = selectedTrainingContext(); contextNetworks.set(activeTrainingContext, bestNetwork.clone()); if (Number.isFinite(bestFitness)) contextFitness.set(activeTrainingContext, bestFitness); contextGenerations.set(activeTrainingContext, generation);
+    updateBestMetrics(); launchRace();
     const detail = `checkpoint loaded from generation ${generation}; fly pilot is ready`;
     setRunState("Checkpoint loaded", detail, "ready", "RACE MODE"); appendEvent(detail);
   } catch (error) {
@@ -692,16 +734,19 @@ function breed(): void {
   recordEvolutionPoint(candidate.score, winnerProgress);
   const result = improved ? `accepted new incumbent ${bestFitness.toFixed(1)}` : `rejected candidate ${candidate.score.toFixed(1)}; incumbent remains ${bestFitness.toFixed(1)}`;
   const reason = progressStalled ? "progress stalled" : improved ? "progress improved" : "fitness did not improve";
-  appendEvent(`generation ${trainingGeneration} complete · ${result} · ${reason} · plateau ${plateauStreak}/${plateauPatience} · ${exploring ? "exploration burst with random immigrants" : "local mutations"} · mutation ${(mutationRate * 100).toFixed(0)}% / ${(mutationAmount).toFixed(2)} · next generation keeps parent at slot 1 and tries ${Math.max(0, ranked.length - 1)} variants`);
+  rememberTrainingContext();
+  const lateRanked = ranked[Math.max(0, ranked.length - 2)]?.network;
+  const breedingPool = [candidate.network, ranked[1]?.network, lateRanked].filter((network, index, networks): network is SpikingNetwork => Boolean(network) && networks.indexOf(network) === index);
+  appendEvent(`generation ${trainingGeneration} complete · ${result} · ${reason} · plateau ${plateauStreak}/${plateauPatience} · ${exploring ? "exploration burst with random immigrants" : "local mutations"} · mutation ${(mutationRate * 100).toFixed(0)}% / ${(mutationAmount).toFixed(2)} · next generation keeps parent at slot 1, crosses winner with runner-up/late-rank, then mutates ${Math.max(0, ranked.length - 1)} variants`);
   persistBestBrain();
-  trainingNetworks = createMutationPopulation(ranked.length, bestNetwork, trainingWorldSeed + trainingGeneration * 1000, mutationRate, mutationAmount, { plateauStreak: plateauExplorationEnabled ? plateauStreak : 0, plateauPatience });
+  trainingNetworks = createMutationPopulation(ranked.length, bestNetwork, trainingWorldSeed + trainingGeneration * 1000, mutationRate, mutationAmount, { plateauStreak: plateauExplorationEnabled ? plateauStreak : 0, plateauPatience, breedingPool });
 }
 
 function finishVisualGeneration(): void { breed(); if (trainingGeneration >= requestedGenerations) finishTraining(); else { trainingGeneration += 1; startVisualGeneration(); } }
 
 async function runHeadless(): Promise<void> {
   const session = ++trainingSession; clearVisualTimer(); training = true; running = false; visualTraining = false; fiveBrainEvolution = false; ghostEvolution = ui.ghostEvolutionToggle.checked; manualMode = false; trainingGeneration = 1;
-  trainingPopulationSize = readInteger(ui.population, 5, 2, 80); requestedGenerations = readInteger(ui.generations, 100, 1, 10000); trainingTracks = selectedTracks(); rewardConfig = readRewardConfig(); physicsConfig = readPhysicsConfig(); readRoadObjectConfig(); readEvolutionConfig(); activeTrack = trainingTracks[0]; trainingWorldSeed = 7000; plateauStreak = 0; mutationRate = DEFAULT_MUTATION_RATE; mutationAmount = DEFAULT_MUTATION_AMOUNT; previousGenerationProgress = 0; resetEvolutionHistory(); trainingNetworks = createMutationPopulation(trainingPopulationSize, bestNetwork, trainingWorldSeed); ensureWorkingCheckpoint(); updateEvolutionTelemetry();
+  trainingPopulationSize = readInteger(ui.population, 5, 2, 80); requestedGenerations = readInteger(ui.generations, 100, 1, 10000); trainingTracks = selectedTracks(); rewardConfig = readRewardConfig(); physicsConfig = readPhysicsConfig(); readRoadObjectConfig(); readEvolutionConfig(); activeTrack = trainingTracks[0]; prepareTrainingContext(); trainingWorldSeed = 7000; plateauStreak = 0; mutationRate = DEFAULT_MUTATION_RATE; mutationAmount = DEFAULT_MUTATION_AMOUNT; previousGenerationProgress = 0; resetEvolutionHistory(); trainingNetworks = createMutationPopulation(trainingPopulationSize, bestNetwork, trainingWorldSeed); ensureWorkingCheckpoint(); updateEvolutionTelemetry();
   beginRun("Headless training", `Evaluating ${trainingPopulationSize} controllers across ${requestedGenerations} generations on ${selectedTrackLabel()}${ghostEvolution ? " in isolated ghost worlds" : " with traffic bots"}${randomObjectsEnabled ? ` and ${trainingObstacleCount()} road objects` : ""}${curriculumEnabled ? " on a progressive hazard curriculum" : ""}.`, "HEADLESS TRAINING");
   setBusy(true); ui.generation.textContent = "0"; ui.fitness.textContent = "—";
   try {
@@ -734,14 +779,14 @@ async function runHeadless(): Promise<void> {
 
 function startVisualTraining(): void {
   const session = ++trainingSession; clearVisualTimer(); training = true; running = false; visualTraining = true; fiveBrainEvolution = false; manualMode = false; trainingHistory = []; trainingGeneration = 1;
-  trainingPopulationSize = readInteger(ui.population, 5, 2, 80); requestedGenerations = readInteger(ui.generations, 100, 1, 10000); trainingTracks = selectedTracks(); rewardConfig = readRewardConfig(); physicsConfig = readPhysicsConfig(); readRoadObjectConfig(); readEvolutionConfig(); activeTrack = trainingTracks[0]; trainingWorldSeed = 5000; plateauStreak = 0; mutationRate = DEFAULT_MUTATION_RATE; mutationAmount = DEFAULT_MUTATION_AMOUNT; previousGenerationProgress = 0; resetEvolutionHistory(); trainingNetworks = createMutationPopulation(trainingPopulationSize, bestNetwork, trainingWorldSeed); ensureWorkingCheckpoint(); updateEvolutionTelemetry();
+  trainingPopulationSize = readInteger(ui.population, 5, 2, 80); requestedGenerations = readInteger(ui.generations, 100, 1, 10000); trainingTracks = selectedTracks(); rewardConfig = readRewardConfig(); physicsConfig = readPhysicsConfig(); readRoadObjectConfig(); readEvolutionConfig(); activeTrack = trainingTracks[0]; prepareTrainingContext(); trainingWorldSeed = 5000; plateauStreak = 0; mutationRate = DEFAULT_MUTATION_RATE; mutationAmount = DEFAULT_MUTATION_AMOUNT; previousGenerationProgress = 0; resetEvolutionHistory(); trainingNetworks = createMutationPopulation(trainingPopulationSize, bestNetwork, trainingWorldSeed); ensureWorkingCheckpoint(); updateEvolutionTelemetry();
   beginRun("Visual training", `Watching ${trainingPopulationSize} candidates drive across ${requestedGenerations} generations on ${selectedTrackLabel()}${randomObjectsEnabled ? ` with ${trainingObstacleCount()} road objects` : ""}${curriculumEnabled ? " on a progressive hazard curriculum" : ""}.`, "VISUAL TRAINING");
   setBusy(true); ui.generation.textContent = "0"; ui.fitness.textContent = "—"; startVisualGeneration(); scheduleVisualBatch(session);
 }
 
 function startFiveBrainEvolution(): void {
   const session = ++trainingSession; clearVisualTimer(); training = true; running = false; visualTraining = true; fiveBrainEvolution = true; ghostEvolution = ui.ghostEvolutionToggle.checked; manualMode = false; trainingHistory = []; trainingGeneration = 1;
-  trainingPopulationSize = readInteger(ui.population, 5, 2, 80); requestedGenerations = readInteger(ui.generations, 100, 1, 10000); trainingTracks = selectedTracks(); rewardConfig = readRewardConfig(); physicsConfig = readPhysicsConfig(); readRoadObjectConfig(); readEvolutionConfig(); activeTrack = trainingTracks[0]; trainingWorldSeed = 9000; plateauStreak = 0; mutationRate = DEFAULT_MUTATION_RATE; mutationAmount = DEFAULT_MUTATION_AMOUNT; previousGenerationProgress = 0; resetEvolutionHistory(); trainingNetworks = createMutationPopulation(trainingPopulationSize, bestNetwork, trainingWorldSeed); ensureWorkingCheckpoint(); updateEvolutionTelemetry();
+  trainingPopulationSize = readInteger(ui.population, 5, 2, 80); requestedGenerations = readInteger(ui.generations, 100, 1, 10000); trainingTracks = selectedTracks(); rewardConfig = readRewardConfig(); physicsConfig = readPhysicsConfig(); readRoadObjectConfig(); readEvolutionConfig(); activeTrack = trainingTracks[0]; prepareTrainingContext(); trainingWorldSeed = 9000; plateauStreak = 0; mutationRate = DEFAULT_MUTATION_RATE; mutationAmount = DEFAULT_MUTATION_AMOUNT; previousGenerationProgress = 0; resetEvolutionHistory(); trainingNetworks = createMutationPopulation(trainingPopulationSize, bestNetwork, trainingWorldSeed); ensureWorkingCheckpoint(); updateEvolutionTelemetry();
   const mode = ghostEvolution ? "isolated ghost worlds" : "a shared physical track";
   beginRun("Population evolution", `Racing ${trainingPopulationSize} brains simultaneously in ${mode} for ${requestedGenerations} generations on ${selectedTrackLabel()}${randomObjectsEnabled ? ` with ${randomObjectCount} road objects` : ""}.`, "POPULATION EVOLUTION");
   setBusy(true); ui.generation.textContent = "0"; ui.fitness.textContent = "—"; startVisualGeneration(); scheduleVisualBatch(session);
@@ -795,7 +840,7 @@ ui.exportButton.addEventListener("click", () => safely(exportBrain));
 ui.importButton.addEventListener("click", () => ui.importFile.click());
 ui.importFile.addEventListener("change", () => { const file = ui.importFile.files?.[0]; if (file) void importBrain(file); });
 ui.copyLogButton.addEventListener("click", () => { void copyAllLog(); });
-ui.trackSelect.addEventListener("change", () => { if (!training) safely(launchRace); });
+ui.trackSelect.addEventListener("change", () => { if (!training) safely(() => { activateStoredContextForRace(); launchRace(); }); });
 ui.wallsToggle.addEventListener("change", () => { physicsConfig = readPhysicsConfig(); appendEvent(physicsConfig.wallsEnabled ? "track walls enabled · off-track recovery is active" : "track walls disabled · cars may leave the road and only receive off-track penalties"); });
 ui.adaptiveTimeToggle.addEventListener("change", () => { physicsConfig = readPhysicsConfig(); appendEvent(physicsConfig.adaptiveTimeLimit ? `adaptive time enabled · up to ${physicsConfig.maxAdaptiveExtensions} evidence-based extensions` : "adaptive time disabled · candidates stop at the base tick limit"); });
 ui.adaptiveExtensions.addEventListener("change", () => { physicsConfig = readPhysicsConfig(); appendEvent(`adaptive extension limit set to ${physicsConfig.maxAdaptiveExtensions}`); });

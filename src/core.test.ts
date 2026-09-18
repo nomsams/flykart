@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   CAR_COLLISION_DIAMETER, CHECKPOINT_COUNT, CLOSE_PROXIMITY_DISTANCE, DEFAULT_PHYSICS_CONFIG, DEFAULT_REWARD_CONFIG, DEFAULT_TRACK, MAX_TICKS, STEP, TRACKS, TRACK_WIDTH, BrainSnapshot, SpikingNetwork, createMutationPopulation, createNetworkPopulation, createRoadObstacles,
-  evaluate, evaluateGeneralist, heuristicAction, nearestTrack, pointAtDistance, sensorValues, startPosition, stepCar, track, trackCheckpoint,
+  evaluate, evaluateGeneralist, heuristicAction, nearestTrack, pointAtDistance, resolveTrack, sensorValues, startPosition, stepCar, track, trackCheckpoint,
 } from "./core";
 
 const finiteAction = (action: ReturnType<SpikingNetwork["step"]>) => {
@@ -23,12 +23,16 @@ describe("SpikingNetwork", () => {
 
   it("keeps the incumbent first and adds deterministic exploration immigrants after a plateau", () => {
     const parent = new SpikingNetwork(12);
+    const partner = new SpikingNetwork(13);
     const local = createMutationPopulation(10, parent, 300, 0.12, 0.22);
     const exploratory = createMutationPopulation(10, parent, 300, 0.12, 0.22, { plateauStreak: 3, plateauPatience: 3 });
+    const bred = createMutationPopulation(4, parent, 301, 0.12, 0.22, { breedingPool: [parent, partner] });
     expect(local[0].toJSON()).toEqual(parent.toJSON());
     expect(exploratory[0].toJSON()).toEqual(parent.toJSON());
+    expect(bred[0].toJSON()).toEqual(parent.toJSON());
     expect(createMutationPopulation(10, parent, 300, 0.12, 0.22, { plateauStreak: 3, plateauPatience: 3 }).map((network) => network.toJSON())).toEqual(exploratory.map((network) => network.toJSON()));
     expect(exploratory.slice(1).some((network) => network.toJSON().inputWeights.join(",") !== parent.toJSON().inputWeights.join(","))).toBe(true);
+    expect(bred[1].toJSON()).not.toEqual(parent.toJSON());
   });
 
   it("resets hidden state and exposes bounded actions", () => {
@@ -352,6 +356,16 @@ describe("vehicle physics and fitness", () => {
     expect(wrongWay.rewardBreakdown.checkpoint).toBe(0);
   });
 
+  it("accepts high-speed checkpoint crossings on irregular tracks", () => {
+    (['zigzag', 'hairpin'] as const).forEach((trackId) => {
+      const route = resolveTrack(trackId); const checkpoint = trackCheckpoint(1, route); const before = pointAtDistance(route.length / CHECKPOINT_COUNT - 0.5, route); const car = startPosition(0, route);
+      car.position = before.point; car.heading = Math.atan2(checkpoint.tangent.y, checkpoint.tangent.x); car.speed = 90; car.progress = nearestTrack(car.position, route).progress; car.totalProgress = car.progress;
+      stepCar(car, { steer: 0, throttle: 0, brake: 0 }, [car], route);
+      expect(car.checkpointsPassed, `${trackId} checkpoint`).toBe(1);
+      expect(car.rewardBreakdown.checkpoint).toBe(DEFAULT_REWARD_CONFIG.checkpoint);
+    });
+  });
+
   it("times out without mislabeling a non-crashed car as crashed", () => {
     const car = startPosition(); car.ticks = MAX_TICKS - 1;
     stepCar(car, { steer: 0, throttle: 0, brake: 0 }, [car]);
@@ -450,6 +464,15 @@ describe("vehicle physics and fitness", () => {
     expect(car.offTrackTicks).toBeGreaterThan(0);
     expect(car.nearestDistance).toBeGreaterThan(DEFAULT_TRACK.width / 2);
     expect(DEFAULT_PHYSICS_CONFIG.wallsEnabled).toBe(true);
+  });
+
+  it("applies the outside-track penalty on every racing tick while outside", () => {
+    const car = startPosition(); car.position.x += TRACK_WIDTH * 1.5;
+    stepCar(car, { steer: 0, throttle: 0, brake: 0 }, [car], DEFAULT_TRACK, DEFAULT_REWARD_CONFIG, { wallsEnabled: false });
+    const firstPenalty = car.rewardBreakdown.offTrack;
+    stepCar(car, { steer: 0, throttle: 0, brake: 0 }, [car], DEFAULT_TRACK, DEFAULT_REWARD_CONFIG, { wallsEnabled: false });
+    expect(firstPenalty).toBeGreaterThan(0);
+    expect(car.rewardBreakdown.offTrack).toBeGreaterThan(0);
   });
 
   it("evaluates a controller across every track for a generalist score", () => {
