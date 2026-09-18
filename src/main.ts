@@ -26,13 +26,13 @@ const ui = {
   resetButton: required<HTMLButtonElement>("#reset-btn"), saveButton: required<HTMLButtonElement>("#save-btn"), loadButton: required<HTMLButtonElement>("#load-btn"),
   exportButton: required<HTMLButtonElement>("#export-btn"), importButton: required<HTMLButtonElement>("#import-btn"), importFile: required<HTMLInputElement>("#import-file"),
   population: required<HTMLInputElement>("#population"), generations: required<HTMLInputElement>("#generations"),
-  trackSelect: required<HTMLSelectElement>("#track-select"), wallsToggle: required<HTMLInputElement>("#walls-toggle"), adaptiveTimeToggle: required<HTMLInputElement>("#adaptive-time-toggle"),
+  trackSelect: required<HTMLSelectElement>("#track-select"), wallsToggle: required<HTMLInputElement>("#walls-toggle"), adaptiveTimeToggle: required<HTMLInputElement>("#adaptive-time-toggle"), ghostEvolutionToggle: required<HTMLInputElement>("#ghost-evolution-toggle"),
   rewardProgress: required<HTMLInputElement>("#reward-progress"), rewardDirection: required<HTMLInputElement>("#reward-direction"), rewardMoving: required<HTMLInputElement>("#reward-moving"),
   rewardStanding: required<HTMLInputElement>("#reward-standing"), rewardWrong: required<HTMLInputElement>("#reward-wrong"), rewardReverse: required<HTMLInputElement>("#reward-reverse"),
-  rewardOffTrack: required<HTMLInputElement>("#reward-offtrack"), rewardEdge: required<HTMLInputElement>("#reward-edge"), rewardCenterline: required<HTMLInputElement>("#reward-centerline"), rewardCollision: required<HTMLInputElement>("#reward-collision"), rewardCrash: required<HTMLInputElement>("#reward-crash"), rewardCheckpoint: required<HTMLInputElement>("#reward-checkpoint"), rewardFinish: required<HTMLInputElement>("#reward-finish"),
+  rewardOffTrack: required<HTMLInputElement>("#reward-offtrack"), rewardEdge: required<HTMLInputElement>("#reward-edge"), rewardProximity: required<HTMLInputElement>("#reward-proximity"), rewardCenterline: required<HTMLInputElement>("#reward-centerline"), rewardCollision: required<HTMLInputElement>("#reward-collision"), rewardCrash: required<HTMLInputElement>("#reward-crash"), rewardCheckpoint: required<HTMLInputElement>("#reward-checkpoint"), rewardFinish: required<HTMLInputElement>("#reward-finish"),
   mode: required<HTMLElement>("#mode-label"), hint: required<HTMLElement>("#hint-label"), status: required<HTMLElement>("#training-status"),
   generation: required<HTMLElement>("#generation"), fitness: required<HTMLElement>("#fitness"), progress: required<HTMLElement>("#progress"),
-  speed: required<HTMLElement>("#speed"), reward: required<HTMLElement>("#reward"), direction: required<HTMLElement>("#direction"), centerline: required<HTMLElement>("#centerline"), penalties: required<HTMLElement>("#penalties"), bars: required<HTMLElement>("#neural-bars"),
+  speed: required<HTMLElement>("#speed"), reward: required<HTMLElement>("#reward"), direction: required<HTMLElement>("#direction"), centerline: required<HTMLElement>("#centerline"), traffic: required<HTMLElement>("#traffic-gap"), penalties: required<HTMLElement>("#penalties"), rewardBreakdown: required<HTMLElement>("#reward-breakdown"), bars: required<HTMLElement>("#neural-bars"),
   runState: required<HTMLElement>("#run-state"), runDetail: required<HTMLElement>("#run-detail"),
   runProgressTrack: required<HTMLElement>("#run-progress-track"), runProgressBar: required<HTMLElement>("#run-progress-bar"),
   runProgressText: required<HTMLElement>("#run-progress-text"), runStepText: required<HTMLElement>("#run-step-text"),
@@ -50,6 +50,7 @@ let running = false;
 let training = false;
 let visualTraining = false;
 let fiveBrainEvolution = false;
+let ghostEvolution = true;
 let manualMode = false;
 let trainingPopulation: Car[] = [];
 let trainingIndex = 0;
@@ -145,6 +146,7 @@ function readRewardConfig(): RewardConfig {
     reverseProgressPerSecond: readNumber(ui.rewardReverse, DEFAULT_REWARD_CONFIG.reverseProgressPerSecond, 0, 30),
     offTrackPerSecond: readNumber(ui.rewardOffTrack, DEFAULT_REWARD_CONFIG.offTrackPerSecond, 0, 200),
     edgePenaltyPerSecond: readNumber(ui.rewardEdge, DEFAULT_REWARD_CONFIG.edgePenaltyPerSecond, 0, 20),
+    proximityPenaltyPerSecond: readNumber(ui.rewardProximity, DEFAULT_REWARD_CONFIG.proximityPenaltyPerSecond, 0, 100),
     centerlinePerSecond: readNumber(ui.rewardCenterline, DEFAULT_REWARD_CONFIG.centerlinePerSecond ?? 0, 0, 20),
     collision: readNumber(ui.rewardCollision, DEFAULT_REWARD_CONFIG.collision, 0, 100),
     crash: readNumber(ui.rewardCrash, DEFAULT_REWARD_CONFIG.crash, 0, 200),
@@ -171,18 +173,37 @@ function selectedTrackLabel(): string {
 function updateRewardTelemetry(car: Car | undefined): void {
   if (!car) return;
   const breakdown = car.rewardBreakdown;
-  const penalty = breakdown.standingStill + breakdown.wrongDirection + breakdown.reverseProgress + breakdown.offTrack + breakdown.edge + breakdown.collision + breakdown.crash;
+  const penalty = breakdown.standingStill + breakdown.wrongDirection + breakdown.reverseProgress + breakdown.offTrack + breakdown.edge + breakdown.proximity + breakdown.collision + breakdown.crash;
   ui.reward.textContent = car.lastReward.toFixed(2);
   ui.reward.className = car.lastReward > 0.001 ? "metric-positive" : car.lastReward < -0.001 ? "metric-negative" : "metric-neutral";
   ui.direction.textContent = `${Math.round(clamp((car.forwardAlignment + 1) * 50, 0, 100))}%`;
   ui.centerline.textContent = `${Math.round(clamp(1 - Math.abs(car.lateralOffset), 0, 1) * 100)}%`;
+  ui.traffic.textContent = Number.isFinite(car.nearestOpponentDistance) ? `${car.nearestOpponentDistance.toFixed(0)} px` : "clear";
+  ui.traffic.className = breakdown.proximity > 0.001 ? "metric-negative" : "metric-neutral";
   ui.penalties.textContent = `-${penalty.toFixed(2)}`;
   ui.penalties.className = penalty > 0.001 ? "metric-negative" : "metric-neutral";
+  const positive = [
+    ["progress", breakdown.progress], ["direction", breakdown.direction], ["moving", breakdown.movement],
+    ["centerline", breakdown.centerline], ["checkpoint", breakdown.checkpoint], ["finish", breakdown.finish],
+  ] as const;
+  const negative = [
+    ["standing", breakdown.standingStill], ["wrong way", breakdown.wrongDirection], ["reverse", breakdown.reverseProgress],
+    ["outside", breakdown.offTrack], ["edge", breakdown.edge], ["close traffic", breakdown.proximity],
+    ["collision", breakdown.collision], ["crash", breakdown.crash],
+  ] as const;
+  ui.rewardBreakdown.replaceChildren();
+  const title = document.createElement("span"); title.className = "reward-breakdown-title"; title.textContent = "This tick"; ui.rewardBreakdown.appendChild(title);
+  [...positive, ...negative].forEach(([label, value]) => {
+    if (value <= 0.0001) return;
+    const item = document.createElement("span"); item.className = value > 0 && positive.some(([key]) => key === label) ? "positive" : "negative";
+    item.textContent = `${item.className === "positive" ? "+" : "−"}${label} ${value.toFixed(2)}`;
+    ui.rewardBreakdown.appendChild(item);
+  });
 }
 
 function setBusy(value: boolean): void {
   [ui.raceButton, ui.driveButton, ui.visualButton, ui.evolveFiveButton, ui.headlessButton, ui.resetButton, ui.saveButton, ui.loadButton, ui.exportButton, ui.importButton].forEach((button) => { button.disabled = value; });
-  [ui.trackSelect, ui.wallsToggle, ui.adaptiveTimeToggle, ui.rewardProgress, ui.rewardDirection, ui.rewardMoving, ui.rewardStanding, ui.rewardWrong, ui.rewardReverse, ui.rewardOffTrack, ui.rewardEdge, ui.rewardCenterline, ui.rewardCollision, ui.rewardCrash, ui.rewardCheckpoint, ui.rewardFinish].forEach((input) => { input.disabled = value; });
+  [ui.trackSelect, ui.wallsToggle, ui.adaptiveTimeToggle, ui.ghostEvolutionToggle, ui.rewardProgress, ui.rewardDirection, ui.rewardMoving, ui.rewardStanding, ui.rewardWrong, ui.rewardReverse, ui.rewardOffTrack, ui.rewardEdge, ui.rewardProximity, ui.rewardCenterline, ui.rewardCollision, ui.rewardCrash, ui.rewardCheckpoint, ui.rewardFinish].forEach((input) => { input.disabled = value; });
   ui.stopButton.disabled = !(value || running);
 }
 
@@ -322,7 +343,7 @@ function render(): void {
   context.clearRect(0, 0, WIDTH, HEIGHT); renderTrack();
   if (training) {
     drawTrainingHistory();
-    if (fiveBrainEvolution) {
+    if (fiveBrainEvolution && !ghostEvolution) {
       const leader = [...trainingPopulation].sort((a, b) => b.score - a.score)[0];
       trainingPopulation.filter((car) => car.trackId === activeTrack.id).forEach((car) => drawCar(car, car === leader ? 1 : 0.62));
       updateRewardTelemetry(leader); updateNeural(leader?.network);
@@ -374,9 +395,9 @@ function updateRace(): void {
 function makeTrainingCar(network: SpikingNetwork, lane = 0, route: TrackDefinition = activeTrack): Car { network.reset(); const car = startPosition(lane, route); car.network = network; car.color = "#8191aa"; car.isFly = true; return car; }
 
 function makeFiveBrainCar(network: SpikingNetwork, index: number, route: TrackDefinition): Car {
-  const lanes = [-1.15, 1.15, -0.45, 0.45, 0]; const offsets = [0, 0, 68, 68, 136];
-  const colors = ["#74c0ff", "#f19a69", "#e9d26d", "#b48cff", "#7cf0b6"];
-  const car = createGridCar(lanes[index] ?? 0, offsets[index] ?? index * 48, colors[index] ?? "#8191aa", `brain ${index + 1}`, route);
+  const lanes = [-1.15, 1.15, -0.45, 0.45, 0]; const colors = ["#74c0ff", "#f19a69", "#e9d26d", "#b48cff", "#7cf0b6"];
+  const column = index % lanes.length; const row = Math.floor(index / lanes.length);
+  const car = createGridCar(lanes[column], row * 86 + (column === 4 ? 42 : 0), colors[index % colors.length], `brain ${index + 1}`, route);
   car.network = network; car.isFly = true; network.reset(); return car;
 }
 
@@ -427,7 +448,7 @@ function trainFiveBrainStep(): void {
 }
 
 function trainPopulationStep(): void {
-  if (fiveBrainEvolution) { trainFiveBrainStep(); return; }
+  if (fiveBrainEvolution && !ghostEvolution) { trainFiveBrainStep(); return; }
   const car = trainingPopulation[trainingIndex]; if (!car?.network) return;
   const cars = [car]; const previousTimeLimit = car.timeLimit; car.action = car.network.step(sensorValues(car, cars, trainingTracks[trainingTrackIndex])); stepCar(car, car.action, cars, trainingTracks[trainingTrackIndex], rewardConfig, physicsConfig);
   if (car.timeLimit > previousTimeLimit) appendEvent(`candidate ${trainingIndex + 1} earned adaptive extension ${car.timeExtensions}/2 · new limit ${car.timeLimit} ticks`);
@@ -461,7 +482,8 @@ function startVisualGeneration(): void {
   trainingIndex = 0;
   trainingPopulation.forEach((car) => car.network?.reset());
   const episodeCount = Math.max(1, trainingTracks.length);
-  setProgress(((trainingGeneration - 1) * trainingPopulationSize * episodeCount) / Math.max(1, trainingPopulationSize * episodeCount * requestedGenerations), fiveBrainEvolution ? `generation ${trainingGeneration}/${requestedGenerations} · five brains racing · ${trainingTracks[0].name}` : `generation ${trainingGeneration}/${requestedGenerations} · candidate 1/${trainingPopulationSize} · ${trainingTracks[0].name}`, fiveBrainEvolution ? "visual race · five independent brains share the track" : "visual · preparing candidate");
+  const evolutionLabel = ghostEvolution ? "ghost evolution · isolated candidates" : "shared-track evolution · collision dynamics enabled";
+  setProgress(((trainingGeneration - 1) * trainingPopulationSize * episodeCount) / Math.max(1, trainingPopulationSize * episodeCount * requestedGenerations), fiveBrainEvolution ? `generation ${trainingGeneration}/${requestedGenerations} · ${trainingPopulationSize} brains · ${trainingTracks[0].name}` : `generation ${trainingGeneration}/${requestedGenerations} · candidate 1/${trainingPopulationSize} · ${trainingTracks[0].name}`, fiveBrainEvolution ? evolutionLabel : "visual · preparing candidate");
 }
 
 function breed(): void {
@@ -481,9 +503,9 @@ function breed(): void {
 function finishVisualGeneration(): void { breed(); if (trainingGeneration >= requestedGenerations) finishTraining(); else { trainingGeneration += 1; startVisualGeneration(); } }
 
 async function runHeadless(): Promise<void> {
-  const session = ++trainingSession; clearVisualTimer(); training = true; running = false; visualTraining = false; fiveBrainEvolution = false; manualMode = false; trainingGeneration = 1;
-  trainingPopulationSize = readInteger(ui.population, 24, 4, 80); requestedGenerations = readInteger(ui.generations, 100, 1, 10000); trainingTracks = selectedTracks(); rewardConfig = readRewardConfig(); physicsConfig = readPhysicsConfig(); activeTrack = trainingTracks[0]; trainingNetworks = createMutationPopulation(trainingPopulationSize, bestNetwork, 7000);
-  beginRun("Headless training", `Evaluating ${trainingPopulationSize} controllers across ${requestedGenerations} generations on ${selectedTrackLabel()}.`, "HEADLESS TRAINING");
+  const session = ++trainingSession; clearVisualTimer(); training = true; running = false; visualTraining = false; fiveBrainEvolution = false; ghostEvolution = ui.ghostEvolutionToggle.checked; manualMode = false; trainingGeneration = 1;
+  trainingPopulationSize = readInteger(ui.population, 24, 2, 80); requestedGenerations = readInteger(ui.generations, 100, 1, 10000); trainingTracks = selectedTracks(); rewardConfig = readRewardConfig(); physicsConfig = readPhysicsConfig(); activeTrack = trainingTracks[0]; trainingNetworks = createMutationPopulation(trainingPopulationSize, bestNetwork, 7000);
+  beginRun("Headless training", `Evaluating ${trainingPopulationSize} controllers across ${requestedGenerations} generations on ${selectedTrackLabel()}${ghostEvolution ? " in isolated ghost worlds" : " with traffic bots"}.`, "HEADLESS TRAINING");
   setBusy(true); ui.generation.textContent = "0"; ui.fitness.textContent = "—";
   try {
     for (; trainingGeneration <= requestedGenerations && training && trainingSession === session; trainingGeneration += 1) {
@@ -497,7 +519,7 @@ async function runHeadless(): Promise<void> {
         const startedCandidates = (trainingGeneration - 1) * trainingPopulationSize + index;
         setProgress(startedCandidates / totalCandidates, `generation ${trainingGeneration}/${requestedGenerations} · candidate ${index + 1}/${trainingPopulationSize}`, `headless · ${trainingTracks.length} track${trainingTracks.length === 1 ? "" : "s"} · evaluating…`);
         await new Promise<void>((resolve) => setTimeout(resolve, 0));
-        const result = evaluateGeneralist(car.network as SpikingNetwork, trainingTracks, rewardConfig, physicsConfig); car.score = result.fitness; car.progress = result.progress; car.totalProgress = result.progress; car.finished = result.finished; car.laps = result.laps; car.rewardTotals = result.rewardTotals; car.rewardBreakdown = result.rewardTotals; car.lastReward = 0; car.forwardAlignment = 0;
+        const result = evaluateGeneralist(car.network as SpikingNetwork, trainingTracks, rewardConfig, physicsConfig, ghostEvolution); car.score = result.fitness; car.progress = result.progress; car.totalProgress = result.progress; car.finished = result.finished; car.laps = result.laps; car.rewardTotals = result.rewardTotals; car.rewardBreakdown = result.rewardTotals; car.lastReward = 0; car.forwardAlignment = 0;
         trainingIndex = index + 1;
         const completedCandidates = (trainingGeneration - 1) * trainingPopulationSize + trainingIndex;
         ui.fitness.textContent = result.fitness.toFixed(1);
@@ -515,15 +537,16 @@ async function runHeadless(): Promise<void> {
 
 function startVisualTraining(): void {
   const session = ++trainingSession; clearVisualTimer(); training = true; running = false; visualTraining = true; fiveBrainEvolution = false; manualMode = false; trainingHistory = []; trainingGeneration = 1;
-  trainingPopulationSize = readInteger(ui.population, 24, 4, 80); requestedGenerations = readInteger(ui.generations, 100, 1, 10000); trainingTracks = selectedTracks(); rewardConfig = readRewardConfig(); physicsConfig = readPhysicsConfig(); activeTrack = trainingTracks[0]; trainingNetworks = createMutationPopulation(trainingPopulationSize, bestNetwork, 5000);
+  trainingPopulationSize = readInteger(ui.population, 24, 2, 80); requestedGenerations = readInteger(ui.generations, 100, 1, 10000); trainingTracks = selectedTracks(); rewardConfig = readRewardConfig(); physicsConfig = readPhysicsConfig(); activeTrack = trainingTracks[0]; trainingNetworks = createMutationPopulation(trainingPopulationSize, bestNetwork, 5000);
   beginRun("Visual training", `Watching ${trainingPopulationSize} candidates drive across ${requestedGenerations} generations on ${selectedTrackLabel()}.`, "VISUAL TRAINING");
   setBusy(true); ui.generation.textContent = "0"; ui.fitness.textContent = "—"; startVisualGeneration(); scheduleVisualBatch(session);
 }
 
 function startFiveBrainEvolution(): void {
-  const session = ++trainingSession; clearVisualTimer(); training = true; running = false; visualTraining = true; fiveBrainEvolution = true; manualMode = false; trainingHistory = []; trainingGeneration = 1;
-  trainingPopulationSize = 5; requestedGenerations = readInteger(ui.generations, 100, 1, 10000); trainingTracks = selectedTracks(); rewardConfig = readRewardConfig(); physicsConfig = readPhysicsConfig(); activeTrack = trainingTracks[0]; trainingNetworks = createMutationPopulation(5, bestNetwork, 9000);
-  beginRun("Five-brain evolution", `Racing five independent brains together for ${requestedGenerations} generations on ${selectedTrackLabel()}.`, "5-BRAIN EVOLUTION");
+  const session = ++trainingSession; clearVisualTimer(); training = true; running = false; visualTraining = true; fiveBrainEvolution = true; ghostEvolution = ui.ghostEvolutionToggle.checked; manualMode = false; trainingHistory = []; trainingGeneration = 1;
+  trainingPopulationSize = readInteger(ui.population, 24, 2, 80); requestedGenerations = readInteger(ui.generations, 100, 1, 10000); trainingTracks = selectedTracks(); rewardConfig = readRewardConfig(); physicsConfig = readPhysicsConfig(); activeTrack = trainingTracks[0]; trainingNetworks = createMutationPopulation(trainingPopulationSize, bestNetwork, 9000);
+  const mode = ghostEvolution ? "isolated ghost worlds" : "a shared physical track";
+  beginRun("Population evolution", `Racing ${trainingPopulationSize} independent brains in ${mode} for ${requestedGenerations} generations on ${selectedTrackLabel()}.`, "POPULATION EVOLUTION");
   setBusy(true); ui.generation.textContent = "0"; ui.fitness.textContent = "—"; startVisualGeneration(); scheduleVisualBatch(session);
 }
 
@@ -577,7 +600,8 @@ ui.importFile.addEventListener("change", () => { const file = ui.importFile.file
 ui.trackSelect.addEventListener("change", () => { if (!training) safely(launchRace); });
 ui.wallsToggle.addEventListener("change", () => { physicsConfig = readPhysicsConfig(); appendEvent(physicsConfig.wallsEnabled ? "track walls enabled · off-track recovery is active" : "track walls disabled · cars may leave the road and only receive off-track penalties"); });
 ui.adaptiveTimeToggle.addEventListener("change", () => { physicsConfig = readPhysicsConfig(); appendEvent(physicsConfig.adaptiveTimeLimit ? "adaptive time enabled · non-negative reward rate can double the limit twice" : "adaptive time disabled · candidates stop at the base tick limit"); });
-[ui.rewardProgress, ui.rewardDirection, ui.rewardMoving, ui.rewardStanding, ui.rewardWrong, ui.rewardReverse, ui.rewardOffTrack, ui.rewardEdge, ui.rewardCenterline, ui.rewardCollision, ui.rewardCrash, ui.rewardCheckpoint, ui.rewardFinish].forEach((input) => {
+ui.ghostEvolutionToggle.addEventListener("change", () => { ghostEvolution = ui.ghostEvolutionToggle.checked; appendEvent(ghostEvolution ? "ghost evolution enabled · candidates cannot see or collide with one another" : "shared-track evolution enabled · candidates now learn traffic interactions"); });
+[ui.rewardProgress, ui.rewardDirection, ui.rewardMoving, ui.rewardStanding, ui.rewardWrong, ui.rewardReverse, ui.rewardOffTrack, ui.rewardEdge, ui.rewardProximity, ui.rewardCenterline, ui.rewardCollision, ui.rewardCrash, ui.rewardCheckpoint, ui.rewardFinish].forEach((input) => {
   input.addEventListener("change", () => { rewardConfig = readRewardConfig(); appendEvent("reward settings updated · new weights apply immediately"); });
 });
 window.addEventListener("keydown", (event) => {

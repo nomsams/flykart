@@ -26,6 +26,7 @@ export const TAU = Math.PI * 2;
 export const CHECKPOINT_COUNT = 8;
 export const ADAPTIVE_REWARD_WINDOW_TICKS = 300;
 export const MAX_ADAPTIVE_EXTENSIONS = 2;
+export const CLOSE_PROXIMITY_DISTANCE = CAR_COLLISION_DIAMETER * 2.75;
 export const DEFAULT_PHYSICS_CONFIG: PhysicsConfig = { wallsEnabled: true, adaptiveTimeLimit: false, maxAdaptiveExtensions: MAX_ADAPTIVE_EXTENSIONS };
 
 function createTrack(id: TrackId, name: string, points: Vec[], width = TRACK_WIDTH): TrackDefinition {
@@ -77,6 +78,7 @@ export type RewardConfig = {
   reverseProgressPerSecond: number;
   offTrackPerSecond: number;
   edgePenaltyPerSecond: number;
+  proximityPenaltyPerSecond: number;
   centerlinePerSecond?: number;
   collision: number;
   crash: number;
@@ -93,6 +95,7 @@ export const DEFAULT_REWARD_CONFIG: RewardConfig = {
   reverseProgressPerSecond: 3,
   offTrackPerSecond: 24,
   edgePenaltyPerSecond: 1.2,
+  proximityPenaltyPerSecond: 10,
   centerlinePerSecond: 0.35,
   collision: 10,
   crash: 75,
@@ -109,6 +112,7 @@ export type RewardBreakdown = {
   reverseProgress: number;
   offTrack: number;
   edge: number;
+  proximity: number;
   centerline: number;
   collision: number;
   crash: number;
@@ -141,6 +145,7 @@ export type BrainSnapshot = {
   recurrentWeights: number[];
   outputWeights: number[];
   bias: number[];
+  outputCount?: number;
 };
 
 export class SpikingNetwork {
@@ -158,11 +163,13 @@ export class SpikingNetwork {
     const random = () => hash(seed += 1.234567) * 2 - 1;
     this.inputWeights = Array.from({ length: this.hiddenCount * this.inputCount }, () => random() * 0.8);
     this.recurrentWeights = Array.from({ length: this.hiddenCount * this.hiddenCount }, () => random() * 0.16);
-    this.outputWeights = Array.from({ length: 3 * this.hiddenCount }, () => random() * 0.5);
+    // Four outputs: steer, throttle, brake, and a gated reverse request.
+    // fromJSON still accepts the original three-output checkpoints.
+    this.outputWeights = Array.from({ length: 4 * this.hiddenCount }, () => random() * 0.5);
     this.bias = Array.from({ length: this.hiddenCount }, () => random() * 0.06);
     this.voltage = new Array(this.hiddenCount).fill(0);
     this.spikes = new Array(this.hiddenCount).fill(0);
-    this.snapshot = { spikes: [...this.spikes], outputs: [0, 0, 0] };
+    this.snapshot = { spikes: [...this.spikes], outputs: [0, 0, 0, 0] };
   }
 
   clone(): SpikingNetwork {
@@ -205,30 +212,36 @@ export class SpikingNetwork {
       this.voltage[neuron] = nextSpikes[neuron] === 1 ? 0 : voltage;
     }
     this.spikes = nextSpikes;
-    const outputs = [0, 0, 0];
-    for (let output = 0; output < 3; output += 1) {
+    const outputs = [0, 0, 0, 0];
+    for (let output = 0; output < outputs.length; output += 1) {
       for (let neuron = 0; neuron < this.hiddenCount; neuron += 1) outputs[output] += this.outputWeights[output * this.hiddenCount + neuron] * this.spikes[neuron];
       outputs[output] = Math.tanh(outputs[output]);
     }
     this.snapshot.spikes = [...this.spikes]; this.snapshot.outputs = outputs;
-    return { steer: outputs[0], throttle: (outputs[1] + 1) / 2, brake: (outputs[2] + 1) / 2 };
+    // Reverse is deliberately gated: a neutral/legacy brain keeps reverse at zero,
+    // while evolution can learn a distinct reverse signal when it is useful.
+    const reverse = clamp((outputs[3] - 0.25) / 0.75, 0, 1);
+    return { steer: outputs[0], throttle: (outputs[1] + 1) / 2, brake: (outputs[2] + 1) / 2, reverse };
   }
 
   activity(): NeuronSnapshot { return this.snapshot; }
 
   toJSON(): BrainSnapshot {
-    return { version: 1, inputCount: this.inputCount, hiddenCount: this.hiddenCount,
+    return { version: 1, inputCount: this.inputCount, hiddenCount: this.hiddenCount, outputCount: 4,
       inputWeights: [...this.inputWeights], recurrentWeights: [...this.recurrentWeights], outputWeights: [...this.outputWeights], bias: [...this.bias] };
   }
 
   static fromJSON(snapshot: BrainSnapshot): SpikingNetwork {
     const arrays = [snapshot.inputWeights, snapshot.recurrentWeights, snapshot.outputWeights, snapshot.bias];
     if (snapshot.version !== 1 || snapshot.inputCount !== 9 || snapshot.hiddenCount !== 48 || arrays.some((value) => !Array.isArray(value) || value.some((item) => !Number.isFinite(item)))) throw new Error("checkpoint format does not match this FlyKart build");
-    if (snapshot.inputWeights.length !== snapshot.inputCount * snapshot.hiddenCount || snapshot.recurrentWeights.length !== snapshot.hiddenCount ** 2 || snapshot.outputWeights.length !== snapshot.hiddenCount * 3 || snapshot.bias.length !== snapshot.hiddenCount) throw new Error("checkpoint dimensions are invalid");
+    const legacyOutputLength = snapshot.hiddenCount * 3;
+    const currentOutputLength = snapshot.hiddenCount * 4;
+    if (snapshot.inputWeights.length !== snapshot.inputCount * snapshot.hiddenCount || snapshot.recurrentWeights.length !== snapshot.hiddenCount ** 2 || (snapshot.outputWeights.length !== legacyOutputLength && snapshot.outputWeights.length !== currentOutputLength) || snapshot.bias.length !== snapshot.hiddenCount) throw new Error("checkpoint dimensions are invalid");
     const result = new SpikingNetwork(0.5);
     result.inputWeights.splice(0, result.inputWeights.length, ...snapshot.inputWeights);
     result.recurrentWeights.splice(0, result.recurrentWeights.length, ...snapshot.recurrentWeights);
-    result.outputWeights.splice(0, result.outputWeights.length, ...snapshot.outputWeights);
+    const outputWeights = snapshot.outputWeights.length === legacyOutputLength ? [...snapshot.outputWeights, ...new Array(result.hiddenCount).fill(0)] : snapshot.outputWeights;
+    result.outputWeights.splice(0, result.outputWeights.length, ...outputWeights);
     result.bias.splice(0, result.bias.length, ...snapshot.bias);
     result.reset(); return result;
   }
@@ -239,12 +252,12 @@ export type Car = {
   trackId: TrackId; distanceAlong: number; nearestDistance: number; offTrackTicks: number; collisions: number; ticks: number; score: number;
   crashed: boolean; timedOut: boolean; finished: boolean; timeLimit: number; timeExtensions: number; rewardWindowScore: number; rewardWindowTicks: number; previousRewardRate: number; nextCheckpoint: number; checkpointsPassed: number; stationaryTicks: number; wrongDirectionTicks: number; forwardAlignment: number; lastReward: number;
   lateralOffset: number; collisionCooldown: number;
-  rewardBreakdown: RewardBreakdown; rewardTotals: RewardTotals;
+  rewardBreakdown: RewardBreakdown; rewardTotals: RewardTotals; nearestOpponentDistance: number;
   color: string; name: string; network?: SpikingNetwork; action: Action; trail: Vec[]; isFly: boolean;
 };
 
 function emptyRewards(): RewardBreakdown {
-  return { progress: 0, direction: 0, movement: 0, standingStill: 0, wrongDirection: 0, reverseProgress: 0, offTrack: 0, edge: 0, centerline: 0, collision: 0, crash: 0, checkpoint: 0, finish: 0, total: 0 };
+  return { progress: 0, direction: 0, movement: 0, standingStill: 0, wrongDirection: 0, reverseProgress: 0, offTrack: 0, edge: 0, proximity: 0, centerline: 0, collision: 0, crash: 0, checkpoint: 0, finish: 0, total: 0 };
 }
 
 function addRewards(target: RewardTotals, current: RewardBreakdown): void {
@@ -263,7 +276,7 @@ export function startPosition(lane = 0, trackRef: TrackRef = DEFAULT_TRACK): Car
   const rewardBreakdown = emptyRewards();
   return { position: point, heading: Math.atan2(line.tangent.y, line.tangent.x), speed: 0, progress: 0, distanceAlong: 0,
     totalProgress: 0, laps: 0, bestProgress: 0, trackId: route.id, nearestDistance: 0, offTrackTicks: 0, collisions: 0, ticks: 0, score: 0,
-    crashed: false, timedOut: false, finished: false, timeLimit: MAX_TICKS, timeExtensions: 0, rewardWindowScore: 0, rewardWindowTicks: 0, previousRewardRate: 0, nextCheckpoint: 1, checkpointsPassed: 0, stationaryTicks: 0, wrongDirectionTicks: 0, forwardAlignment: 1, lastReward: 0, lateralOffset: 0, collisionCooldown: 0,
+    crashed: false, timedOut: false, finished: false, timeLimit: MAX_TICKS, timeExtensions: 0, rewardWindowScore: 0, rewardWindowTicks: 0, previousRewardRate: 0, nextCheckpoint: 1, checkpointsPassed: 0, stationaryTicks: 0, wrongDirectionTicks: 0, forwardAlignment: 1, lastReward: 0, lateralOffset: 0, collisionCooldown: 0, nearestOpponentDistance: Infinity,
     rewardBreakdown, rewardTotals: { ...rewardBreakdown }, color: "#f19a69", name: "bot", action: { steer: 0, throttle: 1, brake: 0 }, trail: [], isFly: false };
 }
 
@@ -294,6 +307,17 @@ function lateralOffset(position: Vec, closest: { point: Vec; tangent: Vec }, rou
   return clamp(cross(closest.tangent, sub(position, closest.point)) / Math.max(1, route.width / 2), -1.5, 1.5);
 }
 
+type OpponentInfo = { other: Car; distance: number; forward: number; side: number };
+
+function nearestOpponent(car: Car, others: Car[]): OpponentInfo | undefined {
+  const forward = { x: Math.cos(car.heading), y: Math.sin(car.heading) };
+  const side = { x: -forward.y, y: forward.x };
+  return others.filter((other) => other !== car && !other.crashed && !other.finished && !other.timedOut && other.trackId === car.trackId).map((other) => {
+    const offset = sub(other.position, car.position); const distance = Math.hypot(offset.x, offset.y); const direction = normalize(offset);
+    return { other, distance, forward: dot(direction, forward), side: dot(direction, side) };
+  }).sort((a, b) => a.distance - b.distance)[0];
+}
+
 export function nearestTrack(position: Vec, trackRef: TrackRef = DEFAULT_TRACK): { point: Vec; tangent: Vec; distance: number; progress: number; distanceAlong: number; segmentIndex: number; segmentT: number } {
   const route = resolveTrack(trackRef);
   let best = { point: route.points[0], tangent: normalize(sub(route.points[1], route.points[0])), distance: Infinity, progress: 0, distanceAlong: 0, segmentIndex: 0, segmentT: 0 };
@@ -314,29 +338,31 @@ export function sensorValues(car: Car, others: Car[], trackRef?: TrackRef): Sens
   const lookahead = pointAtDistance(closest.distanceAlong + 86, route); const desiredHeading = Math.atan2(lookahead.point.y - car.position.y, lookahead.point.x - car.position.x);
   const headingError = wrapAngle(desiredHeading - car.heading) / Math.PI;
   const tangentHeading = Math.atan2(lookahead.tangent.y, lookahead.tangent.x); const curvature = wrapAngle(tangentHeading - car.heading) / Math.PI;
-  const forward = { x: Math.cos(car.heading), y: Math.sin(car.heading) }; const side = { x: -forward.y, y: forward.x };
-  const opponent = others.filter((other) => other !== car).map((other) => {
-    const offset = sub(other.position, car.position); const distance = Math.hypot(offset.x, offset.y); const direction = normalize(offset);
-    return { distance, forward: dot(direction, forward), side: dot(direction, side) };
-  }).filter((item) => item.distance < 180 && item.forward > 0).sort((a, b) => a.distance - b.distance)[0];
+  const opponent = nearestOpponent(car, others);
   const signedLateral = lateralOffset(car.position, closest, route);
   const centerlineProximity = clamp(1 - Math.abs(signedLateral), -1, 1);
   const edgeClearance = clamp(1 - closest.distance / Math.max(1, route.width / 2), -1, 1);
+  const forward = { x: Math.cos(car.heading), y: Math.sin(car.heading) };
   const forwardAlignment = dot(forward, closest.tangent);
   return [clamp(headingError, -1, 1), clamp(curvature, -1, 1), clamp(signedLateral, -1, 1),
     clamp(car.speed / 90, -1, 1), centerlineProximity,
-    opponent ? clamp(1 - opponent.distance / 180, 0, 1) : 0, opponent ? clamp(opponent.side, -1, 1) : 0,
+    opponent && opponent.distance < 180 ? clamp(1 - opponent.distance / 180, 0, 1) : 0, opponent && opponent.distance < 180 ? clamp(opponent.side, -1, 1) : 0,
     edgeClearance, clamp(forwardAlignment, -1, 1)];
 }
 
 export function heuristicAction(car: Car, others: Car[], trackRef?: TrackRef): Action {
   const sensors = sensorValues(car, others, trackRef); const lateral = sensors[2]; const opponentPressure = sensors[5];
-  const avoid = opponentPressure > 0 ? -sensors[6] * opponentPressure * 1.35 : 0;
+  const opponent = nearestOpponent(car, others); const opponentIsAhead = Boolean(opponent && opponent.forward > 0.12);
+  const closeTraffic = Boolean(opponent && opponent.distance < CLOSE_PROXIMITY_DISTANCE);
+  const avoid = opponentPressure > 0 ? -sensors[6] * opponentPressure * (closeTraffic ? 2.2 : 1.35) : 0;
   const steer = clamp(sensors[0] * 1.55 + sensors[1] * 0.7 - lateral * 1.85 + avoid, -1, 1);
-  const targetSpeed = clamp(82 - Math.abs(sensors[1]) * 44 - Math.abs(lateral) * 30 - opponentPressure * 17, 22, 82);
-  const brake = car.speed > targetSpeed + 5 ? clamp((car.speed - targetSpeed) / 35, 0, 1) : Math.abs(steer) > 0.94 ? 0.18 : 0;
-  const reverse = Math.abs(lateral) > 1.05 && car.speed < 6 && sensors[0] * car.forwardAlignment < -0.2 ? 0.32 : 0;
-  return { steer, throttle: reverse > 0 ? 0 : clamp(0.45 + (targetSpeed - Math.max(0, car.speed)) / 85, 0.38, 1), brake, reverse };
+  const targetSpeed = clamp(82 - Math.abs(sensors[1]) * 44 - Math.abs(lateral) * 30 - (opponentIsAhead ? opponentPressure * 25 : 0), 18, 82);
+  const emergencyBrake = opponentIsAhead && closeTraffic ? 0.8 : 0;
+  const brake = emergencyBrake > 0 ? emergencyBrake : car.speed > targetSpeed + 5 ? clamp((car.speed - targetSpeed) / 35, 0, 1) : Math.abs(steer) > 0.94 ? 0.18 : 0;
+  // If a stopped car has a close obstacle in front, briefly back away rather
+  // than feeding another stationary car into the collision chain.
+  const reverse = opponentIsAhead && closeTraffic && car.speed < 5 ? 0.48 : Math.abs(lateral) > 1.05 && car.speed < 6 && sensors[0] * car.forwardAlignment < -0.2 ? 0.32 : 0;
+  return { steer, throttle: reverse > 0 ? 0 : clamp(0.45 + (targetSpeed - Math.max(0, car.speed)) / 85, 0.25, 1), brake, reverse };
 }
 
 export function stepCar(car: Car, action: Action, others: Car[], trackRef?: TrackRef, rewardConfig: RewardConfig = DEFAULT_REWARD_CONFIG, physicsConfig: PhysicsConfig = DEFAULT_PHYSICS_CONFIG): void {
@@ -396,23 +422,49 @@ export function stepCar(car: Car, action: Action, others: Car[], trackRef?: Trac
   const collisionsBefore = car.collisions;
   let contact = false;
   const carIndex = others.indexOf(car);
+  const clampToRoad = (target: Car): void => {
+    if (!physicsConfig.wallsEnabled) return;
+    const targetTrack = nearestTrack(target.position, route);
+    const maxCenterDistance = route.width / 2 - CAR_WIDTH * 0.65;
+    if (targetTrack.distance > maxCenterDistance) target.position = add(targetTrack.point, scale(normalize(sub(target.position, targetTrack.point)), maxCenterDistance));
+  };
+  const setCollisionSpeed = (target: Car, velocity: Vec): void => {
+    const forward = { x: Math.cos(target.heading), y: Math.sin(target.heading) };
+    target.speed = clamp(dot(velocity, forward) * 0.86, -48, 90);
+  };
   others.forEach((other, otherIndex) => {
-    if (other === car || other.crashed || other.trackId !== car.trackId) return;
+    if (other === car || other.crashed || other.finished || other.timedOut || other.trackId !== car.trackId) return;
     const offset = sub(car.position, other.position); const distance = Math.hypot(offset.x, offset.y);
     if (distance >= CAR_COLLISION_DIAMETER) return;
     contact = true;
     const tangent = updated.tangent; const fallback = { x: -tangent.y, y: tangent.x };
     const direction = distance > 0.0001 ? scale(offset, 1 / distance) : scale(fallback, carIndex < otherIndex ? 1 : -1);
     const separation = (CAR_COLLISION_DIAMETER - distance) + 0.75;
-    car.position = add(car.position, scale(direction, separation));
+    // Equal-mass separation keeps both cars movable. The old one-sided push
+    // made a stopped car behave like a wall and created traffic pileups.
+    car.position = add(car.position, scale(direction, separation * 0.5));
+    other.position = sub(other.position, scale(direction, separation * 0.5));
+    const carForward = { x: Math.cos(car.heading), y: Math.sin(car.heading) };
+    const otherForward = { x: Math.cos(other.heading), y: Math.sin(other.heading) };
+    const carVelocity = scale(carForward, car.speed); const otherVelocity = scale(otherForward, other.speed);
+    const relativeNormalSpeed = dot(sub(carVelocity, otherVelocity), direction);
+    if (relativeNormalSpeed < 0) {
+      const impulse = -(1 + 0.42) * relativeNormalSpeed * 0.5;
+      setCollisionSpeed(car, add(carVelocity, scale(direction, impulse)));
+      setCollisionSpeed(other, sub(otherVelocity, scale(direction, impulse)));
+    } else {
+      car.speed *= 0.82; other.speed *= 0.94;
+    }
+    if (car.collisionCooldown <= 0) car.collisions += 1;
+    if (other.collisionCooldown <= 0) other.collisions += 1;
+    car.collisionCooldown = 6; other.collisionCooldown = Math.max(other.collisionCooldown, 6);
+    clampToRoad(car); clampToRoad(other);
   });
   if (contact) {
     car.speed *= 0.38;
     if (car.collisionCooldown <= 0) car.collisions += 1;
     car.collisionCooldown = 6;
-    const afterContact = nearestTrack(car.position, route);
-    const maxCenterDistance = route.width / 2 - CAR_WIDTH * 0.65;
-    if (afterContact.distance > maxCenterDistance) car.position = add(afterContact.point, scale(normalize(sub(car.position, afterContact.point)), maxCenterDistance));
+    clampToRoad(car);
   } else car.collisionCooldown = Math.max(0, car.collisionCooldown - 1);
   const collisionDelta = car.collisions - collisionsBefore;
   const standingStill = car.speed < 3; if (standingStill) car.stationaryTicks += 1; if (alignment < -0.25) car.wrongDirectionTicks += 1;
@@ -426,12 +478,17 @@ export function stepCar(car: Car, action: Action, others: Car[], trackRef?: Trac
   reward.offTrack = offTrack ? rewardConfig.offTrackPerSecond * offTrackSeverity * STEP : 0;
   const edgeRisk = clamp((Math.abs(car.lateralOffset) - 0.55) / 0.45, 0, 1);
   reward.edge = edgeRisk * rewardConfig.edgePenaltyPerSecond * STEP;
+  const opponent = nearestOpponent(car, others);
+  car.nearestOpponentDistance = opponent?.distance ?? Infinity;
+  const proximityDenominator = Math.max(1, CLOSE_PROXIMITY_DISTANCE - CAR_COLLISION_DIAMETER * 1.05);
+  const proximityRisk = opponent ? clamp((CLOSE_PROXIMITY_DISTANCE - opponent.distance) / proximityDenominator, 0, 1) : 0;
+  reward.proximity = proximityRisk * rewardConfig.proximityPenaltyPerSecond * STEP;
   reward.centerline = Math.max(0, 1 - Math.abs(car.lateralOffset)) * (rewardConfig.centerlinePerSecond ?? 0) * STEP;
   reward.collision = collisionDelta * rewardConfig.collision;
   reward.crash = car.crashed ? rewardConfig.crash : 0;
   reward.checkpoint = checkpointCrossed ? rewardConfig.checkpoint : 0;
   reward.finish = firstFinish ? rewardConfig.finish : 0;
-  reward.total = reward.progress + reward.direction + reward.movement + reward.centerline + reward.checkpoint + reward.finish - reward.standingStill - reward.wrongDirection - reward.reverseProgress - reward.offTrack - reward.edge - reward.collision - reward.crash;
+  reward.total = reward.progress + reward.direction + reward.movement + reward.centerline + reward.checkpoint + reward.finish - reward.standingStill - reward.wrongDirection - reward.reverseProgress - reward.offTrack - reward.edge - reward.proximity - reward.collision - reward.crash;
   car.rewardWindowScore += reward.total; car.rewardWindowTicks += 1;
   const windowSeconds = Math.max(STEP, car.rewardWindowTicks * STEP); const windowRate = car.rewardWindowScore / windowSeconds;
   const maxExtensions = clamp(Math.floor(physicsConfig.maxAdaptiveExtensions ?? MAX_ADAPTIVE_EXTENSIONS), 0, MAX_ADAPTIVE_EXTENSIONS);
@@ -455,10 +512,10 @@ export function stepCar(car: Car, action: Action, others: Car[], trackRef?: Trac
 
 export type EvaluationResult = { fitness: number; progress: number; ticks: number; laps: number; finished: boolean; trackId: TrackId; rewardTotals: RewardTotals };
 
-export function evaluate(network: SpikingNetwork, trackRef: TrackRef = DEFAULT_TRACK, rewardConfig: RewardConfig = DEFAULT_REWARD_CONFIG, physicsConfig: PhysicsConfig = DEFAULT_PHYSICS_CONFIG): EvaluationResult {
+export function evaluate(network: SpikingNetwork, trackRef: TrackRef = DEFAULT_TRACK, rewardConfig: RewardConfig = DEFAULT_REWARD_CONFIG, physicsConfig: PhysicsConfig = DEFAULT_PHYSICS_CONFIG, ghost = false): EvaluationResult {
   const route = resolveTrack(trackRef); const car = startPosition(0, route); car.network = network; network.reset();
   const line = startLine(route); const obstacles = [startPosition(-1, route), startPosition(1, route)]; obstacles[0].position = add(obstacles[0].position, scale(line.tangent, 55)); obstacles[1].position = add(obstacles[1].position, scale(line.tangent, 115));
-  const cars = [car, ...obstacles];
+  const cars = ghost ? [car] : [car, ...obstacles];
   const maxExtensions = clamp(Math.floor(physicsConfig.maxAdaptiveExtensions ?? MAX_ADAPTIVE_EXTENSIONS), 0, MAX_ADAPTIVE_EXTENSIONS);
   const simulationLimit = MAX_TICKS * (physicsConfig.adaptiveTimeLimit === true ? 2 ** maxExtensions : 1);
   for (let tick = 0; tick < simulationLimit && !car.crashed && !car.finished && !car.timedOut; tick += 1) {
@@ -470,8 +527,8 @@ export function evaluate(network: SpikingNetwork, trackRef: TrackRef = DEFAULT_T
 
 export type GeneralistEvaluation = { fitness: number; progress: number; ticks: number; laps: number; finished: boolean; rewardTotals: RewardTotals; episodes: EvaluationResult[] };
 
-export function evaluateGeneralist(network: SpikingNetwork, trackRefs: TrackRef[] = TRACKS, rewardConfig: RewardConfig = DEFAULT_REWARD_CONFIG, physicsConfig: PhysicsConfig = DEFAULT_PHYSICS_CONFIG): GeneralistEvaluation {
-  const routes = trackRefs.length > 0 ? trackRefs.map(resolveTrack) : [DEFAULT_TRACK]; const episodes = routes.map((route) => evaluate(network, route, rewardConfig, physicsConfig));
+export function evaluateGeneralist(network: SpikingNetwork, trackRefs: TrackRef[] = TRACKS, rewardConfig: RewardConfig = DEFAULT_REWARD_CONFIG, physicsConfig: PhysicsConfig = DEFAULT_PHYSICS_CONFIG, ghost = false): GeneralistEvaluation {
+  const routes = trackRefs.length > 0 ? trackRefs.map(resolveTrack) : [DEFAULT_TRACK]; const episodes = routes.map((route) => evaluate(network, route, rewardConfig, physicsConfig, ghost));
   const average = (selector: (episode: EvaluationResult) => number): number => episodes.reduce((sum, episode) => sum + selector(episode), 0) / episodes.length;
   const rewardTotals = emptyRewards();
   (Object.keys(rewardTotals) as (keyof RewardBreakdown)[]).forEach((key) => { rewardTotals[key] = average((episode) => episode.rewardTotals[key]); });

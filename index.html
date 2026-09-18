@@ -47,7 +47,7 @@
             <button id="race-btn" class="primary" title="Run a race with the current fly controller">Start race</button>
             <button id="drive-btn" title="Drive the fly with the arrow keys or WASD">Drive manually</button>
             <button id="visual-train-btn" title="Train one controller at a time and watch each candidate">Train visually</button>
-            <button id="evolve-five-btn" title="Race five brains together and breed the best one into the next generation">Evolve 5 brains</button>
+            <button id="evolve-five-btn" title="Evolve the configured population and keep the best incumbent">Evolve population</button>
             <button id="headless-train-btn" title="Train without drawing every simulation step">Headless train</button>
             <button id="stop-btn" class="quiet" title="Pause the current race or training run">Stop</button>
             <button id="reset-btn" class="quiet" title="Forget the current controller and start over">Reset brain</button>
@@ -77,7 +77,7 @@
         <aside class="control-panel">
           <section class="panel-section">
             <div class="section-title"><h2>Training lab</h2><span id="training-status" class="status-dot idle">idle</span></div>
-            <label>Population <input id="population" type="number" min="4" max="80" value="24" /></label>
+            <label>Population <input id="population" type="number" min="2" max="80" value="24" /></label>
             <label>Generations <input id="generations" type="number" min="1" max="10000" value="100" /></label>
             <label>Track set
               <select id="track-select">
@@ -89,7 +89,8 @@
             </label>
             <label class="check-row"><input id="walls-toggle" type="checkbox" checked /> <span>Track walls <small>recovery clamp (turn off for open track)</small></span></label>
             <label class="check-row"><input id="adaptive-time-toggle" type="checkbox" checked /> <span>Adaptive time limit <small>up to two evidence-based extensions</small></span></label>
-            <p class="microcopy">Generalist training evaluates every candidate on all three layouts and averages the result. “Evolve 5 brains” puts five flies on the same track, keeps the highest-fitness brain, then breeds deterministic mutations for the next generation. Cars receive route-progress and ordered checkpoint rewards; checkpoint gates are shown on the track.</p>
+            <label class="check-row"><input id="ghost-evolution-toggle" type="checkbox" checked /> <span>Ghost evolution <small>each brain gets an isolated world; no candidate collisions</small></span></label>
+            <p class="microcopy">Set any population size up to 80. The evolution button keeps the current best brain as candidate 1 and only accepts a new incumbent when its averaged fitness improves. Ghost evolution evaluates each brain independently; turn it off to watch candidates share a physical track and learn traffic avoidance.</p>
           </section>
 
           <details class="panel-section reward-settings" open>
@@ -103,13 +104,14 @@
               <label>Reverse progress / sec <input id="reward-reverse" type="number" min="0" max="30" step="0.05" value="3" /></label>
               <label>Outside track / sec <input id="reward-offtrack" type="number" min="0" max="200" step="0.5" value="24" /></label>
               <label>Near edge / sec <input id="reward-edge" type="number" min="0" max="20" step="0.05" value="1.2" /></label>
+              <label>Close traffic / sec <input id="reward-proximity" type="number" min="0" max="100" step="0.5" value="10" /></label>
               <label>Centerline / sec <input id="reward-centerline" type="number" min="0" max="20" step="0.05" value="0.35" /></label>
               <label>Collision penalty <input id="reward-collision" type="number" min="0" max="100" step="0.5" value="10" /></label>
               <label>Crash penalty <input id="reward-crash" type="number" min="0" max="200" step="1" value="75" /></label>
               <label>Checkpoint reward <input id="reward-checkpoint" type="number" min="0" max="1000" step="5" value="100" /></label>
               <label>Finish reward <input id="reward-finish" type="number" min="0" max="1000" step="5" value="300" /></label>
             </div>
-            <p class="microcopy">Progress is measured along the current track and normalized per second. Cars see heading, curvature, centerline, speed, forward opponents, road-edge clearance, and travel alignment. Near-edge risk is penalized, being outside scales to a severe distance-based penalty, and each ordered checkpoint pays its reward once.</p>
+            <p class="microcopy">Green items add reward; red items subtract it. Close-traffic penalty ramps up smoothly inside roughly 2.75 car diameters and peaks at contact. Cars sense nearby traffic, road-edge clearance, travel direction, and can learn a separate reverse action. Ordered checkpoints pay once and the finish only pays after a valid lap.</p>
           </details>
 
           <section class="panel-section metrics">
@@ -120,7 +122,9 @@
             <div><span>Last reward</span><strong id="reward">0.0</strong></div>
             <div><span>Direction</span><strong id="direction">100%</strong></div>
             <div><span>Centerline</span><strong id="centerline">0%</strong></div>
+            <div><span>Traffic gap</span><strong id="traffic-gap">clear</strong></div>
             <div><span>Penalty / tick</span><strong id="penalties">0.0</strong></div>
+            <div id="reward-breakdown" class="reward-breakdown" aria-live="polite"><span class="reward-breakdown-title">This tick</span></div>
           </section>
 
           <section class="panel-section">

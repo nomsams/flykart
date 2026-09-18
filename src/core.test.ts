@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  CAR_COLLISION_DIAMETER, CHECKPOINT_COUNT, DEFAULT_PHYSICS_CONFIG, DEFAULT_REWARD_CONFIG, DEFAULT_TRACK, MAX_TICKS, STEP, TRACKS, TRACK_WIDTH, BrainSnapshot, SpikingNetwork, createNetworkPopulation,
+  CAR_COLLISION_DIAMETER, CHECKPOINT_COUNT, CLOSE_PROXIMITY_DISTANCE, DEFAULT_PHYSICS_CONFIG, DEFAULT_REWARD_CONFIG, DEFAULT_TRACK, MAX_TICKS, STEP, TRACKS, TRACK_WIDTH, BrainSnapshot, SpikingNetwork, createNetworkPopulation,
   evaluate, evaluateGeneralist, heuristicAction, nearestTrack, pointAtDistance, sensorValues, startPosition, stepCar, track, trackCheckpoint,
 } from "./core";
 
@@ -26,7 +26,7 @@ describe("SpikingNetwork", () => {
     for (let index = 0; index < 40; index += 1) finiteAction(network.step([1, 1, 1, 1, 1, 1, 1, 1, 1]));
     network.reset();
     expect(network.activity().spikes.every((value) => value === 0)).toBe(true);
-    expect(network.activity().outputs).toEqual([0, 0, 0]);
+    expect(network.activity().outputs).toEqual([0, 0, 0, 0]);
   });
 
   it("rejects malformed input vectors", () => {
@@ -50,7 +50,7 @@ describe("SpikingNetwork", () => {
     expect(a).toEqual(b);
     expect(a.inputWeights).toHaveLength(48 * 9);
     expect(a.recurrentWeights).toHaveLength(48 * 48);
-    expect(a.outputWeights).toHaveLength(48 * 3);
+    expect(a.outputWeights).toHaveLength(48 * 4);
     expect(a.bias).toHaveLength(48);
   });
 
@@ -61,6 +61,14 @@ describe("SpikingNetwork", () => {
     const malformed = { ...snapshot, inputWeights: snapshot.inputWeights.slice(1) } as BrainSnapshot;
     expect(() => SpikingNetwork.fromJSON(malformed)).toThrow("checkpoint dimensions are invalid");
     expect(() => SpikingNetwork.fromJSON({ ...snapshot, version: 9 } as unknown as BrainSnapshot)).toThrow("checkpoint format");
+  });
+
+  it("loads older three-output checkpoints and keeps their reverse output neutral", () => {
+    const source = new SpikingNetwork(13).toJSON();
+    const legacy = { ...source, outputCount: undefined, outputWeights: source.outputWeights.slice(0, 48 * 3) } as BrainSnapshot;
+    const loaded = SpikingNetwork.fromJSON(legacy);
+    expect(loaded.toJSON().outputWeights).toHaveLength(48 * 4);
+    expect(loaded.step([0, 0, 0, 0, 0, 0, 0, 0, 0]).reverse).toBe(0);
   });
 });
 
@@ -87,6 +95,15 @@ describe("track geometry and sensors", () => {
     expect(sensors[5]).toBeGreaterThan(0);
     expect(sensors[7]).toBeGreaterThan(0.9);
     expect(sensors[8]).toBeGreaterThan(0.5);
+  });
+
+  it("reports nearby traffic even before a collision", () => {
+    const car = startPosition(); const other = startPosition();
+    const tangent = { x: Math.cos(car.heading), y: Math.sin(car.heading) };
+    other.position = { x: car.position.x + tangent.x * (CAR_COLLISION_DIAMETER * 1.35), y: car.position.y + tangent.y * (CAR_COLLISION_DIAMETER * 1.35) };
+    const sensors = sensorValues(car, [car, other]);
+    expect(sensors[5]).toBeGreaterThan(0.7);
+    expect(Number.isFinite(CLOSE_PROXIMITY_DISTANCE)).toBe(true);
   });
 
   it("does not mutate the track when sensing", () => {
@@ -164,6 +181,25 @@ describe("vehicle physics and fitness", () => {
     expect(first.collisions).toBe(1);
     expect(Math.hypot(first.position.x - second.position.x, first.position.y - second.position.y)).toBeGreaterThanOrEqual(CAR_COLLISION_DIAMETER);
     expect(first.speed).toBe(0);
+  });
+
+  it("shares collision separation and momentum so a stopped car is not an immovable wall", () => {
+    const first = startPosition(); const second = startPosition();
+    const tangent = { x: Math.cos(first.heading), y: Math.sin(first.heading) };
+    second.position = { x: first.position.x + tangent.x * (CAR_COLLISION_DIAMETER - 2), y: first.position.y + tangent.y * (CAR_COLLISION_DIAMETER - 2) };
+    first.speed = 50;
+    stepCar(first, { steer: 0, throttle: 0, brake: 0 }, [first, second]);
+    expect(second.speed).toBeGreaterThan(0);
+    expect(Math.hypot(first.position.x - second.position.x, first.position.y - second.position.y)).toBeGreaterThanOrEqual(CAR_COLLISION_DIAMETER);
+  });
+
+  it("penalizes close traffic before contact and includes it in the total", () => {
+    const car = startPosition(); const other = startPosition();
+    const tangent = { x: Math.cos(car.heading), y: Math.sin(car.heading) };
+    other.position = { x: car.position.x + tangent.x * (CAR_COLLISION_DIAMETER * 1.2), y: car.position.y + tangent.y * (CAR_COLLISION_DIAMETER * 1.2) };
+    stepCar(car, { steer: 0, throttle: 0, brake: 0 }, [car, other]);
+    expect(car.rewardBreakdown.proximity).toBeGreaterThan(0);
+    expect(car.lastReward).toBeLessThan(0);
   });
 
   it("recovers a car from a far edge excursion without killing it", () => {

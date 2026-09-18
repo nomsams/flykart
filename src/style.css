@@ -78,6 +78,11 @@ label { display: flex; justify-content: space-between; align-items: center; marg
 .metrics strong.metric-positive { color: #7cf0b6; text-shadow: 0 0 12px rgba(124, 240, 182, .22); }
 .metrics strong.metric-negative { color: #ff8c8c; text-shadow: 0 0 12px rgba(255, 140, 140, .2); }
 .metrics strong.metric-neutral { color: #e9edf5; }
+.reward-breakdown { grid-column: 1 / -1; display: flex; flex-direction: row !important; flex-wrap: wrap; gap: 5px 7px; margin-top: -3px; padding-top: 10px; border-top: 1px solid #293241; font-size: .66rem; line-height: 1.35; }
+.reward-breakdown-title { width: 100%; color: #7f8ca0; text-transform: uppercase; letter-spacing: .08em; }
+.reward-breakdown .positive { color: #7cf0b6; }
+.reward-breakdown .negative { color: #ff8c8c; }
+.reward-breakdown span:not(.reward-breakdown-title) { padding: 2px 5px; border-radius: 999px; background: rgba(255,255,255,.035); font-variant-numeric: tabular-nums; }
 .neural-bars { display: grid; grid-template-columns: repeat(16, 1fr); align-items: end; height: 64px; gap: 3px; padding: 8px; border-radius: 8px; background: #0e141d; }
 .neural-bars i { display: block; min-height: 4px; height: 8%; border-radius: 2px 2px 1px 1px; background: linear-gradient(#78c8ff, #3773dc); box-shadow: 0 0 8px rgba(85, 169, 255, .25); transition: height 80ms linear; }
 .legend { display: flex; flex-wrap: wrap; gap: 10px 16px; color: #98a5b8; font-size: .72rem; }
