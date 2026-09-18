@@ -1,7 +1,7 @@
 import "./style.css";
 import {
   BrainSnapshot, CAR_WIDTH, CHECKPOINT_COUNT, LANE_SPACING, MAX_ADAPTIVE_EXTENSIONS, Car, DEFAULT_PHYSICS_CONFIG, DEFAULT_REWARD_CONFIG, DEFAULT_TRACK, MAX_TICKS, PhysicsConfig, RewardConfig, STEP, TAU, TRACKS, TrackDefinition, Vec,
-  SpikingNetwork, clamp, createMutationPopulation, createRoadObstacles, evaluateGeneralist, heuristicAction, nearestTrack, pointAtDistance, resolveTrack, sensorValues, startLine, startPosition, stepCar, trackCheckpoint,
+  SpikingNetwork, clamp, createMutationPopulation, createRoadObstacles, evaluateGeneralist, heuristicAction, nearestTrack, pointAtDistance, resolveTrack, sensorValues, startLine, startPosition, stepCar, trackCheckpoint, trackDiagnostics,
 } from "./core";
 
 const WIDTH = 960;
@@ -45,7 +45,7 @@ const ui = {
   runProgressTrack: required<HTMLElement>("#run-progress-track"), runProgressBar: required<HTMLElement>("#run-progress-bar"),
   runProgressText: required<HTMLElement>("#run-progress-text"), runStepText: required<HTMLElement>("#run-step-text"),
   runElapsed: required<HTMLElement>("#run-elapsed"), eventLog: required<HTMLOListElement>("#event-log"), copyLogButton: required<HTMLButtonElement>("#copy-log-btn"),
-  plotSummary: required<HTMLElement>("#plot-summary"), plotTooltip: required<HTMLElement>("#plot-tooltip"),
+  plotSummary: required<HTMLElement>("#plot-summary"), plotTooltip: required<HTMLElement>("#plot-tooltip"), trackInfo: required<HTMLElement>("#track-info"),
 };
 const bars = Array.from({ length: 16 }, () => document.createElement("i"));
 bars.forEach((bar) => ui.bars.appendChild(bar));
@@ -397,6 +397,15 @@ function selectedTracks(): TrackDefinition[] {
 
 function selectedTrackLabel(): string {
   return ui.trackSelect.value === "all" ? "all track types" : resolveTrack(ui.trackSelect.value as TrackDefinition["id"]).name;
+}
+
+function updateTrackInfo(): void {
+  if (ui.trackSelect.value === "all") {
+    ui.trackInfo.textContent = `${TRACKS.length} routes · generalist evaluation · gates are checked in each route's own direction`;
+    return;
+  }
+  const route = resolveTrack(ui.trackSelect.value as TrackDefinition["id"]); const diagnostics = trackDiagnostics(route);
+  ui.trackInfo.textContent = `${route.name} · ${Math.round(diagnostics.length)} px · ${diagnostics.cornerCount} corners · ${diagnostics.hardTurnCount} hard turns · sharpest ${Math.round(diagnostics.maxTurnDegrees)}° · sweep ${Math.round(diagnostics.maxTurnSweepDegrees)}° · shortest segment ${Math.round(diagnostics.minSegmentLength)} px`;
 }
 
 function updateRewardTelemetry(car: Car | undefined): void {
@@ -886,7 +895,7 @@ ui.exportButton.addEventListener("click", () => safely(exportBrain));
 ui.importButton.addEventListener("click", () => ui.importFile.click());
 ui.importFile.addEventListener("change", () => { const file = ui.importFile.files?.[0]; if (file) void importBrain(file); });
 ui.copyLogButton.addEventListener("click", () => { void copyAllLog(); });
-ui.trackSelect.addEventListener("change", () => { if (!training) safely(() => { activateStoredContextForRace(); launchRace(); }); });
+ui.trackSelect.addEventListener("change", () => { updateTrackInfo(); if (!training) safely(() => { activateStoredContextForRace(); launchRace(); }); });
 ui.wallsToggle.addEventListener("change", () => { physicsConfig = readPhysicsConfig(); appendEvent(physicsConfig.wallsEnabled ? "track walls enabled · off-track recovery is active" : "track walls disabled · cars may leave the road and only receive off-track penalties"); });
 ui.adaptiveTimeToggle.addEventListener("change", () => { physicsConfig = readPhysicsConfig(); appendEvent(physicsConfig.adaptiveTimeLimit ? `adaptive time enabled · up to ${physicsConfig.maxAdaptiveExtensions} evidence-based extensions` : "adaptive time disabled · candidates stop at the base tick limit"); });
 ui.adaptiveExtensions.addEventListener("change", () => { physicsConfig = readPhysicsConfig(); appendEvent(`adaptive extension limit set to ${physicsConfig.maxAdaptiveExtensions}`); });
@@ -916,7 +925,7 @@ function frame(now: number): void {
 }
 
 try {
-  readEvolutionConfig(); updateEvolutionTelemetry(); resetEvolutionHistory();
+  readEvolutionConfig(); updateEvolutionTelemetry(); resetEvolutionHistory(); updateTrackInfo();
   launchRace();
   setRunState("Ready to race", "The demo brain is driving now. Choose a training mode to evolve a better fly pilot.", "ready", "RACE MODE");
   appendEvent("application ready · choose a command to begin");

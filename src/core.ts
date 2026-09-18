@@ -119,6 +119,75 @@ export function resolveTrack(trackRef: TrackRef = DEFAULT_TRACK): TrackDefinitio
   return result;
 }
 
+export type TrackDiagnostics = {
+  length: number;
+  cornerCount: number;
+  hardTurnCount: number;
+  maxTurnDegrees: number;
+  maxTurnSweepDegrees: number;
+  averageTurnDegrees: number;
+  minSegmentLength: number;
+};
+
+export function trackDiagnostics(trackRef: TrackRef = DEFAULT_TRACK): TrackDiagnostics {
+  const route = resolveTrack(trackRef);
+  const signedTurns = route.points.map((point, index) => {
+    const previous = route.points[(index - 1 + route.points.length) % route.points.length];
+    const next = route.points[(index + 1) % route.points.length];
+    const incoming = Math.atan2(point.y - previous.y, point.x - previous.x);
+    const outgoing = Math.atan2(next.y - point.y, next.x - point.x);
+    return wrapAngle(outgoing - incoming) * 180 / Math.PI;
+  });
+  const turns = signedTurns.map(Math.abs);
+  const hardTurns = turns.filter((turn) => turn >= 60);
+  // A hairpin can be made from many gentle vertices, so the largest local
+  // angle alone hides how much steering is required. Start after a straight
+  // section when possible and accumulate contiguous turns in the same
+  // direction; this reports a useful sweep without counting both sides of a
+  // whole closed lap as one corner.
+  const turnSamples = signedTurns.map((turn, index) => ({
+    turn,
+    // Sparse route definitions represent long straights as one segment, so
+    // they may have no explicit zero-angle vertex. Treat either side of a
+    // long segment as a sweep boundary as well.
+    isStraight: Math.abs(turn) < 4
+      || route.segmentLengths[index] >= 180
+      || route.segmentLengths[(index - 1 + route.points.length) % route.points.length] >= 180,
+  }));
+  const straightIndex = turnSamples.findIndex((sample) => sample.isStraight);
+  const orderedTurns = straightIndex >= 0
+    ? [...turnSamples.slice(straightIndex + 1), ...turnSamples.slice(0, straightIndex + 1)]
+    : turnSamples;
+  let activeDirection = 0;
+  let activeSweep = 0;
+  let maxTurnSweep = 0;
+  orderedTurns.forEach((sample) => {
+    const magnitude = Math.abs(sample.turn);
+    const direction = Math.sign(sample.turn);
+    if (sample.isStraight || magnitude < 4 || direction === 0) {
+      maxTurnSweep = Math.max(maxTurnSweep, activeSweep);
+      activeDirection = 0;
+      activeSweep = 0;
+    } else if (activeDirection === direction) {
+      activeSweep += magnitude;
+    } else {
+      maxTurnSweep = Math.max(maxTurnSweep, activeSweep);
+      activeDirection = direction;
+      activeSweep = magnitude;
+    }
+  });
+  maxTurnSweep = Math.max(maxTurnSweep, activeSweep);
+  return {
+    length: route.length,
+    cornerCount: turns.filter((turn) => turn >= 8).length,
+    hardTurnCount: hardTurns.length,
+    maxTurnDegrees: Math.max(...turns),
+    maxTurnSweepDegrees: maxTurnSweep,
+    averageTurnDegrees: turns.reduce((sum, turn) => sum + turn, 0) / turns.length,
+    minSegmentLength: Math.min(...route.segmentLengths),
+  };
+}
+
 export type RewardConfig = {
   progressPerSecond: number;
   correctDirectionPerSecond: number;
@@ -466,7 +535,11 @@ export function nearestTrack(position: Vec, trackRef: TrackRef = DEFAULT_TRACK):
 
 export function sensorValues(car: Car, others: Car[], trackRef?: TrackRef): Sensors {
   const route = resolveTrack(trackRef ?? car.trackId); const closest = nearestTrack(car.position, route);
-  const lookahead = pointAtDistance(closest.distanceAlong + 86, route); const desiredHeading = Math.atan2(lookahead.point.y - car.position.y, lookahead.point.x - car.position.x);
+  // At low speed, a shorter lookahead lets the controller commit to a tight
+  // corner. At high speed, the horizon grows so it begins braking and turning
+  // before the apex instead of reacting after it has left the road.
+  const lookaheadDistance = clamp(56 + Math.abs(car.speed) * 0.42, 56, 112);
+  const lookahead = pointAtDistance(closest.distanceAlong + lookaheadDistance, route); const desiredHeading = Math.atan2(lookahead.point.y - car.position.y, lookahead.point.x - car.position.x);
   const headingError = wrapAngle(desiredHeading - car.heading) / Math.PI;
   const tangentHeading = Math.atan2(lookahead.tangent.y, lookahead.tangent.x); const curvature = wrapAngle(tangentHeading - car.heading) / Math.PI;
   const opponent = nearestOpponent(car, others);

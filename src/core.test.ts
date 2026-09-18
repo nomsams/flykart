@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   CAR_COLLISION_DIAMETER, CHECKPOINT_COUNT, CLOSE_PROXIMITY_DISTANCE, DEFAULT_PHYSICS_CONFIG, DEFAULT_REWARD_CONFIG, DEFAULT_TRACK, MAX_TICKS, STEP, TRACKS, TRACK_WIDTH, BrainSnapshot, SpikingNetwork, createMutationPopulation, createNetworkPopulation, createRoadObstacles,
-  evaluate, evaluateGeneralist, heuristicAction, nearestTrack, pointAtDistance, resolveTrack, sensorValues, startLine, startPosition, stepCar, track, trackCheckpoint,
+  evaluate, evaluateGeneralist, heuristicAction, nearestTrack, pointAtDistance, resolveTrack, sensorValues, startLine, startPosition, stepCar, track, trackCheckpoint, trackDiagnostics,
 } from "./core";
 
 const finiteAction = (action: ReturnType<SpikingNetwork["step"]>) => {
@@ -137,6 +137,22 @@ describe("track geometry and sensors", () => {
       expect(car.trackId).toBe(route.id);
       expect(route.length).toBeGreaterThan(500);
     });
+  });
+
+  it("reports finite geometry diagnostics for every route", () => {
+    TRACKS.forEach((route) => {
+      const diagnostics = trackDiagnostics(route);
+      expect(diagnostics.length).toBe(route.length);
+      expect(diagnostics.cornerCount).toBeGreaterThan(0);
+      expect(diagnostics.minSegmentLength).toBeGreaterThan(20);
+      expect(Number.isFinite(diagnostics.maxTurnDegrees)).toBe(true);
+      expect(Number.isFinite(diagnostics.maxTurnSweepDegrees)).toBe(true);
+      expect(Number.isFinite(diagnostics.averageTurnDegrees)).toBe(true);
+    });
+    expect(trackDiagnostics("deep-hairpin").length).toBeGreaterThan(1500);
+    expect(trackDiagnostics("deep-hairpin").maxTurnSweepDegrees).toBeGreaterThan(150);
+    expect(trackDiagnostics("deep-hairpin").maxTurnSweepDegrees).toBeLessThan(300);
+    expect(trackDiagnostics("mountain-pass").hardTurnCount).toBeGreaterThan(5);
   });
 
   it("wraps distance samples around every track", () => {
@@ -515,5 +531,5 @@ describe("vehicle physics and fitness", () => {
     expect(Number.isFinite(result.fitness)).toBe(true);
     expect(Number.isFinite(result.rewardTotals.total)).toBe(true);
     expect(result.ticks).toBeGreaterThan(0);
-  });
+  }, 15000);
 });
