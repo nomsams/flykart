@@ -3,7 +3,7 @@ export type Action = { steer: number; throttle: number; brake: number; reverse?:
 export type Sensors = number[];
 export type TrackId = "grand-loop" | "switchback" | "zigzag";
 export type TrackRef = TrackDefinition | TrackId;
-export type PhysicsConfig = { wallsEnabled: boolean };
+export type PhysicsConfig = { wallsEnabled: boolean; adaptiveTimeLimit?: boolean; maxAdaptiveExtensions?: number };
 
 export type TrackDefinition = {
   id: TrackId;
@@ -23,8 +23,10 @@ export const LANE_SPACING = 32;
 export const STEP = 1 / 30;
 export const MAX_TICKS = 1500;
 export const TAU = Math.PI * 2;
-export const DEFAULT_PHYSICS_CONFIG: PhysicsConfig = { wallsEnabled: true };
 export const CHECKPOINT_COUNT = 8;
+export const ADAPTIVE_REWARD_WINDOW_TICKS = 300;
+export const MAX_ADAPTIVE_EXTENSIONS = 2;
+export const DEFAULT_PHYSICS_CONFIG: PhysicsConfig = { wallsEnabled: true, adaptiveTimeLimit: false, maxAdaptiveExtensions: MAX_ADAPTIVE_EXTENSIONS };
 
 function createTrack(id: TrackId, name: string, points: Vec[], width = TRACK_WIDTH): TrackDefinition {
   const segmentLengths = points.map((point, index) => Math.hypot(point.x - points[(index + 1) % points.length].x, point.y - points[(index + 1) % points.length].y));
@@ -235,7 +237,7 @@ export class SpikingNetwork {
 export type Car = {
   position: Vec; heading: number; speed: number; progress: number; totalProgress: number; laps: number; bestProgress: number;
   trackId: TrackId; distanceAlong: number; nearestDistance: number; offTrackTicks: number; collisions: number; ticks: number; score: number;
-  crashed: boolean; timedOut: boolean; finished: boolean; nextCheckpoint: number; checkpointsPassed: number; stationaryTicks: number; wrongDirectionTicks: number; forwardAlignment: number; lastReward: number;
+  crashed: boolean; timedOut: boolean; finished: boolean; timeLimit: number; timeExtensions: number; rewardWindowScore: number; rewardWindowTicks: number; previousRewardRate: number; nextCheckpoint: number; checkpointsPassed: number; stationaryTicks: number; wrongDirectionTicks: number; forwardAlignment: number; lastReward: number;
   lateralOffset: number; collisionCooldown: number;
   rewardBreakdown: RewardBreakdown; rewardTotals: RewardTotals;
   color: string; name: string; network?: SpikingNetwork; action: Action; trail: Vec[]; isFly: boolean;
@@ -261,7 +263,7 @@ export function startPosition(lane = 0, trackRef: TrackRef = DEFAULT_TRACK): Car
   const rewardBreakdown = emptyRewards();
   return { position: point, heading: Math.atan2(line.tangent.y, line.tangent.x), speed: 0, progress: 0, distanceAlong: 0,
     totalProgress: 0, laps: 0, bestProgress: 0, trackId: route.id, nearestDistance: 0, offTrackTicks: 0, collisions: 0, ticks: 0, score: 0,
-    crashed: false, timedOut: false, finished: false, nextCheckpoint: 1, checkpointsPassed: 0, stationaryTicks: 0, wrongDirectionTicks: 0, forwardAlignment: 1, lastReward: 0, lateralOffset: 0, collisionCooldown: 0,
+    crashed: false, timedOut: false, finished: false, timeLimit: MAX_TICKS, timeExtensions: 0, rewardWindowScore: 0, rewardWindowTicks: 0, previousRewardRate: 0, nextCheckpoint: 1, checkpointsPassed: 0, stationaryTicks: 0, wrongDirectionTicks: 0, forwardAlignment: 1, lastReward: 0, lateralOffset: 0, collisionCooldown: 0,
     rewardBreakdown, rewardTotals: { ...rewardBreakdown }, color: "#f19a69", name: "bot", action: { steer: 0, throttle: 1, brake: 0 }, trail: [], isFly: false };
 }
 
@@ -414,7 +416,6 @@ export function stepCar(car: Car, action: Action, others: Car[], trackRef?: Trac
   } else car.collisionCooldown = Math.max(0, car.collisionCooldown - 1);
   const collisionDelta = car.collisions - collisionsBefore;
   const standingStill = car.speed < 3; if (standingStill) car.stationaryTicks += 1; if (alignment < -0.25) car.wrongDirectionTicks += 1;
-  if (car.ticks >= MAX_TICKS && !car.finished) car.timedOut = true;
   const reward = emptyRewards();
   reward.progress = (validForwardDelta / STEP) * rewardConfig.progressPerSecond;
   reward.direction = Math.max(0, alignment) * rewardConfig.correctDirectionPerSecond * STEP;
@@ -431,6 +432,24 @@ export function stepCar(car: Car, action: Action, others: Car[], trackRef?: Trac
   reward.checkpoint = checkpointCrossed ? rewardConfig.checkpoint : 0;
   reward.finish = firstFinish ? rewardConfig.finish : 0;
   reward.total = reward.progress + reward.direction + reward.movement + reward.centerline + reward.checkpoint + reward.finish - reward.standingStill - reward.wrongDirection - reward.reverseProgress - reward.offTrack - reward.edge - reward.collision - reward.crash;
+  car.rewardWindowScore += reward.total; car.rewardWindowTicks += 1;
+  const windowSeconds = Math.max(STEP, car.rewardWindowTicks * STEP); const windowRate = car.rewardWindowScore / windowSeconds;
+  const maxExtensions = clamp(Math.floor(physicsConfig.maxAdaptiveExtensions ?? MAX_ADAPTIVE_EXTENSIONS), 0, MAX_ADAPTIVE_EXTENSIONS);
+  const atTimeLimit = car.ticks >= car.timeLimit;
+  if (atTimeLimit && !car.finished) {
+    // The first extension requires a non-negative recent rate. A second
+    // extension is stricter: the newest rate must improve on the previous
+    // completed window, so stalled or degrading candidates still terminate.
+    const rateIsImproving = car.timeExtensions === 0 || windowRate > car.previousRewardRate;
+    const canExtend = physicsConfig.adaptiveTimeLimit === true && car.timeExtensions < maxExtensions && windowRate >= 0 && rateIsImproving;
+    if (canExtend) {
+      car.timeExtensions += 1; car.timeLimit *= 2; car.previousRewardRate = windowRate; car.rewardWindowScore = 0; car.rewardWindowTicks = 0;
+    } else {
+      car.timedOut = true; car.previousRewardRate = windowRate; car.rewardWindowScore = 0; car.rewardWindowTicks = 0;
+    }
+  } else if (car.rewardWindowTicks >= ADAPTIVE_REWARD_WINDOW_TICKS) {
+    car.previousRewardRate = windowRate; car.rewardWindowScore = 0; car.rewardWindowTicks = 0;
+  }
   car.forwardAlignment = alignment; car.lastReward = reward.total; car.rewardBreakdown = reward; addRewards(car.rewardTotals, reward); car.score += reward.total;
 }
 
@@ -440,7 +459,9 @@ export function evaluate(network: SpikingNetwork, trackRef: TrackRef = DEFAULT_T
   const route = resolveTrack(trackRef); const car = startPosition(0, route); car.network = network; network.reset();
   const line = startLine(route); const obstacles = [startPosition(-1, route), startPosition(1, route)]; obstacles[0].position = add(obstacles[0].position, scale(line.tangent, 55)); obstacles[1].position = add(obstacles[1].position, scale(line.tangent, 115));
   const cars = [car, ...obstacles];
-  for (let tick = 0; tick < MAX_TICKS && !car.crashed && !car.finished; tick += 1) {
+  const maxExtensions = clamp(Math.floor(physicsConfig.maxAdaptiveExtensions ?? MAX_ADAPTIVE_EXTENSIONS), 0, MAX_ADAPTIVE_EXTENSIONS);
+  const simulationLimit = MAX_TICKS * (physicsConfig.adaptiveTimeLimit === true ? 2 ** maxExtensions : 1);
+  for (let tick = 0; tick < simulationLimit && !car.crashed && !car.finished && !car.timedOut; tick += 1) {
     stepCar(car, network.step(sensorValues(car, cars, route)), cars, route, rewardConfig, physicsConfig);
     obstacles.forEach((bot) => stepCar(bot, heuristicAction(bot, cars, route), cars, route, rewardConfig, physicsConfig));
   }

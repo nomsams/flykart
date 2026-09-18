@@ -26,7 +26,7 @@ const ui = {
   resetButton: required<HTMLButtonElement>("#reset-btn"), saveButton: required<HTMLButtonElement>("#save-btn"), loadButton: required<HTMLButtonElement>("#load-btn"),
   exportButton: required<HTMLButtonElement>("#export-btn"), importButton: required<HTMLButtonElement>("#import-btn"), importFile: required<HTMLInputElement>("#import-file"),
   population: required<HTMLInputElement>("#population"), generations: required<HTMLInputElement>("#generations"),
-  trackSelect: required<HTMLSelectElement>("#track-select"), wallsToggle: required<HTMLInputElement>("#walls-toggle"),
+  trackSelect: required<HTMLSelectElement>("#track-select"), wallsToggle: required<HTMLInputElement>("#walls-toggle"), adaptiveTimeToggle: required<HTMLInputElement>("#adaptive-time-toggle"),
   rewardProgress: required<HTMLInputElement>("#reward-progress"), rewardDirection: required<HTMLInputElement>("#reward-direction"), rewardMoving: required<HTMLInputElement>("#reward-moving"),
   rewardStanding: required<HTMLInputElement>("#reward-standing"), rewardWrong: required<HTMLInputElement>("#reward-wrong"), rewardReverse: required<HTMLInputElement>("#reward-reverse"),
   rewardOffTrack: required<HTMLInputElement>("#reward-offtrack"), rewardEdge: required<HTMLInputElement>("#reward-edge"), rewardCenterline: required<HTMLInputElement>("#reward-centerline"), rewardCollision: required<HTMLInputElement>("#reward-collision"), rewardCrash: required<HTMLInputElement>("#reward-crash"), rewardCheckpoint: required<HTMLInputElement>("#reward-checkpoint"), rewardFinish: required<HTMLInputElement>("#reward-finish"),
@@ -155,7 +155,7 @@ function readRewardConfig(): RewardConfig {
 }
 
 function readPhysicsConfig(): PhysicsConfig {
-  physicsConfig = { wallsEnabled: ui.wallsToggle.checked };
+  physicsConfig = { wallsEnabled: ui.wallsToggle.checked, adaptiveTimeLimit: ui.adaptiveTimeToggle.checked, maxAdaptiveExtensions: 2 };
   return physicsConfig;
 }
 
@@ -173,14 +173,16 @@ function updateRewardTelemetry(car: Car | undefined): void {
   const breakdown = car.rewardBreakdown;
   const penalty = breakdown.standingStill + breakdown.wrongDirection + breakdown.reverseProgress + breakdown.offTrack + breakdown.edge + breakdown.collision + breakdown.crash;
   ui.reward.textContent = car.lastReward.toFixed(2);
+  ui.reward.className = car.lastReward > 0.001 ? "metric-positive" : car.lastReward < -0.001 ? "metric-negative" : "metric-neutral";
   ui.direction.textContent = `${Math.round(clamp((car.forwardAlignment + 1) * 50, 0, 100))}%`;
   ui.centerline.textContent = `${Math.round(clamp(1 - Math.abs(car.lateralOffset), 0, 1) * 100)}%`;
   ui.penalties.textContent = `-${penalty.toFixed(2)}`;
+  ui.penalties.className = penalty > 0.001 ? "metric-negative" : "metric-neutral";
 }
 
 function setBusy(value: boolean): void {
   [ui.raceButton, ui.driveButton, ui.visualButton, ui.evolveFiveButton, ui.headlessButton, ui.resetButton, ui.saveButton, ui.loadButton, ui.exportButton, ui.importButton].forEach((button) => { button.disabled = value; });
-  [ui.trackSelect, ui.wallsToggle, ui.rewardProgress, ui.rewardDirection, ui.rewardMoving, ui.rewardStanding, ui.rewardWrong, ui.rewardReverse, ui.rewardOffTrack, ui.rewardEdge, ui.rewardCenterline, ui.rewardCollision, ui.rewardCrash, ui.rewardCheckpoint, ui.rewardFinish].forEach((input) => { input.disabled = value; });
+  [ui.trackSelect, ui.wallsToggle, ui.adaptiveTimeToggle, ui.rewardProgress, ui.rewardDirection, ui.rewardMoving, ui.rewardStanding, ui.rewardWrong, ui.rewardReverse, ui.rewardOffTrack, ui.rewardEdge, ui.rewardCenterline, ui.rewardCollision, ui.rewardCrash, ui.rewardCheckpoint, ui.rewardFinish].forEach((input) => { input.disabled = value; });
   ui.stopButton.disabled = !(value || running);
 }
 
@@ -346,14 +348,15 @@ function updateRace(): void {
   if (!running || training) return;
   raceCars.forEach((car) => {
     const action = car === fly && manualMode ? manualAction() : car.isFly && car.network ? car.network.step(sensorValues(car, raceCars, activeTrack)) : heuristicAction(car, raceCars, activeTrack);
-    car.action = action; stepCar(car, action, raceCars, activeTrack, rewardConfig, physicsConfig);
+    const previousTimeLimit = car.timeLimit; car.action = action; stepCar(car, action, raceCars, activeTrack, rewardConfig, physicsConfig);
+    if (car.isFly && car.timeLimit > previousTimeLimit) appendEvent(`adaptive time extension ${car.timeExtensions}/2 · limit increased to ${car.timeLimit} ticks`);
   });
   if (fly) {
     const lapPercent = Math.round(fly.progress * 100);
     ui.progress.textContent = `${lapPercent}%`;
     ui.speed.textContent = fly.speed.toFixed(1);
     updateRewardTelemetry(fly);
-    if (!fly.finished) setProgress(fly.progress, `lap ${lapPercent}%`, `speed ${fly.speed.toFixed(1)} · checkpoints ${fly.checkpointsPassed}/${CHECKPOINT_COUNT} · collisions ${fly.collisions}`);
+    if (!fly.finished) setProgress(fly.progress, `lap ${lapPercent}%`, `speed ${fly.speed.toFixed(1)} · time ${fly.ticks}/${fly.timeLimit} · checkpoints ${fly.checkpointsPassed}/${CHECKPOINT_COUNT} · collisions ${fly.collisions}`);
     if (fly.finished && !flyFinishAnnounced) {
       flyFinishAnnounced = true;
       setRunState("Finish line crossed", `Fly pilot completed a lap on ${activeTrack.name} with reward ${fly.score.toFixed(1)}.`, "ready", "FINISH");
@@ -362,7 +365,7 @@ function updateRace(): void {
     }
     if (fly.timedOut && !fly.finished && !flyFinishAnnounced) {
       flyFinishAnnounced = true;
-      setRunState("Time limit", `Fly pilot reached the ${MAX_TICKS}-tick limit without completing the lap.`, "paused", "TIME LIMIT");
+      setRunState("Time limit", `Fly pilot reached its ${fly.timeLimit}-tick limit without completing the lap.`, "paused", "TIME LIMIT");
       appendEvent(`time limit reached on ${activeTrack.name} · no crash recorded`);
     }
   }
@@ -386,17 +389,20 @@ function trainFiveBrainStep(): void {
   const route = trainingTracks[trainingTrackIndex];
   trainingPopulation.forEach((car) => {
     if (!car.network || car.crashed || car.finished || car.timedOut) return;
+    const previousTimeLimit = car.timeLimit;
     car.action = car.network.step(sensorValues(car, trainingPopulation, route));
     stepCar(car, car.action, trainingPopulation, route, rewardConfig, physicsConfig);
+    if (car.timeLimit > previousTimeLimit) appendEvent(`${car.name} earned adaptive extension ${car.timeExtensions}/2 · new limit ${car.timeLimit} ticks`);
   });
   const tick = Math.max(0, ...trainingPopulation.map((car) => car.ticks));
   const episodesPerGeneration = Math.max(1, trainingTracks.length);
   const generationEpisodes = trainingPopulationSize * episodesPerGeneration;
   const completedEpisodes = (trainingGeneration - 1) * generationEpisodes + trainingTrackIndex * trainingPopulationSize;
-  const liveFraction = tick / MAX_TICKS;
   const leader = [...trainingPopulation].sort((a, b) => b.score - a.score)[0];
-  setProgress((completedEpisodes + liveFraction * trainingPopulationSize) / Math.max(1, requestedGenerations * generationEpisodes), `generation ${trainingGeneration}/${requestedGenerations} · five brains racing · ${route.name}`, `visual race · ${tick}/${MAX_TICKS} ticks · leader checkpoints ${leader?.checkpointsPassed ?? 0}/${CHECKPOINT_COUNT} · winner is ranked by averaged fitness`);
-  const finished = trainingPopulation.every((car) => car.crashed || car.finished || car.timedOut || car.ticks >= MAX_TICKS);
+  const displayedTimeLimit = Math.max(MAX_TICKS, ...trainingPopulation.map((car) => car.timeLimit));
+  const liveFraction = Math.min(1, tick / MAX_TICKS);
+  setProgress((completedEpisodes + liveFraction * trainingPopulationSize) / Math.max(1, requestedGenerations * generationEpisodes), `generation ${trainingGeneration}/${requestedGenerations} · five brains racing · ${route.name}`, `visual race · ${tick}/${displayedTimeLimit} ticks · leader checkpoints ${leader?.checkpointsPassed ?? 0}/${CHECKPOINT_COUNT} · winner is ranked by averaged fitness`);
+  const finished = trainingPopulation.every((car) => car.crashed || car.finished || car.timedOut);
   if (leader) {
     updateRewardTelemetry(leader);
     ui.fitness.textContent = leader.score.toFixed(1);
@@ -423,14 +429,15 @@ function trainFiveBrainStep(): void {
 function trainPopulationStep(): void {
   if (fiveBrainEvolution) { trainFiveBrainStep(); return; }
   const car = trainingPopulation[trainingIndex]; if (!car?.network) return;
-  const cars = [car]; car.action = car.network.step(sensorValues(car, cars, trainingTracks[trainingTrackIndex])); stepCar(car, car.action, cars, trainingTracks[trainingTrackIndex], rewardConfig, physicsConfig);
+  const cars = [car]; const previousTimeLimit = car.timeLimit; car.action = car.network.step(sensorValues(car, cars, trainingTracks[trainingTrackIndex])); stepCar(car, car.action, cars, trainingTracks[trainingTrackIndex], rewardConfig, physicsConfig);
+  if (car.timeLimit > previousTimeLimit) appendEvent(`candidate ${trainingIndex + 1} earned adaptive extension ${car.timeExtensions}/2 · new limit ${car.timeLimit} ticks`);
   updateRewardTelemetry(car);
   const episodeCount = Math.max(1, trainingTracks.length); const totalEpisodes = Math.max(1, trainingPopulationSize * episodeCount * requestedGenerations);
   const completedEpisodes = (trainingGeneration - 1) * trainingPopulationSize * episodeCount + trainingIndex * episodeCount + trainingTrackIndex;
-  const candidateFraction = car.ticks / MAX_TICKS;
+  const candidateFraction = Math.min(1, car.ticks / MAX_TICKS);
   const route = trainingTracks[trainingTrackIndex];
-  setProgress((completedEpisodes + candidateFraction) / totalEpisodes, `generation ${trainingGeneration}/${requestedGenerations} · candidate ${trainingIndex + 1}/${trainingPopulationSize} · ${route.name}`, `visual · tick ${car.ticks}/${MAX_TICKS} · checkpoints ${car.checkpointsPassed}/${CHECKPOINT_COUNT} · direction ${Math.round(clamp((car.forwardAlignment + 1) * 50, 0, 100))}%`);
-  if (car.crashed || car.finished || car.ticks >= MAX_TICKS) {
+  setProgress((completedEpisodes + candidateFraction) / totalEpisodes, `generation ${trainingGeneration}/${requestedGenerations} · candidate ${trainingIndex + 1}/${trainingPopulationSize} · ${route.name}`, `visual · tick ${car.ticks}/${car.timeLimit} · checkpoints ${car.checkpointsPassed}/${CHECKPOINT_COUNT} · direction ${Math.round(clamp((car.forwardAlignment + 1) * 50, 0, 100))}%`);
+  if (car.crashed || car.finished || car.timedOut) {
     recordTrainingTrace(car);
     trainingScores[trainingIndex] += car.score;
     trainingProgresses[trainingIndex] += car.totalProgress;
@@ -569,6 +576,7 @@ ui.importButton.addEventListener("click", () => ui.importFile.click());
 ui.importFile.addEventListener("change", () => { const file = ui.importFile.files?.[0]; if (file) void importBrain(file); });
 ui.trackSelect.addEventListener("change", () => { if (!training) safely(launchRace); });
 ui.wallsToggle.addEventListener("change", () => { physicsConfig = readPhysicsConfig(); appendEvent(physicsConfig.wallsEnabled ? "track walls enabled · off-track recovery is active" : "track walls disabled · cars may leave the road and only receive off-track penalties"); });
+ui.adaptiveTimeToggle.addEventListener("change", () => { physicsConfig = readPhysicsConfig(); appendEvent(physicsConfig.adaptiveTimeLimit ? "adaptive time enabled · non-negative reward rate can double the limit twice" : "adaptive time disabled · candidates stop at the base tick limit"); });
 [ui.rewardProgress, ui.rewardDirection, ui.rewardMoving, ui.rewardStanding, ui.rewardWrong, ui.rewardReverse, ui.rewardOffTrack, ui.rewardEdge, ui.rewardCenterline, ui.rewardCollision, ui.rewardCrash, ui.rewardCheckpoint, ui.rewardFinish].forEach((input) => {
   input.addEventListener("change", () => { rewardConfig = readRewardConfig(); appendEvent("reward settings updated · new weights apply immediately"); });
 });

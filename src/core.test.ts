@@ -298,6 +298,27 @@ describe("vehicle physics and fitness", () => {
     expect(car.position).toEqual(position);
   });
 
+  it("doubles the time limit only while reward rate remains viable and improving", () => {
+    const adaptive = { wallsEnabled: true, adaptiveTimeLimit: true, maxAdaptiveExtensions: 2 };
+    const car = startPosition(); car.ticks = MAX_TICKS - 1; car.rewardWindowTicks = 299; car.rewardWindowScore = 0;
+    stepCar(car, { steer: 0, throttle: 0, brake: 0 }, [car], DEFAULT_TRACK, DEFAULT_REWARD_CONFIG, adaptive);
+    expect(car.timeExtensions).toBe(1);
+    expect(car.timeLimit).toBe(MAX_TICKS * 2);
+    expect(car.timedOut).toBe(false);
+
+    car.ticks = car.timeLimit - 1; car.rewardWindowTicks = 299; car.rewardWindowScore = 10; car.previousRewardRate = 0;
+    stepCar(car, { steer: 0, throttle: 0, brake: 0 }, [car], DEFAULT_TRACK, DEFAULT_REWARD_CONFIG, adaptive);
+    expect(car.timeExtensions).toBe(2);
+    expect(car.timeLimit).toBe(MAX_TICKS * 4);
+    expect(car.timedOut).toBe(false);
+
+    const stalled = startPosition(); stalled.ticks = MAX_TICKS - 1; stalled.rewardWindowTicks = 299; stalled.rewardWindowScore = -100;
+    stepCar(stalled, { steer: 0, throttle: 0, brake: 0 }, [stalled], DEFAULT_TRACK, DEFAULT_REWARD_CONFIG, adaptive);
+    expect(stalled.timeExtensions).toBe(0);
+    expect(stalled.timedOut).toBe(true);
+    expect(stalled.crashed).toBe(false);
+  });
+
   it("detects a forward finish-line crossing exactly once", () => {
     const car = startPosition(0, DEFAULT_TRACK);
     const last = DEFAULT_TRACK.points[DEFAULT_TRACK.points.length - 1];
