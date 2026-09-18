@@ -100,7 +100,10 @@
             <label class="check-row"><input id="ghost-evolution-toggle" type="checkbox" /> <span>Ghost evolution <small>optional: candidates are isolated and cannot collide</small></span></label>
             <label class="check-row"><input id="obstacle-toggle" type="checkbox" /> <span>Random road objects <small>stalled cars are added to avoidance training</small></span></label>
             <label>Object count <input id="obstacle-count" type="number" min="0" max="64" value="6" /></label>
-            <p class="microcopy">The population button runs all configured brains simultaneously when Ghost evolution is off, including 10+ cars. Turn Ghost evolution on for independent candidate worlds. The current best remains candidate 1; lower-scoring generations are rejected, and stalled progress automatically increases mutation strength.</p>
+            <label class="check-row"><input id="plateau-exploration-toggle" type="checkbox" checked /> <span>Plateau exploration <small>adds high-variance scouts and random immigrant brains</small></span></label>
+            <label>Plateau patience <input id="plateau-patience" type="number" min="1" max="20" value="3" /></label>
+            <label class="check-row"><input id="curriculum-toggle" type="checkbox" /> <span>Progressive hazards <small>ramps stalled road objects from easy to full difficulty</small></span></label>
+            <p class="microcopy">The population button runs all configured brains simultaneously when Ghost evolution is off, including 10+ cars. Turn Ghost evolution on for independent candidate worlds. The current best remains candidate 1; lower-scoring generations are rejected. Candidates share the same deterministic world per run, so fitness comparisons are fair.</p>
           </section>
 
           <details class="panel-section reward-settings" open>
@@ -129,6 +132,8 @@
             <div><span>Generation</span><strong id="generation">0</strong></div>
             <div><span>Best fitness</span><strong id="fitness">—</strong></div>
             <div><span>Best lap progress</span><strong id="progress">0%</strong></div>
+            <div><span>Plateau</span><strong id="plateau" class="metric-neutral">clear</strong></div>
+            <div><span>Evolution strategy</span><strong id="evolution-strategy" class="metric-neutral">local search</strong></div>
             <div><span>Race speed</span><strong id="speed">0.0</strong></div>
             <div><span>Last reward</span><strong id="reward">0.0</strong></div>
             <div><span>Direction</span><strong id="direction">100%</strong></div>

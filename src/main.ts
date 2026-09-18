@@ -1,7 +1,7 @@
 import "./style.css";
 import {
   BrainSnapshot, CAR_WIDTH, CHECKPOINT_COUNT, LANE_SPACING, MAX_ADAPTIVE_EXTENSIONS, Car, DEFAULT_PHYSICS_CONFIG, DEFAULT_REWARD_CONFIG, DEFAULT_TRACK, MAX_TICKS, PhysicsConfig, RewardConfig, STEP, TAU, TRACKS, TrackDefinition, Vec,
-  SpikingNetwork, clamp, createRoadObstacles, evaluateGeneralist, heuristicAction, nearestTrack, pointAtDistance, resolveTrack, sensorValues, startLine, startPosition, stepCar, trackCheckpoint,
+  SpikingNetwork, clamp, createMutationPopulation, createRoadObstacles, evaluateGeneralist, heuristicAction, nearestTrack, pointAtDistance, resolveTrack, sensorValues, startLine, startPosition, stepCar, trackCheckpoint,
 } from "./core";
 
 const WIDTH = 960;
@@ -26,12 +26,12 @@ const ui = {
   resetButton: required<HTMLButtonElement>("#reset-btn"), saveButton: required<HTMLButtonElement>("#save-btn"), loadButton: required<HTMLButtonElement>("#load-btn"),
   exportButton: required<HTMLButtonElement>("#export-btn"), importButton: required<HTMLButtonElement>("#import-btn"), importFile: required<HTMLInputElement>("#import-file"),
   population: required<HTMLInputElement>("#population"), generations: required<HTMLInputElement>("#generations"),
-  trackSelect: required<HTMLSelectElement>("#track-select"), wallsToggle: required<HTMLInputElement>("#walls-toggle"), adaptiveTimeToggle: required<HTMLInputElement>("#adaptive-time-toggle"), adaptiveExtensions: required<HTMLInputElement>("#adaptive-extensions"), checkpointCount: required<HTMLInputElement>("#checkpoint-count"), ghostEvolutionToggle: required<HTMLInputElement>("#ghost-evolution-toggle"), obstacleToggle: required<HTMLInputElement>("#obstacle-toggle"), obstacleCount: required<HTMLInputElement>("#obstacle-count"),
+  trackSelect: required<HTMLSelectElement>("#track-select"), wallsToggle: required<HTMLInputElement>("#walls-toggle"), adaptiveTimeToggle: required<HTMLInputElement>("#adaptive-time-toggle"), adaptiveExtensions: required<HTMLInputElement>("#adaptive-extensions"), checkpointCount: required<HTMLInputElement>("#checkpoint-count"), ghostEvolutionToggle: required<HTMLInputElement>("#ghost-evolution-toggle"), obstacleToggle: required<HTMLInputElement>("#obstacle-toggle"), obstacleCount: required<HTMLInputElement>("#obstacle-count"), plateauExplorationToggle: required<HTMLInputElement>("#plateau-exploration-toggle"), plateauPatience: required<HTMLInputElement>("#plateau-patience"), curriculumToggle: required<HTMLInputElement>("#curriculum-toggle"),
   rewardProgress: required<HTMLInputElement>("#reward-progress"), rewardDirection: required<HTMLInputElement>("#reward-direction"), rewardMoving: required<HTMLInputElement>("#reward-moving"),
   rewardStanding: required<HTMLInputElement>("#reward-standing"), rewardWrong: required<HTMLInputElement>("#reward-wrong"), rewardReverse: required<HTMLInputElement>("#reward-reverse"),
   rewardOffTrack: required<HTMLInputElement>("#reward-offtrack"), rewardEdge: required<HTMLInputElement>("#reward-edge"), rewardProximity: required<HTMLInputElement>("#reward-proximity"), rewardCenterline: required<HTMLInputElement>("#reward-centerline"), rewardCollision: required<HTMLInputElement>("#reward-collision"), rewardCrash: required<HTMLInputElement>("#reward-crash"), rewardCheckpoint: required<HTMLInputElement>("#reward-checkpoint"), rewardFinish: required<HTMLInputElement>("#reward-finish"),
   mode: required<HTMLElement>("#mode-label"), hint: required<HTMLElement>("#hint-label"), status: required<HTMLElement>("#training-status"),
-  generation: required<HTMLElement>("#generation"), fitness: required<HTMLElement>("#fitness"), progress: required<HTMLElement>("#progress"),
+  generation: required<HTMLElement>("#generation"), fitness: required<HTMLElement>("#fitness"), progress: required<HTMLElement>("#progress"), plateau: required<HTMLElement>("#plateau"), strategy: required<HTMLElement>("#evolution-strategy"),
   speed: required<HTMLElement>("#speed"), reward: required<HTMLElement>("#reward"), direction: required<HTMLElement>("#direction"), centerline: required<HTMLElement>("#centerline"), traffic: required<HTMLElement>("#traffic-gap"), penalties: required<HTMLElement>("#penalties"), rewardBreakdown: required<HTMLElement>("#reward-breakdown"), bars: required<HTMLElement>("#neural-bars"),
   runState: required<HTMLElement>("#run-state"), runDetail: required<HTMLElement>("#run-detail"),
   runProgressTrack: required<HTMLElement>("#run-progress-track"), runProgressBar: required<HTMLElement>("#run-progress-bar"),
@@ -71,6 +71,11 @@ let rewardConfig: RewardConfig = { ...DEFAULT_REWARD_CONFIG };
 let physicsConfig: PhysicsConfig = { ...DEFAULT_PHYSICS_CONFIG };
 let randomObjectsEnabled = false;
 let randomObjectCount = 0;
+let plateauExplorationEnabled = true;
+let plateauPatience = 3;
+let plateauStreak = 0;
+let curriculumEnabled = false;
+let trainingWorldSeed = 0;
 const DEFAULT_MUTATION_RATE = 0.12;
 const DEFAULT_MUTATION_AMOUNT = 0.22;
 let mutationRate = DEFAULT_MUTATION_RATE;
@@ -217,8 +222,29 @@ function readRoadObjectConfig(): void {
   randomObjectCount = readInteger(ui.obstacleCount, 6, 0, 64);
 }
 
+function readEvolutionConfig(): void {
+  plateauExplorationEnabled = ui.plateauExplorationToggle.checked;
+  plateauPatience = readInteger(ui.plateauPatience, 3, 1, 20);
+  curriculumEnabled = ui.curriculumToggle.checked;
+}
+
+function trainingObstacleCount(): number {
+  if (!randomObjectsEnabled || randomObjectCount <= 0) return 0;
+  if (!curriculumEnabled || requestedGenerations <= 1) return randomObjectCount;
+  const difficulty = clamp((trainingGeneration - 1) / Math.max(1, requestedGenerations - 1), 0, 1);
+  return Math.max(1, Math.round(randomObjectCount * (0.2 + difficulty * 0.8)));
+}
+
+function updateEvolutionTelemetry(): void {
+  const exploring = plateauExplorationEnabled && plateauStreak >= plateauPatience;
+  ui.plateau.textContent = plateauStreak === 0 ? "clear" : `${plateauStreak} gen`;
+  ui.strategy.textContent = !plateauExplorationEnabled ? "fixed mutation" : exploring ? "exploration burst" : `local search · ${plateauPatience} gen patience`;
+  ui.plateau.className = plateauStreak === 0 ? "metric-neutral" : exploring ? "metric-negative" : "metric-neutral";
+  ui.strategy.className = exploring ? "metric-negative" : "metric-neutral";
+}
+
 function refreshTrainingObstacles(route: TrackDefinition, seed: number): void {
-  trainingObstacles = randomObjectsEnabled ? createRoadObstacles(randomObjectCount, route, seed) : [];
+  trainingObstacles = randomObjectsEnabled ? createRoadObstacles(trainingObstacleCount(), route, seed) : [];
 }
 
 function selectedTracks(): TrackDefinition[] {
@@ -267,7 +293,7 @@ function updateRewardTelemetry(car: Car | undefined): void {
 
 function setBusy(value: boolean): void {
   [ui.raceButton, ui.driveButton, ui.visualButton, ui.evolveFiveButton, ui.headlessButton, ui.resetButton, ui.loadButton, ui.importButton].forEach((button) => { button.disabled = value; });
-  [ui.trackSelect, ui.wallsToggle, ui.adaptiveTimeToggle, ui.adaptiveExtensions, ui.checkpointCount, ui.ghostEvolutionToggle, ui.obstacleToggle, ui.obstacleCount, ui.rewardProgress, ui.rewardDirection, ui.rewardMoving, ui.rewardStanding, ui.rewardWrong, ui.rewardReverse, ui.rewardOffTrack, ui.rewardEdge, ui.rewardProximity, ui.rewardCenterline, ui.rewardCollision, ui.rewardCrash, ui.rewardCheckpoint, ui.rewardFinish].forEach((input) => { input.disabled = value; });
+  [ui.trackSelect, ui.wallsToggle, ui.adaptiveTimeToggle, ui.adaptiveExtensions, ui.checkpointCount, ui.ghostEvolutionToggle, ui.obstacleToggle, ui.obstacleCount, ui.plateauExplorationToggle, ui.plateauPatience, ui.curriculumToggle, ui.rewardProgress, ui.rewardDirection, ui.rewardMoving, ui.rewardStanding, ui.rewardWrong, ui.rewardReverse, ui.rewardOffTrack, ui.rewardEdge, ui.rewardProximity, ui.rewardCenterline, ui.rewardCollision, ui.rewardCrash, ui.rewardCheckpoint, ui.rewardFinish].forEach((input) => { input.disabled = value; });
   ui.stopButton.disabled = !(value || running);
 }
 
@@ -484,11 +510,6 @@ function makeFiveBrainCar(network: SpikingNetwork, index: number, route: TrackDe
   car.network = network; car.isFly = true; network.reset(); return car;
 }
 
-function createMutationPopulation(size: number, parent: SpikingNetwork | undefined, seed: number, rate = mutationRate, amount = mutationAmount): SpikingNetwork[] {
-  const stableParent = (parent ?? new SpikingNetwork(seed)).clone();
-  return [stableParent, ...Array.from({ length: Math.max(0, size - 1) }, (_, index) => stableParent.mutate(rate, amount, seed + index + 1))];
-}
-
 function ensureWorkingCheckpoint(): void {
   if (!bestNetwork && trainingNetworks[0]) bestNetwork = trainingNetworks[0].clone();
 }
@@ -525,7 +546,7 @@ function trainFiveBrainStep(): void {
   if (trainingTrackIndex + 1 < trainingTracks.length) {
     trainingTrackIndex += 1; activeTrack = trainingTracks[trainingTrackIndex];
     trainingPopulation = trainingNetworks.map((network, index) => makeFiveBrainCar(network, index, activeTrack));
-    refreshTrainingObstacles(activeTrack, trainingGeneration * 1000 + trainingTrackIndex);
+      refreshTrainingObstacles(activeTrack, trainingWorldSeed + trainingTrackIndex * 97);
     appendEvent(`${trainingPopulationSize} brains reset for ${activeTrack.name}; previous track scores retained`);
     return;
   }
@@ -556,7 +577,7 @@ function trainPopulationStep(): void {
     if (trainingTrackIndex + 1 < trainingTracks.length) {
       trainingTrackIndex += 1; activeTrack = trainingTracks[trainingTrackIndex];
       trainingPopulation[trainingIndex] = makeTrainingCar(car.network, (trainingIndex % 3) - 1, trainingTracks[trainingTrackIndex]);
-      refreshTrainingObstacles(activeTrack, trainingGeneration * 1000 + trainingIndex * 17 + trainingTrackIndex);
+      refreshTrainingObstacles(activeTrack, trainingWorldSeed + trainingTrackIndex * 97);
       setProgress((completedEpisodes + 1) / totalEpisodes, `generation ${trainingGeneration}/${requestedGenerations} · candidate ${trainingIndex + 1}/${trainingPopulationSize} · ${trainingTracks[trainingTrackIndex].name}`, "visual · switching track episode");
     } else {
       car.score = trainingScores[trainingIndex] / trainingTracks.length; car.totalProgress = trainingProgresses[trainingIndex] / trainingTracks.length;
@@ -569,11 +590,12 @@ function trainPopulationStep(): void {
 function startVisualGeneration(): void {
   trainingTrackIndex = 0; activeTrack = trainingTracks[0]; trainingScores = trainingNetworks.map(() => 0); trainingProgresses = trainingNetworks.map(() => 0);
   trainingPopulation = fiveBrainEvolution ? trainingNetworks.map((network, index) => makeFiveBrainCar(network, index, trainingTracks[0])) : trainingNetworks.map((network, index) => makeTrainingCar(network, (index % 3) - 1, trainingTracks[0]));
-  refreshTrainingObstacles(activeTrack, trainingGeneration * 1000 + 1);
+  refreshTrainingObstacles(activeTrack, trainingWorldSeed);
   trainingIndex = 0;
   trainingPopulation.forEach((car) => car.network?.reset());
   const episodeCount = Math.max(1, trainingTracks.length);
   const evolutionLabel = ghostEvolution ? "ghost evolution · isolated candidates" : "shared-track evolution · collision dynamics enabled";
+  updateEvolutionTelemetry();
   setProgress(((trainingGeneration - 1) * trainingPopulationSize * episodeCount) / Math.max(1, trainingPopulationSize * episodeCount * requestedGenerations), fiveBrainEvolution ? `generation ${trainingGeneration}/${requestedGenerations} · ${trainingPopulationSize} brains · ${trainingTracks[0].name}` : `generation ${trainingGeneration}/${requestedGenerations} · candidate 1/${trainingPopulationSize} · ${trainingTracks[0].name}`, fiveBrainEvolution ? evolutionLabel : "visual · preparing candidate");
 }
 
@@ -588,6 +610,9 @@ function breed(): void {
   const improved = !bestNetwork || candidate.score > bestFitness;
   if (improved) {
     bestNetwork = candidate.network.clone(); bestFitness = candidate.score; generation = trainingGeneration;
+    plateauStreak = 0;
+  } else {
+    plateauStreak += 1;
   }
   previousGenerationProgress = Math.max(previousGenerationProgress, winnerProgress);
   if (progressStalled || !improved) {
@@ -597,20 +622,22 @@ function breed(): void {
     mutationRate = clamp(mutationRate * 0.92, DEFAULT_MUTATION_RATE, 0.65);
     mutationAmount = clamp(mutationAmount * 0.94, DEFAULT_MUTATION_AMOUNT, 0.85);
   }
+  const exploring = plateauExplorationEnabled && plateauStreak >= plateauPatience;
+  updateEvolutionTelemetry();
   ui.generation.textContent = `${generation}`; ui.fitness.textContent = bestFitness.toFixed(1); ui.progress.textContent = `${Math.round(winnerProgress * 100)}%`;
   const result = improved ? `accepted new incumbent ${bestFitness.toFixed(1)}` : `rejected candidate ${candidate.score.toFixed(1)}; incumbent remains ${bestFitness.toFixed(1)}`;
   const reason = progressStalled ? "progress stalled" : improved ? "progress improved" : "fitness did not improve";
-  appendEvent(`generation ${trainingGeneration} complete · ${result} · ${reason} · mutation ${(mutationRate * 100).toFixed(0)}% / ${(mutationAmount).toFixed(2)} · next generation keeps parent at slot 1 and tries ${Math.max(0, ranked.length - 1)} mutations`);
+  appendEvent(`generation ${trainingGeneration} complete · ${result} · ${reason} · plateau ${plateauStreak}/${plateauPatience} · ${exploring ? "exploration burst with random immigrants" : "local mutations"} · mutation ${(mutationRate * 100).toFixed(0)}% / ${(mutationAmount).toFixed(2)} · next generation keeps parent at slot 1 and tries ${Math.max(0, ranked.length - 1)} variants`);
   persistBestBrain();
-  trainingNetworks = createMutationPopulation(ranked.length, bestNetwork, trainingGeneration * 1000, mutationRate, mutationAmount);
+  trainingNetworks = createMutationPopulation(ranked.length, bestNetwork, trainingWorldSeed + trainingGeneration * 1000, mutationRate, mutationAmount, { plateauStreak: plateauExplorationEnabled ? plateauStreak : 0, plateauPatience });
 }
 
 function finishVisualGeneration(): void { breed(); if (trainingGeneration >= requestedGenerations) finishTraining(); else { trainingGeneration += 1; startVisualGeneration(); } }
 
 async function runHeadless(): Promise<void> {
   const session = ++trainingSession; clearVisualTimer(); training = true; running = false; visualTraining = false; fiveBrainEvolution = false; ghostEvolution = ui.ghostEvolutionToggle.checked; manualMode = false; trainingGeneration = 1;
-  trainingPopulationSize = readInteger(ui.population, 5, 2, 80); requestedGenerations = readInteger(ui.generations, 100, 1, 10000); trainingTracks = selectedTracks(); rewardConfig = readRewardConfig(); physicsConfig = readPhysicsConfig(); readRoadObjectConfig(); activeTrack = trainingTracks[0]; mutationRate = DEFAULT_MUTATION_RATE; mutationAmount = DEFAULT_MUTATION_AMOUNT; previousGenerationProgress = 0; trainingNetworks = createMutationPopulation(trainingPopulationSize, bestNetwork, 7000); ensureWorkingCheckpoint();
-  beginRun("Headless training", `Evaluating ${trainingPopulationSize} controllers across ${requestedGenerations} generations on ${selectedTrackLabel()}${ghostEvolution ? " in isolated ghost worlds" : " with traffic bots"}${randomObjectsEnabled ? ` and ${randomObjectCount} road objects` : ""}.`, "HEADLESS TRAINING");
+  trainingPopulationSize = readInteger(ui.population, 5, 2, 80); requestedGenerations = readInteger(ui.generations, 100, 1, 10000); trainingTracks = selectedTracks(); rewardConfig = readRewardConfig(); physicsConfig = readPhysicsConfig(); readRoadObjectConfig(); readEvolutionConfig(); activeTrack = trainingTracks[0]; trainingWorldSeed = 7000; plateauStreak = 0; mutationRate = DEFAULT_MUTATION_RATE; mutationAmount = DEFAULT_MUTATION_AMOUNT; previousGenerationProgress = 0; trainingNetworks = createMutationPopulation(trainingPopulationSize, bestNetwork, trainingWorldSeed); ensureWorkingCheckpoint(); updateEvolutionTelemetry();
+  beginRun("Headless training", `Evaluating ${trainingPopulationSize} controllers across ${requestedGenerations} generations on ${selectedTrackLabel()}${ghostEvolution ? " in isolated ghost worlds" : " with traffic bots"}${randomObjectsEnabled ? ` and ${trainingObstacleCount()} road objects` : ""}${curriculumEnabled ? " on a progressive hazard curriculum" : ""}.`, "HEADLESS TRAINING");
   setBusy(true); ui.generation.textContent = "0"; ui.fitness.textContent = "—";
   try {
     for (; trainingGeneration <= requestedGenerations && training && trainingSession === session; trainingGeneration += 1) {
@@ -624,7 +651,7 @@ async function runHeadless(): Promise<void> {
         const startedCandidates = (trainingGeneration - 1) * trainingPopulationSize + index;
         setProgress(startedCandidates / totalCandidates, `generation ${trainingGeneration}/${requestedGenerations} · candidate ${index + 1}/${trainingPopulationSize}`, `headless · ${trainingTracks.length} track${trainingTracks.length === 1 ? "" : "s"} · evaluating…`);
         await new Promise<void>((resolve) => setTimeout(resolve, 0));
-        const result = evaluateGeneralist(car.network as SpikingNetwork, trainingTracks, rewardConfig, physicsConfig, ghostEvolution, randomObjectsEnabled ? randomObjectCount : 0, trainingGeneration * 1000 + index); car.score = result.fitness; car.progress = result.progress; car.totalProgress = result.progress; car.finished = result.finished; car.laps = result.laps; car.rewardTotals = result.rewardTotals; car.rewardBreakdown = result.rewardTotals; car.lastReward = 0; car.forwardAlignment = 0;
+        const result = evaluateGeneralist(car.network as SpikingNetwork, trainingTracks, rewardConfig, physicsConfig, ghostEvolution, trainingObstacleCount(), trainingWorldSeed); car.score = result.fitness; car.progress = result.progress; car.totalProgress = result.progress; car.finished = result.finished; car.laps = result.laps; car.rewardTotals = result.rewardTotals; car.rewardBreakdown = result.rewardTotals; car.lastReward = 0; car.forwardAlignment = 0;
         trainingIndex = index + 1;
         const completedCandidates = (trainingGeneration - 1) * trainingPopulationSize + trainingIndex;
         ui.fitness.textContent = result.fitness.toFixed(1);
@@ -642,14 +669,14 @@ async function runHeadless(): Promise<void> {
 
 function startVisualTraining(): void {
   const session = ++trainingSession; clearVisualTimer(); training = true; running = false; visualTraining = true; fiveBrainEvolution = false; manualMode = false; trainingHistory = []; trainingGeneration = 1;
-  trainingPopulationSize = readInteger(ui.population, 5, 2, 80); requestedGenerations = readInteger(ui.generations, 100, 1, 10000); trainingTracks = selectedTracks(); rewardConfig = readRewardConfig(); physicsConfig = readPhysicsConfig(); readRoadObjectConfig(); activeTrack = trainingTracks[0]; mutationRate = DEFAULT_MUTATION_RATE; mutationAmount = DEFAULT_MUTATION_AMOUNT; previousGenerationProgress = 0; trainingNetworks = createMutationPopulation(trainingPopulationSize, bestNetwork, 5000); ensureWorkingCheckpoint();
-  beginRun("Visual training", `Watching ${trainingPopulationSize} candidates drive across ${requestedGenerations} generations on ${selectedTrackLabel()}${randomObjectsEnabled ? ` with ${randomObjectCount} road objects` : ""}.`, "VISUAL TRAINING");
+  trainingPopulationSize = readInteger(ui.population, 5, 2, 80); requestedGenerations = readInteger(ui.generations, 100, 1, 10000); trainingTracks = selectedTracks(); rewardConfig = readRewardConfig(); physicsConfig = readPhysicsConfig(); readRoadObjectConfig(); readEvolutionConfig(); activeTrack = trainingTracks[0]; trainingWorldSeed = 5000; plateauStreak = 0; mutationRate = DEFAULT_MUTATION_RATE; mutationAmount = DEFAULT_MUTATION_AMOUNT; previousGenerationProgress = 0; trainingNetworks = createMutationPopulation(trainingPopulationSize, bestNetwork, trainingWorldSeed); ensureWorkingCheckpoint(); updateEvolutionTelemetry();
+  beginRun("Visual training", `Watching ${trainingPopulationSize} candidates drive across ${requestedGenerations} generations on ${selectedTrackLabel()}${randomObjectsEnabled ? ` with ${trainingObstacleCount()} road objects` : ""}${curriculumEnabled ? " on a progressive hazard curriculum" : ""}.`, "VISUAL TRAINING");
   setBusy(true); ui.generation.textContent = "0"; ui.fitness.textContent = "—"; startVisualGeneration(); scheduleVisualBatch(session);
 }
 
 function startFiveBrainEvolution(): void {
   const session = ++trainingSession; clearVisualTimer(); training = true; running = false; visualTraining = true; fiveBrainEvolution = true; ghostEvolution = ui.ghostEvolutionToggle.checked; manualMode = false; trainingHistory = []; trainingGeneration = 1;
-  trainingPopulationSize = readInteger(ui.population, 5, 2, 80); requestedGenerations = readInteger(ui.generations, 100, 1, 10000); trainingTracks = selectedTracks(); rewardConfig = readRewardConfig(); physicsConfig = readPhysicsConfig(); readRoadObjectConfig(); activeTrack = trainingTracks[0]; mutationRate = DEFAULT_MUTATION_RATE; mutationAmount = DEFAULT_MUTATION_AMOUNT; previousGenerationProgress = 0; trainingNetworks = createMutationPopulation(trainingPopulationSize, bestNetwork, 9000); ensureWorkingCheckpoint();
+  trainingPopulationSize = readInteger(ui.population, 5, 2, 80); requestedGenerations = readInteger(ui.generations, 100, 1, 10000); trainingTracks = selectedTracks(); rewardConfig = readRewardConfig(); physicsConfig = readPhysicsConfig(); readRoadObjectConfig(); readEvolutionConfig(); activeTrack = trainingTracks[0]; trainingWorldSeed = 9000; plateauStreak = 0; mutationRate = DEFAULT_MUTATION_RATE; mutationAmount = DEFAULT_MUTATION_AMOUNT; previousGenerationProgress = 0; trainingNetworks = createMutationPopulation(trainingPopulationSize, bestNetwork, trainingWorldSeed); ensureWorkingCheckpoint(); updateEvolutionTelemetry();
   const mode = ghostEvolution ? "isolated ghost worlds" : "a shared physical track";
   beginRun("Population evolution", `Racing ${trainingPopulationSize} brains simultaneously in ${mode} for ${requestedGenerations} generations on ${selectedTrackLabel()}${randomObjectsEnabled ? ` with ${randomObjectCount} road objects` : ""}.`, "POPULATION EVOLUTION");
   setBusy(true); ui.generation.textContent = "0"; ui.fitness.textContent = "—"; startVisualGeneration(); scheduleVisualBatch(session);
@@ -711,6 +738,9 @@ ui.checkpointCount.addEventListener("change", () => { physicsConfig = readPhysic
 ui.ghostEvolutionToggle.addEventListener("change", () => { ghostEvolution = ui.ghostEvolutionToggle.checked; appendEvent(ghostEvolution ? "ghost evolution enabled · candidates cannot see or collide with one another" : "shared-track evolution enabled · candidates now learn traffic interactions"); });
 ui.obstacleToggle.addEventListener("change", () => { readRoadObjectConfig(); appendEvent(randomObjectsEnabled ? `random road objects enabled · ${randomObjectCount} stalled objects per episode` : "random road objects disabled"); });
 ui.obstacleCount.addEventListener("change", () => { readRoadObjectConfig(); appendEvent(`random road object count set to ${randomObjectCount}`); });
+ui.plateauExplorationToggle.addEventListener("change", () => { readEvolutionConfig(); updateEvolutionTelemetry(); appendEvent(plateauExplorationEnabled ? `plateau exploration enabled · patience ${plateauPatience} generations` : "plateau exploration disabled · mutation stays local"); });
+ui.plateauPatience.addEventListener("change", () => { readEvolutionConfig(); updateEvolutionTelemetry(); appendEvent(`plateau patience set to ${plateauPatience} generations`); });
+ui.curriculumToggle.addEventListener("change", () => { readEvolutionConfig(); appendEvent(curriculumEnabled ? "progressive hazards enabled · obstacle count ramps with training" : "progressive hazards disabled · obstacle count stays fixed"); });
 [ui.rewardProgress, ui.rewardDirection, ui.rewardMoving, ui.rewardStanding, ui.rewardWrong, ui.rewardReverse, ui.rewardOffTrack, ui.rewardEdge, ui.rewardProximity, ui.rewardCenterline, ui.rewardCollision, ui.rewardCrash, ui.rewardCheckpoint, ui.rewardFinish].forEach((input) => {
   input.addEventListener("change", () => { rewardConfig = readRewardConfig(); appendEvent("reward settings updated · new weights apply immediately"); });
 });
@@ -730,6 +760,7 @@ function frame(now: number): void {
 }
 
 try {
+  readEvolutionConfig(); updateEvolutionTelemetry();
   launchRace();
   setRunState("Ready to race", "The demo brain is driving now. Choose a training mode to evolve a better fly pilot.", "ready", "RACE MODE");
   appendEvent("application ready · choose a command to begin");

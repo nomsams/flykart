@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  CAR_COLLISION_DIAMETER, CHECKPOINT_COUNT, CLOSE_PROXIMITY_DISTANCE, DEFAULT_PHYSICS_CONFIG, DEFAULT_REWARD_CONFIG, DEFAULT_TRACK, MAX_TICKS, STEP, TRACKS, TRACK_WIDTH, BrainSnapshot, SpikingNetwork, createNetworkPopulation, createRoadObstacles,
+  CAR_COLLISION_DIAMETER, CHECKPOINT_COUNT, CLOSE_PROXIMITY_DISTANCE, DEFAULT_PHYSICS_CONFIG, DEFAULT_REWARD_CONFIG, DEFAULT_TRACK, MAX_TICKS, STEP, TRACKS, TRACK_WIDTH, BrainSnapshot, SpikingNetwork, createMutationPopulation, createNetworkPopulation, createRoadObstacles,
   evaluate, evaluateGeneralist, heuristicAction, nearestTrack, pointAtDistance, sensorValues, startPosition, stepCar, track, trackCheckpoint,
 } from "./core";
 
@@ -19,6 +19,16 @@ describe("SpikingNetwork", () => {
     const second = new SpikingNetwork(42);
     const inputs = [0.2, -0.3, 0.1, 0.4, 0.8, 0, -0.2, 0.5, 1];
     for (let index = 0; index < 20; index += 1) expect(first.step(inputs)).toEqual(second.step(inputs));
+  });
+
+  it("keeps the incumbent first and adds deterministic exploration immigrants after a plateau", () => {
+    const parent = new SpikingNetwork(12);
+    const local = createMutationPopulation(10, parent, 300, 0.12, 0.22);
+    const exploratory = createMutationPopulation(10, parent, 300, 0.12, 0.22, { plateauStreak: 3, plateauPatience: 3 });
+    expect(local[0].toJSON()).toEqual(parent.toJSON());
+    expect(exploratory[0].toJSON()).toEqual(parent.toJSON());
+    expect(createMutationPopulation(10, parent, 300, 0.12, 0.22, { plateauStreak: 3, plateauPatience: 3 }).map((network) => network.toJSON())).toEqual(exploratory.map((network) => network.toJSON()));
+    expect(exploratory.slice(1).some((network) => network.toJSON().inputWeights.join(",") !== parent.toJSON().inputWeights.join(","))).toBe(true);
   });
 
   it("resets hidden state and exposes bounded actions", () => {

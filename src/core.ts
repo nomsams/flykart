@@ -256,6 +256,40 @@ export class SpikingNetwork {
   }
 }
 
+export type MutationPopulationOptions = {
+  plateauStreak?: number;
+  plateauPatience?: number;
+  immigrantFraction?: number;
+};
+
+/**
+ * Build the next generation while preserving the exact incumbent in slot 1.
+ * During a plateau, the tail of the population becomes deterministic random
+ * immigrants and the remaining scouts use larger mutations. This creates a
+ * real escape route from a local optimum without ever replacing the parent
+ * with a lower-scoring candidate.
+ */
+export function createMutationPopulation(size: number, parent: SpikingNetwork | undefined, seed: number, rate = 0.12, amount = 0.22, options: MutationPopulationOptions = {}): SpikingNetwork[] {
+  const safeSize = Math.max(1, Math.floor(size));
+  const stableParent = parent?.clone() ?? new SpikingNetwork(seed);
+  const plateauStreak = Math.max(0, Math.floor(options.plateauStreak ?? 0));
+  const plateauPatience = Math.max(1, Math.floor(options.plateauPatience ?? 3));
+  const exploring = plateauStreak >= plateauPatience;
+  const immigrantFraction = clamp(options.immigrantFraction ?? 0.2, 0, 1);
+  const immigrantCount = exploring ? Math.min(safeSize - 1, Math.max(1, Math.floor((safeSize - 1) * immigrantFraction))) : 0;
+  const immigrantStart = safeSize - immigrantCount;
+  const children: SpikingNetwork[] = [stableParent];
+  for (let index = 1; index < safeSize; index += 1) {
+    if (exploring && index >= immigrantStart) {
+      children.push(new SpikingNetwork(seed + 90000 + index * 17));
+      continue;
+    }
+    const scoutMultiplier = exploring ? 1.25 + (index % 3) * 0.2 : 1;
+    children.push(stableParent.mutate(clamp(rate * scoutMultiplier, 0, 0.95), clamp(amount * scoutMultiplier, 0, 2), seed + index + 1));
+  }
+  return children;
+}
+
 export type Car = {
   position: Vec; heading: number; speed: number; progress: number; totalProgress: number; laps: number; bestProgress: number;
   trackId: TrackId; distanceAlong: number; nearestDistance: number; offTrackTicks: number; collisions: number; ticks: number; score: number;
