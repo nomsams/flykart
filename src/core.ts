@@ -1,7 +1,7 @@
 export type Vec = { x: number; y: number };
 export type Action = { steer: number; throttle: number; brake: number; reverse?: number };
 export type Sensors = number[];
-export type TrackId = "grand-loop" | "switchback" | "zigzag" | "hairpin" | "oval-sprint" | "sharp-turn" | "deep-hairpin" | "chicane" | "corkscrew" | "mountain-pass" | "tight-corners";
+export type TrackId = "grand-loop" | "switchback" | "zigzag" | "hairpin" | "oval-sprint" | "sharp-turn" | "deep-hairpin" | "chicane" | "corkscrew" | "mountain-pass" | "tight-corners" | "grand-prix" | "castle-run" | "needle-eye" | "rainbow-rally";
 export type TrackRef = TrackDefinition | TrackId;
 export type PhysicsConfig = { wallsEnabled: boolean; adaptiveTimeLimit?: boolean; maxAdaptiveExtensions?: number; checkpointCount?: number };
 
@@ -106,6 +106,34 @@ export const TRACKS: TrackDefinition[] = [
     { x: -55, y: 165 }, { x: -275, y: 165 }, { x: -345, y: 95 }, { x: -330, y: 20 },
     { x: -270, y: -25 }, { x: -330, y: -95 },
   ]),
+  createTrack("grand-prix", "Grand Prix", [
+    { x: -335, y: -120 }, { x: -250, y: -185 }, { x: -60, y: -185 }, { x: 100, y: -150 },
+    { x: 290, y: -180 }, { x: 340, y: -90 }, { x: 300, y: -10 }, { x: 200, y: 20 },
+    { x: 260, y: 100 }, { x: 330, y: 160 }, { x: 250, y: 210 }, { x: 60, y: 190 },
+    { x: -80, y: 220 }, { x: -220, y: 175 }, { x: -335, y: 205 }, { x: -360, y: 120 },
+    { x: -300, y: 60 }, { x: -350, y: -10 },
+  ], 128),
+  createTrack("castle-run", "Castle Run", [
+    { x: -330, y: -170 }, { x: -120, y: -170 }, { x: -50, y: -110 }, { x: 40, y: -170 },
+    { x: 250, y: -170 }, { x: 320, y: -105 }, { x: 260, y: -35 }, { x: 175, y: -15 },
+    { x: 230, y: 60 }, { x: 310, y: 75 }, { x: 330, y: 155 }, { x: 230, y: 205 },
+    { x: 90, y: 175 }, { x: 30, y: 105 }, { x: -60, y: 165 }, { x: -250, y: 165 },
+    { x: -330, y: 95 }, { x: -270, y: 25 }, { x: -340, y: -40 },
+  ], 104),
+  createTrack("needle-eye", "Needle Eye", [
+    { x: -330, y: -170 }, { x: -80, y: -170 }, { x: -20, y: -125 }, { x: -70, y: -80 },
+    { x: -260, y: -80 }, { x: -310, y: -25 }, { x: -260, y: 25 }, { x: -30, y: 25 },
+    { x: 45, y: 75 }, { x: -10, y: 125 }, { x: -220, y: 125 }, { x: -300, y: 180 },
+    { x: -80, y: 215 }, { x: 180, y: 195 }, { x: 310, y: 130 }, { x: 280, y: 45 },
+    { x: 170, y: 5 }, { x: 260, y: -45 }, { x: 325, y: -110 },
+  ], 84),
+  createTrack("rainbow-rally", "Rainbow Rally", [
+    { x: -335, y: -150 }, { x: -230, y: -205 }, { x: -60, y: -160 }, { x: 60, y: -215 },
+    { x: 220, y: -165 }, { x: 330, y: -95 }, { x: 250, y: -35 }, { x: 150, y: -60 },
+    { x: 80, y: 15 }, { x: 170, y: 90 }, { x: 300, y: 75 }, { x: 340, y: 155 },
+    { x: 220, y: 210 }, { x: 60, y: 170 }, { x: -20, y: 105 }, { x: -140, y: 150 },
+    { x: -280, y: 220 }, { x: -345, y: 120 }, { x: -280, y: 55 },
+  ], 118),
 ];
 
 export const DEFAULT_TRACK = TRACKS[0];
@@ -121,6 +149,7 @@ export function resolveTrack(trackRef: TrackRef = DEFAULT_TRACK): TrackDefinitio
 
 export type TrackDiagnostics = {
   length: number;
+  width: number;
   cornerCount: number;
   hardTurnCount: number;
   maxTurnDegrees: number;
@@ -179,6 +208,7 @@ export function trackDiagnostics(trackRef: TrackRef = DEFAULT_TRACK): TrackDiagn
   maxTurnSweep = Math.max(maxTurnSweep, activeSweep);
   return {
     length: route.length,
+    width: route.width,
     cornerCount: turns.filter((turn) => turn >= 8).length,
     hardTurnCount: hardTurns.length,
     maxTurnDegrees: Math.max(...turns),
@@ -187,6 +217,8 @@ export function trackDiagnostics(trackRef: TrackRef = DEFAULT_TRACK): TrackDiagn
     minSegmentLength: Math.min(...route.segmentLengths),
   };
 }
+
+export type RoadObjectKind = "stalled-car" | "barrier" | "cone" | "oil";
 
 export type RewardConfig = {
   progressPerSecond: number;
@@ -198,6 +230,7 @@ export type RewardConfig = {
   offTrackPerSecond: number;
   edgePenaltyPerSecond: number;
   proximityPenaltyPerSecond: number;
+  hazardPenaltyPerSecond: number;
   centerlinePerSecond?: number;
   collision: number;
   crash: number;
@@ -215,6 +248,7 @@ export const DEFAULT_REWARD_CONFIG: RewardConfig = {
   offTrackPerSecond: 24,
   edgePenaltyPerSecond: 1.2,
   proximityPenaltyPerSecond: 10,
+  hazardPenaltyPerSecond: 7.5,
   centerlinePerSecond: 0.35,
   collision: 10,
   crash: 75,
@@ -232,6 +266,7 @@ export type RewardBreakdown = {
   offTrack: number;
   edge: number;
   proximity: number;
+  hazard: number;
   centerline: number;
   collision: number;
   crash: number;
@@ -245,6 +280,32 @@ export type RewardTotals = RewardBreakdown;
 export const clamp = (value: number, min: number, max: number): number => Math.max(min, Math.min(max, value));
 export const dist = (a: Vec, b: Vec): number => Math.hypot(a.x - b.x, a.y - b.y);
 export const wrapAngle = (angle: number): number => Math.atan2(Math.sin(angle), Math.cos(angle));
+
+/**
+ * Rank brains for reproduction without allowing reward scale to hide route
+ * mastery. A completed lap wins first, then greater coverage wins, and raw
+ * reward breaks ties between brains that solved the route equally well.
+ */
+export function evolutionSelectionScore(progress: number, fitness: number, finished = false): number {
+  return (finished ? 1_000_000_000 : 0) + clamp(progress, 0, 1) * 1_000_000 + fitness;
+}
+
+export type EvolutionCandidate = { progress: number; fitness: number; finished: boolean };
+
+/**
+ * Compare candidates lexicographically so an arbitrary reward scale can never
+ * overpower route mastery. Positive means `a` is the better candidate.
+ */
+export function compareEvolutionCandidates(a: EvolutionCandidate, b: EvolutionCandidate): number {
+  if (a.finished !== b.finished) return a.finished ? 1 : -1;
+  const progressDifference = clamp(a.progress, 0, 1) - clamp(b.progress, 0, 1);
+  if (progressDifference !== 0) return progressDifference;
+  return a.fitness - b.fitness;
+}
+
+export function shouldAcceptEvolutionCandidate(candidate: EvolutionCandidate, incumbent?: EvolutionCandidate): boolean {
+  return !incumbent || compareEvolutionCandidates(candidate, incumbent) > 0;
+}
 const hash = (seed: number): number => {
   const value = Math.sin(seed * 12.9898) * 43758.5453;
   return value - Math.floor(value);
@@ -382,6 +443,7 @@ export type MutationPopulationOptions = {
   plateauPatience?: number;
   immigrantFraction?: number;
   breedingPool?: SpikingNetwork[];
+  parentCount?: number;
 };
 
 /**
@@ -401,16 +463,19 @@ export function createMutationPopulation(size: number, parent: SpikingNetwork | 
   const immigrantCount = exploring ? Math.min(safeSize - 1, Math.max(1, Math.floor((safeSize - 1) * immigrantFraction))) : 0;
   const immigrantStart = safeSize - immigrantCount;
   const breedingPool = (options.breedingPool ?? []).filter((network) => network instanceof SpikingNetwork);
+  const parentCount = clamp(Math.floor(options.parentCount ?? 3), 2, 12);
+  const parents = breedingPool.length > 0 ? breedingPool.slice(0, parentCount) : [stableParent];
   const children: SpikingNetwork[] = [stableParent];
   for (let index = 1; index < safeSize; index += 1) {
     if (exploring && index >= immigrantStart) {
       children.push(new SpikingNetwork(seed + 90000 + index * 17));
       continue;
     }
-    if (breedingPool.length > 1 && index <= Math.min(2, safeSize - 1)) {
-      const partner = breedingPool[index % breedingPool.length];
-      const crossed = stableParent.crossover(partner, seed + 30000 + index * 19, 0.5);
-      children.push(crossed.mutate(clamp(rate * 0.75, 0, 0.95), clamp(amount * 0.75, 0, 2), seed + index + 1));
+    if (parents.length > 1) {
+      const mother = parents[(index - 1) % parents.length];
+      const father = parents[index % parents.length];
+      const crossed = mother.crossover(father, seed + 30000 + index * 19, 0.5);
+      children.push(crossed.mutate(clamp(rate * 0.85, 0, 0.95), clamp(amount * 0.85, 0, 2), seed + index + 1));
       continue;
     }
     const scoutMultiplier = exploring ? 1.25 + (index % 3) * 0.2 : 1;
@@ -424,12 +489,12 @@ export type Car = {
   trackId: TrackId; distanceAlong: number; nearestDistance: number; offTrackTicks: number; collisions: number; ticks: number; score: number;
   crashed: boolean; timedOut: boolean; finished: boolean; timeLimit: number; timeExtensions: number; rewardWindowScore: number; rewardWindowTicks: number; previousRewardRate: number; nextCheckpoint: number; checkpointsPassed: number; stationaryTicks: number; wrongDirectionTicks: number; forwardAlignment: number; lastReward: number;
   lateralOffset: number; collisionCooldown: number;
-  rewardBreakdown: RewardBreakdown; rewardTotals: RewardTotals; nearestOpponentDistance: number;
-  color: string; name: string; network?: SpikingNetwork; action: Action; trail: Vec[]; isFly: boolean; isObstacle: boolean;
+  rewardBreakdown: RewardBreakdown; rewardTotals: RewardTotals; nearestOpponentDistance: number; collisionRadius: number;
+  color: string; name: string; network?: SpikingNetwork; action: Action; trail: Vec[]; isFly: boolean; isObstacle: boolean; obstacleKind?: RoadObjectKind;
 };
 
 function emptyRewards(): RewardBreakdown {
-  return { progress: 0, direction: 0, movement: 0, standingStill: 0, wrongDirection: 0, reverseProgress: 0, offTrack: 0, edge: 0, proximity: 0, centerline: 0, collision: 0, crash: 0, checkpoint: 0, finish: 0, total: 0 };
+  return { progress: 0, direction: 0, movement: 0, standingStill: 0, wrongDirection: 0, reverseProgress: 0, offTrack: 0, edge: 0, proximity: 0, hazard: 0, centerline: 0, collision: 0, crash: 0, checkpoint: 0, finish: 0, total: 0 };
 }
 
 function addRewards(target: RewardTotals, current: RewardBreakdown): void {
@@ -449,19 +514,21 @@ export function startPosition(lane = 0, trackRef: TrackRef = DEFAULT_TRACK): Car
   return { position: point, heading: Math.atan2(line.tangent.y, line.tangent.x), speed: 0, progress: 0, distanceAlong: 0,
     totalProgress: 0, laps: 0, bestProgress: 0, trackId: route.id, nearestDistance: 0, offTrackTicks: 0, collisions: 0, ticks: 0, score: 0,
     crashed: false, timedOut: false, finished: false, timeLimit: MAX_TICKS, timeExtensions: 0, rewardWindowScore: 0, rewardWindowTicks: 0, previousRewardRate: 0, nextCheckpoint: 1, checkpointsPassed: 0, stationaryTicks: 0, wrongDirectionTicks: 0, forwardAlignment: 1, lastReward: 0, lateralOffset: 0, collisionCooldown: 0, nearestOpponentDistance: Infinity,
-    rewardBreakdown, rewardTotals: { ...rewardBreakdown }, color: "#f19a69", name: "bot", action: { steer: 0, throttle: 1, brake: 0 }, trail: [], isFly: false, isObstacle: false };
+    rewardBreakdown, rewardTotals: { ...rewardBreakdown }, color: "#f19a69", name: "bot", action: { steer: 0, throttle: 1, brake: 0 }, trail: [], isFly: false, isObstacle: false, collisionRadius: CAR_COLLISION_DIAMETER / 2 };
 }
 
-export function createRoadObstacles(count: number, trackRef: TrackRef = DEFAULT_TRACK, seed = 1): Car[] {
+export function createRoadObstacles(count: number, trackRef: TrackRef = DEFAULT_TRACK, seed = 1, kind: RoadObjectKind | "mixed" = "stalled-car"): Car[] {
   const route = resolveTrack(trackRef); const safeCount = clamp(Math.floor(count), 0, 64); const obstacles: Car[] = [];
   for (let index = 0; index < safeCount; index += 1) {
     const distanceSeed = hash(seed * 17.31 + index * 7.19); const laneSeed = hash(seed * 3.71 + index * 11.47);
     const distance = 120 + distanceSeed * Math.max(80, route.length - 260); const lane = Math.floor(laneSeed * 3) - 1;
+    const mixedKinds: RoadObjectKind[] = ["stalled-car", "barrier", "cone", "oil"];
+    const objectKind: RoadObjectKind = kind === "mixed" ? mixedKinds[Math.floor(hash(seed * 5.17 + index * 13.41) * mixedKinds.length)] : kind;
     const sample = pointAtDistance(distance, route); const normal = { x: -sample.tangent.y, y: sample.tangent.x };
     const car = startPosition(lane * 0.92, route);
     car.position = add(sample.point, scale(normal, lane * LANE_SPACING * 0.92)); car.heading = Math.atan2(sample.tangent.y, sample.tangent.x);
     const nearest = nearestTrack(car.position, route); car.progress = nearest.progress; car.distanceAlong = nearest.distanceAlong; car.bestProgress = nearest.progress;
-    car.speed = 0; car.action = { steer: 0, throttle: 0, brake: 1, reverse: 0 }; car.color = "#d07c72"; car.name = `road object ${index + 1}`; car.isObstacle = true;
+    car.speed = 0; car.action = { steer: 0, throttle: 0, brake: 1, reverse: 0 }; car.color = objectKind === "barrier" ? "#e0a15b" : objectKind === "cone" ? "#f08b47" : objectKind === "oil" ? "#8275c8" : "#d07c72"; car.name = `${objectKind} ${index + 1}`; car.isObstacle = true; car.obstacleKind = objectKind; car.collisionRadius = objectKind === "barrier" ? CAR_COLLISION_DIAMETER * 0.7 : objectKind === "cone" ? CAR_COLLISION_DIAMETER * 0.34 : objectKind === "oil" ? 0 : CAR_COLLISION_DIAMETER / 2;
     obstacles.push(car);
   }
   return obstacles;
@@ -659,13 +726,14 @@ export function stepCar(car: Car, action: Action, others: Car[], trackRef?: Trac
     target.speed = clamp(dot(velocity, forward) * 0.86, -48, 90);
   };
   others.forEach((other, otherIndex) => {
-    if (other === car || other.crashed || other.finished || other.timedOut || other.trackId !== car.trackId) return;
+    if (other === car || other.crashed || other.finished || other.timedOut || other.trackId !== car.trackId || (other.isObstacle && other.obstacleKind === "oil")) return;
     const offset = sub(car.position, other.position); const distance = Math.hypot(offset.x, offset.y);
-    if (distance >= CAR_COLLISION_DIAMETER) return;
+    const collisionDistance = (car.collisionRadius ?? CAR_COLLISION_DIAMETER / 2) + (other.collisionRadius ?? CAR_COLLISION_DIAMETER / 2);
+    if (distance >= collisionDistance) return;
     contact = true;
     const tangent = updated.tangent; const fallback = { x: -tangent.y, y: tangent.x };
     const direction = distance > 0.0001 ? scale(offset, 1 / distance) : scale(fallback, carIndex < otherIndex ? 1 : -1);
-    const separation = (CAR_COLLISION_DIAMETER - distance) + 0.75;
+    const separation = (collisionDistance - distance) + 0.75;
     // Equal-mass separation keeps both cars movable. The old one-sided push
     // made a stopped car behave like a wall and created traffic pileups.
     car.position = add(car.position, scale(direction, separation * 0.5));
@@ -693,6 +761,8 @@ export function stepCar(car: Car, action: Action, others: Car[], trackRef?: Trac
     clampToRoad(car);
   } else car.collisionCooldown = Math.max(0, car.collisionCooldown - 1);
   const collisionDelta = car.collisions - collisionsBefore;
+  const oilHazard = others.some((other) => other !== car && other.trackId === car.trackId && other.isObstacle && other.obstacleKind === "oil" && dist(car.position, other.position) < 28);
+  if (oilHazard) car.speed *= 0.88;
   const standingStill = car.speed < 3; if (standingStill) car.stationaryTicks += 1; if (alignment < -0.25) car.wrongDirectionTicks += 1;
   const reward = emptyRewards();
   reward.progress = (validForwardDelta / STEP) * rewardConfig.progressPerSecond;
@@ -709,12 +779,13 @@ export function stepCar(car: Car, action: Action, others: Car[], trackRef?: Trac
   const proximityDenominator = Math.max(1, CLOSE_PROXIMITY_DISTANCE - CAR_COLLISION_DIAMETER * 1.05);
   const proximityRisk = opponent ? clamp((CLOSE_PROXIMITY_DISTANCE - opponent.distance) / proximityDenominator, 0, 1) : 0;
   reward.proximity = proximityRisk * rewardConfig.proximityPenaltyPerSecond * STEP;
+  reward.hazard = oilHazard ? rewardConfig.hazardPenaltyPerSecond * STEP : 0;
   reward.centerline = Math.max(0, 1 - Math.abs(car.lateralOffset)) * (rewardConfig.centerlinePerSecond ?? 0) * STEP;
   reward.collision = collisionDelta * rewardConfig.collision;
   reward.crash = car.crashed ? rewardConfig.crash : 0;
   reward.checkpoint = checkpointCrossed ? rewardConfig.checkpoint : 0;
   reward.finish = firstFinish ? rewardConfig.finish : 0;
-  reward.total = reward.progress + reward.direction + reward.movement + reward.centerline + reward.checkpoint + reward.finish - reward.standingStill - reward.wrongDirection - reward.reverseProgress - reward.offTrack - reward.edge - reward.proximity - reward.collision - reward.crash;
+  reward.total = reward.progress + reward.direction + reward.movement + reward.centerline + reward.checkpoint + reward.finish - reward.standingStill - reward.wrongDirection - reward.reverseProgress - reward.offTrack - reward.edge - reward.proximity - reward.hazard - reward.collision - reward.crash;
   car.rewardWindowScore += reward.total; car.rewardWindowTicks += 1;
   const windowSeconds = Math.max(STEP, car.rewardWindowTicks * STEP); const windowRate = car.rewardWindowScore / windowSeconds;
   const maxExtensions = clamp(Math.floor(physicsConfig.maxAdaptiveExtensions ?? MAX_ADAPTIVE_EXTENSIONS), 0, MAX_ADAPTIVE_EXTENSIONS);
@@ -738,10 +809,10 @@ export function stepCar(car: Car, action: Action, others: Car[], trackRef?: Trac
 
 export type EvaluationResult = { fitness: number; progress: number; ticks: number; laps: number; finished: boolean; trackId: TrackId; rewardTotals: RewardTotals };
 
-export function evaluate(network: SpikingNetwork, trackRef: TrackRef = DEFAULT_TRACK, rewardConfig: RewardConfig = DEFAULT_REWARD_CONFIG, physicsConfig: PhysicsConfig = DEFAULT_PHYSICS_CONFIG, ghost = false, obstacleCount = 0, obstacleSeed = 1): EvaluationResult {
+export function evaluate(network: SpikingNetwork, trackRef: TrackRef = DEFAULT_TRACK, rewardConfig: RewardConfig = DEFAULT_REWARD_CONFIG, physicsConfig: PhysicsConfig = DEFAULT_PHYSICS_CONFIG, ghost = false, obstacleCount = 0, obstacleSeed = 1, obstacleKind: RoadObjectKind | "mixed" = "stalled-car"): EvaluationResult {
   const route = resolveTrack(trackRef); const car = startPosition(0, route); car.network = network; network.reset();
   const line = startLine(route); const obstacles = [startPosition(-1, route), startPosition(1, route)]; obstacles[0].position = add(obstacles[0].position, scale(line.tangent, 55)); obstacles[1].position = add(obstacles[1].position, scale(line.tangent, 115));
-  const roadObjects = createRoadObstacles(obstacleCount, route, obstacleSeed);
+  const roadObjects = createRoadObstacles(obstacleCount, route, obstacleSeed, obstacleKind);
   const cars = ghost ? [car, ...roadObjects] : [car, ...obstacles, ...roadObjects];
   const maxExtensions = clamp(Math.floor(physicsConfig.maxAdaptiveExtensions ?? MAX_ADAPTIVE_EXTENSIONS), 0, MAX_ADAPTIVE_EXTENSIONS);
   const simulationLimit = MAX_TICKS * (physicsConfig.adaptiveTimeLimit === true ? 2 ** maxExtensions : 1);
@@ -754,8 +825,8 @@ export function evaluate(network: SpikingNetwork, trackRef: TrackRef = DEFAULT_T
 
 export type GeneralistEvaluation = { fitness: number; progress: number; ticks: number; laps: number; finished: boolean; rewardTotals: RewardTotals; episodes: EvaluationResult[] };
 
-export function evaluateGeneralist(network: SpikingNetwork, trackRefs: TrackRef[] = TRACKS, rewardConfig: RewardConfig = DEFAULT_REWARD_CONFIG, physicsConfig: PhysicsConfig = DEFAULT_PHYSICS_CONFIG, ghost = false, obstacleCount = 0, obstacleSeed = 1): GeneralistEvaluation {
-  const routes = trackRefs.length > 0 ? trackRefs.map(resolveTrack) : [DEFAULT_TRACK]; const episodes = routes.map((route, index) => evaluate(network, route, rewardConfig, physicsConfig, ghost, obstacleCount, obstacleSeed + index * 97));
+export function evaluateGeneralist(network: SpikingNetwork, trackRefs: TrackRef[] = TRACKS, rewardConfig: RewardConfig = DEFAULT_REWARD_CONFIG, physicsConfig: PhysicsConfig = DEFAULT_PHYSICS_CONFIG, ghost = false, obstacleCount = 0, obstacleSeed = 1, obstacleKind: RoadObjectKind | "mixed" = "stalled-car"): GeneralistEvaluation {
+  const routes = trackRefs.length > 0 ? trackRefs.map(resolveTrack) : [DEFAULT_TRACK]; const episodes = routes.map((route, index) => evaluate(network, route, rewardConfig, physicsConfig, ghost, obstacleCount, obstacleSeed + index * 97, obstacleKind));
   const average = (selector: (episode: EvaluationResult) => number): number => episodes.reduce((sum, episode) => sum + selector(episode), 0) / episodes.length;
   const rewardTotals = emptyRewards();
   (Object.keys(rewardTotals) as (keyof RewardBreakdown)[]).forEach((key) => { rewardTotals[key] = average((episode) => episode.rewardTotals[key]); });

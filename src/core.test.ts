@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   CAR_COLLISION_DIAMETER, CHECKPOINT_COUNT, CLOSE_PROXIMITY_DISTANCE, DEFAULT_PHYSICS_CONFIG, DEFAULT_REWARD_CONFIG, DEFAULT_TRACK, MAX_TICKS, STEP, TRACKS, TRACK_WIDTH, BrainSnapshot, SpikingNetwork, createMutationPopulation, createNetworkPopulation, createRoadObstacles,
-  evaluate, evaluateGeneralist, heuristicAction, nearestTrack, pointAtDistance, resolveTrack, sensorValues, startLine, startPosition, stepCar, track, trackCheckpoint, trackDiagnostics,
+  compareEvolutionCandidates, evaluate, evaluateGeneralist, evolutionSelectionScore, heuristicAction, nearestTrack, pointAtDistance, resolveTrack, sensorValues, shouldAcceptEvolutionCandidate, startLine, startPosition, stepCar, track, trackCheckpoint, trackDiagnostics,
 } from "./core";
 
 const finiteAction = (action: ReturnType<SpikingNetwork["step"]>) => {
@@ -24,15 +24,28 @@ describe("SpikingNetwork", () => {
   it("keeps the incumbent first and adds deterministic exploration immigrants after a plateau", () => {
     const parent = new SpikingNetwork(12);
     const partner = new SpikingNetwork(13);
+    const thirdParent = new SpikingNetwork(14);
     const local = createMutationPopulation(10, parent, 300, 0.12, 0.22);
     const exploratory = createMutationPopulation(10, parent, 300, 0.12, 0.22, { plateauStreak: 3, plateauPatience: 3 });
     const bred = createMutationPopulation(4, parent, 301, 0.12, 0.22, { breedingPool: [parent, partner] });
+    const topThree = createMutationPopulation(10, parent, 302, 0.12, 0.22, { breedingPool: [parent, partner, thirdParent], parentCount: 3 });
     expect(local[0].toJSON()).toEqual(parent.toJSON());
     expect(exploratory[0].toJSON()).toEqual(parent.toJSON());
     expect(bred[0].toJSON()).toEqual(parent.toJSON());
     expect(createMutationPopulation(10, parent, 300, 0.12, 0.22, { plateauStreak: 3, plateauPatience: 3 }).map((network) => network.toJSON())).toEqual(exploratory.map((network) => network.toJSON()));
     expect(exploratory.slice(1).some((network) => network.toJSON().inputWeights.join(",") !== parent.toJSON().inputWeights.join(","))).toBe(true);
     expect(bred[1].toJSON()).not.toEqual(parent.toJSON());
+    expect(topThree[0].toJSON()).toEqual(parent.toJSON());
+    expect(topThree.slice(1).every((network) => network.toJSON().inputWeights.join(",") !== parent.toJSON().inputWeights.join(","))).toBe(true);
+    expect(createMutationPopulation(10, parent, 302, 0.12, 0.22, { breedingPool: [parent, partner, thirdParent], parentCount: 3 }).map((network) => network.toJSON())).toEqual(topThree.map((network) => network.toJSON()));
+  });
+
+  it("ranks route completion and coverage above incompatible reward scales", () => {
+    expect(evolutionSelectionScore(1, -700, false)).toBeGreaterThan(evolutionSelectionScore(0.12, 11041, false));
+    expect(evolutionSelectionScore(0.95, -500, true)).toBeGreaterThan(evolutionSelectionScore(1, 999999, false));
+    expect(compareEvolutionCandidates({ progress: 0.4, fitness: 999999999, finished: false }, { progress: 0.41, fitness: -1, finished: false })).toBeLessThan(0);
+    expect(shouldAcceptEvolutionCandidate({ progress: 1, fitness: -700, finished: false }, { progress: 0.12, fitness: 11041, finished: false })).toBe(true);
+    expect(shouldAcceptEvolutionCandidate({ progress: 0.12, fitness: 999999999, finished: false }, { progress: 1, fitness: -700, finished: false })).toBe(false);
   });
 
   it("resets hidden state and exposes bounded actions", () => {
@@ -127,7 +140,7 @@ describe("track geometry and sensors", () => {
   });
 
   it("supports independent track geometries with a valid start line", () => {
-    expect(TRACKS).toHaveLength(11);
+    expect(TRACKS).toHaveLength(15);
     expect(new Set(TRACKS.map((route) => route.id)).size).toBe(TRACKS.length);
     TRACKS.forEach((route) => {
       const car = startPosition(0, route);
@@ -143,6 +156,7 @@ describe("track geometry and sensors", () => {
     TRACKS.forEach((route) => {
       const diagnostics = trackDiagnostics(route);
       expect(diagnostics.length).toBe(route.length);
+      expect(diagnostics.width).toBe(route.width);
       expect(diagnostics.cornerCount).toBeGreaterThan(0);
       expect(diagnostics.minSegmentLength).toBeGreaterThan(20);
       expect(Number.isFinite(diagnostics.maxTurnDegrees)).toBe(true);
@@ -165,13 +179,25 @@ describe("track geometry and sensors", () => {
     });
   });
 
-  it("creates deterministic stalled road objects on every track", () => {
+    it("creates deterministic stalled road objects on every track", () => {
     TRACKS.forEach((route) => {
       const first = createRoadObstacles(6, route, 11); const second = createRoadObstacles(6, route, 11);
       expect(first.map((car) => car.position)).toEqual(second.map((car) => car.position));
       expect(first).toHaveLength(6);
       expect(first.every((car) => car.isObstacle && car.speed === 0 && car.trackId === route.id)).toBe(true);
     });
+  });
+
+  it("supports mixed hazard objects and applies an oil-contact penalty", () => {
+    const mixed = createRoadObstacles(16, DEFAULT_TRACK, 19, "mixed");
+    expect(new Set(mixed.map((car) => car.obstacleKind)).size).toBeGreaterThan(1);
+    expect(mixed.every((car) => car.isObstacle && car.collisionRadius >= 0)).toBe(true);
+    const oil = createRoadObstacles(1, DEFAULT_TRACK, 19, "oil")[0];
+    const car = startPosition(); car.position = { ...oil.position };
+    const oilTrack = nearestTrack(car.position, DEFAULT_TRACK); car.progress = oilTrack.progress; car.distanceAlong = oilTrack.distanceAlong; car.totalProgress = oilTrack.progress;
+    stepCar(car, { steer: 0, throttle: 0, brake: 0 }, [car, oil], DEFAULT_TRACK, DEFAULT_REWARD_CONFIG, { ...DEFAULT_PHYSICS_CONFIG, wallsEnabled: false });
+    expect(car.rewardBreakdown.hazard).toBeGreaterThan(0);
+    expect(car.lastReward).toBeLessThan(0);
   });
 
   it("supports more than the default eight ordered checkpoint gates", () => {
