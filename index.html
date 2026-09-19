@@ -88,9 +88,28 @@
             <canvas id="evolution-chart" width="760" height="300" role="img" aria-label="Evolution chart with separate reward and route coverage panels, incumbent and candidate lines, plateau regions, and mutation changes by generation"></canvas>
               <div id="plot-tooltip" class="plot-tooltip" role="status" hidden></div>
             </div>
-            <div class="plot-legend"><span><i class="plot-swatch reward"></i>incumbent reward</span><span><i class="plot-swatch candidate"></i>candidate reward</span><span><i class="plot-swatch progress"></i>best coverage</span><span><i class="plot-swatch candidate"></i>candidate coverage</span><span><i class="plot-swatch plateau"></i>plateau / exploration</span></div>
+            <div class="plot-legend"><span><i class="plot-swatch reward"></i>incumbent reward</span><span><i class="plot-swatch candidate"></i>candidate reward</span><span><i class="plot-swatch progress"></i>best coverage</span><span><i class="plot-swatch candidate"></i>candidate coverage</span><span><i class="plot-swatch mutation"></i>mutation rate</span><span><i class="plot-swatch plateau"></i>plateau / exploration</span></div>
             <p id="plot-summary" class="plot-summary">No generations recorded yet. Start training to plot reward and forward progress.</p>
-            <p class="plot-note">The upper panel scales reward locally; the lower panel is always 0–100% route coverage. Solid lines are retained incumbents, dashed lines are the current generation candidates. A falling candidate line is exploration—not loss of the best brain. Hover a generation for exact values; red shading marks plateau pressure and exploration.</p>
+            <p class="plot-note">The upper panel scales reward locally; the lower panel uses a fixed 0–100% scale for route coverage and mutation rate. Solid lines are retained incumbents, dashed lines are current candidates. A rising purple mutation line means plateau pressure is increasing exploration, even if reward is still inching upward. Hover a generation for exact values.</p>
+          </section>
+
+          <section class="family-tree-panel" aria-labelledby="family-tree-title">
+            <div class="run-console-header">
+              <div>
+                <span class="console-kicker">COMPACT LINEAGE</span>
+                <strong id="family-tree-title">Brain family tree</strong>
+              </div>
+              <span id="lineage-count" class="plot-scale-note">0 brains</span>
+            </div>
+            <div id="family-tree" class="family-tree" role="tree" aria-label="Brain family tree">
+              <p class="family-tree-empty">Start training to see named candidates and their offspring.</p>
+            </div>
+            <div class="lineage-actions">
+              <button id="use-lineage-btn" class="quiet" type="button" disabled>Use selected brain</button>
+              <button id="download-lineage-btn" class="quiet" type="button" disabled>Download selected</button>
+            </div>
+            <p id="lineage-detail" class="lineage-detail">Click a compact brain node to inspect it.</p>
+            <p class="plot-note">Each node is a saved network snapshot. Offspring show their parent names; <span class="lineage-retained-text">green</span> nodes were retained, amber nodes were evaluated candidates, and purple nodes are plateau immigrants.</p>
           </section>
         </div>
 
@@ -173,6 +192,7 @@
             <div><span>Best lap progress</span><strong id="progress">0%</strong></div>
             <div><span>Plateau</span><strong id="plateau" class="metric-neutral">clear</strong></div>
             <div><span>Evolution strategy</span><strong id="evolution-strategy" class="metric-neutral">local search</strong></div>
+            <div><span>Mutation rate</span><strong id="mutation-rate">12%</strong></div>
             <div><span>Race speed</span><strong id="speed">0.0</strong></div>
             <div><span>Last reward</span><strong id="reward">0.0</strong></div>
             <div><span>Direction</span><strong id="direction">100%</strong></div>
