@@ -469,6 +469,12 @@ export type MutationPopulationOptions = {
   immigrantFraction?: number;
   breedingPool?: SpikingNetwork[];
   parentCount?: number;
+  /** Mate every descendant with the protected incumbent. The pool is ordered
+   * by route progress and the weights define the deterministic 10-slot
+   * mating schedule (for example 80/20 = eight winner slots and two runner-up
+   * slots). */
+  incumbentMatingPool?: SpikingNetwork[];
+  incumbentMatingWeights?: number[];
 };
 
 /**
@@ -488,12 +494,32 @@ export function createMutationPopulation(size: number, parent: SpikingNetwork | 
   const immigrantCount = exploring ? Math.min(safeSize - 1, Math.max(1, Math.floor((safeSize - 1) * immigrantFraction))) : 0;
   const immigrantStart = safeSize - immigrantCount;
   const breedingPool = (options.breedingPool ?? []).filter((network) => network instanceof SpikingNetwork);
+  const incumbentMatingPool = (options.incumbentMatingPool ?? []).filter((network) => network instanceof SpikingNetwork);
+  const incumbentMatingWeights = (options.incumbentMatingWeights ?? []).map((weight) => Math.max(0, Number(weight) || 0)).slice(0, incumbentMatingPool.length);
+  const hasIncumbentMating = incumbentMatingPool.length > 0 && incumbentMatingWeights.some((weight) => weight > 0);
+  const matingSchedule: number[] = [];
+  if (hasIncumbentMating) {
+    let allocatedSlots = 0;
+    const totalWeight = Math.max(0.0001, incumbentMatingWeights.reduce((sum, value) => sum + value, 0));
+    incumbentMatingWeights.forEach((weight, index) => {
+      const slots = index === incumbentMatingWeights.length - 1 ? Math.max(0, 10 - allocatedSlots) : Math.max(0, Math.round((weight / totalWeight) * 10));
+      for (let slot = 0; slot < slots; slot += 1) matingSchedule.push(index);
+      allocatedSlots += slots;
+    });
+  }
   const parentCount = clamp(Math.floor(options.parentCount ?? 3), 2, 12);
   const parents = breedingPool.length > 0 ? breedingPool.slice(0, parentCount) : [stableParent];
   const children: SpikingNetwork[] = [stableParent];
   for (let index = 1; index < safeSize; index += 1) {
     if (exploring && index >= immigrantStart) {
       children.push(new SpikingNetwork(seed + 90000 + index * 17));
+      continue;
+    }
+    if (hasIncumbentMating) {
+      const mateIndex = matingSchedule[(index - 1) % Math.max(1, matingSchedule.length)] ?? 0;
+      const mate = incumbentMatingPool[mateIndex] ?? incumbentMatingPool[0];
+      const crossed = stableParent.crossover(mate, seed + 30000 + index * 19, 0.5);
+      children.push(crossed.mutate(clamp(rate * 0.85, 0, 0.95), clamp(amount * 0.85, 0, 2), seed + index + 1));
       continue;
     }
     if (parents.length > 1) {

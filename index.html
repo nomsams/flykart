@@ -162,9 +162,9 @@
             </label>
             <label class="check-row"><input id="plateau-exploration-toggle" type="checkbox" checked /> <span>Plateau exploration <small>adds high-variance scouts and random immigrant brains</small></span></label>
             <label>Plateau patience <input id="plateau-patience" type="number" min="1" max="20" value="3" /></label>
-            <label>Elite parents / generation <input id="elite-parents" type="number" min="2" max="12" value="3" /></label>
+            <label>Winner mating share (%) <input id="winner-mating-share" type="number" min="50" max="95" value="80" /></label>
             <label class="check-row"><input id="curriculum-toggle" type="checkbox" /> <span>Progressive hazards <small>ramps stalled road objects from easy to full difficulty</small></span></label>
-            <p class="microcopy">The population button runs all configured brains simultaneously, including 10+ cars. Choose one interaction mode: shared physical evolution uses rigid collisions; Independent evolution gives every brain its own world; Ghost contact mode keeps one shared visual race so brains sense and penalize overlap, while contact remains non-blocking. The current best remains candidate 1; lower-scoring generations are rejected.</p>
+            <p class="microcopy">The population button runs all configured brains simultaneously, including 10+ cars. The first generation explores many variants; after evaluation, the protected incumbent mates with the best-progress candidate for the configured share (80% by default) and the runner-up for the remainder. Choose one interaction mode: shared physical evolution uses rigid collisions; Independent evolution gives every brain its own world; Ghost contact mode keeps one shared visual race so brains sense and penalize overlap, while contact remains non-blocking.</p>
           </section>
 
           <details class="panel-section reward-settings" open>

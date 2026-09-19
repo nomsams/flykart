@@ -40,6 +40,15 @@ describe("SpikingNetwork", () => {
     expect(createMutationPopulation(10, parent, 302, 0.12, 0.22, { breedingPool: [parent, partner, thirdParent], parentCount: 3 }).map((network) => network.toJSON())).toEqual(topThree.map((network) => network.toJSON()));
   });
 
+  it("mates every descendant with the incumbent using an 80/20 winner-runner-up schedule", () => {
+    const incumbent = new SpikingNetwork(51); const winner = new SpikingNetwork(52); const runnerUp = new SpikingNetwork(53);
+    const population = createMutationPopulation(11, incumbent, 700, 0.12, 0.22, { incumbentMatingPool: [winner, runnerUp], incumbentMatingWeights: [80, 20] });
+    expect(population[0].toJSON()).toEqual(incumbent.toJSON());
+    const expectedChild = (mate: SpikingNetwork, index: number) => incumbent.crossover(mate, 700 + 30000 + index * 19, 0.5).mutate(0.12 * 0.85, 0.22 * 0.85, 700 + index + 1).toJSON();
+    expect(population.slice(1, 9).map((network) => network.toJSON())).toEqual(Array.from({ length: 8 }, (_, offset) => expectedChild(winner, offset + 1)));
+    expect(population.slice(9).map((network) => network.toJSON())).toEqual([expectedChild(runnerUp, 9), expectedChild(runnerUp, 10)]);
+  });
+
   it("ranks route completion and coverage above incompatible reward scales", () => {
     expect(evolutionSelectionScore(1, -700, false)).toBeGreaterThan(evolutionSelectionScore(0.12, 11041, false));
     expect(evolutionSelectionScore(0.95, -500, true)).toBeGreaterThan(evolutionSelectionScore(1, 999999, false));
