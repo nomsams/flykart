@@ -111,6 +111,7 @@ label { display: flex; justify-content: space-between; align-items: center; marg
 .check-row span { display: flex; flex-direction: column; gap: 2px; }
 .check-row small { color: #7f8ca0; font-size: .68rem; }
 .track-info { margin: 7px 0 0; padding: 7px 8px; border-left: 2px solid #72b8ff; color: #8fa4be; background: rgba(114, 184, 255, .06); font-size: .67rem; line-height: 1.4; font-variant-numeric: tabular-nums; }
+.reward-field-note { margin: 5px 0 0; color: #7f8ca0; font-size: .64rem; line-height: 1.4; }
 .track-provenance { margin: 5px 0 0; padding: 6px 8px; color: #9aa8ba; background: rgba(127, 140, 160, .06); font-size: .65rem; line-height: 1.4; font-variant-numeric: tabular-nums; }
 .track-provenance.new-route { border-left: 2px solid #f3c96b; color: #d8bd7f; }
 .track-provenance.trained-route { border-left: 2px solid #7cf0b6; color: #9bd6b4; }

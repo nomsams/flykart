@@ -823,25 +823,28 @@ function renderTrack(): void {
 }
 
 function drawRewardField(): void {
-  const halfWidth = activeTrack.width / 2; const longitudinalSteps = Math.max(80, Math.ceil(activeTrack.length / 18)); const lateralBands = 26; const lateralMin = -1.3; const lateralMax = 1.3; const lateralStep = (lateralMax - lateralMin) / lateralBands;
+  const halfWidth = activeTrack.width / 2; const longitudinalSteps = Math.max(80, Math.ceil(activeTrack.length / 18)); const lateralBands = 22; const lateralMin = -1.18; const lateralMax = 1.18; const lateralStep = (lateralMax - lateralMin) / lateralBands;
   const centerWeight = clamp((rewardConfig.centerlinePerSecond ?? 0) / 1.5, 0, 1); const edgeWeight = clamp(rewardConfig.edgePenaltyPerSecond / 5, 0, 1); const offTrackWeight = clamp(rewardConfig.offTrackPerSecond / 40, 0, 1);
   context.save(); context.globalAlpha = 1; context.lineJoin = "round";
-  for (let step = 0; step < longitudinalSteps; step += 1) {
-    const distance = (step / longitudinalSteps) * activeTrack.length; const nextDistance = ((step + 1) / longitudinalSteps) * activeTrack.length;
-    const sample = pointAtDistance(distance, activeTrack); const next = pointAtDistance(nextDistance, activeTrack); const normal = { x: -sample.tangent.y, y: sample.tangent.x }; const nextNormal = { x: -next.tangent.y, y: next.tangent.x };
-    for (let band = 0; band < lateralBands; band += 1) {
-      const lateralA = lateralMin + band * lateralStep; const lateralB = lateralA + lateralStep; const lateralMid = (lateralA + lateralB) / 2; const absoluteLateral = Math.abs(lateralMid);
-      const centerIntensity = clamp(1 - absoluteLateral / 0.62, 0, 1) * centerWeight;
-      const edgeIntensity = clamp((absoluteLateral - 0.52) / 0.48, 0, 1) * edgeWeight;
-      const offTrackIntensity = clamp((absoluteLateral - 1) / 0.3, 0, 1) * offTrackWeight;
-      const greenIntensity = centerIntensity; const redIntensity = Math.max(edgeIntensity * 0.72, offTrackIntensity);
-      const strongest = Math.max(greenIntensity, redIntensity);
-      const redShare = redIntensity + greenIntensity > 0 ? redIntensity / (redIntensity + greenIntensity) : 0;
-      const red = Math.round(78 + 166 * redShare); const green = Math.round(222 - 104 * redShare); const blue = Math.round(146 - 76 * redShare);
-      context.fillStyle = `rgba(${red}, ${green}, ${blue}, ${0.05 + strongest * 0.46})`;
-      const a = { x: sample.point.x + normal.x * lateralA * halfWidth, y: sample.point.y + normal.y * lateralA * halfWidth }; const b = { x: sample.point.x + normal.x * lateralB * halfWidth, y: sample.point.y + normal.y * lateralB * halfWidth }; const c = { x: next.point.x + nextNormal.x * lateralB * halfWidth, y: next.point.y + nextNormal.y * lateralB * halfWidth }; const d = { x: next.point.x + nextNormal.x * lateralA * halfWidth, y: next.point.y + nextNormal.y * lateralA * halfWidth };
-      context.beginPath(); context.moveTo(a.x, a.y); context.lineTo(b.x, b.y); context.lineTo(c.x, c.y); context.lineTo(d.x, d.y); context.closePath(); context.fill();
+  // Use continuous rounded strokes for each lateral band. Independent
+  // quadrilaterals create self-overlapping wedges at hairpins and chicanes,
+  // which falsely look like extra penalty regions even though they are only
+  // part of the visualization.
+  for (let band = 0; band < lateralBands; band += 1) {
+    const lateralMid = lateralMin + (band + 0.5) * lateralStep; const absoluteLateral = Math.abs(lateralMid);
+    const centerIntensity = clamp(1 - absoluteLateral / 0.62, 0, 1) * centerWeight;
+    const edgeIntensity = clamp((absoluteLateral - 0.52) / 0.48, 0, 1) * edgeWeight;
+    const offTrackIntensity = clamp((absoluteLateral - 1) / 0.18, 0, 1) * offTrackWeight;
+    const greenIntensity = centerIntensity; const redIntensity = Math.max(edgeIntensity * 0.72, offTrackIntensity);
+    const strongest = Math.max(greenIntensity, redIntensity); const redShare = redIntensity + greenIntensity > 0 ? redIntensity / (redIntensity + greenIntensity) : 0;
+    const red = Math.round(78 + 166 * redShare); const green = Math.round(222 - 104 * redShare); const blue = Math.round(146 - 76 * redShare);
+    context.strokeStyle = `rgba(${red}, ${green}, ${blue}, ${0.04 + strongest * 0.42})`; context.lineWidth = Math.max(2, lateralStep * halfWidth * 1.04); context.lineCap = "round";
+    context.beginPath();
+    for (let step = 0; step <= longitudinalSteps; step += 1) {
+      const sample = pointAtDistance((step / longitudinalSteps) * activeTrack.length, activeTrack); const normal = { x: -sample.tangent.y, y: sample.tangent.x }; const point = { x: sample.point.x + normal.x * lateralMid * halfWidth, y: sample.point.y + normal.y * lateralMid * halfWidth };
+      if (step === 0) context.moveTo(point.x, point.y); else context.lineTo(point.x, point.y);
     }
+    context.stroke();
   }
   context.globalAlpha = 0.68; context.strokeStyle = rewardConfig.correctDirectionPerSecond > 0 ? "#b7d8a2" : "#72818a"; context.lineWidth = 1.5;
   const arrowSpacing = Math.max(1, Math.floor(longitudinalSteps / 18));
