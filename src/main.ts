@@ -13,6 +13,14 @@ const canvas = document.querySelector<HTMLCanvasElement>("#game");
 if (!canvas) throw new Error("Game canvas is missing");
 const context = canvas.getContext("2d")!;
 if (!context) throw new Error("Canvas rendering is unavailable");
+// Reward bands are rendered on a transparent layer and clipped with the same
+// wide stroke as the road. This keeps offset bands inside the asphalt when a
+// route folds back on itself or turns sharply.
+const rewardFieldCanvas = document.createElement("canvas");
+rewardFieldCanvas.width = WIDTH;
+rewardFieldCanvas.height = HEIGHT;
+const rewardFieldContext = rewardFieldCanvas.getContext("2d");
+if (!rewardFieldContext) throw new Error("Reward-field rendering is unavailable");
 
 function required<T extends Element>(selector: string): T {
   const element = document.querySelector<T>(selector);
@@ -823,9 +831,10 @@ function renderTrack(): void {
 }
 
 function drawRewardField(): void {
-  const halfWidth = activeTrack.width / 2; const longitudinalSteps = Math.max(80, Math.ceil(activeTrack.length / 18)); const lateralBands = 22; const lateralMin = -1.18; const lateralMax = 1.18; const lateralStep = (lateralMax - lateralMin) / lateralBands;
+  const halfWidth = activeTrack.width / 2; const longitudinalSteps = Math.max(80, Math.ceil(activeTrack.length / 18)); const lateralBands = 18; const lateralMin = -0.96; const lateralMax = 0.96; const lateralStep = (lateralMax - lateralMin) / lateralBands;
   const centerWeight = clamp((rewardConfig.centerlinePerSecond ?? 0) / 1.5, 0, 1); const edgeWeight = clamp(rewardConfig.edgePenaltyPerSecond / 5, 0, 1); const offTrackWeight = clamp(rewardConfig.offTrackPerSecond / 40, 0, 1);
-  context.save(); context.globalAlpha = 1; context.lineJoin = "round";
+  const field = rewardFieldContext!;
+  field.setTransform(1, 0, 0, 1, 0, 0); field.clearRect(0, 0, WIDTH, HEIGHT); field.save(); field.translate(WIDTH / 2, HEIGHT / 2); field.globalAlpha = 1; field.lineJoin = "round";
   // Use continuous rounded strokes for each lateral band. Independent
   // quadrilaterals create self-overlapping wedges at hairpins and chicanes,
   // which falsely look like extra penalty regions even though they are only
@@ -833,26 +842,32 @@ function drawRewardField(): void {
   for (let band = 0; band < lateralBands; band += 1) {
     const lateralMid = lateralMin + (band + 0.5) * lateralStep; const absoluteLateral = Math.abs(lateralMid);
     const centerIntensity = clamp(1 - absoluteLateral / 0.62, 0, 1) * centerWeight;
-    const edgeIntensity = clamp((absoluteLateral - 0.52) / 0.48, 0, 1) * edgeWeight;
-    const offTrackIntensity = clamp((absoluteLateral - 1) / 0.18, 0, 1) * offTrackWeight;
+    const edgeIntensity = clamp((absoluteLateral - 0.54) / 0.38, 0, 1) * edgeWeight;
+    const offTrackIntensity = clamp((absoluteLateral - 0.84) / 0.12, 0, 1) * offTrackWeight;
     const greenIntensity = centerIntensity; const redIntensity = Math.max(edgeIntensity * 0.72, offTrackIntensity);
     const strongest = Math.max(greenIntensity, redIntensity); const redShare = redIntensity + greenIntensity > 0 ? redIntensity / (redIntensity + greenIntensity) : 0;
     const red = Math.round(78 + 166 * redShare); const green = Math.round(222 - 104 * redShare); const blue = Math.round(146 - 76 * redShare);
-    context.strokeStyle = `rgba(${red}, ${green}, ${blue}, ${0.04 + strongest * 0.42})`; context.lineWidth = Math.max(2, lateralStep * halfWidth * 1.04); context.lineCap = "round";
-    context.beginPath();
+    field.strokeStyle = `rgba(${red}, ${green}, ${blue}, ${0.04 + strongest * 0.34})`; field.lineWidth = Math.max(1.5, lateralStep * halfWidth * 0.84); field.lineCap = "round";
+    field.beginPath();
     for (let step = 0; step <= longitudinalSteps; step += 1) {
       const sample = pointAtDistance((step / longitudinalSteps) * activeTrack.length, activeTrack); const normal = { x: -sample.tangent.y, y: sample.tangent.x }; const point = { x: sample.point.x + normal.x * lateralMid * halfWidth, y: sample.point.y + normal.y * lateralMid * halfWidth };
-      if (step === 0) context.moveTo(point.x, point.y); else context.lineTo(point.x, point.y);
+      if (step === 0) field.moveTo(point.x, point.y); else field.lineTo(point.x, point.y);
     }
-    context.stroke();
+    field.stroke();
   }
-  context.globalAlpha = 0.68; context.strokeStyle = rewardConfig.correctDirectionPerSecond > 0 ? "#b7d8a2" : "#72818a"; context.lineWidth = 1.5;
+  field.globalAlpha = 0.68; field.strokeStyle = rewardConfig.correctDirectionPerSecond > 0 ? "#b7d8a2" : "#72818a"; field.lineWidth = 1.5;
   const arrowSpacing = Math.max(1, Math.floor(longitudinalSteps / 18));
   for (let step = 0; step < longitudinalSteps; step += arrowSpacing) {
     const sample = pointAtDistance((step / longitudinalSteps) * activeTrack.length, activeTrack); const tangent = sample.tangent; const tip = { x: sample.point.x + tangent.x * 12, y: sample.point.y + tangent.y * 12 }; const back = { x: sample.point.x - tangent.x * 8, y: sample.point.y - tangent.y * 8 }; const normal = { x: -tangent.y, y: tangent.x };
-    context.beginPath(); context.moveTo(back.x, back.y); context.lineTo(tip.x, tip.y); context.moveTo(tip.x, tip.y); context.lineTo(tip.x - tangent.x * 5 + normal.x * 3, tip.y - tangent.y * 5 + normal.y * 3); context.moveTo(tip.x, tip.y); context.lineTo(tip.x - tangent.x * 5 - normal.x * 3, tip.y - tangent.y * 5 - normal.y * 3); context.stroke();
+    field.beginPath(); field.moveTo(back.x, back.y); field.lineTo(tip.x, tip.y); field.moveTo(tip.x, tip.y); field.lineTo(tip.x - tangent.x * 5 + normal.x * 3, tip.y - tangent.y * 5 + normal.y * 3); field.moveTo(tip.x, tip.y); field.lineTo(tip.x - tangent.x * 5 - normal.x * 3, tip.y - tangent.y * 5 - normal.y * 3); field.stroke();
   }
-  context.restore();
+  // One destination-in operation masks every band in one pass. It avoids
+  // alpha accumulation where the route is close to itself and makes the
+  // visualization flush with the actual road surface.
+  field.globalCompositeOperation = "destination-in"; field.globalAlpha = 1; field.strokeStyle = "#fff"; field.lineWidth = activeTrack.width; field.lineJoin = "round"; field.lineCap = "round";
+  field.beginPath(); activeTrack.points.forEach((point, index) => index === 0 ? field.moveTo(point.x, point.y) : field.lineTo(point.x, point.y)); field.closePath(); field.stroke();
+  field.globalCompositeOperation = "source-over"; field.restore();
+  context.drawImage(rewardFieldCanvas, -WIDTH / 2, -HEIGHT / 2);
 }
 
 function addCanvasPoint(point: { x: number; y: number }, offset: { x: number; y: number }): { x: number; y: number } { return { x: point.x + offset.x, y: point.y + offset.y }; }

@@ -342,6 +342,13 @@ describe("vehicle physics and fitness", () => {
     finiteAction(heuristicAction(car, [car, startPosition(1)]));
   });
 
+  it("damps stationary steering instead of allowing an in-place spin", () => {
+    const car = startPosition(); const initialHeading = car.heading;
+    for (let tick = 0; tick < 120; tick += 1) stepCar(car, { steer: 1, throttle: 0, brake: 0 }, [car]);
+    expect(Math.abs(car.heading - initialHeading)).toBeLessThan(0.2);
+    expect(car.stationaryTicks).toBeGreaterThan(18);
+  });
+
   it("is repeatable for the same evaluated network", () => {
     const first = evaluate(new SpikingNetwork(31));
     const second = evaluate(new SpikingNetwork(31));
@@ -466,6 +473,15 @@ describe("vehicle physics and fitness", () => {
       expect(car.checkpointsPassed, `${trackId} checkpoint`).toBe(1);
       expect(car.rewardBreakdown.checkpoint).toBe(DEFAULT_REWARD_CONFIG.checkpoint);
     });
+  });
+
+  it("keeps the 8-shaped switchback finish locked behind the ordered gate chain", () => {
+    const route = resolveTrack("switchback"); const laterGate = trackCheckpoint(4, route); const before = pointAtDistance(laterGate.distanceAlong - 1, route); const car = startPosition(0, route);
+    car.position = before.point; car.heading = Math.atan2(laterGate.tangent.y, laterGate.tangent.x); car.speed = 60; car.progress = before.distanceAlong / route.length; car.totalProgress = car.progress; car.nextCheckpoint = 1;
+    stepCar(car, { steer: 0, throttle: 0, brake: 0 }, [car], route, DEFAULT_REWARD_CONFIG, { ...DEFAULT_PHYSICS_CONFIG, wallsEnabled: false });
+    expect(car.checkpointsPassed).toBe(0);
+    expect(car.nextCheckpoint).toBe(1);
+    expect(car.finished).toBe(false);
   });
 
   it("times out without mislabeling a non-crashed car as crashed", () => {

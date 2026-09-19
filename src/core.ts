@@ -621,6 +621,20 @@ export function trackCheckpoint(index: number, trackRef: TrackRef = DEFAULT_TRAC
 
 function cross(a: Vec, b: Vec): number { return a.x * b.y - a.y * b.x; }
 
+function forwardArcDistance(from: number, to: number, length: number): number {
+  return ((to - from) % length + length) % length;
+}
+
+function circularArcDistance(from: number, to: number, length: number): number {
+  const forward = forwardArcDistance(from, to, length);
+  return Math.min(forward, length - forward);
+}
+
+function signedArcDistance(from: number, to: number, length: number): number {
+  const forward = forwardArcDistance(from, to, length);
+  return forward <= length / 2 ? forward : forward - length;
+}
+
 function lateralOffset(position: Vec, closest: { point: Vec; tangent: Vec }, route: TrackDefinition): number {
   return clamp(cross(closest.tangent, sub(position, closest.point)) / Math.max(1, route.width / 2), -1.5, 1.5);
 }
@@ -636,23 +650,44 @@ function nearestOpponent(car: Car, others: Car[]): OpponentInfo | undefined {
   }).sort((a, b) => a.distance - b.distance)[0];
 }
 
-export function nearestTrack(position: Vec, trackRef: TrackRef = DEFAULT_TRACK): { point: Vec; tangent: Vec; distance: number; progress: number; distanceAlong: number; segmentIndex: number; segmentT: number } {
+export function nearestTrack(position: Vec, trackRef: TrackRef = DEFAULT_TRACK, referenceDistanceAlong?: number, directionHint = 1): { point: Vec; tangent: Vec; distance: number; progress: number; distanceAlong: number; segmentIndex: number; segmentT: number } {
   const route = resolveTrack(trackRef);
-  let best = { point: route.points[0], tangent: normalize(sub(route.points[1], route.points[0])), distance: Infinity, progress: 0, distanceAlong: 0, segmentIndex: 0, segmentT: 0 };
+  const candidates: { point: Vec; tangent: Vec; distance: number; progress: number; distanceAlong: number; segmentIndex: number; segmentT: number }[] = [];
   for (let index = 0; index < route.points.length; index += 1) {
     const a = route.points[index]; const b = route.points[(index + 1) % route.points.length]; const segment = sub(b, a);
     const t = clamp(dot(sub(position, a), segment) / Math.max(1, dot(segment, segment)), 0, 1);
     const point = add(a, scale(segment, t)); const distance = dist(position, point);
-    if (distance < best.distance) {
-      const distanceAlong = route.cumulativeLengths[index] + route.segmentLengths[index] * t;
-      best = { point, tangent: normalize(segment), distance, progress: distanceAlong / route.length, distanceAlong, segmentIndex: index, segmentT: t };
-    }
+    const distanceAlong = route.cumulativeLengths[index] + route.segmentLengths[index] * t;
+    candidates.push({ point, tangent: normalize(segment), distance, progress: distanceAlong / route.length, distanceAlong, segmentIndex: index, segmentT: t });
   }
-  return best;
+  const nearest = candidates.reduce((best, candidate) => candidate.distance < best.distance ? candidate : best, candidates[0]);
+  if (referenceDistanceAlong === undefined) return nearest;
+  // At a crossover, two road segments can be equally close. Keeping the
+  // projection near the previous route distance prevents the car from
+  // teleporting from one branch of an 8-shaped track to the other and then
+  // collecting checkpoints or finish credit out of order. If the old branch
+  // is genuinely far away, fall back to the globally nearest segment so an
+  // off-road car can still recover normally.
+  const continuityWindow = Math.max(10, route.width * 0.72);
+  return candidates.filter((candidate) => candidate.distance <= nearest.distance + continuityWindow)
+    .reduce((best, candidate) => {
+      const candidateDelta = signedArcDistance(referenceDistanceAlong, candidate.distanceAlong, route.length);
+      const bestDelta = signedArcDistance(referenceDistanceAlong, best.distanceAlong, route.length);
+      // The first and last segment share the start/finish vertex. Around
+      // that seam, prefer the candidate in the requested travel direction;
+      // otherwise a tiny numerical distance advantage at the vertex can make
+      // a forward car look as though it moved backwards for one tick.
+      const nearSeam = referenceDistanceAlong < route.width * 0.5 || referenceDistanceAlong > route.length - route.width * 0.5;
+      if (nearSeam && Math.sign(candidateDelta) !== Math.sign(directionHint) && Math.sign(bestDelta) === Math.sign(directionHint)) return best;
+      const distanceDelta = circularArcDistance(referenceDistanceAlong, candidate.distanceAlong, route.length) - circularArcDistance(referenceDistanceAlong, best.distanceAlong, route.length);
+      if (distanceDelta < -0.001) return candidate;
+      if (Math.abs(distanceDelta) <= 0.001 && Math.sign(candidateDelta) === Math.sign(directionHint) && Math.sign(bestDelta) !== Math.sign(directionHint)) return candidate;
+      return best;
+    }, nearest);
 }
 
 export function sensorValues(car: Car, others: Car[], trackRef?: TrackRef): Sensors {
-  const route = resolveTrack(trackRef ?? car.trackId); const closest = nearestTrack(car.position, route);
+  const route = resolveTrack(trackRef ?? car.trackId); const closest = nearestTrack(car.position, route, car.ticks > 0 ? car.distanceAlong : undefined, car.speed < -0.5 ? -1 : 1);
   // At low speed, a shorter lookahead lets the controller commit to a tight
   // corner. At high speed, the horizon grows so it begins braking and turning
   // before the apex instead of reacting after it has left the road.
@@ -689,22 +724,27 @@ export function heuristicAction(car: Car, others: Car[], trackRef?: TrackRef): A
 
 export function stepCar(car: Car, action: Action, others: Car[], trackRef?: TrackRef, rewardConfig: RewardConfig = DEFAULT_REWARD_CONFIG, physicsConfig: PhysicsConfig = DEFAULT_PHYSICS_CONFIG): void {
   if (car.crashed || car.finished || car.timedOut) return;
-  const route = resolveTrack(trackRef ?? car.trackId); const checkpointCount = clamp(Math.floor(physicsConfig.checkpointCount ?? CHECKPOINT_COUNT), 2, 64); const nearby = nearestTrack(car.position, route); const offTrackBefore = nearby.distance > route.width / 2; const grip = offTrackBefore ? 0.35 : 1;
+  const route = resolveTrack(trackRef ?? car.trackId); const checkpointCount = clamp(Math.floor(physicsConfig.checkpointCount ?? CHECKPOINT_COUNT), 2, 64); const directionHint = car.speed < -0.5 || ((action.reverse ?? 0) > action.throttle && car.speed <= 0) ? -1 : 1; const continuityReference = car.ticks > 0 ? car.distanceAlong : undefined; const nearby = nearestTrack(car.position, route, continuityReference, directionHint); const offTrackBefore = nearby.distance > route.width / 2; const grip = offTrackBefore ? 0.35 : 1;
   const steeringDirection = car.speed < -0.5 ? -1 : 1;
-  car.heading += clamp(action.steer, -1, 1) * (0.65 + Math.abs(car.speed) / 150) * grip * steeringDirection * STEP;
+  // A car with almost no forward speed cannot keep rotating at full steering
+  // authority. This prevents neural candidates from spinning in place while
+  // still allowing a slow reverse/turn escape when they are genuinely stuck.
+  const lowSpeedSteering = clamp(Math.abs(car.speed) / 18, 0.18, 1);
+  const stationarySteering = car.stationaryTicks > 18 ? clamp(1 - (car.stationaryTicks - 18) / 24, 0, 1) : 1;
+  car.heading += clamp(action.steer, -1, 1) * (0.65 + Math.abs(car.speed) / 150) * grip * steeringDirection * lowSpeedSteering * stationarySteering * STEP;
   const forwardThrottle = clamp(action.throttle, 0, 1); const reverseThrottle = clamp(action.reverse ?? 0, 0, 1); const brake = clamp(action.brake, 0, 1);
   let acceleration = forwardThrottle * 55 - reverseThrottle * 45 - car.speed * 0.23;
   if (car.speed > 0) acceleration -= brake * 75; else if (car.speed < 0) acceleration += brake * 75;
   car.speed = clamp(car.speed + acceleration * STEP, -48, 90);
   const previousPosition = { ...car.position };
   car.position = add(car.position, { x: Math.cos(car.heading) * car.speed * STEP, y: Math.sin(car.heading) * car.speed * STEP });
-  let updated = nearestTrack(car.position, route); const rawOffTrackDistance = updated.distance; const wasOffTrack = rawOffTrackDistance > route.width / 2;
+  let updated = nearestTrack(car.position, route, continuityReference, directionHint); const rawOffTrackDistance = updated.distance; const wasOffTrack = rawOffTrackDistance > route.width / 2;
   if (wasOffTrack && physicsConfig.wallsEnabled) {
     const offset = sub(car.position, updated.point); const offsetDirection = normalize(offset);
     const safeCenterDistance = route.width / 2 - CAR_WIDTH * 0.65;
     const pull = clamp((updated.distance - safeCenterDistance) * (updated.distance > route.width * 1.25 ? 0.5 : 0.2), 1.5, 18);
     car.position = sub(car.position, scale(offsetDirection, pull));
-    updated = nearestTrack(car.position, route);
+    updated = nearestTrack(car.position, route, continuityReference, directionHint);
   }
   // Leaving the road should be survivable, but it must be an unattractive
   // strategy. The first pixels outside the asphalt cut speed to about half;
@@ -720,11 +760,20 @@ export function stepCar(car: Car, action: Action, others: Car[], trackRef?: Trac
   }
   const rawDelta = updated.progress - car.progress; let localDelta = rawDelta;
   if (localDelta < -0.5) localDelta += 1; else if (localDelta > 0.5) localDelta -= 1;
+  // Callers may restore a car by setting progress/position without also
+  // filling the cached distanceAlong field. Keep checkpoint validation robust
+  // for those restored or imported states, while preserving the true start
+  // line sentinel at distance zero.
+  const previousDistanceAlong = car.distanceAlong === 0 && car.progress > 0.02 ? car.progress * route.length : car.distanceAlong;
   const forward = { x: Math.cos(car.heading), y: Math.sin(car.heading) }; const alignment = dot(forward, updated.tangent);
   const line = startLine(route); const movement = sub(car.position, previousPosition);
   const crossesGate = (gate: { point: Vec; tangent: Vec; normal: Vec; distanceAlong?: number }): boolean => {
     const previousSide = dot(sub(previousPosition, gate.point), gate.tangent); const currentSide = dot(sub(car.position, gate.point), gate.tangent);
     if (!(previousSide < 0 && currentSide >= 0 && dot(movement, gate.tangent) > 0.01)) return false;
+    const arcTravel = forwardArcDistance(previousDistanceAlong, updated.distanceAlong, route.length);
+    const gateAhead = gate.distanceAlong === undefined ? 0 : forwardArcDistance(previousDistanceAlong, gate.distanceAlong, route.length);
+    const maxArcTravel = Math.max(CAR_LENGTH * 1.5, Math.abs(car.speed) * STEP * 2.2 + 8);
+    if (gate.distanceAlong !== undefined && (arcTravel > maxArcTravel || gateAhead > arcTravel + maxArcTravel)) return false;
     const denominator = previousSide - currentSide; const crossingFraction = clamp(previousSide / denominator, 0, 1);
     const crossingPoint = add(previousPosition, scale(movement, crossingFraction));
     const crossingOffset = Math.abs(dot(sub(crossingPoint, gate.point), gate.normal));
@@ -733,10 +782,12 @@ export function stepCar(car: Car, action: Action, others: Car[], trackRef?: Trac
     // intended arc-length position, otherwise a car on the return lane could
     // collect a checkpoint by crossing the wrong physical lane.
     if (gate.distanceAlong !== undefined) {
+      const centerlineDistance = dist(crossingPoint, gate.point);
+      if (centerlineDistance > route.width / 2 - CAR_WIDTH * 0.25) return false;
       const crossingTrack = nearestTrack(crossingPoint, route);
       const directError = Math.abs(crossingTrack.distanceAlong - gate.distanceAlong);
       const wrappedError = Math.min(directError, route.length - directError);
-      if (wrappedError > Math.max(route.width * 0.8, CAR_LENGTH * 3)) return false;
+      if (wrappedError > Math.max(route.width * 0.45, CAR_LENGTH * 2.5)) return false;
     }
     return crossingOffset <= route.width * 0.5 + CAR_WIDTH;
   };
