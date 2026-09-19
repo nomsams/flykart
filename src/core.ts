@@ -3,7 +3,19 @@ export type Action = { steer: number; throttle: number; brake: number; reverse?:
 export type Sensors = number[];
 export type TrackId = "grand-loop" | "switchback" | "zigzag" | "hairpin" | "oval-sprint" | "sharp-turn" | "deep-hairpin" | "chicane" | "corkscrew" | "mountain-pass" | "tight-corners" | "grand-prix" | "castle-run" | "needle-eye" | "rainbow-rally";
 export type TrackRef = TrackDefinition | TrackId;
-export type PhysicsConfig = { wallsEnabled: boolean; adaptiveTimeLimit?: boolean; maxAdaptiveExtensions?: number; checkpointCount?: number };
+export type PhysicsConfig = {
+  wallsEnabled: boolean;
+  adaptiveTimeLimit?: boolean;
+  maxAdaptiveExtensions?: number;
+  checkpointCount?: number;
+  /**
+   * Keep contact as a sensor/reward event without applying rigid-body
+   * separation or momentum transfer. This is useful when many candidates are
+   * evaluated in one visual scene: they can overlap, pay the same contact
+   * penalty, and continue driving instead of forming a traffic jam.
+   */
+  softCollisions?: boolean;
+};
 
 export type TrackDefinition = {
   id: TrackId;
@@ -382,8 +394,17 @@ export class SpikingNetwork {
 
   crossover(partner: SpikingNetwork, seed: number, partnerProbability = 0.5): SpikingNetwork {
     const result = this.clone(); let cursor = seed;
-    const choose = (first: number, second: number): number => { cursor += 1; return hash(cursor) < partnerProbability ? second : first; };
-    const combine = (target: number[], first: number[], second: number[]): void => target.forEach((_, index) => { target[index] = choose(first[index], second[index]); });
+    // Recombine short chromosome blocks instead of flipping every weight
+    // independently. This keeps useful local neural motifs together while
+    // still producing a deterministic Mendelian-style 50/50 inheritance mix.
+    const combine = (target: number[], first: number[], second: number[]): void => {
+      const blockSize = Math.max(8, Math.floor(Math.sqrt(target.length)));
+      let usePartner = false;
+      target.forEach((_, index) => {
+        if (index % blockSize === 0) { cursor += 1; usePartner = hash(cursor) < partnerProbability; }
+        target[index] = usePartner ? second[index] : first[index];
+      });
+    };
     combine(result.inputWeights, this.inputWeights, partner.inputWeights);
     combine(result.recurrentWeights, this.recurrentWeights, partner.recurrentWeights);
     combine(result.outputWeights, this.outputWeights, partner.outputWeights);
@@ -735,34 +756,39 @@ export function stepCar(car: Car, action: Action, others: Car[], trackRef?: Trac
     const collisionDistance = (car.collisionRadius ?? CAR_COLLISION_DIAMETER / 2) + (other.collisionRadius ?? CAR_COLLISION_DIAMETER / 2);
     if (distance >= collisionDistance) return;
     contact = true;
-    const tangent = updated.tangent; const fallback = { x: -tangent.y, y: tangent.x };
-    const direction = distance > 0.0001 ? scale(offset, 1 / distance) : scale(fallback, carIndex < otherIndex ? 1 : -1);
-    const separation = (collisionDistance - distance) + 0.75;
-    // Equal-mass separation keeps both cars movable. The old one-sided push
-    // made a stopped car behave like a wall and created traffic pileups.
-    car.position = add(car.position, scale(direction, separation * 0.5));
-    other.position = sub(other.position, scale(direction, separation * 0.5));
-    const carForward = { x: Math.cos(car.heading), y: Math.sin(car.heading) };
-    const otherForward = { x: Math.cos(other.heading), y: Math.sin(other.heading) };
-    const carVelocity = scale(carForward, car.speed); const otherVelocity = scale(otherForward, other.speed);
-    const relativeNormalSpeed = dot(sub(carVelocity, otherVelocity), direction);
-    if (relativeNormalSpeed < 0) {
-      const impulse = -(1 + 0.42) * relativeNormalSpeed * 0.5;
-      setCollisionSpeed(car, add(carVelocity, scale(direction, impulse)));
-      setCollisionSpeed(other, sub(otherVelocity, scale(direction, impulse)));
-    } else {
-      car.speed *= 0.82; other.speed *= 0.94;
+    if (!physicsConfig.softCollisions) {
+      const tangent = updated.tangent; const fallback = { x: -tangent.y, y: tangent.x };
+      const direction = distance > 0.0001 ? scale(offset, 1 / distance) : scale(fallback, carIndex < otherIndex ? 1 : -1);
+      const separation = (collisionDistance - distance) + 0.75;
+      // Equal-mass separation keeps both cars movable. The old one-sided push
+      // made a stopped car behave like a wall and created traffic pileups.
+      car.position = add(car.position, scale(direction, separation * 0.5));
+      other.position = sub(other.position, scale(direction, separation * 0.5));
+      const carForward = { x: Math.cos(car.heading), y: Math.sin(car.heading) };
+      const otherForward = { x: Math.cos(other.heading), y: Math.sin(other.heading) };
+      const carVelocity = scale(carForward, car.speed); const otherVelocity = scale(otherForward, other.speed);
+      const relativeNormalSpeed = dot(sub(carVelocity, otherVelocity), direction);
+      if (relativeNormalSpeed < 0) {
+        const impulse = -(1 + 0.42) * relativeNormalSpeed * 0.5;
+        setCollisionSpeed(car, add(carVelocity, scale(direction, impulse)));
+        setCollisionSpeed(other, sub(otherVelocity, scale(direction, impulse)));
+      } else {
+        car.speed *= 0.82; other.speed *= 0.94;
+      }
     }
     if (car.collisionCooldown <= 0) car.collisions += 1;
     if (other.collisionCooldown <= 0) other.collisions += 1;
     car.collisionCooldown = 6; other.collisionCooldown = Math.max(other.collisionCooldown, 6);
-    clampToRoad(car); clampToRoad(other);
+    if (!physicsConfig.softCollisions) { clampToRoad(car); clampToRoad(other); }
   });
   if (contact) {
-    car.speed *= 0.38;
+    // Soft contact deliberately leaves the vehicle's velocity untouched. It
+    // still receives the collision-count penalty above and the continuous
+    // proximity penalty below, so overlapping is possible but not free.
+    if (!physicsConfig.softCollisions) car.speed *= 0.38;
     if (car.collisionCooldown <= 0) car.collisions += 1;
     car.collisionCooldown = 6;
-    clampToRoad(car);
+    if (!physicsConfig.softCollisions) clampToRoad(car);
   } else car.collisionCooldown = Math.max(0, car.collisionCooldown - 1);
   const collisionDelta = car.collisions - collisionsBefore;
   const oilHazard = others.some((other) => other !== car && other.trackId === car.trackId && other.isObstacle && other.obstacleKind === "oil" && dist(car.position, other.position) < 28);

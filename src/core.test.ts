@@ -267,6 +267,24 @@ describe("vehicle physics and fitness", () => {
     expect(Math.hypot(first.position.x - second.position.x, first.position.y - second.position.y)).toBeGreaterThanOrEqual(CAR_COLLISION_DIAMETER);
   });
 
+  it("supports ghost contact: overlap is penalized without separation or momentum transfer", () => {
+    const first = startPosition(); const second = startPosition();
+    const tangent = { x: Math.cos(first.heading), y: Math.sin(first.heading) };
+    second.position = { x: first.position.x + tangent.x * (CAR_COLLISION_DIAMETER - 2), y: first.position.y + tangent.y * (CAR_COLLISION_DIAMETER - 2) };
+    first.speed = 50;
+    const secondBefore = { ...second.position };
+    const firstBefore = { ...first.position };
+    stepCar(first, { steer: 0, throttle: 0, brake: 0 }, [first, second], DEFAULT_TRACK, DEFAULT_REWARD_CONFIG, { ...DEFAULT_PHYSICS_CONFIG, softCollisions: true });
+    expect(first.collisions).toBe(1);
+    expect(first.rewardBreakdown.collision).toBe(DEFAULT_REWARD_CONFIG.collision);
+    expect(first.speed).toBeGreaterThan(40);
+    expect(second.speed).toBe(0);
+    expect(second.position).toEqual(secondBefore);
+    expect(Math.hypot(first.position.x - firstBefore.x, first.position.y - firstBefore.y)).toBeGreaterThan(0);
+    expect(Math.hypot(first.position.x - second.position.x, first.position.y - second.position.y)).toBeLessThan(CAR_COLLISION_DIAMETER);
+    expect(first.crashed).toBe(false);
+  });
+
   it("penalizes close traffic before contact and includes it in the total", () => {
     const car = startPosition(); const other = startPosition();
     const tangent = { x: Math.cos(car.heading), y: Math.sin(car.heading) };

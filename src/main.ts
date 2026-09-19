@@ -34,7 +34,7 @@ const ui = {
   resetButton: required<HTMLButtonElement>("#reset-btn"), saveButton: required<HTMLButtonElement>("#save-btn"), loadButton: required<HTMLButtonElement>("#load-btn"),
   exportButton: required<HTMLButtonElement>("#export-btn"), importButton: required<HTMLButtonElement>("#import-btn"), importFile: required<HTMLInputElement>("#import-file"),
   population: required<HTMLInputElement>("#population"), generations: required<HTMLInputElement>("#generations"),
-  trackSelect: required<HTMLSelectElement>("#track-select"), trackProvenance: required<HTMLElement>("#track-provenance"), wallsToggle: required<HTMLInputElement>("#walls-toggle"), adaptiveTimeToggle: required<HTMLInputElement>("#adaptive-time-toggle"), adaptiveExtensions: required<HTMLInputElement>("#adaptive-extensions"), checkpointCount: required<HTMLInputElement>("#checkpoint-count"), ghostEvolutionToggle: required<HTMLInputElement>("#ghost-evolution-toggle"), obstacleToggle: required<HTMLInputElement>("#obstacle-toggle"), obstacleCount: required<HTMLInputElement>("#obstacle-count"), obstacleKind: required<HTMLSelectElement>("#obstacle-kind"), plateauExplorationToggle: required<HTMLInputElement>("#plateau-exploration-toggle"), plateauPatience: required<HTMLInputElement>("#plateau-patience"), eliteParents: required<HTMLInputElement>("#elite-parents"), curriculumToggle: required<HTMLInputElement>("#curriculum-toggle"),
+  trackSelect: required<HTMLSelectElement>("#track-select"), trackProvenance: required<HTMLElement>("#track-provenance"), wallsToggle: required<HTMLInputElement>("#walls-toggle"), adaptiveTimeToggle: required<HTMLInputElement>("#adaptive-time-toggle"), adaptiveExtensions: required<HTMLInputElement>("#adaptive-extensions"), checkpointCount: required<HTMLInputElement>("#checkpoint-count"), ghostEvolutionToggle: required<HTMLInputElement>("#ghost-evolution-toggle"), softContactToggle: required<HTMLInputElement>("#soft-contact-toggle"), obstacleToggle: required<HTMLInputElement>("#obstacle-toggle"), obstacleCount: required<HTMLInputElement>("#obstacle-count"), obstacleKind: required<HTMLSelectElement>("#obstacle-kind"), plateauExplorationToggle: required<HTMLInputElement>("#plateau-exploration-toggle"), plateauPatience: required<HTMLInputElement>("#plateau-patience"), eliteParents: required<HTMLInputElement>("#elite-parents"), curriculumToggle: required<HTMLInputElement>("#curriculum-toggle"),
   rewardProgress: required<HTMLInputElement>("#reward-progress"), rewardDirection: required<HTMLInputElement>("#reward-direction"), rewardMoving: required<HTMLInputElement>("#reward-moving"),
   rewardStanding: required<HTMLInputElement>("#reward-standing"), rewardWrong: required<HTMLInputElement>("#reward-wrong"), rewardReverse: required<HTMLInputElement>("#reward-reverse"),
   rewardOffTrack: required<HTMLInputElement>("#reward-offtrack"), rewardEdge: required<HTMLInputElement>("#reward-edge"), rewardProximity: required<HTMLInputElement>("#reward-proximity"), rewardHazard: required<HTMLInputElement>("#reward-hazard"), rewardCenterline: required<HTMLInputElement>("#reward-centerline"), rewardCollision: required<HTMLInputElement>("#reward-collision"), rewardCrash: required<HTMLInputElement>("#reward-crash"), rewardCheckpoint: required<HTMLInputElement>("#reward-checkpoint"), rewardFinish: required<HTMLInputElement>("#reward-finish"),
@@ -46,7 +46,7 @@ const ui = {
   runProgressText: required<HTMLElement>("#run-progress-text"), runStepText: required<HTMLElement>("#run-step-text"),
   runElapsed: required<HTMLElement>("#run-elapsed"), eventLog: required<HTMLOListElement>("#event-log"), copyLogButton: required<HTMLButtonElement>("#copy-log-btn"),
   plotSummary: required<HTMLElement>("#plot-summary"), plotTooltip: required<HTMLElement>("#plot-tooltip"), trackInfo: required<HTMLElement>("#track-info"),
-  familyTree: required<HTMLElement>("#family-tree"), lineageCount: required<HTMLElement>("#lineage-count"), useLineageButton: required<HTMLButtonElement>("#use-lineage-btn"), downloadLineageButton: required<HTMLButtonElement>("#download-lineage-btn"), lineageDetail: required<HTMLElement>("#lineage-detail"),
+  familyTree: required<HTMLElement>("#family-tree"), breedingBoard: required<HTMLElement>("#breeding-board"), lineageCount: required<HTMLElement>("#lineage-count"), useLineageButton: required<HTMLButtonElement>("#use-lineage-btn"), downloadLineageButton: required<HTMLButtonElement>("#download-lineage-btn"), lineageDetail: required<HTMLElement>("#lineage-detail"),
 };
 const bars = Array.from({ length: 16 }, () => document.createElement("i"));
 bars.forEach((bar) => ui.bars.appendChild(bar));
@@ -61,6 +61,7 @@ let training = false;
 let visualTraining = false;
 let fiveBrainEvolution = false;
 let ghostEvolution = false;
+let softContactEvolution = false;
 let manualMode = false;
 let trainingPopulation: Car[] = [];
 let trainingObstacles: Car[] = [];
@@ -72,7 +73,9 @@ let trainingIndex = 0;
 let trainingGeneration = 0;
 let trainingNetworks: SpikingNetwork[] = [];
 type LineageNodeStatus = "candidate" | "retained" | "rejected" | "immigrant";
-type LineageNode = { id: string; name: string; generation: number; index: number; parentIds: string[]; network: SpikingNetwork; score?: number; progress?: number; finished?: boolean; status: LineageNodeStatus };
+type BreedingMode = "seed" | "incumbent" | "crossover" | "mutation" | "immigrant";
+type BreedingRecord = { mode: BreedingMode; parentIds: string[]; firstShare: number; secondShare: number; mutationRate: number; mutationAmount: number };
+type LineageNode = { id: string; name: string; generation: number; index: number; parentIds: string[]; network: SpikingNetwork; score?: number; progress?: number; finished?: boolean; status: LineageNodeStatus; breeding?: BreedingRecord };
 const LINEAGE_NAMES = ["Aster", "Brio", "Cinder", "Dune", "Echo", "Fable", "Glim", "Hush", "Iris", "Jolt", "Kite", "Lumen", "Mica", "Nori", "Orbit", "Pip", "Quill", "Rook", "Sable", "Tango", "Umber", "Vega", "Wisp", "Xeno", "Yarrow", "Zest"];
 const MAX_LINEAGE_NODES = 320;
 let lineageNodes: LineageNode[] = [];
@@ -122,7 +125,7 @@ let activeTrack: TrackDefinition = DEFAULT_TRACK;
 let flyFinishAnnounced = false;
 let runStartedAt: number | undefined;
 let eventHistory: string[] = [];
-type EvolutionPoint = { generation: number; bestFitness: number; candidateFitness: number; progress: number; candidateProgress: number; plateauStreak: number; mutationRate: number; mutationAmount: number; plateauReason: string };
+type EvolutionPoint = { generation: number; bestFitness: number; candidateFitness: number; progress: number; candidateProgress: number; plateauStreak: number; mutationRate: number; mutationAmount: number; plateauReason: string; candidateLineageId?: string; candidateName?: string };
 let evolutionHistory: EvolutionPoint[] = [];
 let hoveredEvolutionIndex: number | undefined;
 let hoveredEvolutionRatio = 0;
@@ -270,6 +273,7 @@ function readEvolutionConfig(): void {
   plateauPatience = readInteger(ui.plateauPatience, 3, 1, 20);
   eliteParentCount = readInteger(ui.eliteParents, 3, 2, 12);
   curriculumEnabled = ui.curriculumToggle.checked;
+  softContactEvolution = ui.softContactToggle.checked;
 }
 
 function selectedTrainingContext(): TrainingContextKey {
@@ -381,6 +385,12 @@ function updateLineageSelection(): void {
 
 function selectLineageNode(id: string): void {
   selectedLineageId = id;
+  const node = lineageNodeById(id);
+  // Selection is also the source used by the next race. The explicit
+  // “Use selected brain” button remains available as a visible confirmation,
+  // but clicking a graph point must never leave a stale previously-selected
+  // network attached to the new name.
+  selectedLineageNetwork = node?.network.clone();
   renderLineageTree();
 }
 
@@ -391,7 +401,7 @@ function renderLineageTree(): void {
   const visible = lineageNodes.filter((node) => node.generation >= firstVisibleGeneration);
   ui.lineageCount.textContent = lineageNodes.length === 0 ? "0 brains" : `${lineageNodes.length} brains · G${latestGeneration}`;
   if (visible.length === 0) {
-    const empty = document.createElement("p"); empty.className = "family-tree-empty"; empty.textContent = "Start training to see named candidates and their offspring."; ui.familyTree.appendChild(empty); updateLineageSelection(); return;
+    const empty = document.createElement("p"); empty.className = "family-tree-empty"; empty.textContent = "Start training to see named candidates and their offspring."; ui.familyTree.appendChild(empty); updateLineageSelection(); renderBreedingBoard(latestGeneration); return;
   }
   const generations = new Map<number, LineageNode[]>();
   visible.forEach((node) => { const group = generations.get(node.generation) ?? []; group.push(node); generations.set(node.generation, group); });
@@ -409,23 +419,72 @@ function renderLineageTree(): void {
     generation.appendChild(nodeList); ui.familyTree.appendChild(generation);
   });
   updateLineageSelection();
+  renderBreedingBoard(latestGeneration);
+}
+
+function renderBreedingBoard(generationNumber: number): void {
+  ui.breedingBoard.replaceChildren();
+  const offspring = lineageNodes.filter((node) => node.generation === generationNumber && node.breeding && node.breeding.mode !== "seed");
+  if (offspring.length === 0) {
+    const empty = document.createElement("p"); empty.className = "breeding-empty"; empty.textContent = "Finish a generation to see its parent pairings, inherited gene mix, and mutation pressure."; ui.breedingBoard.appendChild(empty); return;
+  }
+  const summary = document.createElement("p"); summary.className = "breeding-summary";
+  const crosses = offspring.filter((node) => node.breeding?.mode === "crossover").length;
+  const immigrants = offspring.filter((node) => node.breeding?.mode === "immigrant").length;
+  summary.textContent = `G${generationNumber} breeding ledger · ${crosses} crossover${crosses === 1 ? "" : "s"} · ${immigrants} immigrant${immigrants === 1 ? "" : "s"} · incumbent clone is protected in slot 1`;
+  ui.breedingBoard.appendChild(summary);
+  const grid = document.createElement("div"); grid.className = "breeding-grid";
+  offspring.forEach((node) => {
+    const record = node.breeding!; const card = document.createElement("article"); card.className = `breeding-card ${record.mode}`;
+    const heading = document.createElement("div"); heading.className = "breeding-card-heading";
+    const child = document.createElement("strong"); child.textContent = node.name;
+    const role = document.createElement("span"); role.textContent = record.mode === "crossover" ? "crossbred" : record.mode === "incumbent" ? "incumbent" : record.mode === "immigrant" ? "scout" : "mutant";
+    heading.append(child, role); card.appendChild(heading);
+    const parentRow = document.createElement("div"); parentRow.className = "breeding-parents";
+    if (record.parentIds.length === 0) {
+      const origin = document.createElement("span"); origin.className = "breeding-parent origin"; origin.textContent = record.mode === "immigrant" ? "random genome" : "new seed"; parentRow.appendChild(origin);
+    } else {
+      record.parentIds.forEach((parentId, parentIndex) => {
+        const parent = lineageNodeById(parentId); const button = document.createElement("button"); button.type = "button"; button.className = `breeding-parent ${parentIndex === 0 ? "first" : "second"}`; button.textContent = parent?.name ?? "older brain"; button.title = `Select ${parent?.name ?? "older brain"}`; button.addEventListener("click", () => { if (parent) selectLineageNode(parent.id); }); parentRow.appendChild(button);
+        if (parentIndex < record.parentIds.length - 1) { const cross = document.createElement("span"); cross.className = "breeding-cross"; cross.textContent = "×"; parentRow.appendChild(cross); }
+      });
+    }
+    card.appendChild(parentRow);
+    if (record.mode === "crossover" || record.mode === "incumbent" || record.mode === "mutation") {
+      const chromosome = document.createElement("div"); chromosome.className = "chromosome"; chromosome.setAttribute("aria-label", `${Math.round(record.firstShare * 100)}% first parent genes and ${Math.round(record.secondShare * 100)}% second parent genes`);
+      const first = document.createElement("span"); first.className = "chromosome-first"; first.style.flexBasis = `${record.firstShare * 100}%`; first.textContent = `${Math.round(record.firstShare * 100)}%`;
+      const second = document.createElement("span"); second.className = "chromosome-second"; second.style.flexBasis = `${record.secondShare * 100}%`; second.textContent = record.secondShare > 0 ? `${Math.round(record.secondShare * 100)}%` : "";
+      chromosome.append(first, second); card.appendChild(chromosome);
+      const mutation = document.createElement("span"); mutation.className = "breeding-mutation"; mutation.textContent = record.mutationRate > 0 ? `mutation ${(record.mutationRate * 100).toFixed(0)}% · amplitude ${record.mutationAmount.toFixed(2)}` : "protected copy · no mutation"; card.appendChild(mutation);
+    } else {
+      const mutation = document.createElement("span"); mutation.className = "breeding-mutation"; mutation.textContent = "fresh genome · exploration immigrant"; card.appendChild(mutation);
+    }
+    grid.appendChild(card);
+  });
+  ui.breedingBoard.appendChild(grid);
 }
 
 function resetLineage(): void {
   lineageNodes = []; trainingLineageIds = []; selectedLineageId = undefined; selectedLineageNetwork = undefined; lineageSerial = 0; renderLineageTree();
 }
 
-function addLineageNode(network: SpikingNetwork, generationNumber: number, index: number, parentIds: string[], status: LineageNodeStatus): string {
+function addLineageNode(network: SpikingNetwork, generationNumber: number, index: number, parentIds: string[], status: LineageNodeStatus, breeding?: BreedingRecord): string {
   const id = `lineage-${generationNumber}-${lineageSerial}`; lineageSerial += 1;
   const name = generationNumber === 1 && index === 0 ? "Origin·G1.1" : `${LINEAGE_NAMES[(generationNumber * 11 + index) % LINEAGE_NAMES.length]}·G${generationNumber}.${index + 1}`;
-  lineageNodes.push({ id, name, generation: generationNumber, index, parentIds: [...parentIds], network: network.clone(), status });
+  lineageNodes.push({ id, name, generation: generationNumber, index, parentIds: [...parentIds], network: network.clone(), status, breeding });
   if (lineageNodes.length > MAX_LINEAGE_NODES) { const removed = lineageNodes.splice(0, lineageNodes.length - MAX_LINEAGE_NODES); if (removed.some((node) => node.id === selectedLineageId)) selectedLineageId = undefined; }
   return id;
 }
 
 function registerInitialLineagePopulation(networks: SpikingNetwork[]): void {
   const ids: string[] = [];
-  networks.forEach((network, index) => { ids.push(addLineageNode(network, trainingGeneration, index, index === 0 ? [] : ids.slice(0, 1), "candidate")); });
+  networks.forEach((network, index) => {
+    const parentIds = index === 0 ? [] : ids.slice(0, 1);
+    const breeding: BreedingRecord = index === 0
+      ? { mode: "seed", parentIds, firstShare: 1, secondShare: 0, mutationRate: 0, mutationAmount: 0 }
+      : { mode: "mutation", parentIds, firstShare: 1, secondShare: 0, mutationRate: DEFAULT_MUTATION_RATE, mutationAmount: DEFAULT_MUTATION_AMOUNT };
+    ids.push(addLineageNode(network, trainingGeneration, index, parentIds, "candidate", breeding));
+  });
   trainingLineageIds = ids; renderLineageTree();
 }
 
@@ -434,9 +493,15 @@ function registerNextLineagePopulation(networks: SpikingNetwork[], generationNum
   networks.forEach((network, index) => {
     let parentIds = retainedParentId ? [retainedParentId] : [];
     let status: LineageNodeStatus = index === 0 ? "retained" : "candidate";
+    let breeding: BreedingRecord = { mode: index === 0 ? "incumbent" : "mutation", parentIds, firstShare: 1, secondShare: 0, mutationRate: index === 0 ? 0 : mutationRate, mutationAmount: index === 0 ? 0 : mutationAmount };
     if (exploring && index >= immigrantStart) { parentIds = []; status = "immigrant"; }
-    else if (index > 0 && eliteParentIds.length > 1) parentIds = [eliteParentIds[(index - 1) % eliteParentIds.length], eliteParentIds[index % eliteParentIds.length]];
-    ids.push(addLineageNode(network, generationNumber, index, parentIds, status));
+    else if (index > 0 && eliteParentIds.length > 1) {
+      parentIds = [eliteParentIds[(index - 1) % eliteParentIds.length], eliteParentIds[index % eliteParentIds.length]];
+      breeding = { mode: "crossover", parentIds, firstShare: 0.5, secondShare: 0.5, mutationRate: mutationRate * 0.85, mutationAmount: mutationAmount * 0.85 };
+    }
+    if (status === "immigrant") breeding = { mode: "immigrant", parentIds: [], firstShare: 0, secondShare: 0, mutationRate: 0, mutationAmount: 0 };
+    breeding.parentIds = [...parentIds];
+    ids.push(addLineageNode(network, generationNumber, index, parentIds, status, breeding));
   });
   trainingLineageIds = ids; renderLineageTree();
 }
@@ -467,7 +532,7 @@ function renderEvolutionChart(): void {
     evolutionContext.fillStyle = "#7f8ca0"; evolutionContext.fillText("Start training to populate the evolution trend", left, top + panelHeight + gap / 2);
     evolutionContext.strokeStyle = "rgba(113, 145, 181, .18)"; evolutionContext.strokeRect(left, top, plotWidth, panelHeight); evolutionContext.strokeRect(left, progressTop, plotWidth, panelHeight);
     evolutionContext.fillStyle = "#8c9bb0"; evolutionContext.fillText("reward / fitness", 8, top - 10); evolutionContext.fillText("route coverage", 8, progressTop - 10);
-    ui.plotSummary.textContent = "No generations recorded yet. The upper panel will scale reward locally; the lower panel always shows route coverage from 0–100%.";
+    ui.plotSummary.textContent = "No generations recorded yet. The upper panel will scale reward locally; the lower panel always shows route coverage from 0–100%. Click a generation after training to select its candidate.";
     return;
   }
   const fitnessValues = evolutionHistory.flatMap((point) => [point.bestFitness, point.candidateFitness]); const rawMin = Math.min(...fitnessValues); const rawMax = Math.max(...fitnessValues); const rawRange = Math.max(1, rawMax - rawMin); const fitnessPadding = Math.max(1, rawRange * 0.14); const fitnessMin = rawMin - fitnessPadding; const fitnessMax = rawMax + fitnessPadding;
@@ -488,25 +553,44 @@ function renderEvolutionChart(): void {
   evolutionHistory.forEach((point, index) => { const x = xAt(index); const radius = index === hoveredEvolutionIndex ? 4 : 2.5; evolutionContext.fillStyle = "#7cf0b6"; evolutionContext.beginPath(); evolutionContext.arc(x, rewardY(point.bestFitness), radius, 0, TAU); evolutionContext.fill(); evolutionContext.fillStyle = "#72b8ff"; evolutionContext.beginPath(); evolutionContext.arc(x, progressY(point.progress), radius, 0, TAU); evolutionContext.fill(); evolutionContext.fillStyle = "#f3c96b"; evolutionContext.beginPath(); evolutionContext.arc(x, progressY(point.candidateProgress), radius, 0, TAU); evolutionContext.fill(); evolutionContext.fillStyle = "#d29bff"; evolutionContext.beginPath(); evolutionContext.arc(x, progressY(point.mutationRate), radius, 0, TAU); evolutionContext.fill(); if (point.plateauStreak >= plateauPatience) { evolutionContext.fillStyle = "#ff8c8c"; evolutionContext.beginPath(); evolutionContext.arc(x, rewardY(point.bestFitness), 3.5, 0, TAU); evolutionContext.fill(); } });
   const latest = evolutionHistory[evolutionHistory.length - 1]; const previous = evolutionHistory[evolutionHistory.length - 2]; const rewardDelta = previous ? latest.bestFitness - previous.bestFitness : 0; const progressDelta = previous ? (latest.progress - previous.progress) * 100 : latest.progress * 100; const xLabels = evolutionHistory.length === 1 ? [0] : [0, Math.floor((evolutionHistory.length - 1) / 2), evolutionHistory.length - 1];
   evolutionContext.fillStyle = "#8c9bb0"; evolutionContext.font = "10px system-ui"; xLabels.forEach((index) => { const label = `G${evolutionHistory[index].generation}`; evolutionContext.fillText(label, Math.max(left, Math.min(width - right - 22, xAt(index) - 10)), height - 10); });
-  if (hoveredEvolutionIndex !== undefined && evolutionHistory[hoveredEvolutionIndex]) { const point = evolutionHistory[hoveredEvolutionIndex]; const x = xAt(hoveredEvolutionIndex); evolutionContext.strokeStyle = "rgba(238, 245, 255, .65)"; evolutionContext.setLineDash([2, 3]); evolutionContext.beginPath(); evolutionContext.moveTo(x, top); evolutionContext.lineTo(x, progressTop + panelHeight); evolutionContext.stroke(); evolutionContext.setLineDash([]); ui.plotTooltip.hidden = false; ui.plotTooltip.setAttribute("aria-hidden", "false"); ui.plotTooltip.style.left = `${clamp(hoveredEvolutionRatio * evolutionChart.clientWidth + 12, 6, Math.max(6, evolutionChart.clientWidth - 188))}px`; ui.plotTooltip.textContent = `G${point.generation} · reward ${point.bestFitness.toFixed(1)} · candidate ${point.candidateFitness.toFixed(1)} · best coverage ${(point.progress * 100).toFixed(1)}% · candidate coverage ${(point.candidateProgress * 100).toFixed(1)}% · plateau ${point.plateauStreak}/${plateauPatience} (${point.plateauReason}) · mutation ${(point.mutationRate * 100).toFixed(0)}% / ${point.mutationAmount.toFixed(2)}`; }
-  ui.plotSummary.textContent = `G${latest.generation} · reward ${latest.bestFitness.toFixed(1)} · candidate ${latest.candidateFitness.toFixed(1)} · Δ reward ${rewardDelta >= 0 ? "+" : ""}${rewardDelta.toFixed(1)} · best coverage ${(latest.progress * 100).toFixed(1)}% (${progressDelta >= 0 ? "+" : ""}${progressDelta.toFixed(1)} pp) · candidate coverage ${(latest.candidateProgress * 100).toFixed(1)}% · plateau ${latest.plateauStreak}/${plateauPatience} (${latest.plateauReason}) · mutation ${(latest.mutationRate * 100).toFixed(0)}% / ${latest.mutationAmount.toFixed(2)} · reward scale ${fitnessMin.toFixed(0)}…${fitnessMax.toFixed(0)}`;
+  if (hoveredEvolutionIndex !== undefined && evolutionHistory[hoveredEvolutionIndex]) { const point = evolutionHistory[hoveredEvolutionIndex]; const x = xAt(hoveredEvolutionIndex); evolutionContext.strokeStyle = "rgba(238, 245, 255, .65)"; evolutionContext.setLineDash([2, 3]); evolutionContext.beginPath(); evolutionContext.moveTo(x, top); evolutionContext.lineTo(x, progressTop + panelHeight); evolutionContext.stroke(); evolutionContext.setLineDash([]); ui.plotTooltip.hidden = false; ui.plotTooltip.setAttribute("aria-hidden", "false"); ui.plotTooltip.style.left = `${clamp(hoveredEvolutionRatio * evolutionChart.clientWidth + 12, 6, Math.max(6, evolutionChart.clientWidth - 188))}px`; ui.plotTooltip.textContent = `G${point.generation} · reward ${point.bestFitness.toFixed(1)} · candidate ${point.candidateName ?? "unnamed"} ${point.candidateFitness.toFixed(1)} · best coverage ${(point.progress * 100).toFixed(1)}% · candidate coverage ${(point.candidateProgress * 100).toFixed(1)}% · plateau ${point.plateauStreak}/${plateauPatience} (${point.plateauReason}) · mutation ${(point.mutationRate * 100).toFixed(0)}% / ${point.mutationAmount.toFixed(2)} · click to select candidate`; }
+  ui.plotSummary.textContent = `G${latest.generation} · reward ${latest.bestFitness.toFixed(1)} · candidate ${latest.candidateName ?? "unnamed"} ${latest.candidateFitness.toFixed(1)} · Δ reward ${rewardDelta >= 0 ? "+" : ""}${rewardDelta.toFixed(1)} · best coverage ${(latest.progress * 100).toFixed(1)}% (${progressDelta >= 0 ? "+" : ""}${progressDelta.toFixed(1)} pp) · candidate coverage ${(latest.candidateProgress * 100).toFixed(1)}% · plateau ${latest.plateauStreak}/${plateauPatience} (${latest.plateauReason}) · mutation ${(latest.mutationRate * 100).toFixed(0)}% / ${latest.mutationAmount.toFixed(2)} · reward scale ${fitnessMin.toFixed(0)}…${fitnessMax.toFixed(0)} · click a generation to select its candidate`;
 }
 
 function resetEvolutionHistory(): void {
   evolutionHistory = []; renderEvolutionChart();
 }
 
-function recordEvolutionPoint(candidateFitness: number, candidateProgress: number, retainedProgress: number): void {
-  evolutionHistory.push({ generation: trainingGeneration, bestFitness, candidateFitness, progress: clamp(retainedProgress, 0, 1), candidateProgress: clamp(candidateProgress, 0, 1), plateauStreak, mutationRate, mutationAmount, plateauReason });
+function recordEvolutionPoint(candidateFitness: number, candidateProgress: number, retainedProgress: number, candidateLineageId?: string, candidateName?: string): void {
+  evolutionHistory.push({ generation: trainingGeneration, bestFitness, candidateFitness, progress: clamp(retainedProgress, 0, 1), candidateProgress: clamp(candidateProgress, 0, 1), plateauStreak, mutationRate, mutationAmount, plateauReason, candidateLineageId, candidateName });
   if (evolutionHistory.length > 1000) evolutionHistory.shift();
   renderEvolutionChart();
 }
 
+function evolutionPointFromEvent(event: PointerEvent): { index: number; ratio: number } | undefined {
+  if (evolutionHistory.length === 0) return undefined;
+  const bounds = evolutionChart.getBoundingClientRect();
+  const chartX = (event.clientX - bounds.left) * (evolutionChart.width / Math.max(1, bounds.width));
+  const left = 68; const right = 18;
+  const ratio = clamp((chartX - left) / Math.max(1, evolutionChart.width - left - right), 0, 1);
+  return { index: Math.round(ratio * (evolutionHistory.length - 1)), ratio };
+}
+
 evolutionChart.addEventListener("pointermove", (event) => {
-  if (evolutionHistory.length === 0) return;
-  const bounds = evolutionChart.getBoundingClientRect(); const chartX = (event.clientX - bounds.left) * (evolutionChart.width / Math.max(1, bounds.width));
-  const left = 68; const right = 18; const ratio = clamp((chartX - left) / Math.max(1, evolutionChart.width - left - right), 0, 1);
-  hoveredEvolutionRatio = ratio; hoveredEvolutionIndex = Math.round(ratio * (evolutionHistory.length - 1)); renderEvolutionChart();
+  const point = evolutionPointFromEvent(event);
+  if (!point) return;
+  hoveredEvolutionRatio = point.ratio; hoveredEvolutionIndex = point.index; renderEvolutionChart();
+});
+evolutionChart.addEventListener("click", (event) => {
+  const point = evolutionPointFromEvent(event);
+  const evolution = point ? evolutionHistory[point.index] : undefined;
+  const node = lineageNodeById(evolution?.candidateLineageId);
+  if (!node) {
+    if (evolution) appendEvent(`G${evolution.generation} candidate is no longer available in the compact lineage window`);
+    return;
+  }
+  selectLineageNode(node.id);
+  appendEvent(`selected ${node.name} from evolution graph · reward ${node.score?.toFixed(1) ?? evolution?.candidateFitness.toFixed(1) ?? "pending"}`);
 });
 evolutionChart.addEventListener("pointerleave", () => { hoveredEvolutionIndex = undefined; renderEvolutionChart(); });
 
@@ -576,7 +660,7 @@ function updateRewardTelemetry(car: Car | undefined): void {
 
 function setBusy(value: boolean): void {
   [ui.raceButton, ui.driveButton, ui.visualButton, ui.evolveFiveButton, ui.headlessButton, ui.resetButton, ui.loadButton, ui.importButton].forEach((button) => { button.disabled = value; });
-  [ui.trackSelect, ui.wallsToggle, ui.adaptiveTimeToggle, ui.adaptiveExtensions, ui.checkpointCount, ui.ghostEvolutionToggle, ui.obstacleToggle, ui.obstacleCount, ui.obstacleKind, ui.plateauExplorationToggle, ui.plateauPatience, ui.eliteParents, ui.curriculumToggle, ui.rewardProgress, ui.rewardDirection, ui.rewardMoving, ui.rewardStanding, ui.rewardWrong, ui.rewardReverse, ui.rewardOffTrack, ui.rewardEdge, ui.rewardProximity, ui.rewardHazard, ui.rewardCenterline, ui.rewardCollision, ui.rewardCrash, ui.rewardCheckpoint, ui.rewardFinish].forEach((input) => { input.disabled = value; });
+  [ui.trackSelect, ui.wallsToggle, ui.adaptiveTimeToggle, ui.adaptiveExtensions, ui.checkpointCount, ui.ghostEvolutionToggle, ui.softContactToggle, ui.obstacleToggle, ui.obstacleCount, ui.obstacleKind, ui.plateauExplorationToggle, ui.plateauPatience, ui.eliteParents, ui.curriculumToggle, ui.rewardProgress, ui.rewardDirection, ui.rewardMoving, ui.rewardStanding, ui.rewardWrong, ui.rewardReverse, ui.rewardOffTrack, ui.rewardEdge, ui.rewardProximity, ui.rewardHazard, ui.rewardCenterline, ui.rewardCollision, ui.rewardCrash, ui.rewardCheckpoint, ui.rewardFinish].forEach((input) => { input.disabled = value; });
   ui.stopButton.disabled = !(value || running);
 }
 
@@ -854,7 +938,7 @@ function trainFiveBrainStep(): void {
     const simulationCars = ghostEvolution ? [car, ...candidateObstacles] : sharedSimulationCars;
     const previousTimeLimit = car.timeLimit;
     car.action = car.network.step(sensorValues(car, simulationCars, route));
-    stepCar(car, car.action, simulationCars, route, rewardConfig, physicsConfig);
+    stepCar(car, car.action, simulationCars, route, rewardConfig, ghostEvolution ? physicsConfig : { ...physicsConfig, softCollisions: softContactEvolution });
     if (car.timeLimit > previousTimeLimit) appendEvent(`${car.name} earned adaptive extension ${car.timeExtensions}/${physicsConfig.maxAdaptiveExtensions ?? MAX_ADAPTIVE_EXTENSIONS} · new limit ${car.timeLimit} ticks`);
   });
   const tick = Math.max(0, ...trainingPopulation.map((car) => car.ticks));
@@ -927,7 +1011,7 @@ function startVisualGeneration(): void {
   trainingIndex = 0;
   trainingPopulation.forEach((car) => car.network?.reset());
   const episodeCount = Math.max(1, trainingTracks.length);
-  const evolutionLabel = ghostEvolution ? "ghost evolution · isolated candidates" : "shared-track evolution · collision dynamics enabled";
+  const evolutionLabel = ghostEvolution ? "independent evolution · isolated candidate worlds" : softContactEvolution ? "Ghost contact mode · overlap is penalized but non-blocking" : "shared-track evolution · rigid collision dynamics enabled";
   updateEvolutionTelemetry();
   setProgress(((trainingGeneration - 1) * trainingPopulationSize * episodeCount) / Math.max(1, trainingPopulationSize * episodeCount * requestedGenerations), fiveBrainEvolution ? `generation ${trainingGeneration}/${requestedGenerations} · ${trainingPopulationSize} brains · ${trainingTracks[0].name}` : `generation ${trainingGeneration}/${requestedGenerations} · candidate 1/${trainingPopulationSize} · ${trainingTracks[0].name}`, fiveBrainEvolution ? evolutionLabel : "visual · preparing candidate");
 }
@@ -966,7 +1050,7 @@ function breed(): void {
   const exploring = plateauExplorationEnabled && plateauStreak >= plateauPatience;
   updateEvolutionTelemetry();
   ui.generation.textContent = `${generation}`; ui.fitness.textContent = bestFitness.toFixed(1); ui.progress.textContent = `${Math.round(retainedProgress * 100)}%`;
-  recordEvolutionPoint(candidate.score, winnerProgress, retainedProgress);
+  recordEvolutionPoint(candidate.score, winnerProgress, retainedProgress, candidate.lineageId, lineageNodeById(candidate.lineageId)?.name);
   const result = improved ? `accepted new incumbent ${bestFitness.toFixed(1)}` : `rejected candidate ${candidate.score.toFixed(1)}; incumbent remains ${bestFitness.toFixed(1)}`;
   const reason = rewardPlateau ? "reward plateau" : progressStalled ? "route progress plateau" : improved ? "progress improved" : "fitness did not improve";
   trainingLineageIds.forEach((id) => { const node = lineageNodeById(id); if (node && node.status !== "immigrant") node.status = "candidate"; });
@@ -986,7 +1070,7 @@ function finishVisualGeneration(): void { breed(); if (trainingGeneration >= req
 async function runHeadless(): Promise<void> {
   const session = ++trainingSession; clearVisualTimer(); training = true; running = false; visualTraining = false; fiveBrainEvolution = false; ghostEvolution = ui.ghostEvolutionToggle.checked; manualMode = false; trainingGeneration = 1;
   trainingPopulationSize = readInteger(ui.population, 5, 2, 80); requestedGenerations = readInteger(ui.generations, 100, 1, 10000); trainingTracks = selectedTracks(); rewardConfig = readRewardConfig(); physicsConfig = readPhysicsConfig(); readRoadObjectConfig(); readEvolutionConfig(); activeTrack = trainingTracks[0]; prepareTrainingContext(); trainingWorldSeed = 7000; plateauStreak = 0; plateauReason = "none"; mutationRate = DEFAULT_MUTATION_RATE; mutationAmount = DEFAULT_MUTATION_AMOUNT; previousGenerationProgress = 0; resetEvolutionHistory(); resetLineage(); trainingNetworks = createMutationPopulation(trainingPopulationSize, bestNetwork, trainingWorldSeed, DEFAULT_MUTATION_RATE, DEFAULT_MUTATION_AMOUNT, { parentCount: eliteParentCount }); registerInitialLineagePopulation(trainingNetworks); ensureWorkingCheckpoint(); updateEvolutionTelemetry();
-  beginRun("Headless training", `Evaluating ${trainingPopulationSize} controllers across ${requestedGenerations} generations on ${selectedTrackLabel()}${freshTrainingContext ? ` · new route baseline reset · warm-start from ${warmStartLabel}` : ""}${ghostEvolution ? " in isolated ghost worlds" : " with traffic bots"}${randomObjectsEnabled ? ` and ${trainingObstacleCount()} ${randomObjectKind} objects` : ""}${curriculumEnabled ? " on a progressive hazard curriculum" : ""}. Top ${eliteParentCount} parents will crossbreed each generation.`, "HEADLESS TRAINING");
+  beginRun("Headless training", `Evaluating ${trainingPopulationSize} controllers across ${requestedGenerations} generations on ${selectedTrackLabel()}${freshTrainingContext ? ` · new route baseline reset · warm-start from ${warmStartLabel}` : ""}${ghostEvolution ? " in independent candidate worlds" : " with traffic bots"}${randomObjectsEnabled ? ` and ${trainingObstacleCount()} ${randomObjectKind} objects` : ""}${curriculumEnabled ? " on a progressive hazard curriculum" : ""}. Top ${eliteParentCount} parents will crossbreed each generation.`, "HEADLESS TRAINING");
   setBusy(true); ui.generation.textContent = "0"; ui.fitness.textContent = "—";
   try {
     for (; trainingGeneration <= requestedGenerations && training && trainingSession === session; trainingGeneration += 1) {
@@ -1026,7 +1110,7 @@ function startVisualTraining(): void {
 function startFiveBrainEvolution(): void {
   const session = ++trainingSession; clearVisualTimer(); training = true; running = false; visualTraining = true; fiveBrainEvolution = true; ghostEvolution = ui.ghostEvolutionToggle.checked; manualMode = false; trainingHistory = []; trainingGeneration = 1;
   trainingPopulationSize = readInteger(ui.population, 5, 2, 80); requestedGenerations = readInteger(ui.generations, 100, 1, 10000); trainingTracks = selectedTracks(); rewardConfig = readRewardConfig(); physicsConfig = readPhysicsConfig(); readRoadObjectConfig(); readEvolutionConfig(); activeTrack = trainingTracks[0]; prepareTrainingContext(); trainingWorldSeed = 9000; plateauStreak = 0; plateauReason = "none"; mutationRate = DEFAULT_MUTATION_RATE; mutationAmount = DEFAULT_MUTATION_AMOUNT; previousGenerationProgress = 0; resetEvolutionHistory(); resetLineage(); trainingNetworks = createMutationPopulation(trainingPopulationSize, bestNetwork, trainingWorldSeed, DEFAULT_MUTATION_RATE, DEFAULT_MUTATION_AMOUNT, { parentCount: eliteParentCount }); registerInitialLineagePopulation(trainingNetworks); ensureWorkingCheckpoint(); updateEvolutionTelemetry();
-  const mode = ghostEvolution ? "isolated ghost worlds (no candidate sensing, collisions, or influence)" : "a shared physical track";
+  const mode = ghostEvolution ? "independent candidate worlds (no candidate sensing, collisions, or influence)" : softContactEvolution ? "Ghost contact mode (candidates sense and penalize overlap, but contact is non-blocking)" : "a shared physical track with rigid collision dynamics";
   beginRun("Population evolution", `Racing ${trainingPopulationSize} brains simultaneously in ${mode} for ${requestedGenerations} generations on ${selectedTrackLabel()}${freshTrainingContext ? ` · new route baseline reset · warm-start from ${warmStartLabel}` : ""}${randomObjectsEnabled ? ` with ${randomObjectCount} ${randomObjectKind} objects` : ""}. Top ${eliteParentCount} parents will crossbreed each generation.`, "POPULATION EVOLUTION");
   setBusy(true); ui.generation.textContent = "0"; ui.fitness.textContent = "—"; startVisualGeneration(); scheduleVisualBatch(session);
 }
@@ -1086,7 +1170,8 @@ ui.wallsToggle.addEventListener("change", () => { physicsConfig = readPhysicsCon
 ui.adaptiveTimeToggle.addEventListener("change", () => { physicsConfig = readPhysicsConfig(); appendEvent(physicsConfig.adaptiveTimeLimit ? `adaptive time enabled · up to ${physicsConfig.maxAdaptiveExtensions} evidence-based extensions` : "adaptive time disabled · candidates stop at the base tick limit"); });
 ui.adaptiveExtensions.addEventListener("change", () => { physicsConfig = readPhysicsConfig(); appendEvent(`adaptive extension limit set to ${physicsConfig.maxAdaptiveExtensions}`); });
 ui.checkpointCount.addEventListener("change", () => { physicsConfig = readPhysicsConfig(); appendEvent(`checkpoint gate count set to ${physicsConfig.checkpointCount}; ordered gates will be rebuilt on the next run`); });
-ui.ghostEvolutionToggle.addEventListener("change", () => { ghostEvolution = ui.ghostEvolutionToggle.checked; appendEvent(ghostEvolution ? "ghost evolution enabled · candidates run simultaneously but cannot see, collide with, or influence one another" : "shared-track evolution enabled · candidates now learn traffic interactions"); });
+ui.ghostEvolutionToggle.addEventListener("change", () => { ghostEvolution = ui.ghostEvolutionToggle.checked; if (ghostEvolution && ui.softContactToggle.checked) { ui.softContactToggle.checked = false; softContactEvolution = false; appendEvent("independent evolution selected · Ghost contact mode disabled because candidates are fully isolated"); } else appendEvent(ghostEvolution ? "independent evolution enabled · each candidate has its own world and cannot sense, collide with, or influence another" : "shared-track evolution enabled · candidates now learn traffic interactions"); });
+ui.softContactToggle.addEventListener("change", () => { softContactEvolution = ui.softContactToggle.checked; if (softContactEvolution && ui.ghostEvolutionToggle.checked) { ui.ghostEvolutionToggle.checked = false; ghostEvolution = false; appendEvent("Ghost contact mode selected · independent evolution disabled so candidates can sense one another"); } else appendEvent(softContactEvolution ? "Ghost contact mode enabled · overlap is penalized but never separates or stalls a candidate" : "Ghost contact mode disabled · shared evolution uses rigid collision dynamics"); });
 ui.obstacleToggle.addEventListener("change", () => { readRoadObjectConfig(); appendEvent(randomObjectsEnabled ? `random road objects enabled · ${randomObjectCount} ${randomObjectKind} objects per episode` : "random road objects disabled"); });
 ui.obstacleCount.addEventListener("change", () => { readRoadObjectConfig(); appendEvent(`random road object count set to ${randomObjectCount}`); });
 ui.obstacleKind.addEventListener("change", () => { readRoadObjectConfig(); appendEvent(`road object type set to ${randomObjectKind}`); });

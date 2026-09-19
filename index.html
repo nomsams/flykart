@@ -85,12 +85,12 @@
               <span class="plot-scale-note">generation timeline</span>
             </div>
             <div class="plot-canvas-wrap">
-            <canvas id="evolution-chart" width="760" height="300" role="img" aria-label="Evolution chart with separate reward and route coverage panels, incumbent and candidate lines, plateau regions, and mutation changes by generation"></canvas>
+            <canvas id="evolution-chart" width="760" height="300" role="button" tabindex="0" aria-label="Evolution chart. Hover for values and click a generation to select its candidate brain."></canvas>
               <div id="plot-tooltip" class="plot-tooltip" role="status" hidden></div>
             </div>
             <div class="plot-legend"><span><i class="plot-swatch reward"></i>incumbent reward</span><span><i class="plot-swatch candidate"></i>candidate reward</span><span><i class="plot-swatch progress"></i>best coverage</span><span><i class="plot-swatch candidate"></i>candidate coverage</span><span><i class="plot-swatch mutation"></i>mutation rate</span><span><i class="plot-swatch plateau"></i>plateau / exploration</span></div>
             <p id="plot-summary" class="plot-summary">No generations recorded yet. Start training to plot reward and forward progress.</p>
-            <p class="plot-note">The upper panel scales reward locally; the lower panel uses a fixed 0–100% scale for route coverage and mutation rate. Solid lines are retained incumbents, dashed lines are current candidates. A rising purple mutation line means plateau pressure is increasing exploration, even if reward is still inching upward. Hover a generation for exact values.</p>
+            <p class="plot-note">The upper panel scales reward locally; the lower panel uses a fixed 0–100% scale for route coverage and mutation rate. Solid lines are retained incumbents, dashed lines are current candidates. A rising purple mutation line means plateau pressure is increasing exploration, even if reward is still inching upward. Hover a generation for exact values, then click it to select that named candidate for inspection, racing, or download.</p>
           </section>
 
           <section class="family-tree-panel" aria-labelledby="family-tree-title">
@@ -104,12 +104,15 @@
             <div id="family-tree" class="family-tree" role="tree" aria-label="Brain family tree">
               <p class="family-tree-empty">Start training to see named candidates and their offspring.</p>
             </div>
+            <div id="breeding-board" class="breeding-board" aria-live="polite">
+              <p class="breeding-empty">Finish a generation to see its parent pairings, inherited gene mix, and mutation pressure.</p>
+            </div>
             <div class="lineage-actions">
               <button id="use-lineage-btn" class="quiet" type="button" disabled>Use selected brain</button>
               <button id="download-lineage-btn" class="quiet" type="button" disabled>Download selected</button>
             </div>
             <p id="lineage-detail" class="lineage-detail">Click a compact brain node to inspect it.</p>
-            <p class="plot-note">Each node is a saved network snapshot. Offspring show their parent names; <span class="lineage-retained-text">green</span> nodes were retained, amber nodes were evaluated candidates, and purple nodes are plateau immigrants.</p>
+            <p class="plot-note">Each node is a saved network snapshot. The breeding ledger makes each offspring’s parent pair, chromosome share, mutation rate, and immigrant status visible; click a parent pill or child to inspect that exact brain. <span class="lineage-retained-text">Green</span> nodes were retained, amber nodes were evaluated candidates, and purple nodes are plateau immigrants.</p>
           </section>
         </div>
 
@@ -144,7 +147,8 @@
             <label class="check-row"><input id="adaptive-time-toggle" type="checkbox" checked /> <span>Adaptive time limit <small>adds one base time window per viable extension</small></span></label>
             <label>Max adaptive extensions <input id="adaptive-extensions" type="number" min="0" max="6" value="4" /></label>
             <label>Checkpoint gates <input id="checkpoint-count" type="number" min="2" max="64" value="8" /></label>
-            <label class="check-row"><input id="ghost-evolution-toggle" type="checkbox" /> <span>Ghost evolution <small>simultaneous candidates do not see, collide with, or influence one another</small></span></label>
+            <label class="check-row"><input id="ghost-evolution-toggle" type="checkbox" /> <span>Independent evolution <small>isolated candidate worlds: brains do not see, collide with, or influence one another</small></span></label>
+            <label class="check-row"><input id="soft-contact-toggle" type="checkbox" /> <span>Ghost contact mode <small>brains see each other and pay overlap penalties, but contact is soft and never blocks them</small></span></label>
             <label class="check-row"><input id="obstacle-toggle" type="checkbox" /> <span>Random road objects <small>stalled cars are added to avoidance training</small></span></label>
             <label>Object count <input id="obstacle-count" type="number" min="0" max="64" value="6" /></label>
             <label>Object type
@@ -160,7 +164,7 @@
             <label>Plateau patience <input id="plateau-patience" type="number" min="1" max="20" value="3" /></label>
             <label>Elite parents / generation <input id="elite-parents" type="number" min="2" max="12" value="3" /></label>
             <label class="check-row"><input id="curriculum-toggle" type="checkbox" /> <span>Progressive hazards <small>ramps stalled road objects from easy to full difficulty</small></span></label>
-            <p class="microcopy">The population button runs all configured brains simultaneously, including 10+ cars. Turn Ghost evolution on for independent candidate worlds: every brain gets its own candidate and road-object physics, so candidate traffic cannot change the score of another. The current best remains candidate 1; lower-scoring generations are rejected.</p>
+            <p class="microcopy">The population button runs all configured brains simultaneously, including 10+ cars. Choose one interaction mode: shared physical evolution uses rigid collisions; Independent evolution gives every brain its own world; Ghost contact mode keeps one shared visual race so brains sense and penalize overlap, while contact remains non-blocking. The current best remains candidate 1; lower-scoring generations are rejected.</p>
           </section>
 
           <details class="panel-section reward-settings" open>
