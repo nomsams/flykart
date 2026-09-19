@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  CAR_COLLISION_DIAMETER, CHECKPOINT_COUNT, CLOSE_PROXIMITY_DISTANCE, DEFAULT_PHYSICS_CONFIG, DEFAULT_REWARD_CONFIG, DEFAULT_TRACK, MAX_TICKS, STEP, TRACKS, TRACK_WIDTH, BrainSnapshot, SpikingNetwork, createMutationPopulation, createNetworkPopulation, createRoadObstacles,
+  CAR_COLLISION_DIAMETER, CHECKPOINT_COUNT, CLOSE_PROXIMITY_DISTANCE, DEFAULT_PHYSICS_CONFIG, DEFAULT_REWARD_CONFIG, DEFAULT_TRACK, MAX_TICKS, STEP, TRACKS, TRACK_WIDTH, BrainSnapshot, SpikingNetwork, adaptiveTimeLimitForExtensions, createMutationPopulation, createNetworkPopulation, createRoadObstacles,
   compareEvolutionCandidates, evaluate, evaluateGeneralist, evolutionSelectionScore, heuristicAction, nearestTrack, pointAtDistance, resolveTrack, sensorValues, shouldAcceptEvolutionCandidate, startLine, startPosition, stepCar, track, trackCheckpoint, trackDiagnostics,
 } from "./core";
 
@@ -451,7 +451,7 @@ describe("vehicle physics and fitness", () => {
     expect(car.position).toEqual(position);
   });
 
-  it("doubles the time limit only while reward rate remains viable and improving", () => {
+  it("adds one base time window only while reward rate remains viable and improving", () => {
     const adaptive = { wallsEnabled: true, adaptiveTimeLimit: true, maxAdaptiveExtensions: 2 };
     const car = startPosition(); car.ticks = MAX_TICKS - 1; car.rewardWindowTicks = 299; car.rewardWindowScore = 0;
     stepCar(car, { steer: 0, throttle: 0, brake: 0 }, [car], DEFAULT_TRACK, DEFAULT_REWARD_CONFIG, adaptive);
@@ -462,7 +462,7 @@ describe("vehicle physics and fitness", () => {
     car.ticks = car.timeLimit - 1; car.rewardWindowTicks = 299; car.rewardWindowScore = 10; car.previousRewardRate = 0;
     stepCar(car, { steer: 0, throttle: 0, brake: 0 }, [car], DEFAULT_TRACK, DEFAULT_REWARD_CONFIG, adaptive);
     expect(car.timeExtensions).toBe(2);
-    expect(car.timeLimit).toBe(MAX_TICKS * 4);
+    expect(car.timeLimit).toBe(MAX_TICKS * 3);
     expect(car.timedOut).toBe(false);
 
     const stalled = startPosition(); stalled.ticks = MAX_TICKS - 1; stalled.rewardWindowTicks = 299; stalled.rewardWindowScore = -100;
@@ -481,7 +481,9 @@ describe("vehicle physics and fitness", () => {
       expect(car.timedOut).toBe(false);
       expect(car.timeExtensions).toBe(extension + 1);
     }
-    expect(car.timeLimit).toBe(MAX_TICKS * 8);
+    expect(car.timeLimit).toBe(MAX_TICKS * 4);
+    expect(adaptiveTimeLimitForExtensions(0)).toBe(MAX_TICKS);
+    expect(adaptiveTimeLimitForExtensions(4)).toBe(MAX_TICKS * 5);
   });
 
   it("detects a forward finish-line crossing exactly once", () => {

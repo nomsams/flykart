@@ -29,6 +29,10 @@ export const MAX_ADAPTIVE_EXTENSIONS = 6;
 export const CLOSE_PROXIMITY_DISTANCE = CAR_COLLISION_DIAMETER * 2.75;
 export const DEFAULT_PHYSICS_CONFIG: PhysicsConfig = { wallsEnabled: true, adaptiveTimeLimit: false, maxAdaptiveExtensions: MAX_ADAPTIVE_EXTENSIONS };
 
+export function adaptiveTimeLimitForExtensions(extensionCount: number): number {
+  return MAX_TICKS * (1 + clamp(Math.floor(extensionCount), 0, MAX_ADAPTIVE_EXTENSIONS));
+}
+
 function createTrack(id: TrackId, name: string, points: Vec[], width = TRACK_WIDTH): TrackDefinition {
   const segmentLengths = points.map((point, index) => Math.hypot(point.x - points[(index + 1) % points.length].x, point.y - points[(index + 1) % points.length].y));
   const cumulativeLengths: number[] = [0];
@@ -797,7 +801,7 @@ export function stepCar(car: Car, action: Action, others: Car[], trackRef?: Trac
     const rateIsImproving = car.timeExtensions === 0 || windowRate > car.previousRewardRate;
     const canExtend = physicsConfig.adaptiveTimeLimit === true && car.timeExtensions < maxExtensions && windowRate >= 0 && rateIsImproving;
     if (canExtend) {
-      car.timeExtensions += 1; car.timeLimit *= 2; car.previousRewardRate = windowRate; car.rewardWindowScore = 0; car.rewardWindowTicks = 0;
+      car.timeExtensions += 1; car.timeLimit = adaptiveTimeLimitForExtensions(car.timeExtensions); car.previousRewardRate = windowRate; car.rewardWindowScore = 0; car.rewardWindowTicks = 0;
     } else {
       car.timedOut = true; car.previousRewardRate = windowRate; car.rewardWindowScore = 0; car.rewardWindowTicks = 0;
     }
@@ -815,7 +819,7 @@ export function evaluate(network: SpikingNetwork, trackRef: TrackRef = DEFAULT_T
   const roadObjects = createRoadObstacles(obstacleCount, route, obstacleSeed, obstacleKind);
   const cars = ghost ? [car, ...roadObjects] : [car, ...obstacles, ...roadObjects];
   const maxExtensions = clamp(Math.floor(physicsConfig.maxAdaptiveExtensions ?? MAX_ADAPTIVE_EXTENSIONS), 0, MAX_ADAPTIVE_EXTENSIONS);
-  const simulationLimit = MAX_TICKS * (physicsConfig.adaptiveTimeLimit === true ? 2 ** maxExtensions : 1);
+  const simulationLimit = adaptiveTimeLimitForExtensions(physicsConfig.adaptiveTimeLimit === true ? maxExtensions : 0);
   for (let tick = 0; tick < simulationLimit && !car.crashed && !car.finished && !car.timedOut; tick += 1) {
     stepCar(car, network.step(sensorValues(car, cars, route)), cars, route, rewardConfig, physicsConfig);
     if (!ghost) obstacles.forEach((bot) => stepCar(bot, heuristicAction(bot, cars, route), cars, route, rewardConfig, physicsConfig));
