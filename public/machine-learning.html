@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="A practical guide to the machine-learning system behind FlyKart." />
+    <title>Machine learning guide · FlyKart</title>
+    <link rel="stylesheet" href="./machine-learning.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="./" aria-label="Back to FlyKart">
+        <span class="brand-mark" aria-hidden="true">FK</span>
+        <span><strong>FlyKart</strong><small>Machine learning guide</small></span>
+      </a>
+      <nav aria-label="Guide sections">
+        <a href="#pipeline">Pipeline</a>
+        <a href="#brain">Brain</a>
+        <a href="#evolution">Evolution</a>
+        <a href="#reward">Reward</a>
+        <a href="#reality">Reality gap</a>
+      </nav>
+      <a class="launch" href="./">Open simulator <span aria-hidden="true">→</span></a>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div class="hero-copy">
+          <p class="eyebrow">FROM TRACK SENSORS TO SPIKES TO STEERING</p>
+          <h1>How FlyKart <em>learns</em></h1>
+          <p class="intro">FlyKart is a compact evolutionary machine-learning experiment. A recurrent spiking network reads nine numerical sensors, chooses four driving controls, and improves by keeping the brains that master more of the route.</p>
+          <div class="hero-actions">
+            <a class="primary" href="#pipeline">Explore the system</a>
+            <a class="secondary" href="./">Try it in the browser</a>
+          </div>
+        </div>
+        <aside class="spec-card" aria-label="Controller at a glance">
+          <p class="card-label">CONTROLLER AT A GLANCE</p>
+          <dl>
+            <div><dt>9</dt><dd>normalized sensor inputs</dd></div>
+            <div><dt>48</dt><dd>recurrent LIF neurons</dd></div>
+            <div><dt>4</dt><dd>continuous control outputs</dd></div>
+            <div><dt>30 Hz</dt><dd>fixed simulation step</dd></div>
+          </dl>
+          <p class="spec-note">This is a deliberately small controller—not a biological fly connectome and not a vision model.</p>
+        </aside>
+      </section>
+
+      <section id="pipeline" class="section">
+        <div class="section-heading">
+          <p class="section-number">01 · THE LOOP</p>
+          <h2>One decision, every simulation tick</h2>
+          <p>The same deterministic pipeline runs in visual training, headless training, and races. Rendering can speed up or slow down without changing the physics timestep.</p>
+        </div>
+        <ol class="pipeline" aria-label="Machine learning pipeline">
+          <li><span>1</span><strong>Sense</strong><p>Measure track geometry, car motion, road position, and nearby traffic.</p></li>
+          <li><span>2</span><strong>Spike</strong><p>Integrate the inputs and recurrent activity across 48 leaky neurons.</p></li>
+          <li><span>3</span><strong>Act</strong><p>Decode activity into steering, throttle, brake, and reverse.</p></li>
+          <li><span>4</span><strong>Score</strong><p>Reward route mastery and safe forward motion; penalize failure modes.</p></li>
+          <li><span>5</span><strong>Evolve</strong><p>Retain the incumbent, recombine strong parents, mutate, and evaluate again.</p></li>
+        </ol>
+      </section>
+
+      <section id="brain" class="section split-section">
+        <div class="section-heading sticky-heading">
+          <p class="section-number">02 · THE BRAIN</p>
+          <h2>A tiny recurrent spiking controller</h2>
+          <p>Each cell remembers a decaying voltage. Current sensor input and last tick’s spikes can push it past threshold. A spike resets its voltage and contributes to the four motor outputs.</p>
+          <div class="equation" aria-label="Leaky integrate-and-fire update">
+            <code>vᵢ(t+1) = 0.86vᵢ(t) + 0.22Iᵢ(t)</code>
+            <code>sᵢ(t+1) = 𝟙[vᵢ(t+1) &gt; 0.42]</code>
+          </div>
+          <p class="fine-print">These are FlyKart’s discrete simulation coefficients, not a claim of biological parameter accuracy.</p>
+        </div>
+
+        <div class="brain-stack">
+          <article class="info-card sensor-card">
+            <div class="card-top"><span>INPUT</span><strong>9 sensors</strong></div>
+            <ul class="signal-list">
+              <li><b>01</b><span><strong>Heading error</strong>Direction to a speed-adjusted look-ahead point</span></li>
+              <li><b>02</b><span><strong>Curvature</strong>Upcoming track tangent relative to the car</span></li>
+              <li><b>03</b><span><strong>Lateral offset</strong>Signed position left or right of centerline</span></li>
+              <li><b>04</b><span><strong>Speed</strong>Forward or reverse speed normalized to range</span></li>
+              <li><b>05</b><span><strong>Center proximity</strong>Closeness to the center of the road</span></li>
+              <li><b>06–07</b><span><strong>Traffic</strong>Nearest-opponent pressure and relative side</span></li>
+              <li><b>08</b><span><strong>Edge clearance</strong>Remaining space before the road boundary</span></li>
+              <li><b>09</b><span><strong>Forward alignment</strong>Car heading aligned with track direction</span></li>
+            </ul>
+          </article>
+
+          <div class="connector" aria-hidden="true"><span>weighted current + recurrent state</span></div>
+
+          <article class="info-card neuron-card">
+            <div class="card-top"><span>HIDDEN STATE</span><strong>48 LIF neurons</strong></div>
+            <div class="neuron-field" aria-hidden="true">
+              <i></i><i></i><i class="hot"></i><i></i><i></i><i class="hot"></i><i></i><i></i>
+              <i class="hot"></i><i></i><i></i><i></i><i></i><i class="hot"></i><i></i><i></i>
+              <i></i><i></i><i></i><i class="hot"></i><i></i><i></i><i></i><i class="hot"></i>
+            </div>
+            <p>Recurrent connections let a decision depend on recent activity, not only the current sensor frame.</p>
+          </article>
+
+          <div class="connector" aria-hidden="true"><span>weighted spike readout + tanh</span></div>
+
+          <article class="info-card output-card">
+            <div class="card-top"><span>OUTPUT</span><strong>4 controls</strong></div>
+            <div class="output-grid">
+              <div><span>↔</span><strong>Steer</strong><small>−1 … +1</small></div>
+              <div><span>↑</span><strong>Throttle</strong><small>0 … 1</small></div>
+              <div><span>■</span><strong>Brake</strong><small>0 … 1</small></div>
+              <div><span>↓</span><strong>Reverse</strong><small>gated 0 … 1</small></div>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section id="evolution" class="section">
+        <div class="section-heading">
+          <p class="section-number">03 · TRAINING</p>
+          <h2>Evolution, not backpropagation</h2>
+          <p>FlyKart does not differentiate through the physics engine. It evaluates complete networks, selects by route mastery, and searches the parameter space with protected elites, crossover, and mutation.</p>
+        </div>
+        <div class="three-up">
+          <article class="concept-card"><span class="concept-icon">01</span><h3>Protect the incumbent</h3><p>The strongest known brain is cloned exactly into slot one. A weaker generation cannot erase it.</p></article>
+          <article class="concept-card"><span class="concept-icon">02</span><h3>Recombine and mutate</h3><p>Short blocks of weights come from selected parents. Gaussian noise changes a sampled fraction of parameters.</p></article>
+          <article class="concept-card"><span class="concept-icon">03</span><h3>Escape plateaus</h3><p>When improvement stalls, mutation pressure rises and deterministic random immigrants add diversity.</p></article>
+        </div>
+        <div class="selection-rule">
+          <div><span>SELECTION ORDER</span><strong>Completed lap</strong><i>then</i><strong>Route coverage</strong><i>then</i><strong>Reward</strong></div>
+          <p>Raw reward is only the tie-breaker. This prevents a brain from collecting local shaping rewards forever while failing to solve the route.</p>
+        </div>
+      </section>
+
+      <section id="reward" class="section reward-section">
+        <div class="section-heading">
+          <p class="section-number">04 · REWARD SHAPING</p>
+          <h2>Make the goal measurable</h2>
+          <p>A reward is a design specification expressed as numbers. FlyKart exposes every coefficient so you can see how changing the incentives changes the learned behavior.</p>
+        </div>
+        <div class="reward-board">
+          <article class="reward-column positive">
+            <div class="reward-title"><span>+</span><h3>Encourage</h3></div>
+            <ul>
+              <li><span>Forward route progress</span><b>14 / sec</b></li>
+              <li><span>Correct direction</span><b>1.25 / sec</b></li>
+              <li><span>Movement</span><b>0.2 / sec</b></li>
+              <li><span>Centerline position</span><b>0.35 / sec</b></li>
+              <li><span>Ordered checkpoint</span><b>100</b></li>
+              <li><span>Finish line</span><b>300</b></li>
+            </ul>
+          </article>
+          <article class="reward-column negative">
+            <div class="reward-title"><span>−</span><h3>Discourage</h3></div>
+            <ul>
+              <li><span>Standing still</span><b>0.85 / sec</b></li>
+              <li><span>Wrong direction</span><b>2.5 / sec</b></li>
+              <li><span>Reverse progress</span><b>3 / sec</b></li>
+              <li><span>Outside the track</span><b>24 / sec</b></li>
+              <li><span>Collision</span><b>10</b></li>
+              <li><span>Crash</span><b>75</b></li>
+            </ul>
+          </article>
+        </div>
+        <p class="fine-print centered">The table shows current defaults. Edge, proximity, and hazard-contact terms also contribute, and every value can be changed in the simulator.</p>
+      </section>
+
+      <section id="reality" class="section reality-section">
+        <div class="section-heading">
+          <p class="section-number">05 · SIMULATION VS REALITY</p>
+          <h2>The reality gap matters</h2>
+          <p>A controller that performs in FlyKart has learned this simulator’s numerical world. A physical kart would introduce perception, contact dynamics, sensor error, actuator delays, compute limits, and safety constraints that are absent here.</p>
+        </div>
+        <div class="gap-grid">
+          <article><span>SIMULATOR</span><h3>Clean and controlled</h3><ul><li>Exact compact sensor vector</li><li>Deterministic fixed-step physics</li><li>Repeatable obstacle seeds</li><li>Fast parallel evaluation</li></ul></article>
+          <div class="gap-arrow" aria-hidden="true"><b>reality gap</b><span>→</span></div>
+          <article><span>PHYSICAL WORLD</span><h3>Noisy and delayed</h3><ul><li>Cameras, calibration, and occlusion</li><li>Friction and contact uncertainty</li><li>Actuator lag and hardware jitter</li><li>Safety-critical failures</li></ul></article>
+        </div>
+        <div class="takeaway"><strong>Practical transfer pattern</strong><p>Randomize physics and observations in simulation, train across many conditions, validate on held-out scenarios, collect real logs, fine-tune with real data, and deploy gradually behind monitoring and safe fallbacks.</p></div>
+      </section>
+
+      <section class="cta">
+        <p class="eyebrow">LEARN BY CHANGING THE SYSTEM</p>
+        <h2>Now put the guide into practice.</h2>
+        <p>Open FlyKart, adjust reward weights, compare training modes, and watch the neural activity and evolution plot respond.</p>
+        <a class="primary" href="./">Launch FlyKart <span aria-hidden="true">→</span></a>
+      </section>
+    </main>
+
+    <footer>
+      <span>FlyKart · an original deterministic racing environment</span>
+      <a href="https://github.com/nomsams/flykart">View source on GitHub</a>
+    </footer>
+  </body>
+</html>

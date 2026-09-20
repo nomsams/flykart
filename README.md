@@ -2,6 +2,10 @@
 
 FlyKart is a small original racing environment for experimenting with fly-inspired controllers. It is intentionally not a claim that a biological fly can drive a car: the first controller is a compact recurrent leaky integrate-and-fire network with a simple sensor interface.
 
+**Play in your browser:** [https://nomsam.github.io/flykart/](https://nomsam.github.io/flykart/)
+
+The companion [machine-learning guide](https://nomsam.github.io/flykart/machine-learning.html) explains the controller, sensor vector, reward function, evolutionary training loop, and sim-to-real limitations.
+
 ## Run locally
 
 ```bash

@@ -18,10 +18,13 @@ input, select { width: 82px; padding: 0.48rem 0.55rem; color: #e9edf5; backgroun
 select { width: 170px; text-align: left; }
 .app-shell { width: min(1400px, calc(100% - 32px)); margin: 0 auto; padding: 38px 0 24px; }
 .hero { display: flex; justify-content: space-between; align-items: start; margin-bottom: 24px; }
+.hero-links { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
 .eyebrow { margin: 0 0 8px; color: #79a9dd; font-size: 0.7rem; letter-spacing: 0.16em; font-weight: 800; }
 h1 { margin: 0; font-size: clamp(2.3rem, 5vw, 4.4rem); letter-spacing: -0.06em; line-height: 0.95; }
 .lede { margin: 12px 0 0; color: #aab6c7; font-size: 1.03rem; }
 .badge { padding: 0.38rem 0.58rem; border: 1px solid #354052; border-radius: 999px; color: #8ba4c3; font-size: 0.72rem; font-weight: 700; }
+.guide-link { color: #b9d9ff; border-color: #315b83; text-decoration: none; transition: border-color .16s ease, color .16s ease, background .16s ease; }
+.guide-link:hover { color: #fff; border-color: #72b8ff; background: #1a2a3d; }
 .workspace { display: grid; grid-template-columns: minmax(0, 1fr) 310px; gap: 16px; align-items: start; }
 .game-card, .control-panel { background: rgba(20, 25, 34, 0.8); border: 1px solid #293241; border-radius: 14px; box-shadow: 0 18px 60px rgba(0,0,0,.2); }
 .game-card { min-width: 0; padding: 12px; }
@@ -156,5 +159,7 @@ label { display: flex; justify-content: space-between; align-items: center; marg
 .swatch.bot { background: #f19a69; }
 .swatch.ghost { background: #72809a; }
 footer { display: flex; justify-content: space-between; gap: 12px; margin-top: 16px; color: #68768a; font-size: .7rem; }
+footer a { color: #8ba4c3; text-decoration: none; }
+footer a:hover { color: #c7def9; }
 @media (max-width: 920px) { .workspace { grid-template-columns: 1fr; } .control-panel { display: grid; grid-template-columns: 1fr 1fr; gap: 0 20px; } .panel-section { min-width: 0; } .panel-section:nth-child(3) { grid-column: 1 / -1; } }
 @media (max-width: 620px) { .app-shell { width: min(100% - 20px, 1400px); padding-top: 24px; } .hero { margin-bottom: 16px; } .control-panel { display: block; } .canvas-caption { font-size: .6rem; } footer { flex-direction: column; } }
