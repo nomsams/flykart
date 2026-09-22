@@ -1,13 +1,14 @@
 import "./style.css";
 import {
   BrainSnapshot, CAR_WIDTH, CHECKPOINT_COUNT, LANE_SPACING, MAX_ADAPTIVE_EXTENSIONS, Car, DEFAULT_PHYSICS_CONFIG, DEFAULT_REWARD_CONFIG, DEFAULT_TRACK, MAX_TICKS, PhysicsConfig, RewardConfig, RoadObjectKind, STEP, TAU, TRACKS, TrackDefinition, Vec,
-  SpikingNetwork, clamp, compareEvolutionCandidates, createMutationPopulation, createRoadObstacles, evaluateGeneralist, heuristicAction, nearestTrack, pointAtDistance, resolveTrack, sensorValues, shouldAcceptEvolutionCandidate, startLine, startPosition, stepCar, trackCheckpoint, trackDiagnostics,
+  SpikingNetwork, blendedEvolutionSelectionScore, clamp, compareEvolutionCandidates, createMutationPopulation, createRoadObstacles, evaluateGeneralist, heuristicAction, nearestTrack, pointAtDistance, resolveTrack, sensorValues, shouldAcceptEvolutionCandidate, startLine, startPosition, stepCar, trackCheckpoint, trackDiagnostics,
 } from "./core";
 
 const WIDTH = 960;
 const HEIGHT = 600;
 const MODEL_STORAGE_KEY = "flykart.best-brain.v1";
 const CHECKPOINT_VERSION = 1;
+const VISUAL_TRAINING_STEPS_PER_FRAME = 4;
 
 const canvas = document.querySelector<HTMLCanvasElement>("#game");
 if (!canvas) throw new Error("Game canvas is missing");
@@ -42,7 +43,7 @@ const ui = {
   resetButton: required<HTMLButtonElement>("#reset-btn"), saveButton: required<HTMLButtonElement>("#save-btn"), loadButton: required<HTMLButtonElement>("#load-btn"),
   exportButton: required<HTMLButtonElement>("#export-btn"), importButton: required<HTMLButtonElement>("#import-btn"), importFile: required<HTMLInputElement>("#import-file"),
   population: required<HTMLInputElement>("#population"), generations: required<HTMLInputElement>("#generations"),
-  trackSelect: required<HTMLSelectElement>("#track-select"), trackProvenance: required<HTMLElement>("#track-provenance"), wallsToggle: required<HTMLInputElement>("#walls-toggle"), adaptiveTimeToggle: required<HTMLInputElement>("#adaptive-time-toggle"), adaptiveExtensions: required<HTMLInputElement>("#adaptive-extensions"), checkpointCount: required<HTMLInputElement>("#checkpoint-count"), ghostEvolutionToggle: required<HTMLInputElement>("#ghost-evolution-toggle"), softContactToggle: required<HTMLInputElement>("#soft-contact-toggle"), obstacleToggle: required<HTMLInputElement>("#obstacle-toggle"), obstacleCount: required<HTMLInputElement>("#obstacle-count"), obstacleKind: required<HTMLSelectElement>("#obstacle-kind"), plateauExplorationToggle: required<HTMLInputElement>("#plateau-exploration-toggle"), plateauPatience: required<HTMLInputElement>("#plateau-patience"), winnerMatingShare: required<HTMLInputElement>("#winner-mating-share"), curriculumToggle: required<HTMLInputElement>("#curriculum-toggle"),
+  trackSelect: required<HTMLSelectElement>("#track-select"), trackProvenance: required<HTMLElement>("#track-provenance"), wallsToggle: required<HTMLInputElement>("#walls-toggle"), adaptiveTimeToggle: required<HTMLInputElement>("#adaptive-time-toggle"), adaptiveExtensions: required<HTMLInputElement>("#adaptive-extensions"), checkpointCount: required<HTMLInputElement>("#checkpoint-count"), ghostEvolutionToggle: required<HTMLInputElement>("#ghost-evolution-toggle"), softContactToggle: required<HTMLInputElement>("#soft-contact-toggle"), obstacleToggle: required<HTMLInputElement>("#obstacle-toggle"), obstacleCount: required<HTMLInputElement>("#obstacle-count"), obstacleKind: required<HTMLSelectElement>("#obstacle-kind"), plateauExplorationToggle: required<HTMLInputElement>("#plateau-exploration-toggle"), plateauPatience: required<HTMLInputElement>("#plateau-patience"), breedingProgressWeight: required<HTMLInputElement>("#breeding-progress-weight"), breedingPriorityValue: required<HTMLOutputElement>("#breeding-priority-value"), winnerMatingShare: required<HTMLInputElement>("#winner-mating-share"), curriculumToggle: required<HTMLInputElement>("#curriculum-toggle"),
   rewardProgress: required<HTMLInputElement>("#reward-progress"), rewardDirection: required<HTMLInputElement>("#reward-direction"), rewardMoving: required<HTMLInputElement>("#reward-moving"),
   rewardStanding: required<HTMLInputElement>("#reward-standing"), rewardWrong: required<HTMLInputElement>("#reward-wrong"), rewardReverse: required<HTMLInputElement>("#reward-reverse"),
   rewardOffTrack: required<HTMLInputElement>("#reward-offtrack"), rewardEdge: required<HTMLInputElement>("#reward-edge"), rewardProximity: required<HTMLInputElement>("#reward-proximity"), rewardHazard: required<HTMLInputElement>("#reward-hazard"), rewardCenterline: required<HTMLInputElement>("#reward-centerline"), rewardCollision: required<HTMLInputElement>("#reward-collision"), rewardCrash: required<HTMLInputElement>("#reward-crash"), rewardCheckpoint: required<HTMLInputElement>("#reward-checkpoint"), rewardFinish: required<HTMLInputElement>("#reward-finish"),
@@ -112,6 +113,7 @@ let plateauStreak = 0;
 let plateauReason = "none";
 let curriculumEnabled = false;
 let winnerMatingShare = 80;
+let breedingProgressWeight = 100;
 let trainingWorldSeed = 0;
 type TrainingContextKey = TrackDefinition["id"] | "all";
 type TrainingProvenance = { context: TrainingContextKey; trained: boolean; source: string; bestFitness: number | null; bestProgress: number; finished: boolean; generation: number };
@@ -283,6 +285,9 @@ function readEvolutionConfig(): void {
   plateauExplorationEnabled = ui.plateauExplorationToggle.checked;
   plateauPatience = readInteger(ui.plateauPatience, 3, 1, 20);
   winnerMatingShare = readInteger(ui.winnerMatingShare, 80, 50, 95);
+  breedingProgressWeight = readInteger(ui.breedingProgressWeight, 100, 0, 100);
+  ui.breedingPriorityValue.value = `${breedingProgressWeight}% progress · ${100 - breedingProgressWeight}% reward`;
+  ui.breedingPriorityValue.textContent = ui.breedingPriorityValue.value;
   curriculumEnabled = ui.curriculumToggle.checked;
   softContactEvolution = ui.softContactToggle.checked;
 }
@@ -673,7 +678,7 @@ function updateRewardTelemetry(car: Car | undefined): void {
 
 function setBusy(value: boolean): void {
   [ui.raceButton, ui.driveButton, ui.visualButton, ui.evolveFiveButton, ui.headlessButton, ui.resetButton, ui.loadButton, ui.importButton].forEach((button) => { button.disabled = value; });
-  [ui.trackSelect, ui.wallsToggle, ui.adaptiveTimeToggle, ui.adaptiveExtensions, ui.checkpointCount, ui.ghostEvolutionToggle, ui.softContactToggle, ui.obstacleToggle, ui.obstacleCount, ui.obstacleKind, ui.plateauExplorationToggle, ui.plateauPatience, ui.winnerMatingShare, ui.curriculumToggle, ui.rewardProgress, ui.rewardDirection, ui.rewardMoving, ui.rewardStanding, ui.rewardWrong, ui.rewardReverse, ui.rewardOffTrack, ui.rewardEdge, ui.rewardProximity, ui.rewardHazard, ui.rewardCenterline, ui.rewardCollision, ui.rewardCrash, ui.rewardCheckpoint, ui.rewardFinish].forEach((input) => { input.disabled = value; });
+  [ui.trackSelect, ui.wallsToggle, ui.adaptiveTimeToggle, ui.adaptiveExtensions, ui.checkpointCount, ui.ghostEvolutionToggle, ui.softContactToggle, ui.obstacleToggle, ui.obstacleCount, ui.obstacleKind, ui.plateauExplorationToggle, ui.plateauPatience, ui.breedingProgressWeight, ui.winnerMatingShare, ui.curriculumToggle, ui.rewardProgress, ui.rewardDirection, ui.rewardMoving, ui.rewardStanding, ui.rewardWrong, ui.rewardReverse, ui.rewardOffTrack, ui.rewardEdge, ui.rewardProximity, ui.rewardHazard, ui.rewardCenterline, ui.rewardCollision, ui.rewardCrash, ui.rewardCheckpoint, ui.rewardFinish].forEach((input) => { input.disabled = value; });
   ui.stopButton.disabled = !(value || running);
 }
 
@@ -681,7 +686,7 @@ function createGridCar(lane: number, distanceAlong: number, color: string, name:
   const car = startPosition(lane, route); const sample = pointAtDistance(distanceAlong, route); const normal = { x: -sample.tangent.y, y: sample.tangent.x };
   const start = { x: sample.point.x + normal.x * lane * LANE_SPACING, y: sample.point.y + normal.y * lane * LANE_SPACING };
   car.position = start; car.heading = Math.atan2(sample.tangent.y, sample.tangent.x); car.color = color; car.name = name;
-  const nearest = nearestTrack(car.position, route); car.progress = nearest.progress; car.distanceAlong = nearest.distanceAlong; car.bestProgress = nearest.progress;
+  const nearest = nearestTrack(car.position, route); car.progress = nearest.progress; car.totalProgress = nearest.progress; car.distanceAlong = nearest.distanceAlong; car.bestProgress = nearest.progress;
   car.checkpointsPassed = Math.min(checkpointCount - 1, Math.floor(nearest.progress * checkpointCount)); car.nextCheckpoint = car.checkpointsPassed >= checkpointCount - 1 ? 0 : car.checkpointsPassed + 1;
   return car;
 }
@@ -694,7 +699,11 @@ function launchRace(manual = false): void {
   const selectedNode = lineageNodeById(selectedLineageId); const raceNetwork = selectedLineageNetwork ?? bestNetwork;
   fly = startPosition(0, activeTrack); fly.color = "#74c0ff"; fly.name = selectedNode ? `fly · ${selectedNode.name}` : "fly"; fly.isFly = true; fly.network = raceNetwork?.clone() ?? new SpikingNetwork(77);
   const roadObjects = randomObjectsEnabled ? createRoadObstacles(randomObjectCount, activeTrack, generation + 77, randomObjectKind) : [];
-  raceCars = [fly, createGridCar(-1, 52, "#f19a69", "bot 1", activeTrack), createGridCar(1, 108, "#e9d26d", "bot 2", activeTrack), createGridCar(-1, 164, "#b48cff", "bot 3", activeTrack), ...roadObjects];
+  const heuristicRivals = [createGridCar(-1, 52, "#f19a69", "bot 1", activeTrack), createGridCar(1, 108, "#e9d26d", "bot 2", activeTrack), createGridCar(-1, 164, "#b48cff", "bot 3", activeTrack)];
+  // The player/fly timeout is an evaluation limit, not a race-wide kill
+  // switch. Heuristic rivals should continue until they actually finish.
+  heuristicRivals.forEach((car) => { car.timeLimit = Number.POSITIVE_INFINITY; });
+  raceCars = [fly, ...heuristicRivals, ...roadObjects];
   const objectDetail = roadObjects.length > 0 ? ` plus ${roadObjects.length} ${randomObjectKind} objects` : "";
   const detail = manual ? `manual driving on ${activeTrack.name} — arrows or WASD steer, Space brakes, S/↓ reverses${objectDetail}` : selectedNode ? `${selectedNode.name} deployed on ${activeTrack.name} against three spaced heuristic bots${objectDetail}` : bestNetwork ? `best trained fly pilot deployed on ${activeTrack.name} against three spaced heuristic bots${objectDetail}` : `demo brain deployed on ${activeTrack.name} — train a controller to improve it${objectDetail}`;
   setRunState("Racing", detail, "running", "RACE MODE");
@@ -815,14 +824,19 @@ function renderTrack(): void {
   drawPath(); context.strokeStyle = "#7b968b"; context.lineWidth = 2; context.setLineDash([16, 14]); context.stroke(); context.setLineDash([]);
   context.fillStyle = "#b7d8a2"; context.globalAlpha = 0.9; context.font = "600 11px system-ui"; context.fillText("REWARD FIELD · green center / red edge + off-track", -WIDTH / 2 + 18, -HEIGHT / 2 + 24); context.globalAlpha = 1;
   const checkpointCount = physicsConfig.checkpointCount ?? CHECKPOINT_COUNT;
+  const checkpointCar = training
+    ? trainingPopulation.reduce<Car | undefined>((leader, car) => !leader || car.totalProgress > leader.totalProgress ? car : leader, undefined)
+    : fly;
   for (let index = 1; index < checkpointCount; index += 1) {
     const checkpoint = trackCheckpoint(index, activeTrack, checkpointCount); const gateOffset = activeTrack.width / 2 + CAR_WIDTH;
     const gateA = addCanvasPoint(checkpoint.point, { x: checkpoint.normal.x * gateOffset, y: checkpoint.normal.y * gateOffset });
     const gateB = addCanvasPoint(checkpoint.point, { x: -checkpoint.normal.x * gateOffset, y: -checkpoint.normal.y * gateOffset });
-    context.strokeStyle = "#e7bd72"; context.globalAlpha = 0.72; context.lineWidth = 2; context.setLineDash([6, 6]); context.beginPath(); context.moveTo(gateA.x, gateA.y); context.lineTo(gateB.x, gateB.y); context.stroke(); context.setLineDash([]);
+    const passed = Boolean(checkpointCar && checkpointCar.checkpointsPassed >= index);
+    const next = checkpointCar?.nextCheckpoint === index;
+    context.strokeStyle = passed ? "#7cf0b6" : next ? "#74c0ff" : "#e7bd72"; context.globalAlpha = passed || next ? 0.95 : 0.72; context.lineWidth = next ? 3 : 2; context.setLineDash(passed ? [] : [6, 6]); context.beginPath(); context.moveTo(gateA.x, gateA.y); context.lineTo(gateB.x, gateB.y); context.stroke(); context.setLineDash([]);
     context.globalAlpha = 0.9; context.strokeStyle = "#f7dfaa"; context.lineWidth = 1.5; context.beginPath(); context.moveTo(checkpoint.point.x - checkpoint.tangent.x * 9, checkpoint.point.y - checkpoint.tangent.y * 9); context.lineTo(checkpoint.point.x + checkpoint.tangent.x * 9, checkpoint.point.y + checkpoint.tangent.y * 9); context.stroke();
     context.beginPath(); context.moveTo(checkpoint.point.x + checkpoint.tangent.x * 9, checkpoint.point.y + checkpoint.tangent.y * 9); context.lineTo(checkpoint.point.x + checkpoint.tangent.x * 3 - checkpoint.normal.x * 4, checkpoint.point.y + checkpoint.tangent.y * 3 - checkpoint.normal.y * 4); context.moveTo(checkpoint.point.x + checkpoint.tangent.x * 9, checkpoint.point.y + checkpoint.tangent.y * 9); context.lineTo(checkpoint.point.x + checkpoint.tangent.x * 3 + checkpoint.normal.x * 4, checkpoint.point.y + checkpoint.tangent.y * 3 + checkpoint.normal.y * 4); context.stroke();
-    context.fillStyle = "#f1d28f"; context.font = "600 10px system-ui"; context.fillText(`CP${index}`, checkpoint.point.x + 6, checkpoint.point.y - 6);
+    context.fillStyle = passed ? "#7cf0b6" : next ? "#9ed5ff" : "#f1d28f"; context.font = "600 10px system-ui"; context.fillText(`${passed ? "✓ " : next ? "→ " : ""}CP${index}`, checkpoint.point.x + 6, checkpoint.point.y - 6);
   }
   const line = startLine(activeTrack); const lineOffset = activeTrack.width / 2 + CAR_WIDTH; const startA = addCanvasPoint(line.point, { x: line.normal.x * lineOffset, y: line.normal.y * lineOffset }); const startB = addCanvasPoint(line.point, { x: -line.normal.x * lineOffset, y: -line.normal.y * lineOffset });
   context.strokeStyle = "#9ed5ff"; context.lineWidth = 5; context.beginPath(); context.moveTo(startA.x, startA.y); context.lineTo(startB.x, startB.y); context.stroke();
@@ -1072,12 +1086,20 @@ function startVisualGeneration(): void {
 
 function breed(): void {
   updateLineageEvaluations();
-  const ranked = [...trainingNetworks].map((network, index) => {
+  const evaluated = [...trainingNetworks].map((network, index) => {
     const car = trainingPopulation[index]; const score = car?.score ?? -Infinity; const progress = car?.totalProgress ?? car?.progress ?? 0; const finished = car?.finished ?? false;
     return { network, score, car, progress, finished, lineageId: trainingLineageIds[index] };
-  }).sort((a, b) => compareEvolutionCandidates({ progress: b.progress, fitness: b.score, finished: b.finished }, { progress: a.progress, fitness: a.score, finished: a.finished }));
-  const candidate = ranked[0];
+  });
+  const incumbentRanked = [...evaluated].sort((a, b) => compareEvolutionCandidates({ progress: b.progress, fitness: b.score, finished: b.finished }, { progress: a.progress, fitness: a.score, finished: a.finished }));
+  const candidate = incumbentRanked[0];
   if (!candidate || !Number.isFinite(candidate.score)) throw new Error("generation produced no finite brain fitness");
+  const finiteFitness = evaluated.map((entry) => entry.score).filter(Number.isFinite);
+  const fitnessMin = finiteFitness.length > 0 ? Math.min(...finiteFitness) : 0;
+  const fitnessMax = finiteFitness.length > 0 ? Math.max(...finiteFitness) : fitnessMin;
+  const progressShare = breedingProgressWeight / 100;
+  const ranked = [...evaluated]
+    .map((entry) => ({ ...entry, selectionScore: blendedEvolutionSelectionScore({ progress: entry.progress, fitness: entry.score, finished: entry.finished }, progressShare, fitnessMin, fitnessMax) }))
+    .sort((a, b) => b.selectionScore - a.selectionScore || compareEvolutionCandidates({ progress: b.progress, fitness: b.score, finished: b.finished }, { progress: a.progress, fitness: a.score, finished: a.finished }));
   const winnerProgress = candidate.progress;
   const progressGain = winnerProgress - previousGenerationProgress;
   const retainedProgress = Math.max(previousGenerationProgress, winnerProgress);
@@ -1112,13 +1134,16 @@ function breed(): void {
   const retainedParentId = improved ? candidate.lineageId : trainingLineageIds[0]; const retainedNode = lineageNodeById(retainedParentId); if (retainedNode) retainedNode.status = "retained";
   renderLineageTree();
   rememberTrainingContext();
-  const winner = candidate;
+  // Incumbent acceptance deliberately remains progress-first, but mating must
+  // follow the user's progress/reward ratio. Keeping `candidate` here made
+  // the slider mostly cosmetic because only the runner-up came from `ranked`.
+  const winner = ranked[0];
   const runnerUp = ranked[1];
   const winnerShare = winnerMatingShare / 100;
   const runnerUpShare = 1 - winnerShare;
   const winnerParentId = winner.lineageId;
   const runnerUpParentId = runnerUp?.lineageId;
-  appendEvent(`generation ${trainingGeneration} complete · ${result} · ${reason} · plateau ${plateauStreak}/${plateauPatience} · ${exploring ? "exploration burst with random immigrants" : "local mutations"} · mutation ${(mutationRate * 100).toFixed(0)}% / ${(mutationAmount).toFixed(2)} · protected incumbent mates with best progress ${Math.round(winnerShare * 100)}% and runner-up ${Math.round(runnerUpShare * 100)}% across the next descendants`);
+  appendEvent(`generation ${trainingGeneration} complete · ${result} · ${reason} · plateau ${plateauStreak}/${plateauPatience} · ${exploring ? "exploration burst with random immigrants" : "local mutations"} · mutation ${(mutationRate * 100).toFixed(0)}% / ${(mutationAmount).toFixed(2)} · breeding ranked ${breedingProgressWeight}% progress / ${100 - breedingProgressWeight}% normalized reward · protected incumbent mates ${Math.round(winnerShare * 100)}% with blended winner and ${Math.round(runnerUpShare * 100)}% with runner-up`);
   persistBestBrain();
   trainingNetworks = createMutationPopulation(ranked.length, bestNetwork, trainingWorldSeed + trainingGeneration * 1000, mutationRate, mutationAmount, { plateauStreak: plateauExplorationEnabled ? plateauStreak : 0, plateauPatience, incumbentMatingPool: [winner.network, runnerUp?.network ?? winner.network], incumbentMatingWeights: [winnerMatingShare, 100 - winnerMatingShare] });
   if (trainingGeneration < requestedGenerations) registerNextLineagePopulation(trainingNetworks, trainingGeneration + 1, retainedParentId, winnerParentId, runnerUpParentId, winnerMatingShare, exploring);
@@ -1129,7 +1154,7 @@ function finishVisualGeneration(): void { breed(); if (trainingGeneration >= req
 async function runHeadless(): Promise<void> {
   const session = ++trainingSession; clearVisualTimer(); training = true; running = false; visualTraining = false; fiveBrainEvolution = false; ghostEvolution = ui.ghostEvolutionToggle.checked; manualMode = false; trainingGeneration = 1;
   trainingPopulationSize = readInteger(ui.population, 5, 2, 80); requestedGenerations = readInteger(ui.generations, 100, 1, 10000); trainingTracks = selectedTracks(); rewardConfig = readRewardConfig(); physicsConfig = readPhysicsConfig(); readRoadObjectConfig(); readEvolutionConfig(); activeTrack = trainingTracks[0]; prepareTrainingContext(); trainingWorldSeed = 7000; plateauStreak = 0; plateauReason = "none"; mutationRate = DEFAULT_MUTATION_RATE; mutationAmount = DEFAULT_MUTATION_AMOUNT; previousGenerationProgress = 0; resetEvolutionHistory(); resetLineage(); trainingNetworks = createMutationPopulation(trainingPopulationSize, bestNetwork, trainingWorldSeed, DEFAULT_MUTATION_RATE, DEFAULT_MUTATION_AMOUNT); registerInitialLineagePopulation(trainingNetworks); ensureWorkingCheckpoint(); updateEvolutionTelemetry();
-  beginRun("Headless training", `Evaluating ${trainingPopulationSize} controllers across ${requestedGenerations} generations on ${selectedTrackLabel()}${freshTrainingContext ? ` · new route baseline reset · warm-start from ${warmStartLabel}` : ""}${ghostEvolution ? " in independent candidate worlds" : " with traffic bots"}${randomObjectsEnabled ? ` and ${trainingObstacleCount()} ${randomObjectKind} objects` : ""}${curriculumEnabled ? " on a progressive hazard curriculum" : ""}. The incumbent will mate ${winnerMatingShare}% with the best-progress candidate and ${100 - winnerMatingShare}% with the runner-up.`, "HEADLESS TRAINING");
+  beginRun("Headless training", `Evaluating ${trainingPopulationSize} controllers across ${requestedGenerations} generations on ${selectedTrackLabel()}${freshTrainingContext ? ` · new route baseline reset · warm-start from ${warmStartLabel}` : ""}${ghostEvolution ? " in independent candidate worlds" : " with traffic bots"}${randomObjectsEnabled ? ` and ${trainingObstacleCount()} ${randomObjectKind} objects` : ""}${curriculumEnabled ? " on a progressive hazard curriculum" : ""}. Parent ranking uses ${breedingProgressWeight}% progress / ${100 - breedingProgressWeight}% normalized reward; the protected incumbent mates ${winnerMatingShare}% with the blended winner and ${100 - winnerMatingShare}% with the runner-up.`, "HEADLESS TRAINING");
   setBusy(true); ui.generation.textContent = "0"; ui.fitness.textContent = "—";
   try {
     for (; trainingGeneration <= requestedGenerations && training && trainingSession === session; trainingGeneration += 1) {
@@ -1162,7 +1187,7 @@ async function runHeadless(): Promise<void> {
 function startVisualTraining(): void {
   const session = ++trainingSession; clearVisualTimer(); training = true; running = false; visualTraining = true; fiveBrainEvolution = false; manualMode = false; trainingHistory = []; trainingGeneration = 1;
   trainingPopulationSize = readInteger(ui.population, 5, 2, 80); requestedGenerations = readInteger(ui.generations, 100, 1, 10000); trainingTracks = selectedTracks(); rewardConfig = readRewardConfig(); physicsConfig = readPhysicsConfig(); readRoadObjectConfig(); readEvolutionConfig(); activeTrack = trainingTracks[0]; prepareTrainingContext(); trainingWorldSeed = 5000; plateauStreak = 0; plateauReason = "none"; mutationRate = DEFAULT_MUTATION_RATE; mutationAmount = DEFAULT_MUTATION_AMOUNT; previousGenerationProgress = 0; resetEvolutionHistory(); resetLineage(); trainingNetworks = createMutationPopulation(trainingPopulationSize, bestNetwork, trainingWorldSeed, DEFAULT_MUTATION_RATE, DEFAULT_MUTATION_AMOUNT); registerInitialLineagePopulation(trainingNetworks); ensureWorkingCheckpoint(); updateEvolutionTelemetry();
-  beginRun("Visual training", `Watching ${trainingPopulationSize} candidates drive across ${requestedGenerations} generations on ${selectedTrackLabel()}${freshTrainingContext ? ` · new route baseline reset · warm-start from ${warmStartLabel}` : ""}${randomObjectsEnabled ? ` with ${trainingObstacleCount()} ${randomObjectKind} objects` : ""}${curriculumEnabled ? " on a progressive hazard curriculum" : ""}. The incumbent will mate ${winnerMatingShare}% with the best-progress candidate and ${100 - winnerMatingShare}% with the runner-up.`, "VISUAL TRAINING");
+  beginRun("Visual training", `Watching ${trainingPopulationSize} candidates drive across ${requestedGenerations} generations on ${selectedTrackLabel()}${freshTrainingContext ? ` · new route baseline reset · warm-start from ${warmStartLabel}` : ""}${randomObjectsEnabled ? ` with ${trainingObstacleCount()} ${randomObjectKind} objects` : ""}${curriculumEnabled ? " on a progressive hazard curriculum" : ""}. Parent ranking uses ${breedingProgressWeight}% progress / ${100 - breedingProgressWeight}% normalized reward; the protected incumbent mates ${winnerMatingShare}% with the blended winner and ${100 - winnerMatingShare}% with the runner-up.`, "VISUAL TRAINING");
   setBusy(true); ui.generation.textContent = "0"; ui.fitness.textContent = "—"; startVisualGeneration(); scheduleVisualBatch(session);
 }
 
@@ -1170,13 +1195,13 @@ function startFiveBrainEvolution(): void {
   const session = ++trainingSession; clearVisualTimer(); training = true; running = false; visualTraining = true; fiveBrainEvolution = true; ghostEvolution = ui.ghostEvolutionToggle.checked; manualMode = false; trainingHistory = []; trainingGeneration = 1;
   trainingPopulationSize = readInteger(ui.population, 5, 2, 80); requestedGenerations = readInteger(ui.generations, 100, 1, 10000); trainingTracks = selectedTracks(); rewardConfig = readRewardConfig(); physicsConfig = readPhysicsConfig(); readRoadObjectConfig(); readEvolutionConfig(); activeTrack = trainingTracks[0]; prepareTrainingContext(); trainingWorldSeed = 9000; plateauStreak = 0; plateauReason = "none"; mutationRate = DEFAULT_MUTATION_RATE; mutationAmount = DEFAULT_MUTATION_AMOUNT; previousGenerationProgress = 0; resetEvolutionHistory(); resetLineage(); trainingNetworks = createMutationPopulation(trainingPopulationSize, bestNetwork, trainingWorldSeed, DEFAULT_MUTATION_RATE, DEFAULT_MUTATION_AMOUNT); registerInitialLineagePopulation(trainingNetworks); ensureWorkingCheckpoint(); updateEvolutionTelemetry();
   const mode = ghostEvolution ? "independent candidate worlds (no candidate sensing, collisions, or influence)" : softContactEvolution ? "Ghost contact mode (candidates sense and penalize overlap, but contact is non-blocking)" : "a shared physical track with rigid collision dynamics";
-  beginRun("Population evolution", `Racing ${trainingPopulationSize} brains simultaneously in ${mode} for ${requestedGenerations} generations on ${selectedTrackLabel()}${freshTrainingContext ? ` · new route baseline reset · warm-start from ${warmStartLabel}` : ""}${randomObjectsEnabled ? ` with ${randomObjectCount} ${randomObjectKind} objects` : ""}. The incumbent will mate ${winnerMatingShare}% with the best-progress candidate and ${100 - winnerMatingShare}% with the runner-up.`, "POPULATION EVOLUTION");
+  beginRun("Population evolution", `Racing ${trainingPopulationSize} brains simultaneously in ${mode} for ${requestedGenerations} generations on ${selectedTrackLabel()}${freshTrainingContext ? ` · new route baseline reset · warm-start from ${warmStartLabel}` : ""}${randomObjectsEnabled ? ` with ${randomObjectCount} ${randomObjectKind} objects` : ""}. Parent ranking uses ${breedingProgressWeight}% progress / ${100 - breedingProgressWeight}% normalized reward; the protected incumbent mates ${winnerMatingShare}% with the blended winner and ${100 - winnerMatingShare}% with the runner-up.`, "POPULATION EVOLUTION");
   setBusy(true); ui.generation.textContent = "0"; ui.fitness.textContent = "—"; startVisualGeneration(); scheduleVisualBatch(session);
 }
 
 function scheduleVisualBatch(session: number): void {
   if (!visualTraining || trainingSession !== session) return;
-  try { for (let index = 0; index < 24 && visualTraining; index += 1) trainPopulationStep(); }
+  try { for (let index = 0; index < VISUAL_TRAINING_STEPS_PER_FRAME && visualTraining; index += 1) trainPopulationStep(); }
   catch (error) { if (trainingSession === session) failTraining(error); return; }
   visualTimer = window.setTimeout(() => scheduleVisualBatch(session), 16);
 }
@@ -1236,7 +1261,9 @@ ui.obstacleCount.addEventListener("change", () => { readRoadObjectConfig(); appe
 ui.obstacleKind.addEventListener("change", () => { readRoadObjectConfig(); appendEvent(`road object type set to ${randomObjectKind}`); });
 ui.plateauExplorationToggle.addEventListener("change", () => { readEvolutionConfig(); updateEvolutionTelemetry(); appendEvent(plateauExplorationEnabled ? `plateau exploration enabled · patience ${plateauPatience} generations` : "plateau exploration disabled · mutation stays local"); });
 ui.plateauPatience.addEventListener("change", () => { readEvolutionConfig(); updateEvolutionTelemetry(); appendEvent(`plateau patience set to ${plateauPatience} generations`); });
-ui.winnerMatingShare.addEventListener("change", () => { readEvolutionConfig(); appendEvent(`breeding mix set to ${winnerMatingShare}% best-progress winner / ${100 - winnerMatingShare}% runner-up; incumbent remains protected`); });
+ui.breedingProgressWeight.addEventListener("input", () => { readEvolutionConfig(); });
+ui.breedingProgressWeight.addEventListener("change", () => { readEvolutionConfig(); appendEvent(`breeding priority set to ${breedingProgressWeight}% route progress / ${100 - breedingProgressWeight}% normalized reward; lap completion and incumbent protection remain progress-first`); });
+ui.winnerMatingShare.addEventListener("change", () => { readEvolutionConfig(); appendEvent(`breeding mix set to ${winnerMatingShare}% blended winner / ${100 - winnerMatingShare}% runner-up; incumbent remains protected`); });
 ui.curriculumToggle.addEventListener("change", () => { readEvolutionConfig(); appendEvent(curriculumEnabled ? "progressive hazards enabled · obstacle count ramps with training" : "progressive hazards disabled · obstacle count stays fixed"); });
 [ui.rewardProgress, ui.rewardDirection, ui.rewardMoving, ui.rewardStanding, ui.rewardWrong, ui.rewardReverse, ui.rewardOffTrack, ui.rewardEdge, ui.rewardProximity, ui.rewardHazard, ui.rewardCenterline, ui.rewardCollision, ui.rewardCrash, ui.rewardCheckpoint, ui.rewardFinish].forEach((input) => {
   input.addEventListener("change", () => { rewardConfig = readRewardConfig(); appendEvent("reward settings updated · new weights apply immediately"); });

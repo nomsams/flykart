@@ -113,6 +113,12 @@ label { display: flex; justify-content: space-between; align-items: center; marg
 .check-row input { width: auto; accent-color: #72b8ff; }
 .check-row span { display: flex; flex-direction: column; gap: 2px; }
 .check-row small { color: #7f8ca0; font-size: .68rem; }
+.range-control { display: grid; grid-template-columns: 1fr auto; gap: 5px 10px; align-items: end; padding: 9px 0 4px; }
+.range-control > span { display: flex; flex-direction: column; gap: 2px; }
+.range-control small { color: #7f8ca0; font-size: .68rem; }
+.range-control output { color: #b9d9ff; font-size: .7rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.range-control input[type="range"] { grid-column: 1 / -1; width: 100%; height: 18px; padding: 0; border: 0; accent-color: #72b8ff; cursor: grab; }
+.range-control input[type="range"]:active { cursor: grabbing; }
 .track-info { margin: 7px 0 0; padding: 7px 8px; border-left: 2px solid #72b8ff; color: #8fa4be; background: rgba(114, 184, 255, .06); font-size: .67rem; line-height: 1.4; font-variant-numeric: tabular-nums; }
 .reward-field-note { margin: 5px 0 0; color: #7f8ca0; font-size: .64rem; line-height: 1.4; }
 .track-provenance { margin: 5px 0 0; padding: 6px 8px; color: #9aa8ba; background: rgba(127, 140, 160, .06); font-size: .65rem; line-height: 1.4; font-variant-numeric: tabular-nums; }

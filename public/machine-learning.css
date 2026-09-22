@@ -180,3 +180,48 @@ body > footer a { color: var(--green); font-weight: 800; text-decoration: none; 
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
 }
+
+/* Full-compendium bridge: preserve the pushed editorial theme while the
+   expanded document keeps all of its original Tailwind structure. */
+body.compendium { color: var(--ink); background: var(--paper); }
+.compendium > header { border-color: rgba(33, 79, 59, .18) !important; background: rgba(247, 244, 237, .94) !important; }
+.compendium > header h1 { color: var(--ink) !important; font-family: Georgia, "Times New Roman", serif; font-weight: 500 !important; letter-spacing: -.02em !important; }
+.compendium > header p { color: var(--green) !important; }
+.compendium > header nav a { color: var(--muted) !important; }
+.compendium > header nav a:hover { color: var(--violet) !important; }
+.compendium main { overflow: visible; }
+.compendium main > section { scroll-margin-top: 92px; }
+.compendium main > section > div:first-child { border-left-color: var(--violet) !important; }
+.compendium main > section:nth-of-type(3n) > div:first-child { border-left-color: var(--green) !important; }
+.compendium main > section > div:first-child h2 { color: var(--ink) !important; font-family: Georgia, "Times New Roman", serif; font-weight: 500 !important; letter-spacing: -.025em; }
+.compendium main > section > div:first-child p { color: var(--muted) !important; }
+.compendium main .bg-white { background-color: var(--white) !important; }
+.compendium main .border-slate-200,
+.compendium main .border-slate-100 { border-color: var(--line) !important; }
+.compendium main .shadow-sm { box-shadow: 0 16px 50px rgba(38, 48, 36, .055) !important; }
+.compendium main .rounded-xl { border-radius: 19px !important; }
+.compendium main .bg-indigo-50,
+.compendium main .bg-indigo-50\/70,
+.compendium main .bg-violet-50 { background-color: var(--violet-soft) !important; }
+.compendium main .bg-emerald-50,
+.compendium main .bg-emerald-50\/70 { background-color: var(--green-soft) !important; }
+.compendium main .text-indigo-900,
+.compendium main .text-indigo-950,
+.compendium main .text-violet-900,
+.compendium main .text-violet-950 { color: #51478f !important; }
+.compendium main .text-emerald-900,
+.compendium main .text-emerald-950 { color: var(--green) !important; }
+.compendium button { border-color: #c9c2b5; color: var(--ink); background: var(--white); }
+.compendium button:hover { border-color: var(--violet); }
+.compendium input[type="range"] { accent-color: var(--violet); }
+.analogy-card { position: relative; padding: 18px 20px 18px 58px; border: 1px solid #cfc8ee; border-radius: 16px; color: #504b69; background: linear-gradient(135deg, var(--violet-soft), var(--white)); box-shadow: 0 10px 35px rgba(69, 59, 122, .06); }
+.analogy-card::before { content: "↗"; position: absolute; left: 18px; top: 18px; width: 26px; height: 26px; display: grid; place-items: center; border-radius: 50%; color: white; background: var(--violet); font-weight: 900; }
+.analogy-card strong { display: block; margin-bottom: 4px; color: var(--ink); font: 500 1rem Georgia, "Times New Roman", serif; }
+.analogy-card p { margin: 0; font-size: .78rem; line-height: 1.55; }
+.analogy-card .analogy-limit { display: block; margin-top: 6px; color: var(--muted); font-size: .68rem; }
+
+@media (max-width: 700px) {
+  .compendium > header nav { display: none !important; }
+  .compendium main { padding-inline: 14px !important; }
+  .analogy-card { padding-left: 18px; padding-top: 54px; }
+}

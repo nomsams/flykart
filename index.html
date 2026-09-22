@@ -152,7 +152,7 @@
             <label>Max adaptive extensions <input id="adaptive-extensions" type="number" min="0" max="6" value="4" /></label>
             <label>Checkpoint gates <input id="checkpoint-count" type="number" min="2" max="64" value="8" /></label>
             <label class="check-row"><input id="ghost-evolution-toggle" type="checkbox" /> <span>Independent evolution <small>isolated candidate worlds: brains do not see, collide with, or influence one another</small></span></label>
-            <label class="check-row"><input id="soft-contact-toggle" type="checkbox" /> <span>Ghost contact mode <small>brains see each other and pay overlap penalties, but contact is soft and never blocks them</small></span></label>
+            <label class="check-row"><input id="soft-contact-toggle" type="checkbox" checked /> <span>Ghost contact mode <small>brains see each other and pay overlap penalties, but contact is soft and never blocks them</small></span></label>
             <label class="check-row"><input id="obstacle-toggle" type="checkbox" /> <span>Random road objects <small>stalled cars are added to avoidance training</small></span></label>
             <label>Object count <input id="obstacle-count" type="number" min="0" max="64" value="6" /></label>
             <label>Object type
@@ -166,9 +166,14 @@
             </label>
             <label class="check-row"><input id="plateau-exploration-toggle" type="checkbox" checked /> <span>Plateau exploration <small>adds high-variance scouts and random immigrant brains</small></span></label>
             <label>Plateau patience <input id="plateau-patience" type="number" min="1" max="20" value="3" /></label>
+            <label class="range-control" for="breeding-progress-weight">
+              <span>Breeding priority <small>parent ranking within each generation</small></span>
+              <output id="breeding-priority-value" for="breeding-progress-weight">100% progress · 0% reward</output>
+              <input id="breeding-progress-weight" type="range" min="0" max="100" step="10" value="100" aria-label="Breeding selection weight for route progress versus reward" />
+            </label>
             <label>Winner mating share (%) <input id="winner-mating-share" type="number" min="50" max="95" value="80" /></label>
             <label class="check-row"><input id="curriculum-toggle" type="checkbox" /> <span>Progressive hazards <small>ramps stalled road objects from easy to full difficulty</small></span></label>
-            <p class="microcopy">The population button runs all configured brains simultaneously, including 10+ cars. The first generation explores many variants; after evaluation, the protected incumbent mates with the best-progress candidate for the configured share (80% by default) and the runner-up for the remainder. Choose one interaction mode: shared physical evolution uses rigid collisions; Independent evolution gives every brain its own world; Ghost contact mode keeps one shared visual race so brains sense and penalize overlap, while contact remains non-blocking.</p>
+            <p class="microcopy">The population button runs all configured brains simultaneously, including 10+ cars. The breeding-priority slider moves in clear 10-point ratios (100/0, 90/10, 80/20…) and defaults to pure route progress. It ranks the actual mating candidates; completed laps and incumbent acceptance remain progress-first. The protected incumbent mates with the blended winner for the configured share and the runner-up for the remainder. Ghost contact mode is the stable default: brains share one visible race, sense one another, and pay overlap penalties without collision pileups. Independent evolution fully isolates them; turn both modes off only when you explicitly want rigid collision dynamics.</p>
           </section>
 
           <details class="panel-section reward-settings" open>

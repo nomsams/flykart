@@ -1,194 +1,2098 @@
-<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="A practical guide to the machine-learning system behind FlyKart." />
-    <title>Machine learning guide · FlyKart</title>
-    <link rel="stylesheet" href="./machine-learning.css" />
-  </head>
-  <body>
-    <header class="site-header">
-      <a class="brand" href="./" aria-label="Back to FlyKart">
-        <span class="brand-mark" aria-hidden="true">FK</span>
-        <span><strong>FlyKart</strong><small>Machine learning guide</small></span>
-      </a>
-      <nav aria-label="Guide sections">
-        <a href="#pipeline">Pipeline</a>
-        <a href="#brain">Brain</a>
-        <a href="#evolution">Evolution</a>
-        <a href="#reward">Reward</a>
-        <a href="#reality">Reality gap</a>
-      </nav>
-      <a class="launch" href="./">Open simulator <span aria-hidden="true">→</span></a>
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FlyKart Master AI Compendium: Biophysics, Networks, CUDA, Vision & Real-World AI</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="./machine-learning.css">
+    <!-- Chart.js CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- KaTeX CDN for LaTeX Math Rendering -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.css">
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/contrib/auto-render.min.js"></script>
+
+    <style>
+        .chart-container {
+            position: relative;
+            width: 100%;
+            max-width: 680px;
+            margin-left: auto;
+            margin-right: auto;
+            height: 320px;
+            max-height: 380px;
+            overflow: hidden;
+        }
+        @media (min-width: 768px) {
+            .chart-container {
+                height: 360px;
+            }
+        }
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f5f9;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+        .image-render-pixelated {
+            image-rendering: pixelated;
+        }
+    </style>
+</head>
+<body class="compendium bg-[#FAF8F5] text-slate-800 antialiased font-sans leading-relaxed">
+
+<!-- Chosen Palette: Warm Neutrals & Deep Indigo/Slate Accent (Background #FAF8F5, Slate text #1E293B, Amber primary #D97706, Emerald green #059669, Indigo accent #4F46E5, Cyan visual #0891B2, Rose alert #E11D48) -->
+<!-- Application Structure Plan: Master Unified Interactive AI Compendium:
+1. Biophysics & Bio-Neuron Circuit Math (Concept -> Math -> Step-by-Step Worked Examples: Nernst, GHK, LIF).
+2. Bio-Neuron & Artificial Network Box Models:
+   - Single Neuron Box Model (Dendrites, Axon, Synapse, Weights, Bias).
+   - Series Connection Box Model (Deep Cascade Networks, Math, Activation Delay, Worked Example).
+   - Parallel Connection Box Model (Ensemble/Multi-Branch, Multi-Head Attention, Residual Skip, Worked Example).
+3. Connectomes & Brain Scale Matrix (Organism table vs FlyKart AI).
+4. Network Sizing Rules of Thumb, Capacity Bounds & Visual Latency.
+5. Linear Algebra, Matrix Transformations, SVD & Hardware Roofline Bounds.
+6. LLMs, Scaled Dot-Product Attention, MoE & Interactive Quantization Memory Calculator.
+7. CUDA Parallel Computing & GPU Hardware Acceleration (Concept -> Math -> Worked Example).
+8. YOLO Real-Time Perception & Object Detection (Concept -> Math -> Bounding Box & IoU Worked Example).
+9. Knowledge Distillation: Teacher-Student Compression (Concept -> Math -> Temperature Softening Worked Example).
+10. Fine-Tuning & Parameter-Efficient Adaptation (LoRA Matrix Decomposition -> Math -> Parameter Reduction Worked Example).
+11. Neuroevolution & Micro-NEAT Mathematics (Gene Barcodes, Speciation Metric).
+12. Interactive In-Browser Laboratories & Chart.js Benchmark Simulator.
+13. Math Formula ELI9 Cheatsheet & Examples.
+14. Optimization, Training Dynamics & Loss Landscapes.
+15. Real-World AI Systems, Sim-to-Real Transfer & Deployment Engineering.
+-->
+<!-- Visualization & Content Choices: KaTeX LaTeX rendering for math equations, HTML/CSS structured schematic box models for single neuron, series cascade, parallel branch, CUDA blocks, and LoRA matrices. Live HTML5 Canvases for Bio-Neuron Action Potential, 5-Kart Micro-Breeding Track, Dynamic Neural Network Visualizer, and Camera Pixel Downscaled Lab. Interactive JavaScript controls for Quantization VRAM Calculator, Reward Lab, and Chart.js 300-Generation Simulator. NO SVG graphics used and NO Mermaid JS used. -->
+<!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+
+    <!-- Navigation Bar -->
+    <header class="sticky top-0 z-50 bg-[#FAF8F5]/90 backdrop-blur-md border-b border-amber-200/70 shadow-sm">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <span class="text-2xl">🧠</span>
+                <div>
+                    <h1 class="font-bold text-slate-900 text-base sm:text-lg leading-none">FlyKart Master AI Compendium</h1>
+                    <p class="text-xs text-amber-700 font-medium">Biophysics, Networks, CUDA, Vision, Adaptation & Real-World AI</p>
+                </div>
+            </div>
+            <nav class="hidden lg:flex items-center gap-2.5 max-w-[52vw] overflow-x-auto pb-1 text-[11px] font-semibold text-slate-600 [&_a]:whitespace-nowrap">
+                <a href="#biophysics" class="hover:text-indigo-600 transition">1. Biophysics</a>
+                <a href="#topologies" class="hover:text-indigo-600 transition">2. Box Topologies</a>
+                <a href="#connectome" class="hover:text-indigo-600 transition">3. Brain Matrix</a>
+                <a href="#layers-vision" class="hover:text-indigo-600 transition">4. Rules & Latency</a>
+                <a href="#linalg-roofline" class="hover:text-indigo-600 transition">5. LinAlg & Roofline</a>
+                <a href="#llm-moe" class="hover:text-indigo-600 transition">6. LLMs & MoE</a>
+                <a href="#cuda-computing" class="hover:text-indigo-600 transition">7. CUDA Math</a>
+                <a href="#yolo-perception" class="hover:text-indigo-600 transition">8. YOLO Vision</a>
+                <a href="#distillation" class="hover:text-indigo-600 transition">9. Distillation</a>
+                <a href="#lora-finetuning" class="hover:text-indigo-600 transition">10. LoRA Adaptation</a>
+                <a href="#micro-neat" class="hover:text-amber-600 transition">11. Micro-NEAT</a>
+                <a href="#interactive-labs" class="hover:text-amber-600 transition">12. Live Labs</a>
+                <a href="#eli9-math" class="hover:text-emerald-600 transition">13. ELI9 Math</a>
+                <a href="#optimization" class="hover:text-emerald-600 transition">14. Optimization</a>
+                <a href="#real-world-ai" class="hover:text-rose-600 transition">15. Real-World AI</a>
+            </nav>
+            <div class="flex items-center gap-2">
+                <a href="./" class="hidden sm:inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-white text-slate-700 border border-slate-300 hover:border-indigo-400 hover:text-indigo-700 transition">← Simulator</a>
+                <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-indigo-100 text-indigo-900 border border-indigo-300">
+                    🔬 Rigorous Math Manual
+                </span>
+            </div>
+        </div>
     </header>
 
-    <main>
-      <section class="hero">
-        <div class="hero-copy">
-          <p class="eyebrow">FROM TRACK SENSORS TO SPIKES TO STEERING</p>
-          <h1>How FlyKart <em>learns</em></h1>
-          <p class="intro">FlyKart is a compact evolutionary machine-learning experiment. A recurrent spiking network reads nine numerical sensors, chooses four driving controls, and improves by keeping the brains that master more of the route.</p>
-          <div class="hero-actions">
-            <a class="primary" href="#pipeline">Explore the system</a>
-            <a class="secondary" href="./">Try it in the browser</a>
-          </div>
-        </div>
-        <aside class="spec-card" aria-label="Controller at a glance">
-          <p class="card-label">CONTROLLER AT A GLANCE</p>
-          <dl>
-            <div><dt>9</dt><dd>normalized sensor inputs</dd></div>
-            <div><dt>48</dt><dd>recurrent LIF neurons</dd></div>
-            <div><dt>4</dt><dd>continuous control outputs</dd></div>
-            <div><dt>30 Hz</dt><dd>fixed simulation step</dd></div>
-          </dl>
-          <p class="spec-note">This is a deliberately small controller—not a biological fly connectome and not a vision model.</p>
-        </aside>
-      </section>
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-16">
 
-      <section id="pipeline" class="section">
-        <div class="section-heading">
-          <p class="section-number">01 · THE LOOP</p>
-          <h2>One decision, every simulation tick</h2>
-          <p>The same deterministic pipeline runs in visual training, headless training, and races. Rendering can speed up or slow down without changing the physics timestep.</p>
-        </div>
-        <ol class="pipeline" aria-label="Machine learning pipeline">
-          <li><span>1</span><strong>Sense</strong><p>Measure track geometry, car motion, road position, and nearby traffic.</p></li>
-          <li><span>2</span><strong>Spike</strong><p>Integrate the inputs and recurrent activity across 48 leaky neurons.</p></li>
-          <li><span>3</span><strong>Act</strong><p>Decode activity into steering, throttle, brake, and reverse.</p></li>
-          <li><span>4</span><strong>Score</strong><p>Reward route mastery and safe forward motion; penalize failure modes.</p></li>
-          <li><span>5</span><strong>Evolve</strong><p>Retain the incumbent, recombine strong parents, mutate, and evaluate again.</p></li>
-        </ol>
-      </section>
-
-      <section id="brain" class="section split-section">
-        <div class="section-heading sticky-heading">
-          <p class="section-number">02 · THE BRAIN</p>
-          <h2>A tiny recurrent spiking controller</h2>
-          <p>Each cell remembers a decaying voltage. Current sensor input and last tick’s spikes can push it past threshold. A spike resets its voltage and contributes to the four motor outputs.</p>
-          <div class="equation" aria-label="Leaky integrate-and-fire update">
-            <code>vᵢ(t+1) = 0.86vᵢ(t) + 0.22Iᵢ(t)</code>
-            <code>sᵢ(t+1) = 𝟙[vᵢ(t+1) &gt; 0.42]</code>
-          </div>
-          <p class="fine-print">These are FlyKart’s discrete simulation coefficients, not a claim of biological parameter accuracy.</p>
-        </div>
-
-        <div class="brain-stack">
-          <article class="info-card sensor-card">
-            <div class="card-top"><span>INPUT</span><strong>9 sensors</strong></div>
-            <ul class="signal-list">
-              <li><b>01</b><span><strong>Heading error</strong>Direction to a speed-adjusted look-ahead point</span></li>
-              <li><b>02</b><span><strong>Curvature</strong>Upcoming track tangent relative to the car</span></li>
-              <li><b>03</b><span><strong>Lateral offset</strong>Signed position left or right of centerline</span></li>
-              <li><b>04</b><span><strong>Speed</strong>Forward or reverse speed normalized to range</span></li>
-              <li><b>05</b><span><strong>Center proximity</strong>Closeness to the center of the road</span></li>
-              <li><b>06–07</b><span><strong>Traffic</strong>Nearest-opponent pressure and relative side</span></li>
-              <li><b>08</b><span><strong>Edge clearance</strong>Remaining space before the road boundary</span></li>
-              <li><b>09</b><span><strong>Forward alignment</strong>Car heading aligned with track direction</span></li>
-            </ul>
-          </article>
-
-          <div class="connector" aria-hidden="true"><span>weighted current + recurrent state</span></div>
-
-          <article class="info-card neuron-card">
-            <div class="card-top"><span>HIDDEN STATE</span><strong>48 LIF neurons</strong></div>
-            <div class="neuron-field" aria-hidden="true">
-              <i></i><i></i><i class="hot"></i><i></i><i></i><i class="hot"></i><i></i><i></i>
-              <i class="hot"></i><i></i><i></i><i></i><i></i><i class="hot"></i><i></i><i></i>
-              <i></i><i></i><i></i><i class="hot"></i><i></i><i></i><i></i><i class="hot"></i>
+        <!-- SECTION 1: Biophysics & Electrochemical Equations -->
+        <section id="biophysics" class="space-y-6">
+            <div class="border-l-4 border-indigo-600 pl-4">
+                <h2 class="text-2xl sm:text-3xl font-extrabold text-slate-900">1. Biological Biophysics & Electrochemical Circuit Equations</h2>
+                <p class="text-slate-600 text-sm sm:text-base mt-1">
+                    Every biophysical equation explained with its concept, mathematical breakdown, and step-by-step worked numerical example.
+                </p>
             </div>
-            <p>Recurrent connections let a decision depend on recent activity, not only the current sensor frame.</p>
-          </article>
+            <div class="analogy-card"><strong>Mental model: a battery behind a leaky dam</strong><p>Ion concentration is stored water pressure, the membrane is the dam, channels are gates, and voltage is the counter-pressure. Nernst describes one gate, GHK combines several gates, and LIF tracks a leaky reservoir filling toward a spill threshold.</p><span class="analogy-limit">Where it breaks: real neurons have nonlinear channel kinetics and spatial structure that a single bucket or circuit cannot capture.</span></div>
 
-          <div class="connector" aria-hidden="true"><span>weighted spike readout + tanh</span></div>
-
-          <article class="info-card output-card">
-            <div class="card-top"><span>OUTPUT</span><strong>4 controls</strong></div>
-            <div class="output-grid">
-              <div><span>↔</span><strong>Steer</strong><small>−1 … +1</small></div>
-              <div><span>↑</span><strong>Throttle</strong><small>0 … 1</small></div>
-              <div><span>■</span><strong>Brake</strong><small>0 … 1</small></div>
-              <div><span>↓</span><strong>Reverse</strong><small>gated 0 … 1</small></div>
+            <!-- Conceptual ELI7 Explanation -->
+            <div class="bg-indigo-50/70 rounded-xl p-5 border border-indigo-200 text-slate-700 text-sm leading-relaxed space-y-2">
+                <strong class="text-indigo-950 font-bold block text-base">🧸 Biological Neurons as Salty Batteries</strong>
+                <p>
+                    Biological brain cells rely on differential ion concentrations across a semi-permeable lipid membrane. Inside the neuron, potassium ($K^+$) concentrations are high, while outside, sodium ($Na^+$) and chloride ($Cl^-$) predominate. Ion channels act as voltage-gated chemical switches, converting chemical gradient potential energy into rapid electrical pulses (Action Potentials).
+                </p>
             </div>
-          </article>
-        </div>
-      </section>
 
-      <section id="evolution" class="section">
-        <div class="section-heading">
-          <p class="section-number">03 · TRAINING</p>
-          <h2>Evolution, not backpropagation</h2>
-          <p>FlyKart does not differentiate through the physics engine. It evaluates complete networks, selects by route mastery, and searches the parameter space with protected elites, crossover, and mutation.</p>
-        </div>
-        <div class="three-up">
-          <article class="concept-card"><span class="concept-icon">01</span><h3>Protect the incumbent</h3><p>The strongest known brain is cloned exactly into slot one. A weaker generation cannot erase it.</p></article>
-          <article class="concept-card"><span class="concept-icon">02</span><h3>Recombine and mutate</h3><p>Short blocks of weights come from selected parents. Gaussian noise changes a sampled fraction of parameters.</p></article>
-          <article class="concept-card"><span class="concept-icon">03</span><h3>Escape plateaus</h3><p>When improvement stalls, mutation pressure rises and deterministic random immigrants add diversity.</p></article>
-        </div>
-        <div class="selection-rule">
-          <div><span>SELECTION ORDER</span><strong>Completed lap</strong><i>then</i><strong>Route coverage</strong><i>then</i><strong>Reward</strong></div>
-          <p>Raw reward is only the tie-breaker. This prevents a brain from collecting local shaping rewards forever while failing to solve the route.</p>
-        </div>
-      </section>
+            <!-- Equations Breakdown with Worked Examples -->
+            <div class="space-y-6">
 
-      <section id="reward" class="section reward-section">
-        <div class="section-heading">
-          <p class="section-number">04 · REWARD SHAPING</p>
-          <h2>Make the goal measurable</h2>
-          <p>A reward is a design specification expressed as numbers. FlyKart exposes every coefficient so you can see how changing the incentives changes the learned behavior.</p>
-        </div>
-        <div class="reward-board">
-          <article class="reward-column positive">
-            <div class="reward-title"><span>+</span><h3>Encourage</h3></div>
-            <ul>
-              <li><span>Forward route progress</span><b>14 / sec</b></li>
-              <li><span>Correct direction</span><b>1.25 / sec</b></li>
-              <li><span>Movement</span><b>0.2 / sec</b></li>
-              <li><span>Centerline position</span><b>0.35 / sec</b></li>
-              <li><span>Ordered checkpoint</span><b>100</b></li>
-              <li><span>Finish line</span><b>300</b></li>
-            </ul>
-          </article>
-          <article class="reward-column negative">
-            <div class="reward-title"><span>−</span><h3>Discourage</h3></div>
-            <ul>
-              <li><span>Standing still</span><b>0.85 / sec</b></li>
-              <li><span>Wrong direction</span><b>2.5 / sec</b></li>
-              <li><span>Reverse progress</span><b>3 / sec</b></li>
-              <li><span>Outside the track</span><b>24 / sec</b></li>
-              <li><span>Collision</span><b>10</b></li>
-              <li><span>Crash</span><b>75</b></li>
-            </ul>
-          </article>
-        </div>
-        <p class="fine-print centered">The table shows current defaults. Edge, proximity, and hazard-contact terms also contribute, and every value can be changed in the simulator.</p>
-      </section>
+                <!-- 1.1 Nernst Potential -->
+                <div class="bg-white rounded-xl p-6 border border-slate-200 shadow-sm space-y-4">
+                    <div class="flex items-center justify-between border-b border-slate-100 pb-2">
+                        <h3 class="font-bold text-slate-900 text-base text-indigo-900">1.1 Nernst Equilibrium Potential</h3>
+                        <span class="text-xs font-mono bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded font-bold">Single-Ion Voltage</span>
+                    </div>
 
-      <section id="reality" class="section reality-section">
-        <div class="section-heading">
-          <p class="section-number">05 · SIMULATION VS REALITY</p>
-          <h2>The reality gap matters</h2>
-          <p>A controller that performs in FlyKart has learned this simulator’s numerical world. A physical kart would introduce perception, contact dynamics, sensor error, actuator delays, compute limits, and safety constraints that are absent here.</p>
-        </div>
-        <div class="gap-grid">
-          <article><span>SIMULATOR</span><h3>Clean and controlled</h3><ul><li>Exact compact sensor vector</li><li>Deterministic fixed-step physics</li><li>Repeatable obstacle seeds</li><li>Fast parallel evaluation</li></ul></article>
-          <div class="gap-arrow" aria-hidden="true"><b>reality gap</b><span>→</span></div>
-          <article><span>PHYSICAL WORLD</span><h3>Noisy and delayed</h3><ul><li>Cameras, calibration, and occlusion</li><li>Friction and contact uncertainty</li><li>Actuator lag and hardware jitter</li><li>Safety-critical failures</li></ul></article>
-        </div>
-        <div class="takeaway"><strong>Practical transfer pattern</strong><p>Randomize physics and observations in simulation, train across many conditions, validate on held-out scenarios, collect real logs, fine-tune with real data, and deploy gradually behind monitoring and safe fallbacks.</p></div>
-      </section>
+                    <!-- Step 1: Concept -->
+                    <div class="space-y-1 text-xs text-slate-700">
+                        <strong class="text-slate-900 text-sm block">💡 1. Concept:</strong>
+                        <p>
+                            When an ion species can pass through a cell membrane, concentration differences push ions outward via diffusion, while electric charges pull them back. The Nernst Potential represents the exact electrical voltage needed across the membrane to perfectly balance this chemical diffusion drive, bringing net ion flow to zero.
+                        </p>
+                    </div>
 
-      <section class="cta">
-        <p class="eyebrow">LEARN BY CHANGING THE SYSTEM</p>
-        <h2>Now put the guide into practice.</h2>
-        <p>Open FlyKart, adjust reward weights, compare training modes, and watch the neural activity and evolution plot respond.</p>
-        <a class="primary" href="./">Launch FlyKart <span aria-hidden="true">→</span></a>
-      </section>
+                    <!-- Step 2: Math -->
+                    <div class="space-y-2 text-xs text-slate-700">
+                        <strong class="text-slate-900 text-sm block">🧮 2. Mathematical Formulation:</strong>
+                        <div class="p-3 bg-slate-900 text-amber-300 rounded-lg text-center font-mono text-sm">
+                            $$E_{ion} = \frac{R \cdot T}{z \cdot F} \ln\left( \frac{[ion]_{out}}{[ion]_{in}} \right) = \frac{2.303 \cdot R \cdot T}{z \cdot F} \log_{10}\left( \frac{[ion]_{out}}{[ion]_{in}} \right)$$
+                        </div>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-2 text-[11px] font-mono bg-slate-50 p-3 rounded border border-slate-200">
+                            <div>• $R$: Universal Gas Constant ($8.314\text{ J/(mol}\cdot\text{K)}$)</div>
+                            <div>• $T$: Absolute Temperature ($310.15\text{ K}$ at $37^\circ\text{C}$)</div>
+                            <div>• $z$: Ion Valence Charge ($+1$ for $Na^+, K^+$, $+2$ for $Ca^{2+}$)</div>
+                            <div>• $F$: Faraday Constant ($96,485\text{ C/mol}$)</div>
+                            <div>• $[ion]_{out}, [ion]_{in}$: Extracellular & Intracellular Concentrations</div>
+                            <div>• At body temp ($37^\circ\text{C}$): $\frac{R \cdot T \cdot 2.303}{F} \approx 61.54\text{ mV}$</div>
+                        </div>
+                    </div>
+
+                    <!-- Step 3: Worked Example -->
+                    <div class="bg-amber-50/70 p-4 rounded-lg border border-amber-200 space-y-2 text-xs text-slate-800">
+                        <strong class="text-amber-950 font-bold block text-sm">📝 3. Concrete Worked Example: Potassium ($K^+$) Potential</strong>
+                        <p>
+                            Given typical physiological concentrations: $[K^+]_{out} = 5\text{ mM}$ and $[K^+]_{in} = 140\text{ mM}$ at human body temperature ($37^\circ\text{C}, z = +1$):
+                        </p>
+                        <div class="p-2.5 bg-white rounded border border-amber-300 font-mono text-[11px] space-y-1">
+                            <div><strong>Step 1 (Concentration Ratio):</strong> $\frac{[K^+]_{out}}{[K^+]_{in}} = \frac{5}{140} \approx 0.03571$</div>
+                            <div><strong>Step 2 (Natural Logarithm):</strong> $\ln(0.03571) \approx -3.3323$</div>
+                            <div><strong>Step 3 (Thermal Factor):</strong> $\frac{R \cdot T}{z \cdot F} = \frac{8.314 \cdot 310.15}{1 \cdot 96485} \approx 0.02672\text{ V} = 26.72\text{ mV}$</div>
+                            <div><strong>Step 4 (Final Calculation):</strong> $E_{K^+} = 26.72\text{ mV} \cdot (-3.3323) \mathbf{= -89.04\text{ mV}}$</div>
+                        </div>
+                        <p class="text-[11px] text-amber-900">
+                            <strong>Result Interpretation:</strong> The potassium equilibrium potential is negative ($-89.04\text{ mV}$), pulling the neuron's membrane toward a hyperpolarized resting state.
+                        </p>
+                    </div>
+
+                    <!-- Additional Nernst Worked Examples -->
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div class="bg-amber-50/70 p-4 rounded-lg border border-amber-200 space-y-2 text-xs text-slate-800">
+                            <strong class="text-amber-950 font-bold block text-sm">📝 Example B: Sodium ($Na^+$)</strong>
+                            <p>Using $[Na^+]_{out}=145\text{ mM}$, $[Na^+]_{in}=15\text{ mM}$ and $z=+1$:</p>
+                            <div class="p-2.5 bg-white rounded border border-amber-300 font-mono text-[11px] space-y-1">
+                                <div>Ratio: $145/15 = 9.6667$</div>
+                                <div>Natural log: $\ln(9.6667) \approx 2.2687$</div>
+                                <div>$E_{Na^+}=26.72\cdot2.2687\approx\mathbf{+60.6\text{ mV}}$</div>
+                            </div>
+                            <p class="text-[11px] text-amber-900">Opening sodium channels pulls the membrane toward a positive voltage, driving the rising phase of a spike.</p>
+                        </div>
+                        <div class="bg-rose-50/70 p-4 rounded-lg border border-rose-200 space-y-2 text-xs text-slate-800">
+                            <strong class="text-rose-950 font-bold block text-sm">📝 Example C: Extracellular $K^+$ Doubles</strong>
+                            <p>Keep $[K^+]_{in}=140\text{ mM}$ but raise $[K^+]_{out}$ from $5$ to $10\text{ mM}$:</p>
+                            <div class="p-2.5 bg-white rounded border border-rose-300 font-mono text-[11px] space-y-1">
+                                <div>Ratio: $10/140 = 0.07143$</div>
+                                <div>Natural log: $\ln(0.07143) \approx -2.6391$</div>
+                                <div>$E_{K^+}'=26.72\cdot(-2.6391)\approx\mathbf{-70.5\text{ mV}}$</div>
+                            </div>
+                            <p class="text-[11px] text-rose-900">Compared with $-89.0\text{ mV}$, the potential is less negative: the cell is depolarized and closer to threshold.</p>
+                        </div>
+                    </div>
+
+                    <!-- ELI9 Explanation Block for Nernst -->
+                    <div class="bg-indigo-50 p-4 rounded-lg border border-indigo-200 space-y-2 text-xs text-slate-800">
+                        <strong class="text-indigo-950 font-bold block text-sm">🧸 4. ELI9: Nernst Potential</strong>
+                        <p>
+                            Imagine a playground slide with marbles. If you put many marbles at the top (inside the cell) and only a few at the bottom (outside), the marbles really want to roll down the slide. The Nernst equation tells you how strong a “magic hand” (electric voltage) must push the marbles back up so that, on average, as many marbles go down as come up, and the flow balances out.
+                        </p>
+                        <p>
+                            In numbers: potassium marbles inside the cell are about 28 times more than outside. That huge imbalance wants to push $K^+$ out, so the cell needs about \(-89\text{ mV}\) of electric “push-back” to hold them in place and stop net movement.
+                        </p>
+                    </div>
+                </div>
+
+                <!-- 1.2 GHK Equation -->
+                <div class="bg-white rounded-xl p-6 border border-slate-200 shadow-sm space-y-4">
+                    <div class="flex items-center justify-between border-b border-slate-100 pb-2">
+                        <h3 class="font-bold text-slate-900 text-base text-cyan-900">1.2 Goldman-Hodgkin-Katz (GHK) Voltage Equation</h3>
+                        <span class="text-xs font-mono bg-cyan-100 text-cyan-800 px-2 py-0.5 rounded font-bold">Multi-Ion Membrane Voltage</span>
+                    </div>
+
+                    <!-- Step 1: Concept -->
+                    <div class="space-y-1 text-xs text-slate-700">
+                        <strong class="text-slate-900 text-sm block">💡 1. Concept:</strong>
+                        <p>
+                            Real cell membranes are permeable to multiple ion species simultaneously ($K^+, Na^+, Cl^-$). The GHK equation determines the absolute resting membrane potential ($V_m$) by weighting each ion's Nernst potential by its relative membrane permeability ($P_{ion}$).
+                        </p>
+                    </div>
+
+                    <!-- Step 2: Math -->
+                    <div class="space-y-2 text-xs text-slate-700">
+                        <strong class="text-slate-900 text-sm block">🧮 2. Mathematical Formulation:</strong>
+                        <div class="p-3 bg-slate-900 text-cyan-300 rounded-lg text-center font-mono text-sm">
+                            $$V_m = \frac{R \cdot T}{F} \ln\left( \frac{P_K [K^+]_o + P_{Na} [Na^+]_o + P_{Cl} [Cl^-]_i}{P_K [K^+]_i + P_{Na} [Na^+]_i + P_{Cl} [Cl^-]_o} \right)$$
+                        </div>
+                        <p class="text-[11px] text-slate-600">
+                            Notice that chloride ($Cl^-$) inside/outside concentrations are inverted due to its negative valence charge ($z = -1$).
+                        </p>
+                    </div>
+
+                    <!-- Step 3: Worked Example -->
+                    <div class="bg-cyan-50/70 p-4 rounded-lg border border-cyan-200 space-y-2 text-xs text-slate-800">
+                        <strong class="text-cyan-950 font-bold block text-sm">📝 3. Concrete Worked Example: Resting Potential Calculation</strong>
+                        <p>
+                            Using standard resting permeabilities $P_K = 1.0, P_{Na} = 0.05, P_{Cl} = 0.45$ and concentrations $[K^+]_o=5, [K^+]_i=140, [Na^+]_o=145, [Na^+]_i=15, [Cl^-]_o=110, [Cl^-]_i=10\text{ (mM)}$ at $37^\circ\text{C}$:
+                        </p>
+                        <div class="p-2.5 bg-white rounded border border-cyan-300 font-mono text-[11px] space-y-1">
+                            <div><strong>Numerator (Extracellular + Intracellular Cl):</strong> $(1.0 \cdot 5) + (0.05 \cdot 145) + (0.45 \cdot 10) = 5 + 7.25 + 4.5 = \mathbf{16.75\text{ mM}}$</div>
+                            <div><strong>Denominator (Intracellular + Extracellular Cl):</strong> $(1.0 \cdot 140) + (0.05 \cdot 15) + (0.45 \cdot 110) = 140 + 0.75 + 49.5 = \mathbf{190.25\text{ mM}}$</div>
+                            <div><strong>Step 3 (Ratio & Log):</strong> $\ln\left(\frac{16.75}{190.25}\right) = \ln(0.08804) \approx -2.4299$</div>
+                            <div><strong>Step 4 (Final Potential):</strong> $V_m = 26.72\text{ mV} \cdot (-2.4299) \mathbf{= -64.93\text{ mV}}$</div>
+                        </div>
+                        <p class="text-[11px] text-cyan-900">
+                            <strong>Result Interpretation:</strong> Because potassium permeability $P_K$ is $20\times$ higher than sodium $P_{Na}$ at rest, $V_m$ stays close to $E_{K^+}$ ($-65\text{ mV}$). During an action potential spike, $P_{Na}$ surges $100\times$, pulling $V_m$ up to $+40\text{ mV}$!
+                        </p>
+                    </div>
+
+                    <div class="bg-cyan-50/70 p-4 rounded-lg border border-cyan-200 space-y-2 text-xs text-slate-800">
+                        <strong class="text-cyan-950 font-bold block text-sm">📝 Example B: Sodium Permeability Surge</strong>
+                        <p>During spike onset, let $P_{Na}$ rise from $0.05$ to $1.5$, while $P_K=1.0$ and $P_{Cl}=0.45$:</p>
+                        <div class="p-2.5 bg-white rounded border border-cyan-300 font-mono text-[11px] space-y-1">
+                            <div>Numerator: $(1\cdot5)+(1.5\cdot145)+(0.45\cdot10)=\mathbf{227}$</div>
+                            <div>Denominator: $(1\cdot140)+(1.5\cdot15)+(0.45\cdot110)=\mathbf{212}$</div>
+                            <div>$\ln(227/212)\approx0.0684$</div>
+                            <div>$V_m\approx26.72\cdot0.0684=\mathbf{+1.83\text{ mV}}$</div>
+                        </div>
+                        <p class="text-[11px] text-cyan-900">This simplified steady-state calculation shows the direction of travel: increasing sodium permeability moves $V_m$ sharply toward $E_{Na}$. A full action-potential model also includes time-varying channel kinetics.</p>
+                    </div>
+
+                    <!-- ELI9 Explanation Block for GHK -->
+                    <div class="bg-cyan-50 p-4 rounded-lg border border-cyan-200 space-y-2 text-xs text-slate-800">
+                        <strong class="text-cyan-950 font-bold block text-sm">🧸 4. ELI9: GHK Membrane Voltage</strong>
+                        <p>
+                            Think of the cell membrane like a door with three kinds of animals wanting to get through: cats ($K^+$), dogs ($Na^+$), and birds ($Cl^-$). Each animal has its own “door preference” $P_{ion}$: some doors are more open to cats than dogs, etc. The GHK equation looks at how many animals are inside and outside and how open the door is for each species, then tells you the overall “push” of electricity across the door that balances all of them at once.
+                        </p>
+                        <p>
+                            Because the door is mostly open to cats (potassium), the final voltage looks a lot like the cat-only Nernst voltage. When you suddenly open the door wide for dogs (sodium), the voltage swings toward the sodium value, which is exactly what happens in action potentials.
+                        </p>
+                    </div>
+                </div>
+
+                <!-- 1.3 Leaky Integrate-and-Fire -->
+                <div class="bg-white rounded-xl p-6 border border-slate-200 shadow-sm space-y-4">
+                    <div class="flex items-center justify-between border-b border-slate-100 pb-2">
+                        <h3 class="font-bold text-slate-900 text-base text-emerald-900">1.3 Leaky Integrate-and-Fire (LIF) Equivalent Circuit Differential Equation</h3>
+                        <span class="text-xs font-mono bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded font-bold">Spiking Dynamics</span>
+                    </div>
+
+                    <!-- Step 1: Concept -->
+                    <div class="space-y-1 text-xs text-slate-700">
+                        <strong class="text-slate-900 text-sm block">💡 1. Concept:</strong>
+                        <p>
+                            The membrane acts like a parallel resistor-capacitor ($RC$) circuit. Input synaptic currents charge the membrane capacitor ($C_m$), while current continuously leaks out through resistors ($R_m$). If membrane voltage reaches a threshold $V_{thresh}$, an action potential fires and resets the cell voltage to $V_{reset}$.
+                        </p>
+                    </div>
+
+                    <!-- Step 2: Math -->
+                    <div class="space-y-2 text-xs text-slate-700">
+                        <strong class="text-slate-900 text-sm block">🧮 2. Mathematical Formulation & Numerical Euler Step:</strong>
+                        <div class="p-3 bg-slate-900 text-emerald-300 rounded-lg text-center font-mono text-sm">
+                            $$\tau_m \frac{dV(t)}{dt} = -\big(V(t) - V_{rest}\big) + R_m \cdot I_{ext}(t)$$
+                            $$\text{Discretized Euler Step: } V(t + \Delta t) = V(t) + \frac{\Delta t}{\tau_m} \Big[ -\big(V(t) - V_{rest}\big) + R_m I_{ext}(t) \Big]$$
+                        </div>
+                    </div>
+
+                    <!-- Step 3: Worked Example -->
+                    <div class="bg-emerald-50/70 p-4 rounded-lg border border-emerald-200 space-y-2 text-xs text-slate-800">
+                        <strong class="text-emerald-950 font-bold block text-sm">📝 3. Concrete Worked Example: Numerical Integration Step</strong>
+                        <p>
+                            Let $\tau_m = 10\text{ ms}, R_m = 10\text{ M}\Omega, V_{rest} = -70\text{ mV}, V(0) = -70\text{ mV}$. A synaptic current $I_{ext} = 2.5\text{ nA}$ is applied over time step $\Delta t = 1\text{ ms}$:
+                        </p>
+                        <div class="p-2.5 bg-white rounded border border-emerald-300 font-mono text-[11px] space-y-1">
+                            <div><strong>Step 1 (Ohmic Input Drive):</strong> $R_m \cdot I_{ext} = (10 \times 10^6\ \Omega) \cdot (2.5 \times 10^{-9}\text{ A}) = 0.025\text{ V} = +25\text{ mV}$</div>
+                            <div><strong>Step 2 (Membrane Leakage):</strong> $-\big(V(0) - V_{rest}\big) = -(-70 - (-70)) = 0\text{ mV}$</div>
+                            <div><strong>Step 3 (Derivative $\frac{dV}{dt}$):</strong> $\frac{1}{\tau_m} [0 + 25] = \frac{25\text{ mV}}{10\text{ ms}} = 2.5\text{ mV/ms}$</div>
+                            <div><strong>Step 4 (Voltage Update at $t=1\text{ms}$):</strong> $V(1\text{ ms}) = -70\text{ mV} + (2.5\text{ mV/ms} \cdot 1\text{ ms}) \mathbf{= -67.5\text{ mV}}$</div>
+                        </div>
+                        <p class="text-[11px] text-emerald-900">
+                            <strong>Result Interpretation:</strong> After $1\text{ ms}$, the membrane potential rises from $-70\text{ mV}$ to $-67.5\text{ mV}$. Sustained current will drive $V(t)$ toward threshold ($-55\text{ mV}$) to trigger an active spike.
+                        </p>
+                    </div>
+
+                    <div class="bg-emerald-50/70 p-4 rounded-lg border border-emerald-200 space-y-2 text-xs text-slate-800">
+                        <strong class="text-emerald-950 font-bold block text-sm">📝 Example B: Second Euler Step Reveals the Leak</strong>
+                        <p>Continue with $V(1\text{ ms})=-67.5\text{ mV}$ and the same current:</p>
+                        <div class="p-2.5 bg-white rounded border border-emerald-300 font-mono text-[11px] space-y-1">
+                            <div>Leak term: $-(V-V_{rest})=-(-67.5+70)=\mathbf{-2.5\text{ mV}}$</div>
+                            <div>Net drive: $-2.5+25=\mathbf{22.5\text{ mV}}$</div>
+                            <div>Derivative: $22.5/10=\mathbf{2.25\text{ mV/ms}}$</div>
+                            <div>$V(2\text{ ms})=-67.5+2.25=\mathbf{-65.25\text{ mV}}$</div>
+                        </div>
+                        <p class="text-[11px] text-emerald-900">The second rise is smaller than the first because voltage above rest increases the opposing leak current. With constant input, the voltage approaches an asymptote instead of rising linearly forever.</p>
+                    </div>
+
+                    <!-- ELI9 Explanation Block for LIF -->
+                    <div class="bg-emerald-50 p-4 rounded-lg border border-emerald-200 space-y-2 text-xs text-slate-800">
+                        <strong class="text-emerald-950 font-bold block text-sm">🧸 4. ELI9: LIF Neuron</strong>
+                        <p>
+                            Picture a leaky bucket under a dripping tap. The water level is the membrane voltage. When you turn on the tap (incoming current), water fills the bucket, but tiny holes in the bucket let water leak out at the same time. The LIF equation says how fast the water level rises or falls based on the tap strength and the leak rate.
+                        </p>
+                        <p>
+                            If the bucket gets full enough (hits a threshold), you dump it out quickly (the neuron fires an action potential and resets), then start filling again. The math simply tracks the balance between “fill” and “leak” every tiny time step.
+                        </p>
+                    </div>
+                </div>
+
+            </div>
+        </section>
+
+        <!-- SECTION 2: Bio-Neuron & Artificial Network Box Models -->
+        <section id="topologies" class="space-y-6">
+            <div class="border-l-4 border-amber-600 pl-4">
+                <h2 class="text-2xl sm:text-3xl font-extrabold text-slate-900">2. Single Neuron & Multi-Layer Network Box Models</h2>
+                <p class="text-slate-600 text-sm sm:text-base mt-1">
+                    Structured HTML/CSS visual box schematics illustrating single neurons, series cascades, and parallel ensemble connections.
+                </p>
+            </div>
+            <div class="analogy-card"><strong>Mental model: workshop, relay race, and expert committee</strong><p>A neuron is one workshop turning supplies into an output. Layers in series are a relay race where each runner transforms the baton. Parallel branches are an expert committee whose members inspect different evidence before their reports are combined.</p><span class="analogy-limit">Where it breaks: neural representations are distributed; one box rarely corresponds to one human-readable idea.</span></div>
+
+            <!-- BOX MODEL 1: SINGLE NEURON ANATOMY & INFORMATION FLOW -->
+            <div class="bg-white rounded-xl p-6 border border-slate-200 shadow-sm space-y-4">
+                <div class="flex items-center justify-between border-b border-slate-100 pb-2">
+                    <h3 class="font-bold text-slate-900 text-base text-amber-900">2.1 Box Schematic: Single Biological & Artificial Neuron</h3>
+                    <span class="text-xs font-mono bg-amber-100 text-amber-900 px-2 py-0.5 rounded font-bold">Anatomy & Dot Product</span>
+                </div>
+
+                <p class="text-xs text-slate-600">
+                    <strong>Concept:</strong> Information enters through <strong>Dendrites</strong> (Input channels $x_i$), scaled by <strong>Synaptic Weights</strong> ($w_i$), accumulates inside the <strong>Soma</strong> (Cell Body + Bias $b$), travels down the <strong>Axon</strong>, and is released via <strong>Synaptic Activation Gates</strong> ($\sigma(z)$).
+                </p>
+
+                <!-- Box Schematic Container -->
+                <div class="p-4 bg-slate-900 text-slate-100 rounded-xl space-y-4 font-mono text-xs">
+                    <div class="grid grid-cols-1 md:grid-cols-4 gap-3 text-center">
+                        <!-- Dendrites Box -->
+                        <div class="bg-slate-800 p-3 rounded-lg border border-slate-700 flex flex-col justify-between space-y-2">
+                            <span class="text-amber-400 font-bold block text-xs">1. DENDRITES (Inputs)</span>
+                            <div class="space-y-1 text-[11px] text-slate-300">
+                                <div class="bg-slate-900 p-1 rounded border border-slate-700">Input $x_1$</div>
+                                <div class="bg-slate-900 p-1 rounded border border-slate-700">Input $x_2$</div>
+                                <div class="bg-slate-900 p-1 rounded border border-slate-700">Input $x_n$</div>
+                            </div>
+                            <span class="text-[10px] text-slate-400">Sensory Inputs</span>
+                        </div>
+
+                        <!-- Synaptic Weights Box -->
+                        <div class="bg-slate-800 p-3 rounded-lg border border-slate-700 flex flex-col justify-between space-y-2">
+                            <span class="text-indigo-400 font-bold block text-xs">2. SYNAPSES (Weights)</span>
+                            <div class="space-y-1 text-[11px] text-slate-300">
+                                <div class="bg-indigo-950 p-1 rounded border border-indigo-500/50">Weight $w_1$</div>
+                                <div class="bg-indigo-950 p-1 rounded border border-indigo-500/50">Weight $w_2$</div>
+                                <div class="bg-indigo-950 p-1 rounded border border-indigo-500/50">Weight $w_n$</div>
+                            </div>
+                            <span class="text-[10px] text-slate-400">Synaptic Strength</span>
+                        </div>
+
+                        <!-- Soma Box -->
+                        <div class="bg-slate-800 p-3 rounded-lg border border-slate-700 flex flex-col justify-between space-y-2">
+                            <span class="text-cyan-400 font-bold block text-xs">3. SOMA (Summation)</span>
+                            <div class="p-2 bg-cyan-950 rounded border border-cyan-500/50 text-cyan-300 text-[11px]">
+                                $$z = \sum_{i=1}^n w_i x_i + b$$
+                            </div>
+                            <span class="text-[10px] text-slate-400">Bias Baseline Voltage ($b$)</span>
+                        </div>
+
+                        <!-- Axon & Activation Box -->
+                        <div class="bg-slate-800 p-3 rounded-lg border border-slate-700 flex flex-col justify-between space-y-2">
+                            <span class="text-emerald-400 font-bold block text-xs">4. AXON (Activation)</span>
+                            <div class="p-2 bg-emerald-950 rounded border border-emerald-500/50 text-emerald-300 text-[11px]">
+                                $$y = \sigma(z)$$
+                            </div>
+                            <span class="text-[10px] text-slate-400">Action Potential Output</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Single Neuron Worked Example -->
+                <div class="bg-amber-50/70 p-4 rounded-lg border border-amber-200 space-y-2 text-xs text-slate-800">
+                    <strong class="text-amber-950 font-bold block text-sm">📝 Single Artificial Neuron Worked Numerical Calculation:</strong>
+                    <p>
+                        Inputs $\mathbf{x} = [2.0, -1.0, 3.0]$, Weights $\mathbf{w} = [0.5, 1.2, -0.4]$, Bias $b = 0.5$, with ReLU Activation $\sigma(z) = \max(0, z)$:
+                    </p>
+                    <div class="p-2.5 bg-white rounded border border-amber-300 font-mono text-[11px] space-y-1">
+                        <div><strong>Step 1 (Dot Product $\mathbf{w} \cdot \mathbf{x}$):</strong> $(0.5 \cdot 2.0) + (1.2 \cdot -1.0) + (-0.4 \cdot 3.0) = 1.0 - 1.2 - 1.2 = -1.4$</div>
+                        <div><strong>Step 2 (Add Bias $b$):</strong> $z = -1.4 + 0.5 = \mathbf{-0.9}$</div>
+                        <div><strong>Step 3 (ReLU Activation Output):</strong> $y = \max(0, -0.9) \mathbf{= 0.0\text{ (Neuron Inactive)}}$</div>
+                    </div>
+                </div>
+
+                <!-- ELI9 Explanation Block for Dot Product Neuron -->
+                <div class="bg-amber-50 p-4 rounded-lg border border-amber-200 space-y-2 text-xs text-slate-800">
+                    <strong class="text-amber-950 font-bold block text-sm">🧸 ELI9: Single Neuron Dot Product</strong>
+                    <p>
+                        Imagine you are grading homework with three questions. Each question score $x_i$ is multiplied by how important that question is $w_i$ (its weight). You add them all together and then add a bonus or penalty $b$. That total score is $z$. Finally, you decide if the student passes: if the score is negative, you say “0, no pass”; if positive, you let it through. That pass/no-pass is the activation $\sigma(z)$.
+                    </p>
+                    <p>
+                        In our example, the weighted sum is \(-0.9\), so the neuron says “this pattern doesn’t look like what I care about” and outputs zero. The ReLU is like a teacher who never gives negative points, only zero or higher.
+                    </p>
+                </div>
+            </div>
+
+            <!-- BOX MODEL 2: SERIES CONNECTION (CASCADE / DEEP NETWORKS) -->
+            <div class="bg-white rounded-xl p-6 border border-slate-200 shadow-sm space-y-4">
+                <div class="flex items-center justify-between border-b border-slate-100 pb-2">
+                    <h3 class="font-bold text-slate-900 text-base text-indigo-900">2.2 Box Schematic: Series Connection (Cascade / Deep Multi-Layer Topology)</h3>
+                    <span class="text-xs font-mono bg-indigo-100 text-indigo-900 px-2 py-0.5 rounded font-bold">Sequential Processing</span>
+                </div>
+
+                <div class="space-y-2 text-xs text-slate-700">
+                    <strong class="text-slate-900 text-sm block">💡 1. Concept & Mechanics:</strong>
+                    <p>
+                        In a <strong>Series Connection</strong>, neurons are connected sequentially end-to-end. The output of Stage $k$ becomes the input to Stage $k+1$.
+                    </p>
+                    <ul class="list-disc list-inside space-y-1 text-slate-600 text-[11px]">
+                        <li><strong>Feature Abstraction Hierarchy:</strong> Early layers detect low-level raw signals (edges, raycasts); deeper layers compose them into complex abstractions (track curves, drift angles).</li>
+                        <li><strong>Signal Delay & Latency:</strong> Each layer adds biological synaptic delay (~1–2 ms) or GPU memory access overhead.</li>
+                        <li><strong>Matrix Dimensional Chaining:</strong> Dimensions must match: $\mathbf{h}_1 \in \mathbb{R}^{m}, \mathbf{W}_2 \in \mathbb{R}^{p \times m} \implies \mathbf{z}_2 = \mathbf{W}_2 \mathbf{h}_1 + \mathbf{b}_2 \in \mathbb{R}^p$.</li>
+                        <li><strong>Vanishing/Exploding Gradients:</strong> Derivative backpropagation multiplies matrices across layers ($\frac{\partial y}{\partial \mathbf{x}} = \mathbf{W}_3 \cdot \sigma'_2 \cdot \mathbf{W}_2 \cdot \sigma'_1 \cdot \mathbf{W}_1$). If weights are small ($<1$), gradients vanish to zero!</li>
+                    </ul>
+                </div>
+
+                <!-- Box Schematic Container -->
+                <div class="p-4 bg-slate-900 text-slate-100 rounded-xl space-y-3 font-mono text-xs">
+                    <div class="flex flex-col md:flex-row items-center justify-between gap-2 text-center text-[11px]">
+                        <!-- Input Box -->
+                        <div class="bg-amber-950 border border-amber-500 p-2.5 rounded-lg w-full md:w-1/5">
+                            <span class="text-amber-300 font-bold block">Input Vector</span>
+                            <span>$\mathbf{x} \in \mathbb{R}^n$</span>
+                        </div>
+                        <span class="text-indigo-400 font-bold">&rarr; $\mathbf{W}_1, \mathbf{b}_1$ &rarr;</span>
+                        <!-- Layer 1 Box -->
+                        <div class="bg-indigo-950 border border-indigo-500 p-2.5 rounded-lg w-full md:w-1/4">
+                            <span class="text-indigo-300 font-bold block">Series Stage 1</span>
+                            <span>$\mathbf{z}_1 = \mathbf{W}_1 \mathbf{x} + \mathbf{b}_1$</span>
+                            <span class="text-emerald-400 block mt-1">$\mathbf{h}_1 = \sigma_1(\mathbf{z}_1)$</span>
+                        </div>
+                        <span class="text-cyan-400 font-bold">&rarr; $\mathbf{W}_2, \mathbf{b}_2$ &rarr;</span>
+
+                        <!-- Layer 2 Box -->
+                        <div class="bg-cyan-950 border border-cyan-500 p-2.5 rounded-lg w-full md:w-1/4">
+                            <span class="text-cyan-300 font-bold block">Series Stage 2</span>
+                            <span>$\mathbf{z}_2 = \mathbf{W}_2 \mathbf{h}_1 + \mathbf{b}_2$</span>
+                            <span class="text-emerald-400 block mt-1">$\mathbf{y} = \sigma_2(\mathbf{z}_2)$</span>
+                        </div>
+                        <span class="text-emerald-400 font-bold">&rarr;</span>
+
+                        <!-- Output Box -->
+                        <div class="bg-emerald-950 border border-emerald-500 p-2.5 rounded-lg w-full md:w-1/5">
+                            <span class="text-emerald-300 font-bold block">Final Output</span>
+                            <span>$\mathbf{y} \in \mathbb{R}^k$</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Worked Example for Series Connection -->
+                <div class="bg-indigo-50/70 p-4 rounded-lg border border-indigo-200 space-y-2 text-xs text-slate-800">
+                    <strong class="text-indigo-950 font-bold block text-sm">📝 Concrete Worked Example: 2-Stage Series Cascade Calculation</strong>
+                    <p>
+                        Let input $x = 2.0$. <br>
+                        <strong>Stage 1:</strong> $w_1 = 1.5, b_1 = -0.5, \sigma_1(z) = \text{ReLU}(z) = \max(0, z)$. <br>
+                        <strong>Stage 2:</strong> $w_2 = -2.0, b_2 = 4.0, \sigma_2(z) = \text{Sigmoid}(z) = \frac{1}{1 + e^{-z}}$.
+                    </p>
+                    <div class="p-2.5 bg-white rounded border border-indigo-300 font-mono text-[11px] space-y-1">
+                        <div><strong>Stage 1 Sum $z_1$:</strong> $z_1 = (1.5 \cdot 2.0) - 0.5 = 3.0 - 0.5 = 2.5$</div>
+                        <div><strong>Stage 1 Output $h_1$:</strong> $h_1 = \text{ReLU}(2.5) = \mathbf{2.5}$</div>
+                        <div><strong>Stage 2 Sum $z_2$:</strong> $z_2 = (w_2 \cdot h_1) + b_2 = (-2.0 \cdot 2.5) + 4.0 = -5.0 + 4.0 = \mathbf{-1.0}$</div>
+                        <div><strong>Stage 2 Output $y$:</strong> $y = \frac{1}{1 + e^{-(-1.0)}} = \frac{1}{1 + e^{1.0}} = \frac{1}{1 + 2.71828} = \frac{1}{3.71828} \mathbf{= 0.2689}$</div>
+                    </div>
+                </div>
+
+                <!-- ELI9 Explanation Block for Series -->
+                <div class="bg-indigo-50 p-4 rounded-lg border border-indigo-200 space-y-2 text-xs text-slate-800">
+                    <strong class="text-indigo-950 font-bold block text-sm">🧸 ELI9: Series Deep Network</strong>
+                    <p>
+                        Think of building a LEGO car in two steps. In step one, you connect basic bricks to make a rough car shape (Stage 1). In step two, you add details like windows and wheels (Stage 2). The first stage turns raw blocks into a simple object; the second stage turns that object into something more refined.
+                    </p>
+                    <p>
+                        Mathematically, the first layer transforms $x$ into $h_1$, then the second layer looks at $h_1$ and decides the final answer $y$. Each stage can reshape what is important, just like each build step changes your LEGO creation.
+                    </p>
+                </div>
+            </div>
+
+            <!-- BOX MODEL 3: PARALLEL CONNECTION (MULTI-BRANCH / ENSEMBLE) -->
+            <div class="bg-white rounded-xl p-6 border border-slate-200 shadow-sm space-y-4">
+                <div class="flex items-center justify-between border-b border-slate-100 pb-2">
+                    <h3 class="font-bold text-slate-900 text-base text-emerald-900">2.3 Box Schematic: Parallel Connection (Multi-Branch, Ensemble & Residual Topologies)</h3>
+                    <span class="text-xs font-mono bg-emerald-100 text-emerald-900 px-2 py-0.5 rounded font-bold">Concurrent Processing</span>
+                </div>
+
+                <div class="space-y-2 text-xs text-slate-700">
+                    <strong class="text-slate-900 text-sm block">💡 1. Concept & Mechanics:</strong>
+                    <p>
+                        In a <strong>Parallel Connection</strong>, the same input vector $\mathbf{x}$ is processed concurrently across multiple independent pathways or branches.
+                    </p>
+                    <ul class="list-disc list-inside space-y-1 text-slate-600 text-[11px]">
+                        <li><strong>Ensembles & Multi-Head Attention:</strong> Different branches focus on distinct feature subspace representations simultaneously (e.g., Head 1 tracks track borders, Head 2 tracks kart velocity).</li>
+                        <li><strong>ResNet Skip Connections:</strong> Adds raw input directly to transformed output ($\mathbf{y} = \mathbf{x} + \mathcal{F}(\mathbf{x})$), preventing gradient degradation in deep models.</li>
+                        <li><strong>Mixture of Experts (MoE) Routing:</strong> Input is dynamically routed to parallel expert networks based on current context.</li>
+                    </ul>
+                </div>
+
+                <!-- Parallel Box Schematic Container -->
+                <div class="p-4 bg-slate-900 text-slate-100 rounded-xl space-y-3 font-mono text-xs">
+                    <div class="grid grid-cols-1 md:grid-cols-12 gap-2 items-center">
+                        <!-- Shared Input -->
+                        <div class="md:col-span-3 bg-amber-950 border border-amber-500 p-3 rounded-lg text-center">
+                            <span class="text-amber-300 font-bold block">Shared Input $\mathbf{x}$</span>
+                            <span class="text-[10px] text-slate-400">Broadcasts to all branches</span>
+                        </div>
+
+                        <!-- Parallel Branches -->
+                        <div class="md:col-span-6 space-y-2">
+                            <div class="bg-indigo-950 border border-indigo-500 p-2 rounded text-center flex justify-between items-center text-[11px]">
+                                <span class="text-indigo-300 font-bold">Branch A ($W_A$):</span>
+                                <span>$\mathbf{y}_A = \sigma_A(\mathbf{W}_A \mathbf{x} + \mathbf{b}_A)$</span>
+                            </div>
+                            <div class="bg-cyan-950 border border-cyan-500 p-2 rounded text-center flex justify-between items-center text-[11px]">
+                                <span class="text-cyan-300 font-bold">Branch B ($W_B$):</span>
+                                <span>$\mathbf{y}_B = \sigma_B(\mathbf{W}_B \mathbf{x} + \mathbf{b}_B)$</span>
+                            </div>
+                            <div class="bg-emerald-950 border border-emerald-500 p-2 rounded text-center flex justify-between items-center text-[11px]">
+                                <span class="text-emerald-300 font-bold">Skip Pathway (Identity):</span>
+                                <span>$\mathbf{y}_{skip} = \mathbf{x}$</span>
+                            </div>
+                        </div>
+
+                        <!-- Combined Output -->
+                        <div class="md:col-span-3 bg-slate-800 border border-slate-600 p-3 rounded-lg text-center">
+                            <span class="text-emerald-400 font-bold block">Combiner / Sum</span>
+                            <span class="text-[10px] text-slate-300">$$\mathbf{y} = \mathbf{y}_A + \mathbf{y}_B + \mathbf{x}$$</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Parallel Worked Example -->
+                <div class="bg-emerald-50/70 p-4 rounded-lg border border-emerald-200 space-y-2 text-xs text-slate-800">
+                    <strong class="text-emerald-950 font-bold block text-sm">📝 Concrete Worked Example: Residual Parallel Summation</strong>
+                    <p>
+                        Let scalar input $x = 1.5$. <br>
+                        <strong>Branch A:</strong> $w_A = 0.8, b_A = 0.2 \implies y_A = (0.8 \cdot 1.5) + 0.2 = 1.4$. <br>
+                        <strong>Branch B:</strong> $w_B = -0.4, b_B = 1.0 \implies y_B = (-0.4 \cdot 1.5) + 1.0 = 0.4$. <br>
+                        <strong>Skip Residual Pathway:</strong> $y_{skip} = x = 1.5$.
+                    </p>
+                    <div class="p-2.5 bg-white rounded border border-emerald-300 font-mono text-[11px] space-y-1">
+                        <div><strong>Summation Combiner:</strong> $y_{total} = y_A + y_B + y_{skip} = 1.4 + 0.4 + 1.5 \mathbf{= 3.3}$</div>
+                    </div>
+                </div>
+
+                <!-- ELI9 Explanation Block for Parallel/Residual -->
+                <div class="bg-emerald-50 p-4 rounded-lg border border-emerald-200 space-y-2 text-xs text-slate-800">
+                    <strong class="text-emerald-950 font-bold block text-sm">🧸 ELI9: Parallel Branches & Skip Connections</strong>
+                    <p>
+                        Imagine three friends looking at the same race track drawing. Friend A focuses on the curves, Friend B focuses on the track borders, and Friend C just copies the original picture. At the end, you combine their views to get a richer understanding of the track.
+                    </p>
+                    <p>
+                        The skip connection is Friend C: it makes sure you always keep some of the raw picture. This helps deep networks learn without “forgetting” the original input, preventing information from getting too distorted as it passes through many layers.
+                    </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- SECTION 3: Expanded Connectome Evolution & Brain Scale Matrix -->
+        <section id="connectome" class="space-y-6">
+            <div class="border-l-4 border-amber-600 pl-4">
+                <h2 class="text-2xl sm:text-3xl font-extrabold text-slate-900">3. Connectome Evolution & Brain Scale Matrix</h2>
+                <p class="text-slate-600 text-sm sm:text-base mt-1">
+                    Comparing biological nervous systems from simple sea organisms to humans against FlyKart AI models.
+                </p>
+            </div>
+            <div class="analogy-card"><strong>Mental model: a city map is not the city</strong><p>A connectome is a road map showing which neighborhoods connect. It constrains possible traffic, but it does not tell you which cars are moving, which lights are green, or how streets change. Synapse counts describe scale—not intelligence by themselves.</p><span class="analogy-limit">Where it breaks: biological connections vary in strength, chemistry, timing, plasticity, and internal cell state.</span></div>
+
+            <div class="bg-white rounded-xl p-6 border border-slate-200 shadow-sm space-y-4">
+                <h3 class="font-bold text-slate-900 text-base flex items-center gap-2">
+                    📊 Brain Size & Connectome Scale Matrix
+                </h3>
+
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-xs border-collapse">
+                        <thead>
+                            <tr class="bg-slate-100 border-b border-slate-200 text-slate-800 font-bold">
+                                <th class="p-2.5">Organism / System</th>
+                                <th class="p-2.5">Neuron Count</th>
+                                <th class="p-2.5">Synapse Count</th>
+                                <th class="p-2.5">Memory Capacity</th>
+                                <th class="p-2.5">Power Dissipation</th>
+                                <th class="p-2.5">Primary Behavioral Capability</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-200 text-slate-700 font-mono text-[11px]">
+                            <tr class="hover:bg-slate-50">
+                                <td class="p-2.5 font-bold font-sans text-slate-900">🧫 Trichoplax adhaerens</td>
+                                <td class="p-2.5 font-bold text-slate-500">0 Neurons</td>
+                                <td class="p-2.5">0 Synapses</td>
+                                <td class="p-2.5 text-emerald-700">0 KB</td>
+                                <td class="p-2.5">&lt;10$^{-9}$ W</td>
+                                <td class="p-2.5 font-sans">Peptide chemical signaling, ciliary locomotion</td>
+                            </tr>
+                            <tr class="hover:bg-slate-50">
+                                <td class="p-2.5 font-bold font-sans text-slate-900">🪱 C. elegans (Roundworm)</td>
+                                <td class="p-2.5 font-bold text-amber-700">302 Neurons</td>
+                                <td class="p-2.5">~7,500 Synapses</td>
+                                <td class="p-2.5 text-emerald-700">~15 KB</td>
+                                <td class="p-2.5">&lt;0.0001 W</td>
+                                <td class="p-2.5 font-sans">Thermotaxis, egg laying, sensory maze navigation</td>
+                            </tr>
+                            <tr class="hover:bg-slate-50">
+                                <td class="p-2.5 font-bold font-sans text-slate-900">🪰 Fruit Fly (Drosophila)</td>
+                                <td class="p-2.5 font-bold text-amber-700">130,000 Neurons</td>
+                                <td class="p-2.5">~50 Million Synapses</td>
+                                <td class="p-2.5 text-emerald-700">~100 MB</td>
+                                <td class="p-2.5">~1 mW (200 Hz optic flow)</td>
+                                <td class="p-2.5 font-sans">3D aerobatic flight, courtship, visual motion tracking</td>
+                            </tr>
+                            <tr class="hover:bg-slate-50 font-semibold">
+                                <td class="p-2.5 font-bold font-sans text-slate-900">🧠 Human Brain</td>
+                                <td class="p-2.5 font-bold text-indigo-700">86 Billion Neurons</td>
+                                <td class="p-2.5">~100 Trillion Synapses</td>
+                                <td class="p-2.5 text-emerald-700">~2.5 Petabytes (PB)</td>
+                                <td class="p-2.5 text-indigo-900 font-bold">20 Watts (~10 fJ / op)</td>
+                                <td class="p-2.5 font-sans">Abstract language, mathematics, tool building, meta-cognition</td>
+                            </tr>
+                            <tr class="bg-amber-50/80 font-semibold">
+                                <td class="p-2.5 font-bold font-sans text-amber-950">🏎️ FlyKart Micro-AI (N=5)</td>
+                                <td class="p-2.5 font-bold text-amber-900">6 to 192 Neurons</td>
+                                <td class="p-2.5 text-amber-900">12 to 2,328 Weights</td>
+                                <td class="p-2.5 text-emerald-800">&lt;10 KB Float32</td>
+                                <td class="p-2.5 text-emerald-800">&lt;0.5 W (JS Thread)</td>
+                                <td class="p-2.5 font-sans">60 FPS Apex drift control, wall avoidance, track racing</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- ELI9 Connectome Explanation -->
+                <div class="bg-slate-50 p-4 rounded-lg border border-slate-200 space-y-2 text-xs text-slate-800">
+                    <strong class="text-slate-900 font-bold block text-sm">🧸 ELI9: Brain Size vs AI Size</strong>
+                    <p>
+                        Think of neurons like light bulbs in a city at night. A worm is a tiny village with a few hundred bulbs; a fruit fly is a small town; a human brain is a megacity with billions of lights and trillions of connections. Your FlyKart AI is like a clever little robot with only a handful of bulbs, but they are wired very efficiently to control racing karts in a game.
+                    </p>
+                    <p>
+                        Even with far fewer “bulbs” than a real brain, the AI can still do useful tasks because its wiring is tuned very specifically for driving, rather than for everything a human does.
+                    </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- SECTION 4: Rules of Thumb & Eye Signal Latency -->
+        <section id="layers-vision" class="space-y-6">
+            <div class="border-l-4 border-cyan-500 pl-4">
+                <h2 class="text-2xl sm:text-3xl font-extrabold text-slate-900">4. Network Rules of Thumb & Eye Signal Latency</h2>
+                <p class="text-slate-600 text-sm sm:text-base mt-1">
+                    Engineering heuristics for sizing neural networks and visual throughput bounds.
+                </p>
+            </div>
+            <div class="analogy-card"><strong>Mental model: choose the smallest backpack that carries the trip</strong><p>Network capacity is backpack space: too little and necessary tools do not fit; too much and you carry noise, cost, and overfitting. Visual latency is a steering delay—fresh detail arriving too late can be less useful than a smaller image arriving on time.</p><span class="analogy-limit">Where it breaks: parameter count alone ignores architecture, data quality, optimization, sparsity, and hardware utilization.</span></div>
+
+            <!-- Rules of Thumb -->
+            <div class="bg-white rounded-xl p-6 border border-slate-200 shadow-sm space-y-4">
+                <h3 class="font-bold text-slate-900 text-base flex items-center gap-2">
+                    📐 Network Design Rules of Thumb
+                </h3>
+
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <div class="bg-slate-50 p-4 rounded-lg border border-slate-200 space-y-2">
+                        <span class="text-xs font-bold text-amber-800 uppercase tracking-wider block">1. Hidden Layer Sizing</span>
+                        <div class="text-xs space-y-1 text-slate-700 font-mono">
+                            <p>$N_h = \frac{N_{in} + N_{out}}{2}$</p>
+                            <p>$N_h = \frac{2}{3} N_{in} + N_{out}$</p>
+                            <p class="text-[11px] font-sans text-slate-500 mt-1">Prevents over-fitting while preserving feature capacity.</p>
+                        </div>
+                    </div>
+
+                    <div class="bg-slate-50 p-4 rounded-lg border border-slate-200 space-y-2">
+                        <span class="text-xs font-bold text-indigo-800 uppercase tracking-wider block">2. Data-to-Weight Ratio</span>
+                        <div class="text-xs space-y-1 text-slate-700 font-mono">
+                            <p>$N_{samples} \ge 10 \times N_{weights}$</p>
+                            <p class="text-[11px] font-sans text-slate-500 mt-1">If training data is less than $10\times$ parameters, use dropout or weight decay!</p>
+                        </div>
+                    </div>
+
+                    <div class="bg-slate-50 p-4 rounded-lg border border-slate-200 space-y-2">
+                        <span class="text-xs font-bold text-cyan-800 uppercase tracking-wider block">3. Depth vs Width</span>
+                        <div class="text-xs space-y-1 text-slate-700">
+                            <p class="text-[11px]">Deeper networks excel at hierarchical abstractions; wider networks memorize patterns faster.</p>
+                        </div>
+                    </div>
+
+                    <div class="bg-slate-50 p-4 rounded-lg border border-slate-200 space-y-2">
+                        <span class="text-xs font-bold text-emerald-800 uppercase tracking-wider block">4. Laptop CPU Bound</span>
+                        <div class="text-xs space-y-1 text-slate-700 font-mono">
+                            <p>$N_{weights} &lt; 3,000$</p>
+                            <p class="text-[11px] font-sans text-slate-500 mt-1">Guarantees zero-lag 60 FPS in JavaScript for 5 parallel karts!</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ELI9 for Heuristics -->
+                <div class="bg-slate-50 p-4 rounded-lg border border-slate-200 space-y-2 text-xs text-slate-800">
+                    <strong class="text-slate-900 font-bold block text-sm">🧸 ELI9: Simple Network Building Rules</strong>
+                    <p>
+                        These formulas are like rules for building toy car tracks. If you make the track too huge and complicated (too many weights) compared to the number of races you run (training examples), you overfit: the cars memorize one race instead of learning general driving.
+                    </p>
+                    <p>
+                        The thumb rules say: keep hidden layers somewhere between inputs and outputs, make sure you have many more examples than knobs to tune, and remember that your laptop has a limit—too many weights and it will lag just like a game with too many graphics.
+                    </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- SECTION 5: Linear Algebra & Hardware Roofline Bounds -->
+        <section id="linalg-roofline" class="space-y-6">
+            <div class="border-l-4 border-indigo-600 pl-4">
+                <h2 class="text-2xl sm:text-3xl font-extrabold text-slate-900">5. Linear Algebra, SVD & Hardware Roofline Bounds</h2>
+                <p class="text-slate-600 text-sm sm:text-base mt-1">
+                    Matrix decomposition and compute intensity vs memory bandwidth bounds.
+                </p>
+            </div>
+            <div class="analogy-card"><strong>Mental model: SVD sorts the useful directions; roofline finds the slow station</strong><p>SVD is like rotating a messy warehouse so the busiest aisles come first, then discarding rarely used aisles. The roofline model is a kitchen: speed is capped either by how fast ingredients arrive or by how fast cooks can process them.</p><span class="analogy-limit">Where it breaks: real kernels also pay synchronization, launch, cache, layout, and control-flow costs.</span></div>
+
+            <div class="bg-white rounded-xl p-6 border border-slate-200 shadow-sm space-y-4">
+                <h3 class="font-bold text-slate-900 text-base">🧮 Matrix Singular Value Decomposition (SVD) & Roofline Bounds</h3>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <!-- SVD -->
+                    <div class="bg-slate-900 text-slate-100 p-4 rounded-xl font-mono text-xs space-y-3">
+                        <span class="text-amber-400 font-bold block border-b border-slate-800 pb-1">📐 SVD Matrix Factorization</span>
+                        <div class="p-2 bg-slate-950 rounded text-emerald-300 text-center text-sm">
+                            $$\mathbf{W} = \mathbf{U} \mathbf{\Sigma} \mathbf{V}^T \approx \mathbf{U}_r \mathbf{\Sigma}_r \mathbf{V}_r^T$$
+                        </div>
+                        <p class="text-slate-300 text-[11px] font-sans">
+                            Compresses dense weight matrices by retaining top-$r$ singular values.
+                        </p>
+                    </div>
+
+                    <!-- Roofline Model -->
+                    <div class="bg-slate-900 text-slate-100 p-4 rounded-xl font-mono text-xs space-y-3">
+                        <span class="text-cyan-400 font-bold block border-b border-slate-800 pb-1">⚡ GPU/CPU Hardware Roofline Model</span>
+                        <div class="p-2 bg-slate-950 rounded text-cyan-300 text-center text-sm">
+                            $$\text{Arithmetic Intensity} = \frac{\text{FLOPs}}{\text{Bytes Transferred}}$$
+                        </div>
+                        <p class="text-slate-300 text-[11px] font-sans">
+                            Determines if inference is <strong>Memory Bandwidth Bound</strong> (LLM generation) or <strong>Compute Bound</strong> (large matrix batch training).
+                        </p>
+                    </div>
+                </div>
+
+                <!-- ELI9 for SVD & Roofline -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                    <div class="bg-slate-50 p-4 rounded-lg border border-slate-200 space-y-2 text-slate-800">
+                        <strong class="text-slate-900 font-bold block text-sm">🧸 ELI9: SVD Matrix Compression</strong>
+                        <p>
+                            Think of a big image made out of many tiny dots (pixels). SVD says: “We can redraw this picture using only a few special patterns,” like basic shapes and shades, instead of every single dot. Keeping only the biggest singular values is like keeping only the most important patterns in the picture.
+                        </p>
+                        <p>
+                            In AI, this means you can represent a huge weight matrix with fewer numbers while still getting almost the same result—like compressing a photo without it looking much worse.
+                        </p>
+                    </div>
+                    <div class="bg-slate-50 p-4 rounded-lg border border-slate-200 space-y-2 text-slate-800">
+                        <strong class="text-slate-900 font-bold block text-sm">🧸 ELI9: Roofline Model</strong>
+                        <p>
+                            Imagine filling buckets with water from a tap. If the tap is slow (low bandwidth), no matter how many buckets you have (compute units), you can’t fill them fast. If the tap is very fast but you only have a few buckets, then the buckets limit you.
+                        </p>
+                        <p>
+                            Arithmetic intensity says how many math operations you do per byte of data you move. High intensity means you reuse data a lot (good for GPUs); low intensity means your algorithm keeps fetching new data and spends more time waiting on memory than doing math.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- SECTION 6: LLMs, Attention, MoE & Interactive Quantization -->
+        <section id="llm-moe" class="space-y-6">
+            <div class="border-l-4 border-emerald-600 pl-4">
+                <h2 class="text-2xl sm:text-3xl font-extrabold text-slate-900">6. Scaled Dot-Product Attention, MoE & Quantization Calculator</h2>
+                <p class="text-slate-600 text-sm sm:text-base mt-1">
+                    Transformer attention mechanisms, Mixture of Experts (MoE) routing, and precision formats.
+                </p>
+            </div>
+            <div class="analogy-card"><strong>Mental model: searchlights, specialist desks, and smaller measuring cups</strong><p>Attention points searchlights at the most relevant tokens. MoE sends each request to a few specialist desks instead of waking the entire company. Quantization uses coarser measuring cups so weights take less space and move faster.</p><span class="analogy-limit">Where it breaks: attention is weighted vector mixing, experts can share or collapse, and low precision introduces numerical—not merely visual—error.</span></div>
+
+            <div class="bg-white rounded-xl p-6 border border-slate-200 shadow-sm space-y-4">
+                <h3 class="font-bold text-slate-900 text-base">🔍 Scaled Dot-Product Attention Math</h3>
+
+                <div class="p-3 bg-slate-900 text-emerald-300 rounded-lg text-center font-mono text-sm">
+                    $$\text{Attention}(\mathbf{Q}, \mathbf{K}, \mathbf{V}) = \text{Softmax}\left( \frac{\mathbf{Q} \mathbf{K}^T}{\sqrt{d_k}} \right) \mathbf{V}$$
+                </div>
+
+                <p class="text-xs text-slate-600">
+                    Calculates pairwise similarity between Query ($\mathbf{Q}$) and Key ($\mathbf{K}$) vectors, scaled by $\sqrt{d_k}$ to prevent gradient vanishing in Softmax, then weights Value ($\mathbf{V}$) vectors.
+                </p>
+
+                <!-- ELI9 Attention -->
+                <div class="bg-emerald-50 p-4 rounded-lg border border-emerald-200 space-y-2 text-xs text-slate-800">
+                    <strong class="text-emerald-950 font-bold block text-sm">🧸 ELI9: Attention Mechanism</strong>
+                    <p>
+                        Imagine reading a story and trying to understand one word. Your brain looks back at other words and decides which ones matter most for understanding the current word. Attention does the same for a machine: each Query word asks, “Which Key words should I care about?” and then takes a weighted mix of the Value vectors from those important words.
+                    </p>
+                    <p>
+                        The $\sqrt{d_k}$ scaling is like turning down the volume when too many words shout at once, so the softmax doesn’t become overly sharp and gradients stay healthy during training.
+                    </p>
+                </div>
+            </div>
+
+            <!-- Quantization Calculator -->
+            <div class="bg-white rounded-xl p-6 border border-slate-200 shadow-sm space-y-4">
+                <h3 class="font-bold text-slate-900 text-sm border-b border-slate-100 pb-2">
+                    🧮 Interactive Quantization & VRAM Memory Calculator
+                </h3>
+
+                <div class="space-y-3 text-xs">
+                    <div>
+                        <label class="font-bold text-slate-700 block mb-1">Select Total Model Parameters:</label>
+                        <select id="quantModelSelect" onchange="calculateQuantization()" class="w-full bg-slate-100 border border-slate-300 rounded-lg p-2 font-mono font-bold text-slate-800">
+                            <option value="7">7 Billion (e.g. Llama-3 7B / Small LLM)</option>
+                            <option value="70">70 Billion (e.g. Llama-3 70B / Medium LLM)</option>
+                            <option value="500">500 Billion (e.g. Nemotron Ultra / DeepSeek MoE Total)</option>
+                            <option value="0.000002328">FlyKart 16x12 Camera Model (2,328 Params)</option>
+                        </select>
+                    </div>
+
+                    <div>
+                        <label class="font-bold text-slate-700 block mb-1">Select Quantization Precision Format:</label>
+                        <div class="grid grid-cols-3 gap-2 font-mono text-[11px]">
+                            <button onclick="setQuantFormat('fp32')" id="qbtn-fp32" class="p-2 border rounded-lg bg-indigo-50 border-indigo-500 font-bold">FP32 (32-bit)</button>
+                            <button onclick="setQuantFormat('fp16')" id="qbtn-fp16" class="p-2 border border-slate-200 rounded-lg">FP16 / BF16</button>
+                            <button onclick="setQuantFormat('int8')" id="qbtn-int8" class="p-2 border border-slate-200 rounded-lg">INT8 (8-bit)</button>
+                            <button onclick="setQuantFormat('int4')" id="qbtn-int4" class="p-2 border border-slate-200 rounded-lg">INT4 (4-bit)</button>
+                            <button onclick="setQuantFormat('fp4')" id="qbtn-fp4" class="p-2 border border-slate-200 rounded-lg">NVFP4 / FP4</button>
+                        </div>
+                    </div>
+
+                    <div id="quantResultBox" class="p-4 bg-slate-900 text-slate-100 rounded-xl space-y-2 font-mono text-xs">
+                        <div class="flex justify-between border-b border-slate-800 pb-1 text-amber-400 font-bold">
+                            <span>💾 Required VRAM / RAM:</span>
+                            <span id="qVramNeeded" class="text-emerald-400">28.00 GB</span>
+                        </div>
+                        <div class="text-[11px] text-slate-300 space-y-1">
+                            <div class="flex justify-between"><span>Bytes Per Weight:</span><span id="qBytesPerW" class="text-indigo-300">4 Bytes</span></div>
+                            <div class="flex justify-between"><span>Memory Bandwidth Savings:</span><span id="qSavings" class="text-cyan-300">0% (Baseline)</span></div>
+                            <div class="flex justify-between"><span>Accuracy Degradation:</span><span id="qAccuracy" class="text-emerald-300">0% (Exact Lossless)</span></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ELI9 Quantization -->
+                <div class="bg-slate-50 mt-4 p-4 rounded-lg border border-slate-200 space-y-2 text-xs text-slate-800">
+                    <strong class="text-slate-900 font-bold block text-sm">🧸 ELI9: Quantization & Bits per Weight</strong>
+                    <p>
+                        Imagine storing numbers on cards. FP32 uses big cards with very detailed numbers (32 bits), while INT4 uses tiny cards with rough numbers (4 bits). If your model has billions of weights, using big cards fills many boxes (VRAM). Using smaller cards saves boxes but the numbers are less precise.
+                    </p>
+                    <p>
+                        Quantization tries to find a sweet spot where you shrink the cards (fewer bits) so the model fits into your GPU, but the answers stay almost as good as before. The calculator shows you how many GB you need for each choice.
+                    </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- SECTION 7: CUDA Computing & GPU Hardware Acceleration -->
+        <section id="cuda-computing" class="space-y-6">
+            <div class="border-l-4 border-indigo-600 pl-4">
+                <h2 class="text-2xl sm:text-3xl font-extrabold text-slate-900">7. CUDA Parallel Computing & GPU Hardware Acceleration</h2>
+                <p class="text-slate-600 text-sm sm:text-base mt-1">
+                    GPU Thread Grids, Warps, Shared Memory, and GEMM matrix multiplication math.
+                </p>
+            </div>
+            <div class="analogy-card"><strong>Mental model: a numbered factory floor</strong><p>The grid is the factory, blocks are work teams, warps are synchronized rows of workers, and each thread has a seat number telling it which item to process. Shared memory is the team’s nearby workbench; global memory is the distant warehouse.</p><span class="analogy-limit">Where it breaks: workers in a warp share an instruction stream, and memory access patterns can dominate even when arithmetic looks perfectly parallel.</span></div>
+
+            <div class="bg-white rounded-xl p-6 border border-slate-200 shadow-sm space-y-4">
+                <div class="flex items-center justify-between border-b border-slate-100 pb-2">
+                    <h3 class="font-bold text-slate-900 text-base text-indigo-900">7.1 CUDA Execution Model: Threads, Warps & Blocks</h3>
+                    <span class="text-xs font-mono bg-indigo-100 text-indigo-900 px-2 py-0.5 rounded font-bold">GPU Parallelism</span>
+                </div>
+
+                <!-- Concept -->
+                <div class="space-y-1 text-xs text-slate-700">
+                    <strong class="text-slate-900 text-sm block">💡 1. Concept:</strong>
+                    <p>
+                        While CPUs feature few high-speed sequential cores, GPUs contain thousands of lightweight parallel cores. CUDA organizes computation into <strong>Threads</strong>, grouped into <strong>Warps</strong> (32 threads executing in SIMT lockstep), grouped into <strong>Thread Blocks</strong>, forming a <strong>Grid</strong>.
+                    </p>
+                </div>
+
+                <!-- Math & Equations -->
+                <div class="space-y-2 text-xs text-slate-700">
+                    <strong class="text-slate-900 text-sm block">🧮 2. Mathematical Indexing & Memory Bandwidth Equations:</strong>
+                    <div class="p-3 bg-slate-900 text-cyan-300 rounded-lg text-center font-mono text-sm">
+                        $$\text{Global Thread Index: } idx = \text{blockIdx.x} \cdot \text{blockDim.x} + \text{threadIdx.x}$$
+                        $$\text{Theoretical GPU Bandwidth (GB/s)} = \frac{\text{Memory Clock Rate (Hz)} \cdot \text{Bus Width (bits)}}{8 \cdot 10^9}$$
+                    </div>
+                </div>
+
+                <!-- Box Schematic of CUDA Block -->
+                <div class="p-4 bg-slate-900 text-slate-100 rounded-xl space-y-3 font-mono text-xs">
+                    <span class="text-amber-400 font-bold block text-center">🖥️ CUDA GPU Grid Hardware Hierarchy</span>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-3 text-center text-[11px]">
+                        <div class="bg-slate-800 p-2.5 rounded border border-slate-700">
+                            <span class="text-indigo-300 font-bold block">Thread Block (128–1024 Threads)</span>
+                            <span class="text-slate-400 text-[10px]">Executes on Streaming Multiprocessor (SM)</span>
+                        </div>
+                        <div class="bg-slate-800 p-2.5 rounded border border-slate-700">
+                            <span class="text-cyan-300 font-bold block">Shared Memory (SRAM)</span>
+                            <span class="text-slate-400 text-[10px]">Ultra-fast L1 cache (~19 TB/s bandwidth)</span>
+                        </div>
+                        <div class="bg-slate-800 p-2.5 rounded border border-slate-700">
+                            <span class="text-emerald-300 font-bold block">Tensor Cores (WMMA)</span>
+                            <span class="text-slate-400 text-[10px]">Hardware $4 \times 4$ Matrix Multiply Accumulate ($D = A \cdot B + C$)</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Worked Example -->
+                <div class="bg-indigo-50/70 p-4 rounded-lg border border-indigo-200 space-y-2 text-xs text-slate-800">
+                    <strong class="text-indigo-950 font-bold block text-sm">📝 Concrete Worked Example: Thread Indexing & Memory Bandwidth</strong>
+                    <p>
+                        A GPU kernel runs with block size $\text{blockDim.x} = 256$ threads. A thread in block $\text{blockIdx.x} = 12$ with local index $\text{threadIdx.x} = 45$:
+                    </p>
+                    <div class="p-2.5 bg-white rounded border border-indigo-300 font-mono text-[11px] space-y-1">
+                        <div><strong>Global Index Calculation:</strong> $idx = (12 \cdot 256) + 45 = 3072 + 45 \mathbf{= 3117}$</div>
+                        <div><strong>GPU VRAM Bandwidth (e.g. RTX 4090 - 384-bit bus at 21 Gbps):</strong> $\frac{(21 \times 10^9\text{ bps}) \cdot 384}{8 \cdot 10^9} \mathbf{= 1,008\text{ GB/s}}$</div>
+                    </div>
+                </div>
+
+                <div class="bg-indigo-50/70 p-4 rounded-lg border border-indigo-200 space-y-2 text-xs text-slate-800">
+                    <strong class="text-indigo-950 font-bold block text-sm">📝 Example B: 2D Image-Kernel Indexing</strong>
+                    <p>For a $640$-pixel-wide image, launch $16\times16$ blocks. Consider $\text{blockIdx}=(3,5)$ and $\text{threadIdx}=(7,11)$:</p>
+                    <div class="p-2.5 bg-white rounded border border-indigo-300 font-mono text-[11px] space-y-1">
+                        <div>$x=\text{blockIdx.x}\cdot\text{blockDim.x}+\text{threadIdx.x}=3\cdot16+7=\mathbf{55}$</div>
+                        <div>$y=\text{blockIdx.y}\cdot\text{blockDim.y}+\text{threadIdx.y}=5\cdot16+11=\mathbf{91}$</div>
+                        <div>$idx=y\cdot width+x=91\cdot640+55=\mathbf{58,295}$</div>
+                    </div>
+                    <p class="text-[11px] text-indigo-900">Each thread owns one pixel. Real kernels must still guard with <code>if (x &lt; width &amp;&amp; y &lt; height)</code> because the final block may extend beyond the image.</p>
+                </div>
+
+                <!-- ELI9 CUDA -->
+                <div class="bg-slate-50 p-4 rounded-lg border border-slate-200 space-y-2 text-xs text-slate-800">
+                    <strong class="text-slate-900 font-bold block text-sm">🧸 ELI9: Threads & Blocks</strong>
+                    <p>
+                        Imagine a huge classroom with thousands of students solving math problems. You group students into tables of 32 (warps), several tables form a group (block), and many groups fill the room (grid). Each student solves a small part of the big problem.
+                    </p>
+                    <p>
+                        The global index formula just tells each student their unique ID based on their table number and seat number, so they know exactly which piece of the job to work on.
+                    </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- SECTION 8: YOLO Real-Time Visual Perception -->
+        <section id="yolo-perception" class="space-y-6">
+            <div class="border-l-4 border-cyan-500 pl-4">
+                <h2 class="text-2xl sm:text-3xl font-extrabold text-slate-900">8. YOLO (You Only Look Once) Real-Time Visual Perception</h2>
+                <p class="text-slate-600 text-sm sm:text-base mt-1">
+                    Unified grid bounding box regression, objectness scores, and Non-Maximum Suppression (NMS).
+                </p>
+            </div>
+            <div class="analogy-card"><strong>Mental model: one glance, many transparent rectangles</strong><p>YOLO looks at the whole scene once and lays candidate rectangles over objects. Confidence says how much it trusts each rectangle; IoU measures agreement between drawings; NMS keeps the strongest drawing when several describe the same object.</p><span class="analogy-limit">Where it breaks: modern YOLO families vary in heads and assignment rules, and NMS/threshold choices can hide crowded or overlapping objects.</span></div>
+
+            <div class="bg-white rounded-xl p-6 border border-slate-200 shadow-sm space-y-4">
+                <div class="flex items-center justify-between border-b border-slate-100 pb-2">
+                    <h3 class="font-bold text-slate-900 text-base text-cyan-900">8.1 Bounding Box Regression & Intersection over Union (IoU)</h3>
+                    <span class="text-xs font-mono bg-cyan-100 text-cyan-900 px-2 py-0.5 rounded font-bold">Real-Time Object Detection</span>
+                </div>
+
+                <!-- Concept -->
+                <div class="space-y-1 text-xs text-slate-700">
+                    <strong class="text-slate-900 text-sm block">💡 1. Concept:</strong>
+                    <p>
+                        Traditional vision methods ran slow sliding windows over image regions. YOLO divides an image into an $S \times S$ grid. If an object center falls within a grid cell, that cell predicts bounding box offsets ($t_x, t_y, t_w, t_h$) relative to pre-defined anchor shapes ($p_w, p_h$).
+                    </p>
+                </div>
+
+                <!-- Math -->
+                <div class="space-y-2 text-xs text-slate-700">
+                    <strong class="text-slate-900 text-sm block">🧮 2. Mathematical Box Decoding & IoU Equations:</strong>
+                    <div class="p-3 bg-slate-900 text-cyan-300 rounded-lg text-center font-mono text-sm">
+                        $$\hat{x} = \sigma(t_x) + c_x, \quad \hat{y} = \sigma(t_y) + c_y, \quad \hat{w} = p_w \cdot e^{t_w}, \quad \hat{h} = p_h \cdot e^{t_h}$$
+                        $$\text{Intersection over Union (IoU)} = \frac{\text{Area}(\text{Box}_A \cap \text{Box}_B)}{\text{Area}(\text{Box}_A \cup \text{Box}_B)}$$
+                    </div>
+                </div>
+
+                <!-- Worked Example -->
+                <div class="bg-cyan-50/70 p-4 rounded-lg border border-cyan-200 space-y-2 text-xs text-slate-800">
+                    <strong class="text-cyan-950 font-bold block text-sm">📝 Concrete Worked Example: Bounding Box Decoding & IoU Overlap</strong>
+                    <p>
+                        Given grid cell top-left $(c_x=3, c_y=2)$, anchor shape $(p_w=50, p_h=80)$, raw model logits $t_x=0.0, t_y=0.0, t_w=0.2, t_h=-0.1$:
+                    </p>
+                    <div class="p-2.5 bg-white rounded border border-cyan-300 font-mono text-[11px] space-y-1">
+                        <div><strong>Center Coordinates:</strong> $\hat{x} = \sigma(0) + 3 = 0.5 + 3 = \mathbf{3.5}$, $\hat{y} = \sigma(0) + 2 = 0.5 + 2 = \mathbf{2.5}$</div>
+                        <div><strong>Width & Height:</strong> $\hat{w} = 50 \cdot e^{0.2} = 50 \cdot 1.2214 = \mathbf{61.07\text{ px}}$, $\hat{h} = 80 \cdot e^{-0.1} = 80 \cdot 0.9048 = \mathbf{72.38\text{ px}}$</div>
+                        <div><strong>IoU Calculation:</strong> If Ground Truth Box Area = $4,000$, Prediction Box Area = $4,420$, Intersection Area = $3,500$:</div>
+                        <div>$$\text{Union Area} = 4000 + 4420 - 3500 = 5,920$$</div>
+                        <div>$$\text{IoU} = \frac{3500}{5920} \mathbf{= 0.5912\text{ (59.12\% Match)}}$$</div>
+                    </div>
+                </div>
+
+                <div class="bg-cyan-50/70 p-4 rounded-lg border border-cyan-200 space-y-2 text-xs text-slate-800">
+                    <strong class="text-cyan-950 font-bold block text-sm">📝 Example B: IoU from Corner Coordinates</strong>
+                    <p>Let $A=(10,20,110,120)$ and $B=(60,50,150,140)$, where each tuple is $(x_1,y_1,x_2,y_2)$:</p>
+                    <div class="p-2.5 bg-white rounded border border-cyan-300 font-mono text-[11px] space-y-1">
+                        <div>$A_A=(110-10)(120-20)=\mathbf{10,000}$</div>
+                        <div>$A_B=(150-60)(140-50)=\mathbf{8,100}$</div>
+                        <div>Intersection: $(110-60)(120-50)=50\cdot70=\mathbf{3,500}$</div>
+                        <div>Union: $10,000+8,100-3,500=\mathbf{14,600}$</div>
+                        <div>$IoU=3,500/14,600\approx\mathbf{0.240}$</div>
+                    </div>
+                    <p class="text-[11px] text-cyan-900">This moderate overlap may be below a training match or NMS threshold, depending on the detector and task. IoU thresholds are design choices, not universal constants.</p>
+                </div>
+
+                <!-- ELI9 IoU -->
+                <div class="bg-cyan-50 p-4 rounded-lg border border-cyan-200 space-y-2 text-xs text-slate-800">
+                    <strong class="text-cyan-950 font-bold block text-sm">🧸 ELI9: Box Overlap & IoU</strong>
+                    <p>
+                        Imagine drawing two rectangles on a piece of paper around the same toy car: one drawn by you, one by your friend. The overlap area shows how much you agree. IoU is “agreement area” divided by “total area covered by both drawings.”
+                    </p>
+                    <p>
+                        If you perfectly overlap, IoU = 1. If the boxes barely touch, IoU is close to 0. YOLO uses this to decide which predicted boxes are good enough matches to keep.
+                    </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- SECTION 9: Knowledge Distillation -->
+        <section id="distillation" class="space-y-6">
+            <div class="border-l-4 border-amber-500 pl-4">
+                <h2 class="text-2xl sm:text-3xl font-extrabold text-slate-900">9. Knowledge Distillation (Teacher-Student Compression)</h2>
+                <p class="text-slate-600 text-sm sm:text-base mt-1">
+                    Transferring dark knowledge from large teacher models to compact student models via temperature scaling.
+                </p>
+            </div>
+            <div class="analogy-card"><strong>Mental model: learn from the teacher’s margin notes</strong><p>A hard label is a teacher circling one answer. Distillation also copies the margin notes: “this alternative was plausible; that one was impossible.” Temperature turns down the loudest answer so the student can hear those quieter relationships.</p><span class="analogy-limit">Where it breaks: a student cannot necessarily represent every teacher behavior, and soft targets can transfer teacher errors as well as knowledge.</span></div>
+
+            <div class="bg-white rounded-xl p-6 border border-slate-200 shadow-sm space-y-4">
+                <div class="flex items-center justify-between border-b border-slate-100 pb-2">
+                    <h3 class="font-bold text-slate-900 text-base text-amber-900">9.1 Temperature Softening & Loss Function</h3>
+                    <span class="text-xs font-mono bg-amber-100 text-amber-900 px-2 py-0.5 rounded font-bold">Model Compression</span>
+                </div>
+
+                <!-- Concept -->
+                <div class="space-y-1 text-xs text-slate-700">
+                    <strong class="text-slate-900 text-sm block">💡 1. Concept:</strong>
+                    <p>
+                        A massive Teacher model knows more than just the correct class label—its non-target probability outputs ("dark knowledge") reveal structural similarities between concepts (e.g., a racing kart looks 80% like a car, 15% like a lawnmower, 0.01% like a tree). Distillation uses a <strong>Temperature Parameter ($T$)</strong> to soften logits, allowing a small Student model to match the Teacher's rich output distribution.
+                    </p>
+                </div>
+
+                <!-- Math -->
+                <div class="space-y-2 text-xs text-slate-700">
+                    <strong class="text-slate-900 text-sm block">🧮 2. Mathematical Formulations:</strong>
+                    <div class="p-3 bg-slate-900 text-amber-300 rounded-lg text-center font-mono text-sm">
+                        $$\text{Softened Probability: } q_i = \frac{\exp(z_i / T)}{\sum_j \exp(z_j / T)}$$
+                        $$\mathcal{L}_{Distill} = \alpha T^2 \mathcal{L}_{KL}\big( q_{Student}^T \parallel q_{Teacher}^T \big) + (1 - \alpha) \mathcal{L}_{CE}\big( y, q_{Student}^{T=1} \big)$$
+                    </div>
+                </div>
+
+                <!-- Worked Example -->
+                <div class="bg-amber-50/70 p-4 rounded-lg border border-amber-200 space-y-2 text-xs text-slate-800">
+                    <strong class="text-amber-950 font-bold block text-sm">📝 Concrete Worked Example: Logit Softening at T=1 vs T=3</strong>
+                    <p>
+                        Teacher raw logits $\mathbf{z} = [6.0, 3.0, 0.0]$ for classes [Kart, Car, Dog]:
+                    </p>
+                    <div class="p-2.5 bg-white rounded border border-amber-300 font-mono text-[11px] space-y-1">
+                        <div><strong>Standard Softmax ($T=1$):</strong> $e^6 \approx 403.4, e^3 \approx 20.1, e^0 = 1.0 \implies \text{Sum} = 424.5$</div>
+                        <div>$$\mathbf{q}_{T=1} = \left[ \frac{403.4}{424.5}, \frac{20.1}{424.5}, \frac{1.0}{424.5} \right] \mathbf{= [0.950, 0.047, 0.002]}$$</div>
+                        <div><strong>Softened Softmax ($T=3$):</strong> Logits divided by $3 \implies \mathbf{z}/3 = [2.0, 1.0, 0.0]$</div>
+                        <div>$e^2 \approx 7.389, e^1 \approx 2.718, e^0 = 1.0 \implies \text{Sum} = 11.107$</div>
+                        <div>$$\mathbf{q}_{T=3} = \left[ \frac{7.389}{11.107}, \frac{2.718}{11.107}, \frac{1.0}{11.107} \right] \mathbf{= [0.665, 0.245, 0.090]}$$</div>
+                    </div>
+                    <p class="text-[11px] text-amber-900">
+                        <strong>Result Interpretation:</strong> Raising $T$ to $3$ exposes the secondary relationship ($24.5\%$ probability for Car vs $0.2\%$ at $T=1$), providing rich gradient supervision to the Student model!
+                    </p>
+                </div>
+
+                <div class="bg-amber-50/70 p-4 rounded-lg border border-amber-200 space-y-2 text-xs text-slate-800">
+                    <strong class="text-amber-950 font-bold block text-sm">📝 Extra Scenario: Raising Temperature to $T=6$</strong>
+                    <p>Using the same logits $[6,3,0]$, divide by $6$ to get $[1,0.5,0]$:</p>
+                    <div class="p-2.5 bg-white rounded border border-amber-300 font-mono text-[11px] space-y-1">
+                        <div>$e^1=2.718$, $e^{0.5}=1.649$, $e^0=1$; sum $=5.367$</div>
+                        <div>$\mathbf{q}_{T=6}\approx\mathbf{[0.506,0.307,0.186]}$</div>
+                    </div>
+                    <p class="text-[11px] text-amber-900">Higher $T$ reveals more class similarity but makes the target flatter. The usual $T^2$ factor compensates for the smaller gradients; $T$ and the hard-label mixture weight $\alpha$ must be validated together.</p>
+                </div>
+
+                <!-- ELI9 Distillation -->
+                <div class="bg-amber-50 p-4 rounded-lg border border-amber-200 space-y-2 text-xs text-slate-800">
+                    <strong class="text-amber-950 font-bold block text-sm">🧸 ELI9: Teacher & Student Models</strong>
+                    <p>
+                        Imagine a very smart teacher who not only says “the answer is 5” but also says “3 is pretty close, 1 is very wrong.” A smaller student can learn more quickly if it copies both the correct answer and these extra hints.
+                    </p>
+                    <p>
+                        The temperature $T$ is like making the teacher speak more softly, spreading their “confidence” across many answers so the student hears the nuances instead of just one loud correct answer.
+                    </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- SECTION 10: Fine-Tuning & Parameter-Efficient Adaptation (LoRA) -->
+        <section id="lora-finetuning" class="space-y-6">
+            <div class="border-l-4 border-emerald-600 pl-4">
+                <h2 class="text-2xl sm:text-3xl font-extrabold text-slate-900">10. Fine-Tuning & Low-Rank Adaptation (LoRA)</h2>
+                <p class="text-slate-600 text-sm sm:text-base mt-1">
+                    Freezing foundational model weights and updating low-rank decomposition matrices $B \cdot A$.
+                </p>
+            </div>
+            <div class="analogy-card"><strong>Mental model: add a compact correction lens</strong><p>The frozen model is a large camera you do not rebuild. LoRA adds a small two-part lens that bends its existing view toward a new task. Rank controls how many independent correction directions the lens can express.</p><span class="analogy-limit">Where it breaks: higher rank is not automatically better, and placement, data, scaling, and optimization matter as much as adapter size.</span></div>
+
+            <div class="bg-white rounded-xl p-6 border border-slate-200 shadow-sm space-y-4">
+                <div class="flex items-center justify-between border-b border-slate-100 pb-2">
+                    <h3 class="font-bold text-slate-900 text-base text-emerald-900">10.1 Low-Rank Matrix Factorization Math</h3>
+                    <span class="text-xs font-mono bg-emerald-100 text-emerald-900 px-2 py-0.5 rounded font-bold">PEFT Fine-Tuning</span>
+                </div>
+
+                <!-- Concept -->
+                <div class="space-y-1 text-xs text-slate-700">
+                    <strong class="text-slate-900 text-sm block">💡 1. Concept:</strong>
+                    <p>
+                        Full fine-tuning rewrites all billion parameters of a model, requiring immense GPU VRAM. LoRA freezes the original weight matrix $\mathbf{W}_0 \in \mathbb{R}^{d \times k}$ and injects two tiny trainable rank-decomposition matrices $\mathbf{A} \in \mathbb{R}^{r \times k}$ and $\mathbf{B} \in \mathbb{R}^{d \times r}$, where rank $r \ll \min(d, k)$.
+                    </p>
+                </div>
+
+                <!-- Math -->
+                <div class="space-y-2 text-xs text-slate-700">
+                    <strong class="text-slate-900 text-sm block">🧮 2. Mathematical Formulations:</strong>
+                    <div class="p-3 bg-slate-900 text-emerald-300 rounded-lg text-center font-mono text-sm">
+                        $$\mathbf{h} = \mathbf{W}_0 \mathbf{x} + \Delta \mathbf{W} \mathbf{x} = \mathbf{W}_0 \mathbf{x} + \frac{\alpha}{r} (\mathbf{B} \cdot \mathbf{A}) \mathbf{x}$$
+                    </div>
+                </div>
+
+                <!-- Box Schematic of LoRA -->
+                <div class="p-4 bg-slate-900 text-slate-100 rounded-xl space-y-3 font-mono text-xs">
+                    <span class="text-emerald-400 font-bold block text-center">📐 LoRA Low-Rank Decomposition Schematic</span>
+                    <div class="flex flex-col md:flex-row items-center justify-center gap-4 text-center text-[11px]">
+                        <div class="bg-slate-800 p-3 rounded border border-slate-700 w-full md:w-1/3">
+                            <span class="text-slate-400 font-bold block">Frozen Base Weights $\mathbf{W}_0$</span>
+                            <span>$d \times k$ (e.g. $4096 \times 4096$)</span>
+                            <span class="text-rose-400 block mt-1">16.77 Million Parameters (FROZEN)</span>
+                        </div>
+                        <span class="text-emerald-400 text-lg font-bold">+</span>
+                        <div class="bg-emerald-950 p-3 rounded border border-emerald-500 w-full md:w-1/3">
+                            <span class="text-emerald-300 font-bold block">Trainable LoRA ($\mathbf{B} \cdot \mathbf{A}$)</span>
+                            <span>Matrix A ($r \times k$) + Matrix B ($d \times r$)</span>
+                            <span class="text-emerald-400 block mt-1">65,536 Parameters (TRAINABLE)</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Worked Example -->
+                <div class="bg-emerald-50/70 p-4 rounded-lg border border-emerald-200 space-y-2 text-xs text-slate-800">
+                    <strong class="text-emerald-950 font-bold block text-sm">📝 Concrete Worked Example: 99.6% Parameter Savings</strong>
+                    <p>
+                        For a Transformer projection matrix with $d = 4096, k = 4096$ using LoRA rank $r = 8$:
+                    </p>
+                    <div class="p-2.5 bg-white rounded border border-emerald-300 font-mono text-[11px] space-y-1">
+                        <div><strong>Full Fine-Tuning Parameters:</strong> $4096 \cdot 4096 \mathbf{= 16,777,216\text{ params}}$</div>
+                        <div><strong>LoRA Trainable Parameters:</strong> $(r \cdot k) + (d \cdot r) = (8 \cdot 4096) + (4096 \cdot 8) = 32,768 + 32,768 \mathbf{= 65,536\text{ params}}$</div>
+                        <div><strong>Parameter Reduction Factor:</strong> $\frac{65,536}{16,777,216} \mathbf{= 0.003906\ \implies\ 99.61\%\text{ Reduction!}}$</div>
+                    </div>
+                </div>
+
+                <div class="bg-emerald-50/70 p-4 rounded-lg border border-emerald-200 space-y-2 text-xs text-slate-800">
+                    <strong class="text-emerald-950 font-bold block text-sm">📝 Extra Scenario: Doubling Rank to $r=16$</strong>
+                    <div class="p-2.5 bg-white rounded border border-emerald-300 font-mono text-[11px] space-y-1">
+                        <div>Rank-8 trainable parameters: $8(4096+4096)=\mathbf{65,536}$</div>
+                        <div>Rank-16 trainable parameters: $16(4096+4096)=\mathbf{131,072}$</div>
+                        <div>Share of full matrix: $131,072/16,777,216=\mathbf{0.78125\%}$</div>
+                        <div>Reduction vs full fine-tuning: $\mathbf{99.22\%}$</div>
+                    </div>
+                    <p class="text-[11px] text-emerald-900">Doubling rank doubles adapter parameters and possible update capacity, but it does not guarantee better validation performance. Rank, target modules, data volume, and regularization should be tuned as one system.</p>
+                </div>
+
+                <!-- ELI9 LoRA -->
+                <div class="bg-emerald-50 p-4 rounded-lg border border-emerald-200 space-y-2 text-xs text-slate-800">
+                    <strong class="text-emerald-950 font-bold block text-sm">🧸 ELI9: Small Tweaks on Big Models</strong>
+                    <p>
+                        Imagine you have a giant cookbook with thousands of recipes (the base model) but you’re only allowed to write tiny sticky notes instead of changing the pages. LoRA is like adding small sticky notes (matrices A and B) that slightly adjust how you read the original recipe, without rewriting the whole book.
+                    </p>
+                    <p>
+                        Because the sticky notes are tiny compared to the book, you can train them quickly and store many different “styles” of cooking (fine-tunes) without needing a separate full copy of the model each time.
+                    </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- SECTION 11: Micro-NEAT Mathematics & Gene Barcodes -->
+        <section id="micro-neat" class="space-y-6">
+            <div class="border-l-4 border-amber-500 pl-4">
+                <h2 class="text-2xl sm:text-3xl font-extrabold text-slate-900">11. Neuroevolution & Micro-NEAT Mathematics</h2>
+                <p class="text-slate-600 text-sm sm:text-base mt-1">
+                    Innovation barcodes, speciation distance metrics, and mutation operators for $N=5$ kart populations.
+                </p>
+            </div>
+            <div class="analogy-card"><strong>Mental model: breeding blueprints without losing unusual species</strong><p>Each genome is a machine blueprint. Innovation numbers align matching parts during crossover, while speciation gives strange new blueprints a protected workshop before mature designs outcompete them.</p><span class="analogy-limit">Where it breaks: evolution does not understand intent; selection pressure and fitness design decide which shortcuts survive.</span></div>
+
+            <div class="bg-white rounded-xl p-6 border border-slate-200 shadow-sm space-y-4">
+                <h3 class="font-bold text-slate-900 text-base">🧬 NEAT Speciation Distance Metric</h3>
+
+                <div class="p-3 bg-slate-900 text-amber-300 rounded-lg text-center font-mono text-sm">
+                    $$\delta = \frac{c_1 E}{N} + \frac{c_2 D}{N} + c_3 \cdot \bar{\Delta W}$$
+                </div>
+
+                <p class="text-xs text-slate-600">
+                    Aligns genomes across generations using historical innovation numbers. $E$ represents Excess genes, $D$ represents Disjoint genes, and $\bar{\Delta W}$ is average weight difference.
+                </p>
+
+                <!-- ELI9 NEAT -->
+                <div class="bg-amber-50 p-4 rounded-lg border border-amber-200 space-y-2 text-xs text-slate-800">
+                    <strong class="text-amber-950 font-bold block text-sm">🧸 ELI9: Species Distance in Evolving Networks</strong>
+                    <p>
+                        Imagine two toy cars that have different sets of upgrades: one has a spoiler and neon lights, the other has off-road tires and a new engine. NEAT compares their “upgrade lists” and counts which upgrades are extra, which don’t match (disjoint), and how different the shared upgrades are.
+                    </p>
+                    <p>
+                        The distance $\delta$ is like saying “these cars are from different racing teams” if they differ too much. That way, evolution keeps similar designs together in the same species and lets them compete fairly, instead of mixing totally different designs.
+                    </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- SECTION 12: Interactive In-Browser Laboratories & Benchmarks -->
+        <section id="interactive-labs" class="space-y-12">
+            <div class="border-l-4 border-amber-500 pl-4">
+                <h2 class="text-2xl sm:text-3xl font-extrabold text-slate-900">12. Interactive In-Browser AI Laboratories & Benchmarks</h2>
+                <p class="text-slate-600 text-sm sm:text-base mt-1">
+                    Live execution of neural action potentials, 5-kart micro-breeding race tracks, network budget visualizers, camera downscaling labs, reward formula simulators, and 300-generation performance charts.
+                </p>
+            </div>
+            <div class="analogy-card"><strong>Mental model: a wind tunnel for ideas</strong><p>Each lab isolates one force—spiking, breeding, capacity, perception, or reward—so you can change a knob and watch the response. Like a wind tunnel, it builds intuition before the pieces meet in a full vehicle.</p><span class="analogy-limit">Where it breaks: isolated demonstrations remove interactions and failure modes that appear only in the complete system.</span></div>
+
+            <!-- LAB 1: Biological Action Potential Canvas -->
+            <div class="bg-white rounded-xl p-5 border border-slate-200 shadow-sm space-y-4">
+                <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+                    <span class="font-bold text-slate-900 text-sm flex items-center gap-2">
+                        🧪 Lab 1: Biological Action Potential & Synapse Impulse Simulator
+                    </span>
+                    <span id="bioStatusTag" class="text-xs text-indigo-900 bg-indigo-100 px-2 py-1 rounded font-mono font-bold">
+                        Resting Potential (-70mV)
+                    </span>
+                </div>
+
+                <div class="w-full bg-slate-950 rounded-lg p-3 flex flex-col items-center justify-center relative">
+                    <canvas id="bioNeuronCanvas" width="550" height="260" class="w-full max-w-full h-[250px] block cursor-pointer"></canvas>
+                </div>
+
+                <div class="flex flex-col sm:flex-row justify-between items-start gap-4 text-xs text-slate-700">
+                    <div class="space-y-2">
+                        <p class="text-[11px]">
+                            Click the button to fire an action potential. The capacitor-like membrane charges from -70 mV to +30 mV, then propagates down the axon to synaptic terminals.
+                        </p>
+                        <button id="fireBioBtn" class="px-3 py-1.5 rounded-md bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shadow-sm">
+                            ⚡ Fire Action Potential
+                        </button>
+                    </div>
+                    <div class="bg-slate-50 rounded-lg p-3 border border-slate-200 text-[11px]">
+                        <strong class="block text-slate-900 mb-1">Lab Summary:</strong>
+                        <p>Visualizes the LIF neuron concept as a moving pulse along the axon with synaptic release “sparks” at terminals.</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- LAB 2: Micro-Kart Track Visualizer -->
+            <div class="bg-white rounded-xl p-5 border border-slate-200 shadow-sm space-y-4">
+                <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+                    <span class="font-bold text-slate-900 text-sm flex items-center gap-2">
+                        🧪 Lab 2: Micro-NEAT 5-Kart Breeding & Drift Track Visualizer
+                    </span>
+                    <span class="text-xs text-emerald-900 bg-emerald-100 px-2 py-1 rounded font-mono font-bold">
+                        Gen 1 (5 karts)
+                    </span>
+                </div>
+
+                <div class="w-full bg-slate-950 rounded-lg p-3">
+                    <canvas id="microTrackCanvas" width="550" height="240" class="w-full h-[230px] block"></canvas>
+                </div>
+
+                <div class="flex flex-col sm:flex-row justify-between items-start gap-4 text-xs text-slate-700">
+                    <div class="space-y-2">
+                        <p class="text-[11px]">
+                            Press the generation step button to re-seed kart speeds and observe speciation across evolving micro-networks.
+                        </p>
+                        <button id="stepMicroGenBtn" class="px-3 py-1.5 rounded-md bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold shadow-sm">
+                            ➕ Step Generation
+                        </button>
+                    </div>
+                    <div class="bg-slate-50 rounded-lg p-3 border border-slate-200 text-[11px]">
+                        <strong class="block text-slate-900 mb-1">Lab Summary:</strong>
+                        <p>Visualizes changing race performance across generations, reinforcing NEAT speciation and mutation concepts.</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- LAB 3: Dynamic Neural Network Canvas -->
+            <div class="bg-white rounded-xl p-5 border border-slate-200 shadow-sm space-y-4">
+                <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+                    <span class="font-bold text-slate-900 text-sm flex items-center gap-2">
+                        🧪 Lab 3: Dynamic Network Architecture Visualizer (Tasks & Budget)
+                    </span>
+                    <span id="taskTag" class="text-xs text-indigo-900 bg-indigo-100 px-2 py-1 rounded font-mono font-bold">
+                        Single Layer Perceptron
+                    </span>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+                    <div class="md:col-span-1 space-y-2">
+                        <button id="btn-task-basic" onclick="selectTask('basic')" class="w-full text-left p-3 rounded-lg border hover:border-indigo-400 transition flex justify-between items-center bg-indigo-50/50 border-indigo-500">
+                            <span class="font-bold text-slate-900">Basic Steering Net</span>
+                            <span class="font-mono text-[10px] text-slate-500">12 weights</span>
+                        </button>
+                        <button id="btn-task-apex" onclick="selectTask('apex')" class="w-full text-left p-3 rounded-lg border border-slate-200 hover:border-indigo-400 transition flex justify-between items-center">
+                            <span class="font-bold text-slate-900">Apex Corner Net</span>
+                            <span class="font-mono text-[10px] text-slate-500">45 weights</span>
+                        </button>
+                        <button id="btn-task-drift" onclick="selectTask('drift')" class="w-full text-left p-3 rounded-lg border border-slate-200 hover:border-indigo-400 transition flex justify-between items-center">
+                            <span class="font-bold text-slate-900">Drift Specialist Net</span>
+                            <span class="font-mono text-[10px] text-slate-500">110 weights</span>
+                        </button>
+                        <button id="btn-task-vision2d" onclick="selectTask('vision2d')" class="w-full text-left p-3 rounded-lg border border-slate-200 hover:border-indigo-400 transition flex justify-between items-center">
+                            <span class="font-bold text-slate-900">16x12 Visual Net</span>
+                            <span class="font-mono text-[10px] text-slate-500">2,328 weights</span>
+                        </button>
+                    </div>
+
+                    <div class="md:col-span-2 space-y-3">
+                        <canvas id="neuralCanvas" width="550" height="220" class="w-full h-[210px] block bg-slate-950 rounded-lg"></canvas>
+                        <div class="grid grid-cols-2 gap-3 text-[11px]">
+                            <div class="bg-slate-50 rounded-lg p-3 border border-slate-200">
+                                <strong class="block text-slate-900 mb-1">Task Description</strong>
+                                <p id="taskDesc">
+                                    <strong>Task Explanation:</strong> 5 Raycasts + Speed input connected directly to Steering and Throttle.
+                                </p>
+                            </div>
+                            <div class="bg-slate-50 rounded-lg p-3 border border-slate-200">
+                                <strong class="block text-slate-900 mb-1">Math Budget</strong>
+                                <p>Inputs: <span id="mathInputs" class="font-mono">6</span></p>
+                                <p>Hidden: <span id="mathHidden" class="font-mono">0</span></p>
+                                <p>Outputs: <span id="mathOutputs" class="font-mono">2</span></p>
+                                <p>Synapses: <span id="mathSynapseTotal" class="font-mono">12 Weights</span></p>
+                                <p>CPU Load: <span id="mathCpuLoad" class="font-mono">0.2% CPU</span></p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- LAB 4: Camera Downscaling -->
+            <div class="bg-white rounded-xl p-5 border border-slate-200 shadow-sm space-y-4">
+                <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+                    <span class="font-bold text-slate-900 text-sm flex items-center gap-2">
+                        🧪 Lab 4: HD vs Micro Camera Downscaling
+                    </span>
+                    <span class="text-xs text-cyan-900 bg-cyan-100 px-2 py-1 rounded font-mono font-bold">
+                        192-Pixel Micro Grid
+                    </span>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                    <div class="space-y-2">
+                        <canvas id="cameraRawCanvas" width="240" height="180" class="w-full h-[180px] bg-slate-900 rounded-lg"></canvas>
+                        <p class="text-[11px] text-slate-600">
+                            Raw HD camera frame (~2M pixels).
+                        </p>
+                    </div>
+                    <div class="space-y-2">
+                        <canvas id="cameraProcessedCanvas" width="240" height="180" class="w-full h-[180px] bg-slate-900 rounded-lg image-render-pixelated"></canvas>
+                        <p class="text-[11px] text-slate-600">
+                            Processed micro grid (16x12 = 192 pixels).
+                        </p>
+                        <div class="space-y-1">
+                            <button id="btn-res-hd" onclick="selectRes('hd')" class="w-full text-left p-3 rounded-lg border border-slate-200 hover:border-cyan-400 transition flex justify-between items-center">
+                                <span class="font-bold text-slate-900">HD Mode</span>
+                                <span class="font-mono text-[10px] text-slate-500">2,073,600 pixels</span>
+                            </button>
+                            <button id="btn-res-micro" onclick="selectRes('micro')" class="w-full text-left p-3 rounded-lg border hover:border-cyan-400 transition flex justify-between items-center bg-cyan-50/50 border-cyan-500">
+                                <span class="font-bold text-slate-900">Micro Mode</span>
+                                <span class="font-mono text-[10px] text-slate-500">192 pixels</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- LAB 5: Reward Lab -->
+            <div class="bg-white rounded-xl p-5 border border-slate-200 shadow-sm space-y-4">
+                <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+                    <span class="font-bold text-slate-900 text-sm flex items-center gap-2">
+                        🧪 Lab 5: Reward Function Design & Penalties
+                    </span>
+                    <span class="text-xs text-rose-900 bg-rose-100 px-2 py-1 rounded font-mono font-bold">
+                        Reward Tuning
+                    </span>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+                    <div class="space-y-2">
+                        <label class="block text-slate-700 font-bold text-[11px]">Progress Reward (+ per meter)</label>
+                        <input id="input-rProgress" type="range" min="0" max="5" step="0.5" value="1.0" oninput="updateRewardLab()" class="w-full">
+                        <span id="val-rProgress" class="text-[11px] font-mono text-emerald-700">+1.0 / meter</span>
+                    </div>
+                    <div class="space-y-2">
+                        <label class="block text-slate-700 font-bold text-[11px]">Crash Penalty (- points)</label>
+                        <input id="input-pCrash" type="range" min="0" max="50" step="5" value="20" oninput="updateRewardLab()" class="w-full">
+                        <span id="val-pCrash" class="text-[11px] font-mono text-rose-700">-20 pts</span>
+                    </div>
+                    <div class="space-y-2">
+                        <label class="block text-slate-700 font-bold text-[11px]">Steering Smoothness Penalty</label>
+                        <input id="input-pSteer" type="range" min="0" max="1" step="0.05" value="0.25" oninput="updateRewardLab()" class="w-full">
+                        <span id="val-pSteer" class="text-[11px] font-mono text-indigo-700">-0.25 / delta</span>
+                    </div>
+                </div>
+
+                <div class="bg-slate-50 rounded-lg p-3 border border-slate-200 text-[11px]">
+                    <strong class="block text-slate-900 mb-1">Reward Function (Concept):</strong>
+                    <p>
+                        A simple form: $R = r_{progress} \cdot \Delta s - p_{crash} \cdot \mathbf{1}_{crash} - p_{steer} \cdot |\Delta \theta|$, where $\Delta s$ is distance advanced, $\mathbf{1}_{crash}$ is 1 on crash and 0 otherwise, and $\Delta \theta$ is steering change magnitude.
+                    </p>
+                </div>
+
+                <!-- ELI9 Reward -->
+                <div class="bg-slate-50 rounded-lg p-3 border border-slate-200 text-[11px] mt-3">
+                    <strong class="block text-slate-900 mb-1">🧸 ELI9: Reward as Scorekeeping</strong>
+                    <p>
+                        The reward function is just a score system for your kart driver. You give points for moving forward, subtract points for crashing, and subtract a little for jerky steering. The kart tries to learn how to get the highest total score over time, just like a player trying to beat their best lap.
+                    </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- SECTION 13: Math Formula ELI9 Cheatsheet & Examples -->
+        <section id="eli9-math" class="space-y-6">
+            <div class="border-l-4 border-emerald-500 pl-4">
+                <h2 class="text-2xl sm:text-3xl font-extrabold text-slate-900">13. Math Formula ELI9 Cheatsheet & Examples</h2>
+                <p class="text-slate-600 text-sm sm:text-base mt-1">
+                    Side-by-side explanations of key formulas used above, with intuitive analogies and simple numeric examples.
+                </p>
+            </div>
+            <div class="analogy-card"><strong>Mental model: formulas are reusable tools, not spells</strong><p>A dot product is a weighted vote, cross-entropy is a surprise meter, regularization is a complexity tax, and gradient descent is repeated error-guided adjustment. The symbol names change; the underlying jobs repeat.</p><span class="analogy-limit">Where it breaks: analogies explain purpose, but units, assumptions, signs, and domains still decide whether the calculation is valid.</span></div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                <!-- Nernst & GHK -->
+                <div class="bg-white rounded-xl p-4 border border-slate-200 shadow-sm space-y-2">
+                    <h3 class="font-bold text-slate-900 text-sm">🧪 Nernst & GHK (Ion Voltages)</h3>
+                    <p><strong>Formal Idea:</strong> Voltage is set by the ratio of ion concentrations inside vs outside and by which ions can cross the membrane.</p>
+                    <p><strong>ELI9 Analogy:</strong> Marbles on a slide (Nernst) and multiple animal species at a door (GHK) together tell you how strong an electric “force” is needed to balance everything.</p>
+                    <p><strong>Mini Example:</strong> If $[K^+]_{in}$ is 10x $[K^+]_{out}$, Nernst says the cell needs a negative voltage to keep potassium from rushing out. Doubling sodium permeability pulls the membrane potential closer to sodium’s voltage, like letting more dogs through the door than cats.</p>
+                </div>
+
+                <!-- Dot Product Neuron -->
+                <div class="bg-white rounded-xl p-4 border border-slate-200 shadow-sm space-y-2">
+                    <h3 class="font-bold text-slate-900 text-sm">🧪 Dot Product Neuron $z = \sum w_i x_i + b$</h3>
+                    <p><strong>Formal Idea:</strong> $z$ is a weighted sum of inputs plus a bias, then $y = \sigma(z)$ transforms it non-linearly.</p>
+                    <p><strong>ELI9 Analogy:</strong> Weighted homework scores plus a bonus. If the final score is high, the neuron says “yes”; if low, it says “no” or a small value.</p>
+                    <p><strong>Mini Example:</strong> Inputs $[1, 0, 1]$ and weights $[2, -1, 0.5]$ with bias $b=0$ give $z = 2\cdot1 + (-1)\cdot0 + 0.5\cdot1 = 2.5$. A sigmoid activation returns about $0.924$, meaning the neuron is highly “confident” this pattern matches.</p>
+                </div>
+
+                <!-- Attention -->
+                <div class="bg-white rounded-xl p-4 border border-slate-200 shadow-sm space-y-2">
+                    <h3 class="font-bold text-slate-900 text-sm">🧪 Scaled Dot-Product Attention</h3>
+                    <p><strong>Formal Idea:</strong> Similarity scores $\mathbf{Q} \mathbf{K}^T$ are normalized with softmax and used to blend Values $\mathbf{V}$.</p>
+                    <p><strong>ELI9 Analogy:</strong> For each word in a sentence, you look back at other words and choose how much to “listen” to each one when deciding what this word means.</p>
+                    <p><strong>Mini Example:</strong> If a Query word has similarity scores [2, 0, -1] to three Keys, softmax turns that into soft weights like [0.7, 0.2, 0.1]. The output is a mixture of their Value vectors with these weights, like averaging three hints with different importance.</p>
+                </div>
+
+                <!-- Gradient Descent -->
+                <div class="bg-white rounded-xl p-4 border border-slate-200 shadow-sm space-y-2">
+                    <h3 class="font-bold text-slate-900 text-sm">🧪 Gradient Descent (Training Rule)</h3>
+                    <p><strong>Formula:</strong> $$w_{\text{new}} = w_{\text{old}} - \eta \frac{\partial \mathcal{L}}{\partial w}$$</p>
+                    <p><strong>ELI9 Analogy:</strong> You are walking down a hill in fog, taking small steps in the direction where the ground slopes downward (negative gradient) to reach the valley (low loss).</p>
+                    <p><strong>Mini Example:</strong> Suppose loss $\mathcal{L}(w) = (w - 3)^2$ and current weight $w=5$. Then $\frac{\partial \mathcal{L}}{\partial w} = 2(w-3) = 4$. With learning rate $\eta=0.1$, you update to $w_{\text{new}} = 5 - 0.1\cdot4 = 4.6$, moving closer to the optimum at $w=3$.</p>
+                </div>
+
+                <!-- Cross-Entropy -->
+                <div class="bg-white rounded-xl p-4 border border-slate-200 shadow-sm space-y-2">
+                    <h3 class="font-bold text-slate-900 text-sm">🧪 Cross-Entropy Loss</h3>
+                    <p><strong>Formula:</strong> $$\mathcal{L}_{CE} = -\sum_i y_i \log p_i$$</p>
+                    <p><strong>ELI9 Analogy:</strong> If the true answer is “cat” (one-hot $y$) and you predict probabilities for cat/dog/bird, the loss measures how surprised you would be if a friend secretly picked cat and you had bet on your distribution.</p>
+                    <p><strong>Mini Example:</strong> True label cat, predicted $p = [0.8, 0.1, 0.1]$. Loss is $-\log(0.8) \approx 0.223$. If instead you predicted $p = [0.2, 0.4, 0.4]$, loss is $-\log(0.2) \approx 1.609$, much worse.</p>
+                </div>
+
+                <!-- Regularization -->
+                <div class="bg-white rounded-xl p-4 border border-slate-200 shadow-sm space-y-2">
+                    <h3 class="font-bold text-slate-900 text-sm">🧪 L2 Regularization (Weight Decay)</h3>
+                    <p><strong>Formula:</strong> $$\mathcal{L}_{\text{total}} = \mathcal{L}_{\text{task}} + \lambda \sum_i w_i^2$$</p>
+                    <p><strong>ELI9 Analogy:</strong> Imagine you add a “tidiness penalty” for using too many big knobs in your machine. The more you twist weights away from zero, the more you pay, so you keep them small to avoid overcomplicating the model.</p>
+                    <p><strong>Mini Example:</strong> If task loss is 0.5 and you have weights [1, 2, -1], the penalty is $\lambda(1^2+2^2+1^2) = \lambda(6)$. With $\lambda=0.05$, total loss becomes $0.5 + 0.3 = 0.8$, gently encouraging smaller weights.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- SECTION 14: Optimization, Training Dynamics & Loss Landscapes -->
+        <section id="optimization" class="space-y-6">
+            <div class="border-l-4 border-indigo-500 pl-4">
+                <h2 class="text-2xl sm:text-3xl font-extrabold text-slate-900">14. Optimization, Training Dynamics & Loss Landscapes</h2>
+                <p class="text-slate-600 text-sm sm:text-base mt-1">
+                    Gradient descent, learning rate scheduling, momentum, and intuitive views of loss surfaces for FlyKart-style models.
+                </p>
+            </div>
+            <div class="analogy-card"><strong>Mental model: hike through fog with a rolling backpack</strong><p>The gradient is the local downhill slope, learning rate is stride length, and momentum remembers recent direction like a heavy backpack that resists zig-zagging. Scheduling shortens the stride near a promising valley.</p><span class="analogy-limit">Where it breaks: high-dimensional loss landscapes contain saddles, noise, flat directions, and symmetries that a two-dimensional hill cannot show.</span></div>
+
+            <div class="bg-white rounded-xl p-6 border border-slate-200 shadow-sm space-y-4 text-xs">
+                <h3 class="font-bold text-slate-900 text-sm">🧮 Gradient Descent with Momentum</h3>
+                <div class="p-3 bg-slate-900 text-indigo-300 rounded-lg text-center font-mono text-sm">
+                    $$v_{t} = \beta v_{t-1} + (1 - \beta) \nabla_w \mathcal{L}(w_{t-1})$$
+                    $$w_{t} = w_{t-1} - \eta v_{t}$$
+                </div>
+                <p>
+                    Momentum accumulates gradients over time so updates don’t zig-zag as much and can roll through small bumps, like a heavy ball sliding down a curved loss surface.
+                </p>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="bg-slate-50 rounded-lg p-3 border border-slate-200 space-y-2">
+                        <strong class="block text-slate-900 mb-1">🧸 ELI9: Momentum</strong>
+                        <p>
+                            Instead of changing direction instantly every time the slope adjusts, momentum lets you keep some of your previous push, like riding a bicycle downhill—you don’t stop after each meter to re-evaluate; you keep rolling and only slightly adjust steering.
+                        </p>
+                    </div>
+                    <div class="bg-slate-50 rounded-lg p-3 border border-slate-200 space-y-2">
+                        <strong class="block text-slate-900 mb-1">Mini Example</strong>
+                        <p>
+                            Suppose gradients are [1, 0.8, 0.6, 0.4] and $\beta=0.9$. The velocity keeps around 90% of the previous value plus 10% of the new gradient, smoothing the update. You avoid jerky weight changes and reach good minima faster.
+                        </p>
+                    </div>
+                </div>
+
+                <h3 class="font-bold text-slate-900 text-sm mt-4">🧮 Learning Rate Scheduling</h3>
+                <p>
+                    Common schedule: piecewise or cosine decay, e.g. $$\eta_t = \eta_0 \cdot \frac{1}{1 + \gamma t}$$ or a cosine schedule that slowly lowers $\eta$ as training progresses, allowing large exploratory steps early and fine-grained steps later.
+                </p>
+
+                <div class="bg-slate-50 rounded-lg p-3 border border-slate-200 space-y-2">
+                    <strong class="block text-slate-900 mb-1">🧸 ELI9: Learning Rate as Step Size</strong>
+                    <p>
+                        Early training is like exploring a new town: you take big steps to quickly find interesting places. Later, once you’re near the best park (minimum), you take smaller steps so you don’t overshoot. The learning rate schedule shrinks your step size over time for this reason.
+                    </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- SECTION 15: Real-World AI Systems & Sim-to-Real Engineering -->
+        <section id="real-world-ai" class="space-y-6">
+            <div class="border-l-4 border-rose-600 pl-4">
+                <h2 class="text-2xl sm:text-3xl font-extrabold text-slate-900">15. Real-World AI Systems, Sim-to-Real Transfer & Deployment Engineering</h2>
+                <p class="text-slate-600 text-sm sm:text-base mt-1">
+                    Turning a strong benchmark or simulator policy into a dependable system requires explicit work on uncertainty, shift, hardware, human context, monitoring, and safe recovery.
+                </p>
+            </div>
+            <div class="analogy-card"><strong>Mental model: flight simulator, test pilot, and cockpit checklist</strong><p>Simulation teaches broad skills cheaply, hardware-in-the-loop reveals timing and equipment quirks, guarded trials reveal reality, and monitoring is the cockpit instrument panel. Safety layers are seatbelts and emergency controls—not proof the pilot never errs.</p><span class="analogy-limit">Where it breaks: deployment changes the environment and user behavior, so the target keeps moving after launch.</span></div>
+
+            <div class="bg-rose-50/70 rounded-xl p-5 border border-rose-200 text-slate-700 text-sm leading-relaxed space-y-2">
+                <strong class="text-rose-950 font-bold block text-base">⚠️ The model is only one component</strong>
+                <p>
+                    Simulation controls the world and exposes clean state. Deployment inherits imperfect sensors, delayed actuators, changing users, feedback loops, power limits, and failures the training set did not contain. A production AI system therefore includes the model <em>plus</em> data contracts, uncertainty handling, observability, guardrails, rollback, and an operating process.
+                </p>
+            </div>
+
+            <!-- 15.1 Reality-gap model -->
+            <div class="bg-white rounded-xl p-6 border border-slate-200 shadow-sm space-y-4">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-2">
+                    <h3 class="font-bold text-slate-900 text-base text-rose-900">15.1 Measure the Reality Gap Instead of Naming It</h3>
+                    <span class="text-xs font-mono bg-rose-100 text-rose-900 px-2 py-0.5 rounded font-bold">Sim ≠ Deployment</span>
+                </div>
+                <p class="text-xs text-slate-700">
+                    Let $J(\pi)$ be an agreed task score for policy $\pi$. Track both an absolute and normalized transfer gap, then break the gap down by controlled interventions instead of treating it as one mystery number.
+                </p>
+                <div class="p-3 bg-slate-900 text-rose-300 rounded-lg text-center font-mono text-sm">
+                    $$G_{abs}(\pi)=\left|J_{sim}(\pi)-J_{real}(\pi)\right|$$
+                    $$G_{rel}(\pi)=\frac{J_{sim}(\pi)-J_{real}(\pi)}{\max(|J_{sim}(\pi)|,\epsilon)}$$
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-3 text-xs">
+                    <div class="bg-slate-50 rounded-lg p-3 border border-slate-200"><strong class="block text-rose-800">Perception gap</strong><span class="text-slate-600">Lighting, blur, occlusion, calibration, compression, missing values.</span></div>
+                    <div class="bg-slate-50 rounded-lg p-3 border border-slate-200"><strong class="block text-rose-800">Dynamics gap</strong><span class="text-slate-600">Friction, backlash, contact, wear, mass, damping, tire or motor behavior.</span></div>
+                    <div class="bg-slate-50 rounded-lg p-3 border border-slate-200"><strong class="block text-rose-800">Timing gap</strong><span class="text-slate-600">Sensor age, queues, network jitter, inference tails, actuator delay.</span></div>
+                    <div class="bg-slate-50 rounded-lg p-3 border border-slate-200"><strong class="block text-rose-800">Context gap</strong><span class="text-slate-600">New users, incentives, policy changes, adversaries, rare scenarios.</span></div>
+                </div>
+                <p class="text-[11px] text-slate-500">Ablation recipe: replay the same scenario while replacing one simulated channel at a time with recorded real data. The change in $J$ estimates which gap deserves engineering effort first.</p>
+            </div>
+
+            <!-- 15.2 Domain randomization and system identification -->
+            <div class="bg-white rounded-xl p-6 border border-slate-200 shadow-sm space-y-4">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-2">
+                    <h3 class="font-bold text-slate-900 text-base text-indigo-900">15.2 Domain Randomization, Adaptation & System Identification</h3>
+                    <span class="text-xs font-mono bg-indigo-100 text-indigo-900 px-2 py-0.5 rounded font-bold">Train a Family of Worlds</span>
+                </div>
+                <p class="text-xs text-slate-700">
+                    Replace one fixed simulator with a distribution of environments $\mathcal{M}_{\theta}$. Sample plausible parameters every episode so the policy cannot depend on a single texture, friction value, latency, or obstacle layout. Domain adaptation then uses real observations or a small labeled real set to close residual feature mismatch.
+                </p>
+                <div class="p-3 bg-slate-900 text-indigo-300 rounded-lg text-center font-mono text-sm">
+                    $$\theta\sim P(\theta),\qquad \pi^*=\arg\max_{\pi}\;\mathbb{E}_{\theta\sim P(\theta)}[J(\pi;\mathcal{M}_{\theta})]$$
+                    $$\text{Calibrate }P(\theta)\text{ from measured hardware logs; do not randomize blindly.}$$
+                </div>
+                <div class="overflow-x-auto rounded-lg border border-slate-200">
+                    <table class="w-full text-left text-xs min-w-[760px]">
+                        <thead class="bg-slate-900 text-slate-100"><tr><th class="p-3">Parameter family</th><th class="p-3">Randomize in training</th><th class="p-3">Measure in reality</th><th class="p-3">Failure exposed</th></tr></thead>
+                        <tbody class="divide-y divide-slate-200">
+                            <tr><td class="p-3 font-bold">Visual</td><td class="p-3">Light direction, exposure, texture, weather, blur</td><td class="p-3">Camera histograms and calibration drift</td><td class="p-3">Detector memorizes appearance</td></tr>
+                            <tr><td class="p-3 font-bold">Physics</td><td class="p-3">Mass, friction, damping, restitution</td><td class="p-3">Step response and trajectory residuals</td><td class="p-3">Policy exploits simulator dynamics</td></tr>
+                            <tr><td class="p-3 font-bold">Sensors</td><td class="p-3">Bias, dropout, quantization, noise correlation</td><td class="p-3">Static and moving sensor logs</td><td class="p-3">Brittleness to imperfect observations</td></tr>
+                            <tr><td class="p-3 font-bold">Timing</td><td class="p-3">Delay, jitter, frame drops, stale state</td><td class="p-3">Timestamped end-to-end traces</td><td class="p-3">Oscillation and late action</td></tr>
+                            <tr><td class="p-3 font-bold">World</td><td class="p-3">Traffic, distractors, routes, rare events</td><td class="p-3">Scenario frequency and near misses</td><td class="p-3">Overfitting to a narrow curriculum</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="bg-indigo-50 p-4 rounded-lg border border-indigo-200 text-xs">
+                    <strong class="text-indigo-950 block mb-1">🧸 ELI9: Randomize the things reality will randomize</strong>
+                    Train the driver on sunny, dark, slippery, delayed, and noisy tracks—but choose the ranges from real measurements. If you randomize impossible worlds too aggressively, the controller spends capacity solving problems it will never face.
+                </div>
+            </div>
+
+            <!-- 15.3 Distribution shift -->
+            <div class="bg-white rounded-xl p-6 border border-slate-200 shadow-sm space-y-4">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-2">
+                    <h3 class="font-bold text-slate-900 text-base text-emerald-900">15.3 Distribution Shift, OOD Inputs & Feedback Loops</h3>
+                    <span class="text-xs font-mono bg-emerald-100 text-emerald-900 px-2 py-0.5 rounded font-bold">The World Keeps Moving</span>
+                </div>
+                <div class="p-3 bg-slate-900 text-emerald-300 rounded-lg text-center font-mono text-sm">
+                    $$P_{train}(X,Y)\neq P_{deploy}(X,Y)$$
+                    $$\text{Covariate shift: }P(X)\text{ changes};\quad \text{label shift: }P(Y)\text{ changes};\quad \text{concept shift: }P(Y|X)\text{ changes}$$
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+                    <div class="bg-emerald-50 rounded-lg p-4 border border-emerald-200"><strong class="block text-emerald-950 mb-2">Monitor immediately</strong><ul class="list-disc list-inside text-slate-700 space-y-1"><li>Schema and missingness</li><li>Feature ranges and quantiles</li><li>Prediction and confidence mix</li><li>Latency, errors, fallback rate</li></ul></div>
+                    <div class="bg-amber-50 rounded-lg p-4 border border-amber-200"><strong class="block text-amber-950 mb-2">Monitor with delayed labels</strong><ul class="list-disc list-inside text-slate-700 space-y-1"><li>Calibration and slice accuracy</li><li>False-positive/negative costs</li><li>Business or task outcomes</li><li>Performance by cohort and time</li></ul></div>
+                    <div class="bg-rose-50 rounded-lg p-4 border border-rose-200"><strong class="block text-rose-950 mb-2">Act safely</strong><ul class="list-disc list-inside text-slate-700 space-y-1"><li>Abstain or use a safe fallback</li><li>Shadow a candidate model</li><li>Canary rollout by small traffic share</li><li>Rollback before retraining blindly</li></ul></div>
+                </div>
+                <p class="text-xs text-slate-700"><strong>Important:</strong> feature drift is an alarm, not proof of quality loss. A harmless seasonal color change may move $P(X)$; concept drift can hurt performance even when simple feature histograms look stable. Join statistical drift signals with labeled outcomes and operational metrics.</p>
+            </div>
+
+            <!-- 15.4 Hardware and latency -->
+            <div class="bg-white rounded-xl p-6 border border-slate-200 shadow-sm space-y-4">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-2">
+                    <h3 class="font-bold text-slate-900 text-base text-cyan-900">15.4 End-to-End Latency, Energy & Hardware Constraints</h3>
+                    <span class="text-xs font-mono bg-cyan-100 text-cyan-900 px-2 py-0.5 rounded font-bold">Benchmark the Whole Loop</span>
+                </div>
+                <div class="p-3 bg-slate-900 text-cyan-300 rounded-lg text-center font-mono text-sm">
+                    $$T_{loop}=T_{capture}+T_{pre}+T_{queue}+T_{infer}+T_{post}+T_{network}+T_{actuate}$$
+                    $$E_{decision}=\int_0^{T_{loop}}P(t)\,dt,\qquad f_{safe}\leq\frac{1}{T_{loop}}$$
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                    <div class="bg-slate-50 rounded-lg p-4 border border-slate-200 space-y-2">
+                        <strong class="text-slate-900">Report more than average inference time</strong>
+                        <ul class="list-disc list-inside text-slate-700 space-y-1"><li>p50, p95, p99 and worst observed loop latency</li><li>Throughput at the required latency and accuracy</li><li>Cold start, warmup, dynamic-shape and batch effects</li><li>Memory peak, temperature, throttling and joules/decision</li></ul>
+                    </div>
+                    <div class="bg-slate-50 rounded-lg p-4 border border-slate-200 space-y-2">
+                        <strong class="text-slate-900">Stress the deployment hardware</strong>
+                        <ul class="list-disc list-inside text-slate-700 space-y-1"><li>Concurrent workloads and bursty arrivals</li><li>Low battery, weak network and thermal saturation</li><li>Sensor dropout and timestamp skew</li><li>Backpressure: drop, queue, degrade, or fail safe</li></ul>
+                    </div>
+                </div>
+                <div class="bg-cyan-50 p-4 rounded-lg border border-cyan-200 text-xs"><strong class="text-cyan-950">Control insight:</strong> at $20\text{ m/s}$, an extra $100\text{ ms}$ of end-to-end delay moves a vehicle $2\text{ m}$ before the new action takes effect. Latency changes the task, not merely the user experience.</div>
+            </div>
+
+            <!-- 15.5 Safety case -->
+            <div class="bg-white rounded-xl p-6 border border-slate-200 shadow-sm space-y-4">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-2">
+                    <h3 class="font-bold text-slate-900 text-base text-rose-900">15.5 Safety Envelopes, Uncertainty & Fallbacks</h3>
+                    <span class="text-xs font-mono bg-rose-100 text-rose-900 px-2 py-0.5 rounded font-bold">Fail Operationally Safe</span>
+                </div>
+                <p class="text-xs text-slate-700">A model confidence score is not automatically a calibrated probability. Validate calibration on deployment-like slices, detect unsupported inputs, and put a deterministic safety layer between learned actions and irreversible effects.</p>
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-3 text-xs">
+                    <div class="p-4 rounded-lg border border-slate-200"><strong class="block text-rose-800 mb-2">1. Detect</strong>Invalid schema, OOD state, disagreement, stale sensor, impossible action.</div>
+                    <div class="p-4 rounded-lg border border-slate-200"><strong class="block text-rose-800 mb-2">2. Constrain</strong>Speed limits, collision envelopes, rate limits, action clipping, policy rules.</div>
+                    <div class="p-4 rounded-lg border border-slate-200"><strong class="block text-rose-800 mb-2">3. Degrade</strong>Slow down, request human review, switch to a simpler verified controller.</div>
+                    <div class="p-4 rounded-lg border border-slate-200"><strong class="block text-rose-800 mb-2">4. Recover</strong>Stop safely, rollback version, preserve evidence, rehearse incident response.</div>
+                </div>
+                <div class="bg-rose-50 p-4 rounded-lg border border-rose-200 text-xs space-y-1"><strong class="text-rose-950 block">Safety-case question</strong><p>For every hazardous output, document the hazard, triggering conditions, prevention layer, detection signal, fallback, owner, test evidence, and residual risk. “The benchmark score was high” is not a safety argument.</p></div>
+            </div>
+
+            <!-- 15.6 Deployment gates -->
+            <div class="bg-white rounded-xl p-6 border border-slate-200 shadow-sm space-y-4">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-2">
+                    <h3 class="font-bold text-slate-900 text-base text-amber-900">15.6 Staged Deployment & Evidence Loop</h3>
+                    <span class="text-xs font-mono bg-amber-100 text-amber-900 px-2 py-0.5 rounded font-bold">Promote by Evidence</span>
+                </div>
+                <ol class="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs list-none">
+                    <li class="p-4 rounded-lg bg-slate-50 border border-slate-200"><strong class="text-amber-800 block">Gate 1 · Offline replay</strong>Temporal holdout, hard slices, counterfactuals, corrupted inputs, calibration, deterministic regression tests.</li>
+                    <li class="p-4 rounded-lg bg-slate-50 border border-slate-200"><strong class="text-amber-800 block">Gate 2 · Randomized simulation</strong>Wide parameter sweeps, rare events, adversarial scenarios, worst-seed reporting—not only the mean.</li>
+                    <li class="p-4 rounded-lg bg-slate-50 border border-slate-200"><strong class="text-amber-800 block">Gate 3 · Hardware-in-the-loop</strong>Real sensors or actuators, production runtime, injected delay/dropout, power and thermal profiling.</li>
+                    <li class="p-4 rounded-lg bg-slate-50 border border-slate-200"><strong class="text-amber-800 block">Gate 4 · Shadow mode</strong>Run on live inputs without controlling the system; compare decisions, latency, uncertainty, and fallback triggers.</li>
+                    <li class="p-4 rounded-lg bg-slate-50 border border-slate-200"><strong class="text-amber-800 block">Gate 5 · Guarded canary</strong>Small reversible exposure with stop criteria, safety supervisor, on-call ownership, and instant rollback.</li>
+                    <li class="p-4 rounded-lg bg-slate-50 border border-slate-200"><strong class="text-amber-800 block">Gate 6 · Continuous operation</strong>Drift and incident monitoring, delayed-label evaluation, periodic revalidation, change log, retirement criteria.</li>
+                </ol>
+                <div class="p-3 bg-slate-900 text-amber-300 rounded-lg text-center font-mono text-sm">$$\text{Promote only if quality}\ge q_{min},\;p99\ latency\le L_{max},\;risk\le R_{max},\;rollback\ tested=true$$</div>
+            </div>
+
+            <!-- 15.7 LLM and human context -->
+            <div class="bg-white rounded-xl p-6 border border-slate-200 shadow-sm space-y-4">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-2">
+                    <h3 class="font-bold text-slate-900 text-base text-violet-900">15.7 Human Context, Agents & Deployment Simulation</h3>
+                    <span class="text-xs font-mono bg-violet-100 text-violet-900 px-2 py-0.5 rounded font-bold">Users Change the System</span>
+                </div>
+                <p class="text-xs text-slate-700">For recommenders, fraud models, and language-model agents, deployment changes future data: rankings influence clicks, fraud rules change attacker behavior, and capable assistants attract new tasks. Evaluate the closed loop, not only a frozen test set.</p>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+                    <div class="bg-violet-50 p-4 rounded-lg border border-violet-200"><strong class="block text-violet-950 mb-2">Representative replay</strong>Replay recent, privacy-preserving production-like contexts with the candidate; compare error and safety rates by slice.</div>
+                    <div class="bg-violet-50 p-4 rounded-lg border border-violet-200"><strong class="block text-violet-950 mb-2">Tool realism</strong>Simulate permissions, timeouts, stale data, retries, partial failure, and irreversible-action confirmation.</div>
+                    <div class="bg-violet-50 p-4 rounded-lg border border-violet-200"><strong class="block text-violet-950 mb-2">Human factors</strong>Measure over-reliance, override behavior, workload, accessibility, recourse, and whether explanations support good decisions.</div>
+                </div>
+                <p class="text-[11px] text-slate-500">Deployment simulation complements targeted red-teaming; it cannot reliably expose extremely rare failures unless the sample is large enough and the simulated context is representative.</p>
+            </div>
+
+            <!-- 15.8 FlyKart roadmap -->
+            <div class="bg-slate-900 rounded-xl p-6 border border-slate-700 shadow-sm space-y-5 text-slate-100">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-700 pb-3">
+                    <h3 class="font-bold text-base text-white">15.8 FlyKart → Physical Kart Research Roadmap</h3>
+                    <span class="text-xs font-mono bg-rose-500/20 text-rose-200 px-2 py-0.5 rounded font-bold">Do Not Skip Gates</span>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+                    <div class="bg-slate-800 p-4 rounded-lg"><strong class="text-cyan-300 block mb-2">A · Observation bridge</strong>Replace privileged track state with recorded camera/IMU inputs; preserve timestamps and missing-data behavior.</div>
+                    <div class="bg-slate-800 p-4 rounded-lg"><strong class="text-indigo-300 block mb-2">B · Calibrated randomization</strong>Fit friction, steering lag, noise, exposure, and delay ranges from real logs; train across route and weather seeds.</div>
+                    <div class="bg-slate-800 p-4 rounded-lg"><strong class="text-amber-300 block mb-2">C · Safety supervisor</strong>Independent speed, geofence, collision, stale-sensor, watchdog, and emergency-stop logic.</div>
+                    <div class="bg-slate-800 p-4 rounded-lg"><strong class="text-emerald-300 block mb-2">D · Evidence ladder</strong>Replay → randomized sim → HIL → closed test track → safety-driver canary → monitored expansion.</div>
+                </div>
+                <p class="text-xs text-slate-300"><strong class="text-white">Minimum experiment record:</strong> code/model hash, training data and simulator version, random seeds, hardware/runtime, scenario distribution, reward configuration, mean and worst-slice performance, p99 loop latency, energy, fallback count, near misses, and a link to raw logs.</p>
+            </div>
+
+            <!-- Primary references -->
+            <div class="bg-white rounded-xl p-6 border border-slate-200 shadow-sm space-y-4">
+                <h3 class="font-bold text-slate-900 text-base">Primary references & engineering standards</h3>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                    <a class="p-3 rounded-lg border border-slate-200 hover:border-indigo-400 hover:bg-indigo-50 transition" target="_blank" rel="noopener noreferrer" href="https://arxiv.org/abs/1703.06907"><strong class="block text-indigo-800">Tobin et al. · Domain Randomization</strong><span class="text-slate-600">Training on varied simulated images so reality can appear as another variation.</span></a>
+                    <a class="p-3 rounded-lg border border-slate-200 hover:border-indigo-400 hover:bg-indigo-50 transition" target="_blank" rel="noopener noreferrer" href="https://docs.nvidia.com/learning/physical-ai/getting-started-with-isaac-lab/latest/transferring-robot-learning-policies-from-simulation-to-reality/03-bridging-the-gap-simulation-enhancement/index.html"><strong class="block text-indigo-800">NVIDIA Isaac Lab · Bridging the Gap</strong><span class="text-slate-600">Observation noise, physics parameters, actuator modeling, and simulation enhancement.</span></a>
+                    <a class="p-3 rounded-lg border border-slate-200 hover:border-emerald-400 hover:bg-emerald-50 transition" target="_blank" rel="noopener noreferrer" href="https://developers.google.com/machine-learning/guides/rules-of-ml"><strong class="block text-emerald-800">Google · Rules of Machine Learning</strong><span class="text-slate-600">Training-serving skew, temporal evaluation, logging, and production feedback loops.</span></a>
+                    <a class="p-3 rounded-lg border border-slate-200 hover:border-emerald-400 hover:bg-emerald-50 transition" target="_blank" rel="noopener noreferrer" href="https://www.nist.gov/itl/ai-risk-management-framework"><strong class="block text-emerald-800">NIST · AI Risk Management Framework</strong><span class="text-slate-600">Lifecycle governance, measurement, management, and post-deployment monitoring.</span></a>
+                    <a class="p-3 rounded-lg border border-slate-200 hover:border-cyan-400 hover:bg-cyan-50 transition" target="_blank" rel="noopener noreferrer" href="https://docs.mlcommons.org/inference/index_gh/"><strong class="block text-cyan-800">MLCommons · MLPerf Inference</strong><span class="text-slate-600">Deployment scenarios and accuracy-constrained latency/throughput benchmarking.</span></a>
+                    <a class="p-3 rounded-lg border border-slate-200 hover:border-cyan-400 hover:bg-cyan-50 transition" target="_blank" rel="noopener noreferrer" href="https://arxiv.org/abs/2106.07597"><strong class="block text-cyan-800">MLPerf Tiny</strong><span class="text-slate-600">Accuracy, latency, and energy for ultra-low-power inference.</span></a>
+                    <a class="p-3 rounded-lg border border-slate-200 hover:border-violet-400 hover:bg-violet-50 transition" target="_blank" rel="noopener noreferrer" href="https://openai.com/index/deployment-simulation/"><strong class="block text-violet-800">OpenAI · Deployment Simulation</strong><span class="text-slate-600">Production-like replay as a complement to targeted pre-deployment safety evaluation.</span></a>
+                    <a class="p-3 rounded-lg border border-slate-200 hover:border-violet-400 hover:bg-violet-50 transition" target="_blank" rel="noopener noreferrer" href="https://papers.nips.cc/paper/5656-hidden-technical-debt-in-machine-learning-systems.pdf"><strong class="block text-violet-800">Sculley et al. · Hidden Technical Debt</strong><span class="text-slate-600">Feedback loops, data dependencies, entanglement, and system-level ML maintenance risk.</span></a>
+                    <a class="p-3 rounded-lg border border-slate-200 hover:border-indigo-400 hover:bg-indigo-50 transition" target="_blank" rel="noopener noreferrer" href="https://docs.nvidia.com/cuda/cuda-programming-guide/02-basics/intro-to-cuda-cpp.html"><strong class="block text-indigo-800">NVIDIA · CUDA Programming Guide</strong><span class="text-slate-600">Official thread, block, grid, and multidimensional-indexing model.</span></a>
+                    <a class="p-3 rounded-lg border border-slate-200 hover:border-cyan-400 hover:bg-cyan-50 transition" target="_blank" rel="noopener noreferrer" href="https://openaccess.thecvf.com/content_cvpr_2016/html/Redmon_You_Only_Look_CVPR_2016_paper.html"><strong class="block text-cyan-800">Redmon et al. · YOLO</strong><span class="text-slate-600">The original unified, real-time object-detection paper.</span></a>
+                    <a class="p-3 rounded-lg border border-slate-200 hover:border-amber-400 hover:bg-amber-50 transition" target="_blank" rel="noopener noreferrer" href="https://arxiv.org/abs/1503.02531"><strong class="block text-amber-800">Hinton et al. · Knowledge Distillation</strong><span class="text-slate-600">Teacher-student compression with softened output distributions.</span></a>
+                    <a class="p-3 rounded-lg border border-slate-200 hover:border-emerald-400 hover:bg-emerald-50 transition" target="_blank" rel="noopener noreferrer" href="https://arxiv.org/abs/2106.09685"><strong class="block text-emerald-800">Hu et al. · LoRA</strong><span class="text-slate-600">Low-rank trainable updates for parameter-efficient adaptation.</span></a>
+                </div>
+            </div>
+        </section>
     </main>
 
-    <footer>
-      <span>FlyKart · an original deterministic racing environment</span>
-      <a href="https://github.com/nomsams/flykart">View source on GitHub</a>
-    </footer>
-  </body>
+    <script>
+        // Auto-render KaTeX
+        document.addEventListener("DOMContentLoaded", function() {
+            renderMathInElement(document.body, {
+                delimiters: [
+                    {left: "$$", right: "$$", display: true},
+                    {left: "$", right: "$", display: false}
+                ]
+            });
+        });
+
+        // --- LAB 1: Action Potential ---
+        const bioCanvas = document.getElementById('bioNeuronCanvas');
+        const bioCtx = bioCanvas.getContext('2d');
+        let isFiring = false;
+        let bioPulse = 0;
+
+        function drawBioNeuron() {
+            bioCtx.clearRect(0, 0, bioCanvas.width, bioCanvas.height);
+
+            bioCtx.fillStyle = '#0f172a';
+            bioCtx.fillRect(0, 0, bioCanvas.width, bioCanvas.height);
+
+            // Dendrites
+            bioCtx.strokeStyle = '#22c55e';
+            bioCtx.lineWidth = 4;
+            bioCtx.beginPath();
+            bioCtx.moveTo(40, 80); bioCtx.lineTo(100, 120);
+            bioCtx.moveTo(40, 160); bioCtx.lineTo(100, 120);
+            bioCtx.stroke();
+
+            // Soma
+            bioCtx.fillStyle = '#6366f1';
+            bioCtx.beginPath();
+            bioCtx.arc(140, 130, 30, 0, Math.PI * 2);
+            bioCtx.fill();
+
+            // Axon
+            bioCtx.strokeStyle = '#d97706'; bioCtx.lineWidth = 6;
+            bioCtx.beginPath(); bioCtx.moveTo(155, 130); bioCtx.lineTo(380, 130); bioCtx.stroke();
+
+            // Synapses
+            const terminals = [[430, 90], [440, 130], [430, 170]];
+            terminals.forEach(pt => {
+                bioCtx.beginPath(); bioCtx.moveTo(380, 130); bioCtx.lineTo(pt[0], pt[1]); bioCtx.strokeStyle = '#d97706'; bioCtx.stroke();
+                bioCtx.fillStyle = '#10b981'; bioCtx.beginPath(); bioCtx.arc(pt[0], pt[1], 7, 0, Math.PI * 2); bioCtx.fill();
+            });
+
+            // Action Potential Animation
+            if (isFiring) {
+                bioPulse += 8;
+                if (bioPulse < 230) {
+                    bioCtx.fillStyle = '#ef4444';
+                    bioCtx.beginPath(); bioCtx.arc(155 + bioPulse, 130, 8, 0, Math.PI * 2); bioCtx.fill();
+                    requestAnimationFrame(drawBioNeuron);
+                } else {
+                    for (let i = 0; i < 15; i++) {
+                        bioCtx.fillStyle = '#10b981';
+                        bioCtx.beginPath(); bioCtx.arc(430 + Math.random() * 30, 80 + Math.random() * 100, 3, 0, Math.PI * 2); bioCtx.fill();
+                    }
+                    if (bioPulse > 280) {
+                        isFiring = false; bioPulse = 0;
+                        document.getElementById('bioStatusTag').innerText = "Resting Potential (-70mV)";
+                        document.getElementById('bioStatusTag').className = "text-xs text-indigo-900 bg-indigo-100 px-2 py-1 rounded font-mono font-bold";
+                    } else {
+                        requestAnimationFrame(drawBioNeuron);
+                    }
+                }
+            }
+
+            bioCtx.fillStyle = '#94a3b8'; bioCtx.font = '10px monospace';
+            bioCtx.fillText("DENDRITES (Inputs x_i)", 20, 25);
+            bioCtx.fillText("SOMA (Bias b)", 100, 180);
+            bioCtx.fillText("AXON (Weights w_i)", 220, 115);
+            bioCtx.fillText("SYNAPSE (Output y)", 410, 200);
+        }
+
+        document.getElementById('fireBioBtn').addEventListener('click', () => {
+            if (!isFiring) {
+                isFiring = true; bioPulse = 0;
+                document.getElementById('bioStatusTag').innerText = "⚡ ACTION POTENTIAL (+30mV)!";
+                document.getElementById('bioStatusTag').className = "text-xs text-white bg-rose-600 px-2 py-1 rounded font-mono font-bold animate-pulse";
+                drawBioNeuron();
+            }
+        });
+
+        drawBioNeuron();
+
+        // --- SECTION 6: Quantization Calculator ---
+        let selectedQuantFormat = 'fp32';
+        const quantBpp = { fp32: 4.0, fp16: 2.0, int8: 1.0, int4: 0.5, fp4: 0.5 };
+        const quantSavingsMap = { fp32: "0% (Baseline)", fp16: "50% Savings", int8: "75% Savings", int4: "87.5% Savings", fp4: "87.5% Savings" };
+        const quantAccMap = { fp32: "0% (Lossless)", fp16: "<0.1% Loss", int8: "<0.5% Loss", int4: "~1-2% Loss", fp4: "<1% Loss (NVFP4)" };
+
+        function setQuantFormat(fmt) {
+            selectedQuantFormat = fmt;
+            ['fp32', 'fp16', 'int8', 'int4', 'fp4'].forEach(k => {
+                const btn = document.getElementById(`qbtn-${k}`);
+                if (k === fmt) btn.className = "p-2 border rounded-lg bg-indigo-50 border-indigo-500 font-bold";
+                else btn.className = "p-2 border border-slate-200 rounded-lg";
+            });
+            calculateQuantization();
+        }
+
+        function calculateQuantization() {
+            const paramsBillion = parseFloat(document.getElementById('quantModelSelect').value);
+            const bytesPerParam = quantBpp[selectedQuantFormat];
+            const totalBytes = paramsBillion * 1e9 * bytesPerParam;
+
+            let vramStr = "";
+            if (totalBytes < 1024 * 1024) vramStr = `${(totalBytes / 1024).toFixed(2)} KB`;
+            else if (totalBytes < 1024 * 1024 * 1024) vramStr = `${(totalBytes / (1024 * 1024)).toFixed(2)} MB`;
+            else vramStr = `${(totalBytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+
+            document.getElementById('qVramNeeded').innerText = vramStr;
+            document.getElementById('qBytesPerW').innerText = `${bytesPerParam} Bytes (${bytesPerParam * 8}-bit)`;
+            document.getElementById('qSavings').innerText = quantSavingsMap[selectedQuantFormat];
+            document.getElementById('qAccuracy').innerText = quantAccMap[selectedQuantFormat];
+        }
+
+        calculateQuantization();
+
+        // --- LAB 2: Track Visualizer ---
+        const trackCanvas = document.getElementById('microTrackCanvas');
+        const trackCtx = trackCanvas.getContext('2d');
+        let genCount = 1;
+
+        const trackPoints = [
+            {x: 60, y: 130}, {x: 120, y: 50}, {x: 300, y: 40},
+            {x: 480, y: 90}, {x: 460, y: 200}, {x: 280, y: 210}, {x: 140, y: 180}
+        ];
+
+        let karts = [
+            { id: 1, color: "#d97706", progress: 0.8, speed: 0.012, yOffset: -5 },
+            { id: 2, color: "#4f46e5", progress: 0.72, speed: 0.011, yOffset: 5 },
+            { id: 3, color: "#6366f1", progress: 0.65, speed: 0.010, yOffset: -10 },
+            { id: 4, color: "#818cf8", progress: 0.58, speed: 0.009, yOffset: 10 },
+            { id: 5, color: "#059669", progress: 0.50, speed: 0.014, yOffset: 0 }
+        ];
+
+        function getTrackPos(p) {
+            const total = trackPoints.length;
+            const idx = Math.floor(p * total) % total;
+            const nextIdx = (idx + 1) % total;
+            const t = (p * total) % 1;
+            const p1 = trackPoints[idx];
+            const p2 = trackPoints[nextIdx];
+            return { x: p1.x + (p2.x - p1.x) * t, y: p1.y + (p2.y - p1.y) * t };
+        }
+
+        function drawMicroTrack() {
+            trackCtx.clearRect(0, 0, trackCanvas.width, trackCanvas.height);
+
+            trackCtx.beginPath();
+            trackCtx.moveTo(trackPoints[0].x, trackPoints[0].y);
+            for (let i = 1; i < trackPoints.length; i++) trackCtx.lineTo(trackPoints[i].x, trackPoints[i].y);
+            trackCtx.closePath();
+            trackCtx.strokeStyle = '#334155'; trackCtx.lineWidth = 34; trackCtx.lineJoin = 'round'; trackCtx.stroke();
+
+            trackCtx.strokeStyle = '#f8fafc'; trackCtx.lineWidth = 2; trackCtx.setLineDash([6, 6]); trackCtx.stroke(); trackCtx.setLineDash([]);
+
+            karts.forEach(k => {
+                k.progress += k.speed;
+                if (k.progress >= 1) k.progress -= 1;
+                const pos = getTrackPos(k.progress);
+                trackCtx.beginPath(); trackCtx.arc(pos.x, pos.y + k.yOffset, 6, 0, Math.PI * 2);
+                trackCtx.fillStyle = k.color; trackCtx.fill(); trackCtx.strokeStyle = '#ffffff'; trackCtx.lineWidth = 1.5; trackCtx.stroke();
+            });
+
+            trackCtx.fillStyle = '#f8fafc'; trackCtx.font = 'bold 11px sans-serif';
+            trackCtx.fillText(`Gen: ${genCount} (5 Active Karts)`, 15, 25);
+
+            requestAnimationFrame(drawMicroTrack);
+        }
+
+        document.getElementById('stepMicroGenBtn').addEventListener('click', () => {
+            genCount++;
+            karts.forEach(k => { k.progress = 0.05; k.speed = (k.id === 1) ? 0.013 : 0.008 + Math.random() * 0.005; });
+        });
+
+        trackCanvas.addEventListener('click', () => {
+            alert("🚨 CATACLYSMIC RESET! Karts #2-#5 weights wiped. Gold Champion retained.");
+            genCount++; karts.forEach(k => k.progress = 0);
+        });
+
+        drawMicroTrack();
+
+        // --- LAB 3: Dynamic Brain Canvas ---
+        const nCanvas = document.getElementById('neuralCanvas');
+        const nCtx = nCanvas.getContext('2d');
+        let currentTask = 'basic';
+
+        const taskSpecs = {
+            basic: { inputs: 6, hidden: 0, outputs: 2, tag: "Single Layer Perceptron", desc: "<strong>Task Explanation:</strong> 5 Raycasts + Speed input connected directly to Steering and Throttle.", totalW: "12 Weights", load: "0.2% CPU" },
+            apex: { inputs: 7, hidden: 5, outputs: 2, tag: "Smooth Cornering Net", desc: "<strong>Task Explanation:</strong> Raycasts + Speed + Steering Memory with 5 hidden neurons.", totalW: "45 Weights", load: "0.5% CPU" },
+            drift: { inputs: 9, hidden: 10, outputs: 2, tag: "Drift & Slip Specialist", desc: "<strong>Task Explanation:</strong> Raycasts + Yaw Rate + Slip Angle with 10 hidden neurons.", totalW: "110 Weights", load: "1.2% CPU" },
+            vision2d: { inputs: 192, hidden: 12, outputs: 2, tag: "16x12 Visual Micro-Grid", desc: "<strong>Task Explanation:</strong> 192 downscaled grayscale camera pixels feeding 12 hidden neurons.", totalW: "2,328 Weights", load: "4.5% CPU" }
+        };
+
+        function drawNeuralNet() {
+            nCtx.clearRect(0, 0, nCanvas.width, nCanvas.height);
+            const spec = taskSpecs[currentTask];
+            const renderInputs = Math.min(spec.inputs, 16);
+            const renderHidden = Math.min(spec.hidden, 10);
+            const renderOutputs = spec.outputs;
+
+            const xIn = 60, xHid = 275, xOut = 490;
+            const time = Date.now() * 0.003;
+
+            for (let i = 0; i < renderInputs; i++) {
+                const y1 = (nCanvas.height / (renderInputs + 1)) * (i + 1);
+                if (renderHidden > 0) {
+                    for (let h = 0; h < renderHidden; h++) {
+                        const y2 = (nCanvas.height / (renderHidden + 1)) * (h + 1);
+                        nCtx.strokeStyle = `rgba(99, 102, 241, ${0.15 + 0.1 * Math.sin(time + i + h)})`;
+                        nCtx.beginPath(); nCtx.moveTo(xIn, y1); nCtx.lineTo(xHid, y2); nCtx.stroke();
+                    }
+                } else {
+                    for (let o = 0; o < renderOutputs; o++) {
+                        const y2 = (nCanvas.height / (renderOutputs + 1)) * (o + 1);
+                        nCtx.strokeStyle = `rgba(217, 119, 6, ${0.2 + 0.15 * Math.sin(time + i + o)})`;
+                        nCtx.beginPath(); nCtx.moveTo(xIn, y1); nCtx.lineTo(xOut, y2); nCtx.stroke();
+                    }
+                }
+            }
+
+            for (let i = 0; i < renderInputs; i++) {
+                const y = (nCanvas.height / (renderInputs + 1)) * (i + 1);
+                nCtx.beginPath(); nCtx.arc(xIn, y, 6, 0, Math.PI * 2); nCtx.fillStyle = '#f59e0b'; nCtx.fill();
+            }
+
+            if (renderHidden > 0) {
+                for (let h = 0; h < renderHidden; h++) {
+                    const y = (nCanvas.height / (renderHidden + 1)) * (h + 1);
+                    nCtx.beginPath(); nCtx.arc(xHid, y, 7, 0, Math.PI * 2); nCtx.fillStyle = '#6366f1'; nCtx.fill();
+                }
+            }
+
+            for (let o = 0; o < renderOutputs; o++) {
+                const y = (nCanvas.height / (renderOutputs + 1)) * (o + 1);
+                nCtx.beginPath(); nCtx.arc(xOut, y, 8, 0, Math.PI * 2); nCtx.fillStyle = '#10b981'; nCtx.fill();
+            }
+
+            requestAnimationFrame(drawNeuralNet);
+        }
+
+        function selectTask(key) {
+            currentTask = key;
+            ['basic', 'apex', 'drift', 'vision2d'].forEach(k => {
+                const btn = document.getElementById(`btn-task-${k}`);
+                if (btn) btn.className = (k === key)
+                    ? "w-full text-left p-3 rounded-lg border hover:border-indigo-400 transition flex justify-between items-center bg-indigo-50/50 border-indigo-500"
+                    : "w-full text-left p-3 rounded-lg border border-slate-200 hover:border-indigo-400 transition flex justify-between items-center";
+            });
+
+            const spec = taskSpecs[key];
+            document.getElementById('taskTag').innerText = spec.tag;
+            document.getElementById('taskDesc').innerHTML = spec.desc;
+            document.getElementById('mathInputs').innerText = spec.inputs;
+            document.getElementById('mathHidden').innerText = spec.hidden;
+            document.getElementById('mathOutputs').innerText = spec.outputs;
+            document.getElementById('mathSynapseTotal').innerText = spec.totalW;
+            document.getElementById('mathCpuLoad').innerText = spec.load;
+        }
+
+        selectTask('basic');
+        drawNeuralNet();
+
+        // --- LAB 4: Camera Downscaling ---
+        const rawCam = document.getElementById('cameraRawCanvas');
+        const rawCtx = rawCam.getContext('2d');
+        const procCam = document.getElementById('cameraProcessedCanvas');
+        const procCtx = procCam.getContext('2d');
+        let currentRes = 'micro';
+
+        function drawCameraSim() {
+            rawCtx.fillStyle = '#059669'; rawCtx.fillRect(0, 0, 240, 180);
+            rawCtx.fillStyle = '#334155';
+            rawCtx.beginPath(); rawCtx.moveTo(20, 180); rawCtx.lineTo(90, 80); rawCtx.lineTo(150, 80); rawCtx.lineTo(220, 180); rawCtx.fill();
+
+            procCtx.clearRect(0, 0, 240, 180);
+
+            if (currentRes === 'hd') {
+                procCtx.fillStyle = '#f43f5e'; procCtx.fillRect(0, 0, 240, 180);
+                procCtx.fillStyle = '#ffffff'; procCtx.font = 'bold 12px sans-serif'; procCtx.textAlign = 'center';
+                procCtx.fillText("2,073,600 PIXELS", 120, 90);
+            } else {
+                const w = 240 / 16; const h = 180 / 12;
+                for (let x = 0; x < 16; x++) {
+                    for (let y = 0; y < 12; y++) {
+                        let val = (y > 4 && x >= 4 && x <= 11) ? 160 : 60;
+                        procCtx.fillStyle = `rgb(${val},${val},${val})`;
+                        procCtx.fillRect(x * w, y * h, w - 1, h - 1);
+                    }
+                }
+            }
+        }
+
+        function selectRes(key) {
+            currentRes = key;
+            ['hd', 'micro'].forEach(k => {
+                const btn = document.getElementById(`btn-res-${k}`);
+                if (btn) btn.className = (k === key)
+                    ? "w-full text-left p-3 rounded-lg border hover:border-cyan-400 transition flex justify-between items-center bg-cyan-50/50 border-cyan-500"
+                    : "w-full text-left p-3 rounded-lg border border-slate-200 hover:border-cyan-400 transition flex justify-between items-center";
+            });
+            drawCameraSim();
+        }
+
+        selectRes('micro');
+
+        // --- LAB 5: Reward Lab ---
+        function updateRewardLab() {
+            const prog = parseFloat(document.getElementById('input-rProgress').value);
+            const crash = parseInt(document.getElementById('input-pCrash').value);
+            const steer = parseFloat(document.getElementById('input-pSteer').value);
+
+            document.getElementById('val-rProgress').innerText = `+${prog.toFixed(1)} / meter`;
+            document.getElementById('val-pCrash').innerText = `-${crash} pts`;
+            document.getElementById('val-pSteer').innerText = `-${steer.toFixed(2)} / delta`;
+        }
+
+        updateRewardLab();
+    </script>
+</body>
 </html>

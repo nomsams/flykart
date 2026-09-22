@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  CAR_COLLISION_DIAMETER, CHECKPOINT_COUNT, CLOSE_PROXIMITY_DISTANCE, DEFAULT_PHYSICS_CONFIG, DEFAULT_REWARD_CONFIG, DEFAULT_TRACK, MAX_TICKS, STEP, TRACKS, TRACK_WIDTH, BrainSnapshot, SpikingNetwork, adaptiveTimeLimitForExtensions, createMutationPopulation, createNetworkPopulation, createRoadObstacles,
-  compareEvolutionCandidates, evaluate, evaluateGeneralist, evolutionSelectionScore, heuristicAction, nearestTrack, pointAtDistance, resolveTrack, sensorValues, shouldAcceptEvolutionCandidate, startLine, startPosition, stepCar, track, trackCheckpoint, trackDiagnostics,
+  CAR_COLLISION_DIAMETER, CHECKPOINT_COUNT, CLOSE_PROXIMITY_DISTANCE, DEFAULT_PHYSICS_CONFIG, DEFAULT_REWARD_CONFIG, DEFAULT_TRACK, LANE_SPACING, MAX_TICKS, STEP, TRACKS, TRACK_WIDTH, BrainSnapshot, SpikingNetwork, adaptiveTimeLimitForExtensions, createMutationPopulation, createNetworkPopulation, createRoadObstacles,
+  blendedEvolutionSelectionScore, compareEvolutionCandidates, evaluate, evaluateGeneralist, evolutionSelectionScore, heuristicAction, nearestTrack, pointAtDistance, resolveTrack, sensorValues, shouldAcceptEvolutionCandidate, startLine, startPosition, stepCar, track, trackCheckpoint, trackDiagnostics,
 } from "./core";
 
 const finiteAction = (action: ReturnType<SpikingNetwork["step"]>) => {
@@ -55,6 +55,15 @@ describe("SpikingNetwork", () => {
     expect(compareEvolutionCandidates({ progress: 0.4, fitness: 999999999, finished: false }, { progress: 0.41, fitness: -1, finished: false })).toBeLessThan(0);
     expect(shouldAcceptEvolutionCandidate({ progress: 1, fitness: -700, finished: false }, { progress: 0.12, fitness: 11041, finished: false })).toBe(true);
     expect(shouldAcceptEvolutionCandidate({ progress: 0.12, fitness: 999999999, finished: false }, { progress: 1, fitness: -700, finished: false })).toBe(false);
+  });
+
+  it("blends normalized reward and progress for breeding without demoting completed laps", () => {
+    const highProgress = { progress: 0.8, fitness: 10, finished: false };
+    const highReward = { progress: 0.3, fitness: 100, finished: false };
+    expect(blendedEvolutionSelectionScore(highProgress, 0.85, 10, 100)).toBeGreaterThan(blendedEvolutionSelectionScore(highReward, 0.85, 10, 100));
+    expect(blendedEvolutionSelectionScore(highReward, 0.1, 10, 100)).toBeGreaterThan(blendedEvolutionSelectionScore(highProgress, 0.1, 10, 100));
+    expect(blendedEvolutionSelectionScore(highProgress, 1, 10, 100)).toBeGreaterThan(blendedEvolutionSelectionScore(highReward, 1, 10, 100));
+    expect(blendedEvolutionSelectionScore({ progress: 0.01, fitness: 10, finished: true }, 0, 10, 100)).toBeGreaterThan(blendedEvolutionSelectionScore({ progress: 1, fitness: 100, finished: false }, 0, 10, 100));
   });
 
   it("resets hidden state and exposes bounded actions", () => {
@@ -342,11 +351,72 @@ describe("vehicle physics and fitness", () => {
     finiteAction(heuristicAction(car, [car, startPosition(1)]));
   });
 
+  it("lets a centered heuristic car register ordered checkpoints", () => {
+    const car = startPosition();
+    for (let tick = 0; tick < MAX_TICKS && car.checkpointsPassed < 2; tick += 1) {
+      stepCar(car, heuristicAction(car, [car], DEFAULT_TRACK), [car], DEFAULT_TRACK);
+    }
+    expect(car.checkpointsPassed).toBeGreaterThanOrEqual(2);
+    expect(car.nextCheckpoint).toBe(3);
+    expect(car.crashed).toBe(false);
+  });
+
+  it("keeps a four-car heuristic race progressing through ordered checkpoints", () => {
+    const gridCar = (lane: number, distanceAlong: number) => {
+      const car = startPosition(lane); const sample = pointAtDistance(distanceAlong); const normal = { x: -sample.tangent.y, y: sample.tangent.x };
+      car.position = { x: sample.point.x + normal.x * lane * LANE_SPACING, y: sample.point.y + normal.y * lane * LANE_SPACING };
+      car.heading = Math.atan2(sample.tangent.y, sample.tangent.x);
+      const nearest = nearestTrack(car.position); car.progress = nearest.progress; car.distanceAlong = nearest.distanceAlong; car.bestProgress = nearest.progress;
+      car.checkpointsPassed = Math.min(CHECKPOINT_COUNT - 1, Math.floor(nearest.progress * CHECKPOINT_COUNT)); car.nextCheckpoint = car.checkpointsPassed >= CHECKPOINT_COUNT - 1 ? 0 : car.checkpointsPassed + 1;
+      return car;
+    };
+    const cars = [gridCar(0, 0), gridCar(-1, 52), gridCar(1, 108), gridCar(-1, 164)];
+    for (let tick = 0; tick < MAX_TICKS; tick += 1) {
+      cars.forEach((car) => stepCar(car, heuristicAction(car, cars), cars));
+    }
+    cars.forEach((car) => {
+      expect(car.checkpointsPassed, JSON.stringify({ progress: car.totalProgress, offTrackTicks: car.offTrackTicks, collisions: car.collisions, timedOut: car.timedOut })).toBeGreaterThanOrEqual(2);
+      expect(car.crashed).toBe(false);
+    });
+  });
+
+  it("keeps heuristic rivals progressing around an untrained neural car", () => {
+    const gridCar = (lane: number, distanceAlong: number) => {
+      const car = startPosition(lane); const sample = pointAtDistance(distanceAlong); const normal = { x: -sample.tangent.y, y: sample.tangent.x };
+      car.position = { x: sample.point.x + normal.x * lane * LANE_SPACING, y: sample.point.y + normal.y * lane * LANE_SPACING };
+      car.heading = Math.atan2(sample.tangent.y, sample.tangent.x);
+      const nearest = nearestTrack(car.position); car.progress = nearest.progress; car.distanceAlong = nearest.distanceAlong; car.bestProgress = nearest.progress;
+      car.checkpointsPassed = Math.min(CHECKPOINT_COUNT - 1, Math.floor(nearest.progress * CHECKPOINT_COUNT)); car.nextCheckpoint = car.checkpointsPassed >= CHECKPOINT_COUNT - 1 ? 0 : car.checkpointsPassed + 1;
+      return car;
+    };
+    const fly = gridCar(0, 0); fly.network = new SpikingNetwork(77);
+    const rivals = [gridCar(-1, 52), gridCar(1, 108), gridCar(-1, 164)]; const cars = [fly, ...rivals];
+    for (let tick = 0; tick < MAX_TICKS; tick += 1) {
+      cars.forEach((car) => stepCar(car, car === fly ? fly.network!.step(sensorValues(fly, cars)) : heuristicAction(car, cars), cars));
+    }
+    rivals.forEach((car) => expect(car.checkpointsPassed, JSON.stringify({ progress: car.totalProgress, offTrackTicks: car.offTrackTicks, collisions: car.collisions, timedOut: car.timedOut })).toBeGreaterThanOrEqual(2));
+  });
+
+  it("keeps a heuristic driver progressing on every selectable track", () => {
+    TRACKS.forEach((route) => {
+      const car = startPosition(0, route);
+      for (let tick = 0; tick < MAX_TICKS && car.checkpointsPassed < 4; tick += 1) stepCar(car, heuristicAction(car, [car], route), [car], route);
+      expect(car.checkpointsPassed, `${route.id}: progress ${car.totalProgress.toFixed(3)}, next CP${car.nextCheckpoint}`).toBeGreaterThanOrEqual(4);
+    });
+  });
+
   it("damps stationary steering instead of allowing an in-place spin", () => {
     const car = startPosition(); const initialHeading = car.heading;
     for (let tick = 0; tick < 120; tick += 1) stepCar(car, { steer: 1, throttle: 0, brake: 0 }, [car]);
     expect(Math.abs(car.heading - initialHeading)).toBeLessThan(0.2);
     expect(car.stationaryTicks).toBeGreaterThan(18);
+  });
+
+  it("filters alternating steering commands instead of shaking at full lock", () => {
+    const car = startPosition(); car.speed = 45; const initialHeading = car.heading;
+    for (let tick = 0; tick < 30; tick += 1) stepCar(car, { steer: tick % 2 === 0 ? 1 : -1, throttle: 0, brake: 0 }, [car]);
+    expect(Math.abs(car.steering)).toBeLessThan(0.2);
+    expect(Math.abs(car.heading - initialHeading)).toBeLessThan(0.12);
   });
 
   it("is repeatable for the same evaluated network", () => {

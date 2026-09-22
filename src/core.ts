@@ -309,6 +309,23 @@ export function evolutionSelectionScore(progress: number, fitness: number, finis
 export type EvolutionCandidate = { progress: number; fitness: number; finished: boolean };
 
 /**
+ * Blend route progress with reward for parent selection. Reward is normalized
+ * inside the current generation so its arbitrary scale cannot dominate the
+ * slider. Completed laps remain above every incomplete candidate.
+ */
+export function blendedEvolutionSelectionScore(candidate: EvolutionCandidate, progressWeight: number, fitnessMin: number, fitnessMax: number): number {
+  const progressShare = clamp(progressWeight, 0, 1);
+  const normalizedProgress = clamp(candidate.progress, 0, 1);
+  const safeMin = Number.isFinite(fitnessMin) ? fitnessMin : 0;
+  const safeMax = Number.isFinite(fitnessMax) ? fitnessMax : safeMin;
+  const fitnessRange = safeMax - safeMin;
+  const normalizedFitness = Number.isFinite(candidate.fitness)
+    ? fitnessRange > 1e-9 ? clamp((candidate.fitness - safeMin) / fitnessRange, 0, 1) : 0.5
+    : 0;
+  return (candidate.finished ? 2 : 0) + progressShare * normalizedProgress + (1 - progressShare) * normalizedFitness;
+}
+
+/**
  * Compare candidates lexicographically so an arbitrary reward scale can never
  * overpower route mastery. Positive means `a` is the better candidate.
  */
@@ -539,7 +556,7 @@ export type Car = {
   position: Vec; heading: number; speed: number; progress: number; totalProgress: number; laps: number; bestProgress: number;
   trackId: TrackId; distanceAlong: number; nearestDistance: number; offTrackTicks: number; collisions: number; ticks: number; score: number;
   crashed: boolean; timedOut: boolean; finished: boolean; timeLimit: number; timeExtensions: number; rewardWindowScore: number; rewardWindowTicks: number; previousRewardRate: number; nextCheckpoint: number; checkpointsPassed: number; stationaryTicks: number; wrongDirectionTicks: number; forwardAlignment: number; lastReward: number;
-  lateralOffset: number; collisionCooldown: number;
+  lateralOffset: number; collisionCooldown: number; steering: number;
   rewardBreakdown: RewardBreakdown; rewardTotals: RewardTotals; nearestOpponentDistance: number; collisionRadius: number;
   color: string; name: string; network?: SpikingNetwork; action: Action; trail: Vec[]; isFly: boolean; isObstacle: boolean; obstacleKind?: RoadObjectKind;
 };
@@ -564,7 +581,7 @@ export function startPosition(lane = 0, trackRef: TrackRef = DEFAULT_TRACK): Car
   const rewardBreakdown = emptyRewards();
   return { position: point, heading: Math.atan2(line.tangent.y, line.tangent.x), speed: 0, progress: 0, distanceAlong: 0,
     totalProgress: 0, laps: 0, bestProgress: 0, trackId: route.id, nearestDistance: 0, offTrackTicks: 0, collisions: 0, ticks: 0, score: 0,
-    crashed: false, timedOut: false, finished: false, timeLimit: MAX_TICKS, timeExtensions: 0, rewardWindowScore: 0, rewardWindowTicks: 0, previousRewardRate: 0, nextCheckpoint: 1, checkpointsPassed: 0, stationaryTicks: 0, wrongDirectionTicks: 0, forwardAlignment: 1, lastReward: 0, lateralOffset: 0, collisionCooldown: 0, nearestOpponentDistance: Infinity,
+    crashed: false, timedOut: false, finished: false, timeLimit: MAX_TICKS, timeExtensions: 0, rewardWindowScore: 0, rewardWindowTicks: 0, previousRewardRate: 0, nextCheckpoint: 1, checkpointsPassed: 0, stationaryTicks: 0, wrongDirectionTicks: 0, forwardAlignment: 1, lastReward: 0, lateralOffset: 0, collisionCooldown: 0, steering: 0, nearestOpponentDistance: Infinity,
     rewardBreakdown, rewardTotals: { ...rewardBreakdown }, color: "#f19a69", name: "bot", action: { steer: 0, throttle: 1, brake: 0 }, trail: [], isFly: false, isObstacle: false, collisionRadius: CAR_COLLISION_DIAMETER / 2 };
 }
 
@@ -668,6 +685,11 @@ export function nearestTrack(position: Vec, trackRef: TrackRef = DEFAULT_TRACK, 
   // collecting checkpoints or finish credit out of order. If the old branch
   // is genuinely far away, fall back to the globally nearest segment so an
   // off-road car can still recover normally.
+  // At crossovers the intended branch can be noticeably farther in screen
+  // space, so keep a road-width-sized candidate set. Rank it by both route
+  // continuity and physical distance: route distance preserves topology at a
+  // crossing, while physical distance prevents an ordinary corner from
+  // clinging to the previous segment endpoint.
   const continuityWindow = Math.max(10, route.width * 0.72);
   return candidates.filter((candidate) => candidate.distance <= nearest.distance + continuityWindow)
     .reduce((best, candidate) => {
@@ -679,9 +701,11 @@ export function nearestTrack(position: Vec, trackRef: TrackRef = DEFAULT_TRACK, 
       // a forward car look as though it moved backwards for one tick.
       const nearSeam = referenceDistanceAlong < route.width * 0.5 || referenceDistanceAlong > route.length - route.width * 0.5;
       if (nearSeam && Math.sign(candidateDelta) !== Math.sign(directionHint) && Math.sign(bestDelta) === Math.sign(directionHint)) return best;
-      const distanceDelta = circularArcDistance(referenceDistanceAlong, candidate.distanceAlong, route.length) - circularArcDistance(referenceDistanceAlong, best.distanceAlong, route.length);
-      if (distanceDelta < -0.001) return candidate;
-      if (Math.abs(distanceDelta) <= 0.001 && Math.sign(candidateDelta) === Math.sign(directionHint) && Math.sign(bestDelta) !== Math.sign(directionHint)) return candidate;
+      const candidateScore = circularArcDistance(referenceDistanceAlong, candidate.distanceAlong, route.length) + candidate.distance * 3;
+      const bestScore = circularArcDistance(referenceDistanceAlong, best.distanceAlong, route.length) + best.distance * 3;
+      const scoreDelta = candidateScore - bestScore;
+      if (scoreDelta < -0.001) return candidate;
+      if (Math.abs(scoreDelta) <= 0.001 && Math.sign(candidateDelta) === Math.sign(directionHint) && Math.sign(bestDelta) !== Math.sign(directionHint)) return candidate;
       return best;
     }, nearest);
 }
@@ -724,14 +748,20 @@ export function heuristicAction(car: Car, others: Car[], trackRef?: TrackRef): A
 
 export function stepCar(car: Car, action: Action, others: Car[], trackRef?: TrackRef, rewardConfig: RewardConfig = DEFAULT_REWARD_CONFIG, physicsConfig: PhysicsConfig = DEFAULT_PHYSICS_CONFIG): void {
   if (car.crashed || car.finished || car.timedOut) return;
-  const route = resolveTrack(trackRef ?? car.trackId); const checkpointCount = clamp(Math.floor(physicsConfig.checkpointCount ?? CHECKPOINT_COUNT), 2, 64); const directionHint = car.speed < -0.5 || ((action.reverse ?? 0) > action.throttle && car.speed <= 0) ? -1 : 1; const continuityReference = car.ticks > 0 ? car.distanceAlong : undefined; const nearby = nearestTrack(car.position, route, continuityReference, directionHint); const offTrackBefore = nearby.distance > route.width / 2; const grip = offTrackBefore ? 0.35 : 1;
+  const route = resolveTrack(trackRef ?? car.trackId); const checkpointCount = clamp(Math.floor(physicsConfig.checkpointCount ?? CHECKPOINT_COUNT), 2, 64); const directionHint = car.speed < -0.5 || ((action.reverse ?? 0) > action.throttle && car.speed <= 0) ? -1 : 1; const continuityReference = car.ticks > 0 ? car.distanceAlong : undefined; const nearby = nearestTrack(car.position, route, continuityReference, directionHint); const offTrackBefore = nearby.distance > route.width / 2; const grip = offTrackBefore ? 0.68 : 1;
   const steeringDirection = car.speed < -0.5 ? -1 : 1;
   // A car with almost no forward speed cannot keep rotating at full steering
   // authority. This prevents neural candidates from spinning in place while
   // still allowing a slow reverse/turn escape when they are genuinely stuck.
   const lowSpeedSteering = clamp(Math.abs(car.speed) / 18, 0.18, 1);
-  const stationarySteering = car.stationaryTicks > 18 ? clamp(1 - (car.stationaryTicks - 18) / 24, 0, 1) : 1;
-  car.heading += clamp(action.steer, -1, 1) * (0.65 + Math.abs(car.speed) / 150) * grip * steeringDirection * lowSpeedSteering * stationarySteering * STEP;
+  const stationarySteering = car.stationaryTicks > 18 ? clamp(1 - (car.stationaryTicks - 18) / 24, 0.2, 1) : 1;
+  // Spiking outputs can alternate sharply on adjacent ticks. A short actuator
+  // response window behaves like a real steering rack and removes visible
+  // left/right shake without hiding sustained steering intent.
+  const requestedSteering = clamp(action.steer, -1, 1);
+  car.steering += (requestedSteering - car.steering) * 0.24;
+  if (Math.abs(car.steering) < 0.0001) car.steering = 0;
+  car.heading += car.steering * (0.65 + Math.abs(car.speed) / 150) * grip * steeringDirection * lowSpeedSteering * stationarySteering * STEP;
   const forwardThrottle = clamp(action.throttle, 0, 1); const reverseThrottle = clamp(action.reverse ?? 0, 0, 1); const brake = clamp(action.brake, 0, 1);
   let acceleration = forwardThrottle * 55 - reverseThrottle * 45 - car.speed * 0.23;
   if (car.speed > 0) acceleration -= brake * 75; else if (car.speed < 0) acceleration += brake * 75;
@@ -784,7 +814,10 @@ export function stepCar(car: Car, action: Action, others: Car[], trackRef?: Trac
     if (gate.distanceAlong !== undefined) {
       const centerlineDistance = dist(crossingPoint, gate.point);
       if (centerlineDistance > route.width / 2 - CAR_WIDTH * 0.25) return false;
-      const crossingTrack = nearestTrack(crossingPoint, route);
+      // Crossovers can put another branch a few pixels closer than the branch
+      // that owns this gate. Anchor the projection to the expected gate's arc
+      // so the nearby lane cannot steal the crossing's route identity.
+      const crossingTrack = nearestTrack(crossingPoint, route, gate.distanceAlong, 1);
       const directError = Math.abs(crossingTrack.distanceAlong - gate.distanceAlong);
       const wrappedError = Math.min(directError, route.length - directError);
       if (wrappedError > Math.max(route.width * 0.45, CAR_LENGTH * 2.5)) return false;
@@ -794,7 +827,14 @@ export function stepCar(car: Car, action: Action, others: Car[], trackRef?: Trac
   const directedStartCross = crossesGate(line);
   const expectedCheckpoint = car.nextCheckpoint;
   const expectedGate = trackCheckpoint(expectedCheckpoint, route, checkpointCount);
-  const intermediateCheckpointCrossed = expectedCheckpoint > 0 && crossesGate(expectedGate) && alignment > 0.15 && car.speed > 2;
+  const arcTravel = forwardArcDistance(previousDistanceAlong, updated.distanceAlong, route.length);
+  const gateAhead = forwardArcDistance(previousDistanceAlong, expectedGate.distanceAlong, route.length);
+  const maxCheckpointArcTravel = Math.max(CAR_LENGTH * 1.5, Math.abs(car.speed) * STEP * 2.2 + 8);
+  // At a polygon corner, the visually correct blended gate can differ a few
+  // pixels from the projection segment. Route-distance crossing is an
+  // equivalent, continuity-safe fallback while the car remains on the road.
+  const crossedExpectedArc = arcTravel > 0.0001 && arcTravel <= maxCheckpointArcTravel && gateAhead <= arcTravel + 0.75 && updated.distance <= route.width / 2 + CAR_WIDTH;
+  const intermediateCheckpointCrossed = expectedCheckpoint > 0 && (crossesGate(expectedGate) || crossedExpectedArc) && alignment > 0.15 && car.speed > 2;
   // The start gate is also the finish gate, but it is only valid after all
   // intermediate gates were crossed in order and nearly one full lap elapsed.
   const lapCrossed = expectedCheckpoint === 0 && directedStartCross && car.totalProgress >= 0.95 && alignment > 0.15 && car.speed > 2;
@@ -870,7 +910,13 @@ export function stepCar(car: Car, action: Action, others: Car[], trackRef?: Trac
   const collisionDelta = car.collisions - collisionsBefore;
   const oilHazard = others.some((other) => other !== car && other.trackId === car.trackId && other.isObstacle && other.obstacleKind === "oil" && dist(car.position, other.position) < 28);
   if (oilHazard) car.speed *= 0.88;
-  const standingStill = car.speed < 3; if (standingStill) car.stationaryTicks += 1; if (alignment < -0.25) car.wrongDirectionTicks += 1;
+  // These are consecutive-state counters, not lifetime totals. Leaving them
+  // latched meant a car that accumulated 42 slow ticks across several turns
+  // eventually lost all steering authority forever and appeared to die just
+  // after a checkpoint.
+  const standingStill = Math.abs(car.speed) < 3;
+  car.stationaryTicks = standingStill ? car.stationaryTicks + 1 : 0;
+  car.wrongDirectionTicks = alignment < -0.25 ? car.wrongDirectionTicks + 1 : 0;
   const reward = emptyRewards();
   reward.progress = (validForwardDelta / STEP) * rewardConfig.progressPerSecond;
   reward.direction = Math.max(0, alignment) * rewardConfig.correctDirectionPerSecond * STEP;
