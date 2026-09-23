@@ -151,6 +151,10 @@
             <label class="check-row"><input id="walls-toggle" type="checkbox" checked /> <span>Track walls <small>recovery clamp (turn off for open track)</small></span></label>
             <label class="check-row"><input id="adaptive-time-toggle" type="checkbox" checked /> <span>Adaptive time limit <small>adds one base time window per viable extension</small></span></label>
             <label>Max adaptive extensions <input id="adaptive-extensions" type="number" min="0" max="6" value="4" /></label>
+            <label class="check-row"><input id="ruthless-culling-toggle" type="checkbox" checked /> <span>Ruthless progress watchdog <small>eliminates training candidates that spend whole windows going nowhere</small></span></label>
+            <label>Watchdog window (seconds) <input id="cull-window-seconds" type="number" min="3" max="30" step="1" value="10" /></label>
+            <label>Minimum progress per window (%) <input id="cull-min-progress" type="number" min="0.1" max="25" step="0.1" value="2" /></label>
+            <label>Bad windows before elimination <input id="cull-patience" type="number" min="1" max="5" step="1" value="2" /></label>
             <label>Checkpoint gates <input id="checkpoint-count" type="number" min="2" max="64" value="8" /></label>
             <label class="check-row"><input id="ghost-evolution-toggle" type="checkbox" /> <span>Independent evolution <small>isolated candidate worlds: brains do not see, collide with, or influence one another</small></span></label>
             <label class="check-row"><input id="soft-contact-toggle" type="checkbox" checked /> <span>Ghost contact mode <small>brains see each other and pay overlap penalties, but contact is soft and never blocks them</small></span></label>
@@ -172,9 +176,15 @@
               <output id="breeding-priority-value" for="breeding-progress-weight">100% progress · 0% reward</output>
               <input id="breeding-progress-weight" type="range" min="0" max="100" step="10" value="100" aria-label="Breeding selection weight for route progress versus reward" />
             </label>
+            <label>Progress metric
+              <select id="breeding-progress-metric">
+                <option value="distance">Total route progress</option>
+                <option value="rate">Progress per time</option>
+              </select>
+            </label>
             <label>Winner mating share (%) <input id="winner-mating-share" type="number" min="50" max="95" value="80" /></label>
             <label class="check-row"><input id="curriculum-toggle" type="checkbox" /> <span>Progressive hazards <small>ramps stalled road objects from easy to full difficulty</small></span></label>
-            <p class="microcopy">The population button runs all configured brains simultaneously, including 10+ cars. The breeding-priority slider moves in clear 10-point ratios (100/0, 90/10, 80/20…) and defaults to pure route progress. It ranks the actual mating candidates; completed laps and incumbent acceptance remain progress-first. The protected incumbent mates with the blended winner for the configured share and the runner-up for the remainder. Ghost contact mode is the stable default: brains share one visible race, sense one another, and pay overlap penalties without collision pileups. Independent evolution fully isolates them; turn both modes off only when you explicitly want rigid collision dynamics.</p>
+            <p class="microcopy">The population button runs all configured brains simultaneously, including 10+ cars. Choose whether “progress” means total distance or route progress per second, then blend it with reward in clear 10-point ratios (100/0, 90/10, 80/20…). Think of total progress as “who got furthest” and progress per time as “who climbed fastest.” The watchdog is a separate race steward: after its grace windows, it removes candidates that fail to advance and denies adaptive extensions bought with idle reward. The protected incumbent mates with the blended winner for the configured share and the runner-up for the remainder. Ghost contact mode keeps candidate contact non-blocking.</p>
           </section>
 
           <details class="panel-section reward-settings" open>

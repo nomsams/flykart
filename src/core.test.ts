@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   CAR_COLLISION_DIAMETER, CHECKPOINT_COUNT, CLOSE_PROXIMITY_DISTANCE, DEFAULT_PHYSICS_CONFIG, DEFAULT_REWARD_CONFIG, DEFAULT_TRACK, LANE_SPACING, MAX_TICKS, STEP, TRACKS, TRACK_WIDTH, BrainSnapshot, SpikingNetwork, adaptiveTimeLimitForExtensions, createMutationPopulation, createNetworkPopulation, createRoadObstacles,
-  blendedEvolutionSelectionScore, compareEvolutionCandidates, evaluate, evaluateGeneralist, evolutionSelectionScore, heuristicAction, nearestTrack, pointAtDistance, resolveTrack, sensorValues, shouldAcceptEvolutionCandidate, startLine, startPosition, stepCar, track, trackCheckpoint, trackDiagnostics,
+  blendedEvolutionSelectionScore, compareEvolutionCandidates, evaluate, evaluateGeneralist, evolutionSelectionScore, heuristicAction, nearestTrack, pointAtDistance, progressPerSecond, resolveTrack, sensorValues, shouldAcceptEvolutionCandidate, startLine, startPosition, stepCar, track, trackCheckpoint, trackDiagnostics,
 } from "./core";
 
 const finiteAction = (action: ReturnType<SpikingNetwork["step"]>) => {
@@ -405,6 +405,14 @@ describe("vehicle physics and fitness", () => {
     });
   });
 
+  it("keeps a genuinely progressing heuristic driver alive under the ruthless watchdog", () => {
+    const car = startPosition();
+    const watchdog = { wallsEnabled: true, adaptiveTimeLimit: true, maxAdaptiveExtensions: 4, ruthlessCulling: true, cullWindowTicks: 300, minProgressPerWindow: 0.02, cullPatience: 1 };
+    for (let tick = 0; tick < 600 && !car.finished && !car.eliminated; tick += 1) stepCar(car, heuristicAction(car, [car]), [car], DEFAULT_TRACK, DEFAULT_REWARD_CONFIG, watchdog);
+    expect(car.eliminated, car.eliminationReason).toBe(false);
+    expect(car.totalProgress).toBeGreaterThan(0.04);
+  });
+
   it("damps stationary steering instead of allowing an in-place spin", () => {
     const car = startPosition(); const initialHeading = car.heading;
     for (let tick = 0; tick < 120; tick += 1) stepCar(car, { steer: 1, throttle: 0, brake: 0 }, [car]);
@@ -583,6 +591,33 @@ describe("vehicle physics and fitness", () => {
     expect(stalled.timeExtensions).toBe(0);
     expect(stalled.timedOut).toBe(true);
     expect(stalled.crashed).toBe(false);
+  });
+
+  it("ranks faster route progress above slower progress when rate is selected", () => {
+    expect(progressPerSecond(0.5, 300)).toBeGreaterThan(progressPerSecond(0.7, 900));
+    expect(progressPerSecond(0.5, 300)).toBeCloseTo(0.05);
+  });
+
+  it("denies an adaptive extension when reward is positive but route progress is not viable", () => {
+    const car = startPosition(); car.ticks = MAX_TICKS - 1; car.rewardWindowTicks = 299; car.rewardWindowScore = 100;
+    stepCar(car, { steer: 0, throttle: 0, brake: 0 }, [car], DEFAULT_TRACK, DEFAULT_REWARD_CONFIG, {
+      wallsEnabled: true, adaptiveTimeLimit: true, maxAdaptiveExtensions: 4, ruthlessCulling: true, cullWindowTicks: 300, minProgressPerWindow: 0.02, cullPatience: 2,
+    });
+    expect(car.timeExtensions).toBe(0);
+    expect(car.timedOut).toBe(true);
+    expect(car.eliminated).toBe(false);
+  });
+
+  it("eliminates a stagnant candidate after the configured number of bad windows", () => {
+    const car = startPosition();
+    const watchdog = { wallsEnabled: true, adaptiveTimeLimit: true, maxAdaptiveExtensions: 4, ruthlessCulling: true, cullWindowTicks: 30, minProgressPerWindow: 0.01, cullPatience: 2 };
+    for (let tick = 0; tick < 90 && !car.eliminated; tick += 1) stepCar(car, { steer: 0, throttle: 0, brake: 1 }, [car], DEFAULT_TRACK, DEFAULT_REWARD_CONFIG, watchdog);
+    expect(car.eliminated).toBe(true);
+    expect(car.ticks).toBe(60);
+    expect(car.eliminationReason).toContain("progress watchdog");
+    const position = { ...car.position };
+    stepCar(car, { steer: 1, throttle: 1, brake: 0 }, [car], DEFAULT_TRACK, DEFAULT_REWARD_CONFIG, watchdog);
+    expect(car.position).toEqual(position);
   });
 
   it("allows adaptive time to extend beyond the old two-extension limit", () => {
