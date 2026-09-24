@@ -12,6 +12,12 @@ export type PhysicsConfig = {
   cullWindowTicks?: number;
   minProgressPerWindow?: number;
   cullPatience?: number;
+  /** Fractional episode-to-episode variation applied to grip, engine force,
+   * and steering response during evaluation. Zero keeps exact base physics. */
+  domainRandomization?: number;
+  gripScale?: number;
+  engineScale?: number;
+  steeringScale?: number;
   /**
    * Keep contact as a sensor/reward event without applying rigid-body
    * separation or momentum transfer. This is useful when many candidates are
@@ -256,6 +262,9 @@ export type RewardConfig = {
   proximityPenaltyPerSecond: number;
   hazardPenaltyPerSecond: number;
   centerlinePerSecond?: number;
+  controlChangePerSecond?: number;
+  controlConflictPerSecond?: number;
+  spikeEnergyPerSecond?: number;
   collision: number;
   crash: number;
   checkpoint: number;
@@ -274,6 +283,9 @@ export const DEFAULT_REWARD_CONFIG: RewardConfig = {
   proximityPenaltyPerSecond: 10,
   hazardPenaltyPerSecond: 7.5,
   centerlinePerSecond: 0.35,
+  controlChangePerSecond: 0.08,
+  controlConflictPerSecond: 0.5,
+  spikeEnergyPerSecond: 0.04,
   collision: 10,
   crash: 75,
   checkpoint: 100,
@@ -292,6 +304,9 @@ export type RewardBreakdown = {
   proximity: number;
   hazard: number;
   centerline: number;
+  controlChange: number;
+  controlConflict: number;
+  spikeEnergy: number;
   collision: number;
   crash: number;
   checkpoint: number;
@@ -351,6 +366,14 @@ const hash = (seed: number): number => {
   const value = Math.sin(seed * 12.9898) * 43758.5453;
   return value - Math.floor(value);
 };
+export function physicsForEpisode(config: PhysicsConfig, seed: number, trackRef: TrackRef = DEFAULT_TRACK): PhysicsConfig {
+  const route = resolveTrack(trackRef); const variation = clamp(config.domainRandomization ?? 0, 0, 0.35);
+  return { ...config,
+    gripScale: 1 + (hash(seed * 1.17 + route.length) * 2 - 1) * variation,
+    engineScale: 1 + (hash(seed * 2.31 + route.width) * 2 - 1) * variation,
+    steeringScale: 1 + (hash(seed * 3.73 + route.points.length) * 2 - 1) * variation,
+  };
+}
 const add = (a: Vec, b: Vec): Vec => ({ x: a.x + b.x, y: a.y + b.y });
 const sub = (a: Vec, b: Vec): Vec => ({ x: a.x - b.x, y: a.y - b.y });
 const scale = (a: Vec, amount: number): Vec => ({ x: a.x * amount, y: a.y * amount });
@@ -359,7 +382,7 @@ const normalize = (a: Vec): Vec => scale(a, 1 / (Math.hypot(a.x, a.y) || 1));
 
 export type NeuronSnapshot = { spikes: number[]; outputs: number[] };
 export type BrainSnapshot = {
-  version: 1;
+  version: 1 | 2;
   inputCount: number;
   hiddenCount: number;
   inputWeights: number[];
@@ -367,10 +390,11 @@ export type BrainSnapshot = {
   outputWeights: number[];
   bias: number[];
   outputCount?: number;
+  mutationSigma?: number;
 };
 
 export class SpikingNetwork {
-  readonly inputCount = 9;
+  readonly inputCount = 17;
   readonly hiddenCount = 48;
   private readonly inputWeights: number[];
   private readonly recurrentWeights: number[];
@@ -378,6 +402,9 @@ export class SpikingNetwork {
   private readonly bias: number[];
   private voltage: number[];
   private spikes: number[];
+  private nextSpikes: number[];
+  private readonly readout: number[];
+  private mutationSigma = 1;
   private readonly snapshot: NeuronSnapshot;
 
   constructor(seed = Math.random()) {
@@ -390,6 +417,8 @@ export class SpikingNetwork {
     this.bias = Array.from({ length: this.hiddenCount }, () => random() * 0.06);
     this.voltage = new Array(this.hiddenCount).fill(0);
     this.spikes = new Array(this.hiddenCount).fill(0);
+    this.nextSpikes = new Array(this.hiddenCount).fill(0);
+    this.readout = [0, 0, 0, 0];
     this.snapshot = { spikes: [...this.spikes], outputs: [0, 0, 0, 0] };
   }
 
@@ -399,6 +428,7 @@ export class SpikingNetwork {
     result.recurrentWeights.splice(0, result.recurrentWeights.length, ...this.recurrentWeights);
     result.outputWeights.splice(0, result.outputWeights.length, ...this.outputWeights);
     result.bias.splice(0, result.bias.length, ...this.bias);
+    result.mutationSigma = this.mutationSigma;
     return result;
   }
 
@@ -410,80 +440,106 @@ export class SpikingNetwork {
       cursor += 1; const b = hash(cursor) * 2 - 1;
       return Math.sqrt(-2 * Math.log(Math.max(0.0001, (a + 1) / 2))) * Math.cos(TAU * (b + 1) / 2);
     };
-    const change = (weights: number[]) => weights.forEach((value, index) => {
-      if (hash(cursor += 1) < rate) weights[index] = value + noise() * amount;
+    result.mutationSigma = clamp(this.mutationSigma * Math.exp(noise() * 0.08), 0.25, 4);
+    const change = (weights: number[], layerScale: number, limit: number) => weights.forEach((value, index) => {
+      if (hash(cursor += 1) < rate) weights[index] = clamp(value + noise() * amount * result.mutationSigma * layerScale, -limit, limit);
     });
-    change(result.inputWeights); change(result.recurrentWeights); change(result.outputWeights); change(result.bias);
+    change(result.inputWeights, 1, 3); change(result.recurrentWeights, 0.45, 1.5); change(result.outputWeights, 0.75, 3); change(result.bias, 0.25, 0.8);
     return result;
   }
 
   crossover(partner: SpikingNetwork, seed: number, partnerProbability = 0.5): SpikingNetwork {
     const result = this.clone(); let cursor = seed;
-    // Recombine short chromosome blocks instead of flipping every weight
-    // independently. This keeps useful local neural motifs together while
-    // still producing a deterministic Mendelian-style 50/50 inheritance mix.
-    const combine = (target: number[], first: number[], second: number[]): void => {
-      const blockSize = Math.max(8, Math.floor(Math.sqrt(target.length)));
-      let usePartner = false;
-      target.forEach((_, index) => {
-        if (index % blockSize === 0) { cursor += 1; usePartner = hash(cursor) < partnerProbability; }
-        target[index] = usePartner ? second[index] : first[index];
-      });
-    };
-    combine(result.inputWeights, this.inputWeights, partner.inputWeights);
-    combine(result.recurrentWeights, this.recurrentWeights, partner.recurrentWeights);
-    combine(result.outputWeights, this.outputWeights, partner.outputWeights);
-    combine(result.bias, this.bias, partner.bias);
+    // Copy whole hidden-neuron units: input row, recurrent input row, bias,
+    // and that neuron's contribution to every output. Flat array crossover
+    // splits these coupled genes apart and usually destroys useful behavior.
+    const partnerNeuron = Array.from({ length: this.hiddenCount }, () => hash(cursor += 1) < partnerProbability);
+    for (let neuron = 0; neuron < this.hiddenCount; neuron += 1) {
+      if (!partnerNeuron[neuron]) continue;
+      const inputStart = neuron * this.inputCount;
+      result.inputWeights.splice(inputStart, this.inputCount, ...partner.inputWeights.slice(inputStart, inputStart + this.inputCount));
+      const recurrentStart = neuron * this.hiddenCount;
+      result.recurrentWeights.splice(recurrentStart, this.hiddenCount, ...partner.recurrentWeights.slice(recurrentStart, recurrentStart + this.hiddenCount));
+      result.bias[neuron] = partner.bias[neuron];
+      for (let output = 0; output < 4; output += 1) result.outputWeights[output * this.hiddenCount + neuron] = partner.outputWeights[output * this.hiddenCount + neuron];
+    }
+    result.mutationSigma = (this.mutationSigma + partner.mutationSigma) / 2;
     result.reset(); return result;
   }
 
   reset(): void {
-    this.voltage.fill(0); this.spikes.fill(0); this.snapshot.spikes.fill(0); this.snapshot.outputs.fill(0);
+    this.voltage.fill(0); this.spikes.fill(0); this.nextSpikes.fill(0); this.readout.fill(0); this.snapshot.spikes.fill(0); this.snapshot.outputs.fill(0);
   }
 
   step(inputs: Sensors): Action {
     if (inputs.length !== this.inputCount || inputs.some((value) => !Number.isFinite(value))) throw new Error("invalid neural input vector");
-    const nextSpikes = new Array(this.hiddenCount).fill(0);
     for (let neuron = 0; neuron < this.hiddenCount; neuron += 1) {
       let current = this.bias[neuron];
       for (let input = 0; input < this.inputCount; input += 1) current += this.inputWeights[neuron * this.inputCount + input] * inputs[input];
       for (let previous = 0; previous < this.hiddenCount; previous += 1) current += this.recurrentWeights[neuron * this.hiddenCount + previous] * this.spikes[previous];
       const voltage = this.voltage[neuron] * 0.86 + current * 0.22;
-      nextSpikes[neuron] = voltage > 0.42 ? 1 : 0;
-      this.voltage[neuron] = nextSpikes[neuron] === 1 ? 0 : voltage;
+      this.nextSpikes[neuron] = voltage > 0.42 ? 1 : 0;
+      this.voltage[neuron] = this.nextSpikes[neuron] === 1 ? 0 : voltage;
     }
-    this.spikes = nextSpikes;
-    const outputs = [0, 0, 0, 0];
-    for (let output = 0; output < outputs.length; output += 1) {
-      for (let neuron = 0; neuron < this.hiddenCount; neuron += 1) outputs[output] += this.outputWeights[output * this.hiddenCount + neuron] * this.spikes[neuron];
-      outputs[output] = Math.tanh(outputs[output]);
+    const previousSpikes = this.spikes; this.spikes = this.nextSpikes; this.nextSpikes = previousSpikes;
+    for (let output = 0; output < this.readout.length; output += 1) {
+      let instantaneous = 0;
+      for (let neuron = 0; neuron < this.hiddenCount; neuron += 1) instantaneous += this.outputWeights[output * this.hiddenCount + neuron] * this.spikes[neuron];
+      this.readout[output] = this.readout[output] * 0.72 + Math.tanh(instantaneous) * 0.28;
     }
-    this.snapshot.spikes = [...this.spikes]; this.snapshot.outputs = outputs;
+    for (let neuron = 0; neuron < this.hiddenCount; neuron += 1) this.snapshot.spikes[neuron] = this.spikes[neuron];
+    for (let output = 0; output < this.readout.length; output += 1) this.snapshot.outputs[output] = this.readout[output];
     // Reverse is deliberately gated: a neutral/legacy brain keeps reverse at zero,
     // while evolution can learn a distinct reverse signal when it is useful.
-    const reverse = clamp((outputs[3] - 0.25) / 0.75, 0, 1);
-    return { steer: outputs[0], throttle: (outputs[1] + 1) / 2, brake: (outputs[2] + 1) / 2, reverse };
+    const drive = this.readout[1] - this.readout[2];
+    const throttle = clamp(drive, 0, 1); const brake = clamp(-drive, 0, 1);
+    const reverse = clamp((this.readout[3] - 0.25) / 0.75, 0, 1);
+    return { steer: this.readout[0], throttle: reverse > 0 ? 0 : throttle, brake, reverse };
+  }
+
+  trainActionReadout(inputs: Sensors, target: Action, learningRate = 0.015): number {
+    const predicted = this.step(inputs);
+    const targets = [clamp(target.steer, -1, 1), clamp(target.throttle - target.brake, -1, 1), clamp(target.brake - target.throttle, -1, 1), clamp(target.reverse ?? 0, 0, 1)];
+    const predictedValues = [predicted.steer, predicted.throttle - predicted.brake, predicted.brake - predicted.throttle, predicted.reverse ?? 0];
+    let loss = 0;
+    for (let output = 0; output < 4; output += 1) {
+      const error = targets[output] - predictedValues[output]; loss += error * error;
+      for (let neuron = 0; neuron < this.hiddenCount; neuron += 1) {
+        const index = output * this.hiddenCount + neuron;
+        this.outputWeights[index] = clamp(this.outputWeights[index] + learningRate * error * this.spikes[neuron], -3, 3);
+      }
+    }
+    return loss / 4;
   }
 
   activity(): NeuronSnapshot { return this.snapshot; }
 
   toJSON(): BrainSnapshot {
-    return { version: 1, inputCount: this.inputCount, hiddenCount: this.hiddenCount, outputCount: 4,
+    return { version: 2, inputCount: this.inputCount, hiddenCount: this.hiddenCount, outputCount: 4, mutationSigma: this.mutationSigma,
       inputWeights: [...this.inputWeights], recurrentWeights: [...this.recurrentWeights], outputWeights: [...this.outputWeights], bias: [...this.bias] };
   }
 
   static fromJSON(snapshot: BrainSnapshot): SpikingNetwork {
     const arrays = [snapshot.inputWeights, snapshot.recurrentWeights, snapshot.outputWeights, snapshot.bias];
-    if (snapshot.version !== 1 || snapshot.inputCount !== 9 || snapshot.hiddenCount !== 48 || arrays.some((value) => !Array.isArray(value) || value.some((item) => !Number.isFinite(item)))) throw new Error("checkpoint format does not match this FlyKart build");
+    const legacyInputCount = 9;
+    const supportedInputCount = snapshot.version === 1 ? legacyInputCount : 17;
+    if (![1, 2].includes(snapshot.version) || snapshot.inputCount !== supportedInputCount || snapshot.hiddenCount !== 48 || arrays.some((value) => !Array.isArray(value) || value.some((item) => !Number.isFinite(item)))) throw new Error("checkpoint format does not match this FlyKart build");
     const legacyOutputLength = snapshot.hiddenCount * 3;
     const currentOutputLength = snapshot.hiddenCount * 4;
     if (snapshot.inputWeights.length !== snapshot.inputCount * snapshot.hiddenCount || snapshot.recurrentWeights.length !== snapshot.hiddenCount ** 2 || (snapshot.outputWeights.length !== legacyOutputLength && snapshot.outputWeights.length !== currentOutputLength) || snapshot.bias.length !== snapshot.hiddenCount) throw new Error("checkpoint dimensions are invalid");
     const result = new SpikingNetwork(0.5);
-    result.inputWeights.splice(0, result.inputWeights.length, ...snapshot.inputWeights);
+    if (snapshot.inputCount === result.inputCount) result.inputWeights.splice(0, result.inputWeights.length, ...snapshot.inputWeights);
+    else {
+      result.inputWeights.fill(0);
+      for (let neuron = 0; neuron < result.hiddenCount; neuron += 1) {
+        for (let input = 0; input < legacyInputCount; input += 1) result.inputWeights[neuron * result.inputCount + input] = snapshot.inputWeights[neuron * legacyInputCount + input];
+      }
+    }
     result.recurrentWeights.splice(0, result.recurrentWeights.length, ...snapshot.recurrentWeights);
     const outputWeights = snapshot.outputWeights.length === legacyOutputLength ? [...snapshot.outputWeights, ...new Array(result.hiddenCount).fill(0)] : snapshot.outputWeights;
     result.outputWeights.splice(0, result.outputWeights.length, ...outputWeights);
     result.bias.splice(0, result.bias.length, ...snapshot.bias);
+    result.mutationSigma = clamp(snapshot.mutationSigma ?? 1, 0.25, 4);
     result.reset(); return result;
   }
 }
@@ -506,8 +562,8 @@ export type MutationPopulationOptions = {
  * Build the next generation while preserving the exact incumbent in slot 1.
  * During a plateau, the tail of the population becomes deterministic random
  * immigrants and the remaining scouts use larger mutations. This creates a
- * real escape route from a local optimum without ever replacing the parent
- * with a lower-scoring candidate.
+ * real escape route from a local optimum while preserving the selected
+ * objective winner exactly in slot 1.
  */
 export function createMutationPopulation(size: number, parent: SpikingNetwork | undefined, seed: number, rate = 0.12, amount = 0.22, options: MutationPopulationOptions = {}): SpikingNetwork[] {
   const safeSize = Math.max(1, Math.floor(size));
@@ -561,16 +617,16 @@ export function createMutationPopulation(size: number, parent: SpikingNetwork | 
 }
 
 export type Car = {
-  position: Vec; heading: number; speed: number; progress: number; totalProgress: number; laps: number; bestProgress: number;
+  position: Vec; heading: number; speed: number; progress: number; totalProgress: number; netProgress: number; forwardDistance: number; laps: number; bestProgress: number;
   trackId: TrackId; distanceAlong: number; nearestDistance: number; offTrackTicks: number; collisions: number; ticks: number; score: number;
-  crashed: boolean; timedOut: boolean; finished: boolean; eliminated: boolean; eliminationReason?: string; timeLimit: number; timeExtensions: number; rewardWindowScore: number; rewardWindowTicks: number; rewardWindowProgressStart: number; previousRewardRate: number; progressWindowStart: number; progressWindowTicks: number; poorProgressWindows: number; nextCheckpoint: number; checkpointsPassed: number; stationaryTicks: number; wrongDirectionTicks: number; forwardAlignment: number; lastReward: number;
+  crashed: boolean; crashReason?: string; timedOut: boolean; finished: boolean; eliminated: boolean; eliminationReason?: string; timeLimit: number; timeExtensions: number; rewardWindowScore: number; rewardWindowTicks: number; rewardWindowProgressStart: number; previousRewardRate: number; progressWindowStart: number; progressWindowTicks: number; poorProgressWindows: number; nextCheckpoint: number; checkpointsPassed: number; stationaryTicks: number; wrongDirectionTicks: number; consecutiveOffTrackTicks: number; forwardAlignment: number; lastReward: number;
   lateralOffset: number; collisionCooldown: number; steering: number;
   rewardBreakdown: RewardBreakdown; rewardTotals: RewardTotals; nearestOpponentDistance: number; collisionRadius: number;
   color: string; name: string; network?: SpikingNetwork; action: Action; trail: Vec[]; isFly: boolean; isObstacle: boolean; obstacleKind?: RoadObjectKind;
 };
 
 function emptyRewards(): RewardBreakdown {
-  return { progress: 0, direction: 0, movement: 0, standingStill: 0, wrongDirection: 0, reverseProgress: 0, offTrack: 0, edge: 0, proximity: 0, hazard: 0, centerline: 0, collision: 0, crash: 0, checkpoint: 0, finish: 0, total: 0 };
+  return { progress: 0, direction: 0, movement: 0, standingStill: 0, wrongDirection: 0, reverseProgress: 0, offTrack: 0, edge: 0, proximity: 0, hazard: 0, centerline: 0, controlChange: 0, controlConflict: 0, spikeEnergy: 0, collision: 0, crash: 0, checkpoint: 0, finish: 0, total: 0 };
 }
 
 function addRewards(target: RewardTotals, current: RewardBreakdown): void {
@@ -588,8 +644,8 @@ export function startPosition(lane = 0, trackRef: TrackRef = DEFAULT_TRACK): Car
   const route = resolveTrack(trackRef); const line = startLine(route); const point = add(line.point, scale(line.normal, lane * LANE_SPACING));
   const rewardBreakdown = emptyRewards();
   return { position: point, heading: Math.atan2(line.tangent.y, line.tangent.x), speed: 0, progress: 0, distanceAlong: 0,
-    totalProgress: 0, laps: 0, bestProgress: 0, trackId: route.id, nearestDistance: 0, offTrackTicks: 0, collisions: 0, ticks: 0, score: 0,
-    crashed: false, timedOut: false, finished: false, eliminated: false, timeLimit: MAX_TICKS, timeExtensions: 0, rewardWindowScore: 0, rewardWindowTicks: 0, rewardWindowProgressStart: 0, previousRewardRate: 0, progressWindowStart: 0, progressWindowTicks: 0, poorProgressWindows: 0, nextCheckpoint: 1, checkpointsPassed: 0, stationaryTicks: 0, wrongDirectionTicks: 0, forwardAlignment: 1, lastReward: 0, lateralOffset: 0, collisionCooldown: 0, steering: 0, nearestOpponentDistance: Infinity,
+    totalProgress: 0, netProgress: 0, forwardDistance: 0, laps: 0, bestProgress: 0, trackId: route.id, nearestDistance: 0, offTrackTicks: 0, collisions: 0, ticks: 0, score: 0,
+    crashed: false, timedOut: false, finished: false, eliminated: false, timeLimit: MAX_TICKS, timeExtensions: 0, rewardWindowScore: 0, rewardWindowTicks: 0, rewardWindowProgressStart: 0, previousRewardRate: 0, progressWindowStart: 0, progressWindowTicks: 0, poorProgressWindows: 0, nextCheckpoint: 1, checkpointsPassed: 0, stationaryTicks: 0, wrongDirectionTicks: 0, consecutiveOffTrackTicks: 0, forwardAlignment: 1, lastReward: 0, lateralOffset: 0, collisionCooldown: 0, steering: 0, nearestOpponentDistance: Infinity,
     rewardBreakdown, rewardTotals: { ...rewardBreakdown }, color: "#f19a69", name: "bot", action: { steer: 0, throttle: 1, brake: 0 }, trail: [], isFly: false, isObstacle: false, collisionRadius: CAR_COLLISION_DIAMETER / 2 };
 }
 
@@ -669,7 +725,12 @@ type OpponentInfo = { other: Car; distance: number; forward: number; side: numbe
 function nearestOpponent(car: Car, others: Car[]): OpponentInfo | undefined {
   const forward = { x: Math.cos(car.heading), y: Math.sin(car.heading) };
   const side = { x: -forward.y, y: forward.x };
-  return others.filter((other) => other !== car && !other.crashed && !other.finished && !other.timedOut && !other.eliminated && other.trackId === car.trackId).map((other) => {
+  const route = resolveTrack(car.trackId);
+  return others.filter((other) => {
+    if (other === car || other.crashed || other.finished || other.timedOut || other.eliminated || other.trackId !== car.trackId) return false;
+    const arcSeparation = circularArcDistance(car.distanceAlong, other.distanceAlong, route.length);
+    return arcSeparation < Math.max(220, route.width * 2.5) || dist(car.position, other.position) < route.width * 0.7;
+  }).map((other) => {
     const offset = sub(other.position, car.position); const distance = Math.hypot(offset.x, offset.y); const direction = normalize(offset);
     return { other, distance, forward: dot(direction, forward), side: dot(direction, side) };
   }).sort((a, b) => a.distance - b.distance)[0];
@@ -727,16 +788,26 @@ export function sensorValues(car: Car, others: Car[], trackRef?: TrackRef): Sens
   const lookahead = pointAtDistance(closest.distanceAlong + lookaheadDistance, route); const desiredHeading = Math.atan2(lookahead.point.y - car.position.y, lookahead.point.x - car.position.x);
   const headingError = wrapAngle(desiredHeading - car.heading) / Math.PI;
   const tangentHeading = Math.atan2(lookahead.tangent.y, lookahead.tangent.x); const curvature = wrapAngle(tangentHeading - car.heading) / Math.PI;
+  const nearLookahead = pointAtDistance(closest.distanceAlong + 30, route);
+  const farLookahead = pointAtDistance(closest.distanceAlong + 150, route);
+  const nearCurvature = wrapAngle(Math.atan2(nearLookahead.tangent.y, nearLookahead.tangent.x) - car.heading) / Math.PI;
+  const farCurvature = wrapAngle(Math.atan2(farLookahead.tangent.y, farLookahead.tangent.x) - car.heading) / Math.PI;
   const opponent = nearestOpponent(car, others);
   const signedLateral = lateralOffset(car.position, closest, route);
   const centerlineProximity = clamp(1 - Math.abs(signedLateral), -1, 1);
   const edgeClearance = clamp(1 - closest.distance / Math.max(1, route.width / 2), -1, 1);
   const forward = { x: Math.cos(car.heading), y: Math.sin(car.heading) };
   const forwardAlignment = dot(forward, closest.tangent);
+  const checkpoint = trackCheckpoint(car.nextCheckpoint, route);
+  const checkpointHeading = wrapAngle(Math.atan2(checkpoint.point.y - car.position.y, checkpoint.point.x - car.position.x) - car.heading) / Math.PI;
+  const opponentRelativeSpeed = opponent ? (opponent.other.speed - car.speed) / 90 : 0;
   return [clamp(headingError, -1, 1), clamp(curvature, -1, 1), clamp(signedLateral, -1, 1),
     clamp(car.speed / 90, -1, 1), centerlineProximity,
     opponent && opponent.distance < 180 ? clamp(1 - opponent.distance / 180, 0, 1) : 0, opponent && opponent.distance < 180 ? clamp(opponent.side, -1, 1) : 0,
-    edgeClearance, clamp(forwardAlignment, -1, 1)];
+    edgeClearance, clamp(forwardAlignment, -1, 1),
+    opponent ? clamp(opponent.forward, -1, 1) : 0, clamp(opponentRelativeSpeed, -1, 1),
+    clamp(nearCurvature, -1, 1), clamp(farCurvature, -1, 1), clamp(checkpointHeading, -1, 1),
+    clamp(car.action.steer, -1, 1), clamp(car.action.throttle - car.action.brake, -1, 1), opponent?.other.isObstacle ? 1 : 0];
 }
 
 export function heuristicAction(car: Car, others: Car[], trackRef?: TrackRef): Action {
@@ -756,7 +827,8 @@ export function heuristicAction(car: Car, others: Car[], trackRef?: TrackRef): A
 
 export function stepCar(car: Car, action: Action, others: Car[], trackRef?: TrackRef, rewardConfig: RewardConfig = DEFAULT_REWARD_CONFIG, physicsConfig: PhysicsConfig = DEFAULT_PHYSICS_CONFIG): void {
   if (car.crashed || car.finished || car.timedOut || car.eliminated) return;
-  const route = resolveTrack(trackRef ?? car.trackId); const checkpointCount = clamp(Math.floor(physicsConfig.checkpointCount ?? CHECKPOINT_COUNT), 2, 64); const directionHint = car.speed < -0.5 || ((action.reverse ?? 0) > action.throttle && car.speed <= 0) ? -1 : 1; const continuityReference = car.ticks > 0 ? car.distanceAlong : undefined; const nearby = nearestTrack(car.position, route, continuityReference, directionHint); const offTrackBefore = nearby.distance > route.width / 2; const grip = offTrackBefore ? 0.68 : 1;
+  const previousAction = { ...car.action };
+  const route = resolveTrack(trackRef ?? car.trackId); const checkpointCount = clamp(Math.floor(physicsConfig.checkpointCount ?? CHECKPOINT_COUNT), 2, 64); const directionHint = car.speed < -0.5 || ((action.reverse ?? 0) > action.throttle && car.speed <= 0) ? -1 : 1; const continuityReference = car.ticks > 0 ? car.distanceAlong : undefined; const nearby = nearestTrack(car.position, route, continuityReference, directionHint); const offTrackBefore = nearby.distance > route.width / 2; const grip = (offTrackBefore ? 0.68 : 1) * clamp(physicsConfig.gripScale ?? 1, 0.6, 1.4);
   const steeringDirection = car.speed < -0.5 ? -1 : 1;
   // A car with almost no forward speed cannot keep rotating at full steering
   // authority. This prevents neural candidates from spinning in place while
@@ -769,9 +841,10 @@ export function stepCar(car: Car, action: Action, others: Car[], trackRef?: Trac
   const requestedSteering = clamp(action.steer, -1, 1);
   car.steering += (requestedSteering - car.steering) * 0.24;
   if (Math.abs(car.steering) < 0.0001) car.steering = 0;
-  car.heading += car.steering * (0.65 + Math.abs(car.speed) / 150) * grip * steeringDirection * lowSpeedSteering * stationarySteering * STEP;
+  car.heading += car.steering * (0.65 + Math.abs(car.speed) / 150) * grip * clamp(physicsConfig.steeringScale ?? 1, 0.65, 1.35) * steeringDirection * lowSpeedSteering * stationarySteering * STEP;
   const forwardThrottle = clamp(action.throttle, 0, 1); const reverseThrottle = clamp(action.reverse ?? 0, 0, 1); const brake = clamp(action.brake, 0, 1);
-  let acceleration = forwardThrottle * 55 - reverseThrottle * 45 - car.speed * 0.23;
+  const engineScale = clamp(physicsConfig.engineScale ?? 1, 0.65, 1.35);
+  let acceleration = forwardThrottle * 55 * engineScale - reverseThrottle * 45 * engineScale - car.speed * 0.23;
   if (car.speed > 0) acceleration -= brake * 75; else if (car.speed < 0) acceleration += brake * 75;
   car.speed = clamp(car.speed + acceleration * STEP, -48, 90);
   const previousPosition = { ...car.position };
@@ -845,7 +918,10 @@ export function stepCar(car: Car, action: Action, others: Car[], trackRef?: Trac
   const intermediateCheckpointCrossed = expectedCheckpoint > 0 && (crossesGate(expectedGate) || crossedExpectedArc) && alignment > 0.15 && car.speed > 2;
   // The start gate is also the finish gate, but it is only valid after all
   // intermediate gates were crossed in order and nearly one full lap elapsed.
-  const lapCrossed = expectedCheckpoint === 0 && directedStartCross && car.totalProgress >= 0.95 && alignment > 0.15 && car.speed > 2;
+  const signedProgressDelta = alignment > -0.35 ? localDelta : Math.min(0, localDelta);
+  const projectedNetProgress = car.netProgress + signedProgressDelta;
+  const projectedNovelProgress = Math.max(car.totalProgress, clamp(projectedNetProgress, 0, 1));
+  const lapCrossed = expectedCheckpoint === 0 && directedStartCross && projectedNovelProgress >= 0.95 && alignment > 0.15 && car.speed > 2;
   const checkpointCrossed = intermediateCheckpointCrossed || lapCrossed;
   if (intermediateCheckpointCrossed) {
     car.checkpointsPassed += 1;
@@ -855,15 +931,19 @@ export function stepCar(car: Car, action: Action, others: Car[], trackRef?: Trac
     car.nextCheckpoint = checkpointCount;
   }
   const firstFinish = lapCrossed && !car.finished;
-  const validForwardDelta = localDelta > 0 && alignment > -0.35 ? localDelta : 0;
+  car.netProgress = clamp(projectedNetProgress, -1, 2);
+  car.forwardDistance += Math.max(0, localDelta);
+  const validForwardDelta = Math.max(0, projectedNovelProgress - car.totalProgress);
   if (lapCrossed) { car.laps += 1; car.finished = true; }
-  car.totalProgress += validForwardDelta; car.progress = updated.progress; car.distanceAlong = updated.distanceAlong; car.bestProgress = Math.max(car.bestProgress, car.progress);
+  car.totalProgress = projectedNovelProgress; car.progress = updated.progress; car.distanceAlong = updated.distanceAlong; car.bestProgress = Math.max(car.bestProgress, car.totalProgress);
   car.nearestDistance = updated.distance; const offTrackDistance = outsideDistance; const offTrack = offTrackDistance > route.width / 2; if (offTrack) car.offTrackTicks += 1;
+  car.consecutiveOffTrackTicks = offTrack ? car.consecutiveOffTrackTicks + 1 : 0;
   const offTrackSeverity = offTrack ? 1 + clamp((offTrackDistance - route.width / 2) / Math.max(1, route.width / 2), 0, 3) : 0;
   car.lateralOffset = lateralOffset(car.position, updated, route);
   car.ticks += 1; if (car.ticks % 8 === 0) car.trail.push({ ...car.position }); if (car.trail.length > 38) car.trail.shift();
   const collisionsBefore = car.collisions;
   let contact = false;
+  let severeCollision = false;
   const carIndex = others.indexOf(car);
   const clampToRoad = (target: Car): void => {
     if (!physicsConfig.wallsEnabled) return;
@@ -893,6 +973,7 @@ export function stepCar(car: Car, action: Action, others: Car[], trackRef?: Trac
       const otherForward = { x: Math.cos(other.heading), y: Math.sin(other.heading) };
       const carVelocity = scale(carForward, car.speed); const otherVelocity = scale(otherForward, other.speed);
       const relativeNormalSpeed = dot(sub(carVelocity, otherVelocity), direction);
+      if (relativeNormalSpeed < -115) severeCollision = true;
       if (relativeNormalSpeed < 0) {
         const impulse = -(1 + 0.42) * relativeNormalSpeed * 0.5;
         setCollisionSpeed(car, add(carVelocity, scale(direction, impulse)));
@@ -925,13 +1006,20 @@ export function stepCar(car: Car, action: Action, others: Car[], trackRef?: Trac
   const standingStill = Math.abs(car.speed) < 3;
   car.stationaryTicks = standingStill ? car.stationaryTicks + 1 : 0;
   car.wrongDirectionTicks = alignment < -0.25 ? car.wrongDirectionTicks + 1 : 0;
+  if (!car.finished && (severeCollision || car.consecutiveOffTrackTicks >= 300 || (!physicsConfig.wallsEnabled && outsideDepth > route.width * 1.5))) {
+    car.crashed = true;
+    car.crashReason = severeCollision ? "high-energy collision" : "irrecoverably off track";
+    car.speed = 0;
+  }
   const reward = emptyRewards();
-  reward.progress = (validForwardDelta / STEP) * rewardConfig.progressPerSecond;
+  // Potential-based progress: reward only newly reached route coverage. Going
+  // backward and replaying the same asphalt cannot farm progress repeatedly.
+  reward.progress = validForwardDelta * rewardConfig.progressPerSecond;
   reward.direction = Math.max(0, alignment) * rewardConfig.correctDirectionPerSecond * STEP;
   reward.movement = offTrack ? 0 : clamp(car.speed / 60, 0, 1) * rewardConfig.movementPerSecond * STEP;
   reward.standingStill = standingStill ? rewardConfig.standingStillPerSecond * STEP : 0;
   reward.wrongDirection = Math.max(0, -alignment) * rewardConfig.wrongDirectionPerSecond * STEP;
-  reward.reverseProgress = (Math.max(0, -localDelta) / STEP) * rewardConfig.reverseProgressPerSecond;
+  reward.reverseProgress = Math.max(0, -localDelta) * rewardConfig.reverseProgressPerSecond;
   reward.offTrack = offTrack ? rewardConfig.offTrackPerSecond * offTrackSeverity * STEP : 0;
   const edgeRisk = clamp((Math.abs(car.lateralOffset) - 0.55) / 0.45, 0, 1);
   reward.edge = edgeRisk * rewardConfig.edgePenaltyPerSecond * STEP;
@@ -942,11 +1030,16 @@ export function stepCar(car: Car, action: Action, others: Car[], trackRef?: Trac
   reward.proximity = proximityRisk * rewardConfig.proximityPenaltyPerSecond * STEP;
   reward.hazard = oilHazard ? rewardConfig.hazardPenaltyPerSecond * STEP : 0;
   reward.centerline = Math.max(0, 1 - Math.abs(car.lateralOffset)) * (rewardConfig.centerlinePerSecond ?? 0) * STEP;
+  const controlChange = Math.abs(action.steer - previousAction.steer) + Math.abs(action.throttle - previousAction.throttle) + Math.abs(action.brake - previousAction.brake) + Math.abs((action.reverse ?? 0) - (previousAction.reverse ?? 0));
+  reward.controlChange = controlChange * (rewardConfig.controlChangePerSecond ?? 0) * STEP;
+  reward.controlConflict = Math.min(forwardThrottle, brake) * (rewardConfig.controlConflictPerSecond ?? 0) * STEP;
+  const spikeRate = car.network ? car.network.activity().spikes.reduce((sum, spike) => sum + spike, 0) / car.network.hiddenCount : 0;
+  reward.spikeEnergy = spikeRate * (rewardConfig.spikeEnergyPerSecond ?? 0) * STEP;
   reward.collision = collisionDelta * rewardConfig.collision;
   reward.crash = car.crashed ? rewardConfig.crash : 0;
   reward.checkpoint = checkpointCrossed ? rewardConfig.checkpoint : 0;
   reward.finish = firstFinish ? rewardConfig.finish : 0;
-  reward.total = reward.progress + reward.direction + reward.movement + reward.centerline + reward.checkpoint + reward.finish - reward.standingStill - reward.wrongDirection - reward.reverseProgress - reward.offTrack - reward.edge - reward.proximity - reward.hazard - reward.collision - reward.crash;
+  reward.total = reward.progress + reward.direction + reward.movement + reward.centerline + reward.checkpoint + reward.finish - reward.standingStill - reward.wrongDirection - reward.reverseProgress - reward.offTrack - reward.edge - reward.proximity - reward.hazard - reward.controlChange - reward.controlConflict - reward.spikeEnergy - reward.collision - reward.crash;
   car.rewardWindowScore += reward.total; car.rewardWindowTicks += 1;
   car.progressWindowTicks += 1;
   const cullWindowTicks = clamp(Math.floor(physicsConfig.cullWindowTicks ?? ADAPTIVE_REWARD_WINDOW_TICKS), 30, MAX_TICKS);
@@ -984,7 +1077,7 @@ export function stepCar(car: Car, action: Action, others: Car[], trackRef?: Trac
   } else if (car.rewardWindowTicks >= ADAPTIVE_REWARD_WINDOW_TICKS) {
     car.previousRewardRate = windowRate; car.rewardWindowScore = 0; car.rewardWindowTicks = 0; car.rewardWindowProgressStart = car.totalProgress;
   }
-  car.forwardAlignment = alignment; car.lastReward = reward.total; car.rewardBreakdown = reward; addRewards(car.rewardTotals, reward); car.score += reward.total;
+  car.forwardAlignment = alignment; car.lastReward = reward.total; car.rewardBreakdown = reward; addRewards(car.rewardTotals, reward); car.score += reward.total; car.action = { ...action };
 }
 
 export type EvaluationResult = { fitness: number; progress: number; ticks: number; laps: number; finished: boolean; eliminated: boolean; trackId: TrackId; rewardTotals: RewardTotals };
@@ -994,23 +1087,56 @@ export function evaluate(network: SpikingNetwork, trackRef: TrackRef = DEFAULT_T
   const line = startLine(route); const obstacles = [startPosition(-1, route), startPosition(1, route)]; obstacles[0].position = add(obstacles[0].position, scale(line.tangent, 55)); obstacles[1].position = add(obstacles[1].position, scale(line.tangent, 115));
   const roadObjects = createRoadObstacles(obstacleCount, route, obstacleSeed, obstacleKind);
   const cars = ghost ? [car, ...roadObjects] : [car, ...obstacles, ...roadObjects];
+  const episodePhysics = physicsForEpisode(physicsConfig, obstacleSeed, route);
   const maxExtensions = clamp(Math.floor(physicsConfig.maxAdaptiveExtensions ?? MAX_ADAPTIVE_EXTENSIONS), 0, MAX_ADAPTIVE_EXTENSIONS);
   const simulationLimit = adaptiveTimeLimitForExtensions(physicsConfig.adaptiveTimeLimit === true ? maxExtensions : 0);
   for (let tick = 0; tick < simulationLimit && !car.crashed && !car.finished && !car.timedOut && !car.eliminated; tick += 1) {
-    stepCar(car, network.step(sensorValues(car, cars, route)), cars, route, rewardConfig, physicsConfig);
-    if (!ghost) obstacles.forEach((bot) => stepCar(bot, heuristicAction(bot, cars, route), cars, route, rewardConfig, physicsConfig));
+    // Freeze decisions before moving any car. Otherwise the first vehicle in
+    // the array gets a different world state from the final vehicle.
+    const carAction = network.step(sensorValues(car, cars, route));
+    const botActions = ghost ? [] : obstacles.map((bot) => heuristicAction(bot, cars, route));
+    stepCar(car, carAction, cars, route, rewardConfig, episodePhysics);
+    if (!ghost) obstacles.forEach((bot, index) => stepCar(bot, botActions[index], cars, route, rewardConfig, { ...episodePhysics, ruthlessCulling: false }));
   }
   return { fitness: car.score, progress: car.totalProgress, ticks: car.ticks, laps: car.laps, finished: car.finished, eliminated: car.eliminated, trackId: route.id, rewardTotals: { ...car.rewardTotals } };
 }
 
-export type GeneralistEvaluation = { fitness: number; progress: number; ticks: number; laps: number; finished: boolean; eliminated: boolean; rewardTotals: RewardTotals; episodes: EvaluationResult[] };
+export type GeneralistEvaluation = { fitness: number; progress: number; meanProgress: number; worstProgress: number; completionRate: number; progressRate: number; ticks: number; laps: number; finished: boolean; eliminated: boolean; rewardTotals: RewardTotals; episodes: EvaluationResult[] };
 
-export function evaluateGeneralist(network: SpikingNetwork, trackRefs: TrackRef[] = TRACKS, rewardConfig: RewardConfig = DEFAULT_REWARD_CONFIG, physicsConfig: PhysicsConfig = DEFAULT_PHYSICS_CONFIG, ghost = false, obstacleCount = 0, obstacleSeed = 1, obstacleKind: RoadObjectKind | "mixed" = "stalled-car"): GeneralistEvaluation {
-  const routes = trackRefs.length > 0 ? trackRefs.map(resolveTrack) : [DEFAULT_TRACK]; const episodes = routes.map((route, index) => evaluate(network, route, rewardConfig, physicsConfig, ghost, obstacleCount, obstacleSeed + index * 97, obstacleKind));
+export function evaluateGeneralist(network: SpikingNetwork, trackRefs: TrackRef[] = TRACKS, rewardConfig: RewardConfig = DEFAULT_REWARD_CONFIG, physicsConfig: PhysicsConfig = DEFAULT_PHYSICS_CONFIG, ghost = false, obstacleCount = 0, obstacleSeed: number | number[] = 1, obstacleKind: RoadObjectKind | "mixed" = "stalled-car"): GeneralistEvaluation {
+  const routes = trackRefs.length > 0 ? trackRefs.map(resolveTrack) : [DEFAULT_TRACK];
+  const seeds = Array.isArray(obstacleSeed) && obstacleSeed.length > 0 ? obstacleSeed : [Number(obstacleSeed) || 1];
+  const episodes = routes.flatMap((route, routeIndex) => seeds.map((seed, seedIndex) => evaluate(network, route, rewardConfig, physicsConfig, ghost, obstacleCount, seed + routeIndex * 97 + seedIndex * 7919, obstacleKind)));
   const average = (selector: (episode: EvaluationResult) => number): number => episodes.reduce((sum, episode) => sum + selector(episode), 0) / episodes.length;
+  const lowerTail = (selector: (episode: EvaluationResult) => number): number => {
+    const values = episodes.map(selector).sort((a, b) => a - b); const count = Math.max(1, Math.ceil(values.length * 0.25));
+    return values.slice(0, count).reduce((sum, value) => sum + value, 0) / count;
+  };
   const rewardTotals = emptyRewards();
   (Object.keys(rewardTotals) as (keyof RewardBreakdown)[]).forEach((key) => { rewardTotals[key] = average((episode) => episode.rewardTotals[key]); });
-  return { fitness: average((episode) => episode.fitness), progress: average((episode) => episode.progress), ticks: episodes.reduce((sum, episode) => sum + episode.ticks, 0), laps: episodes.reduce((sum, episode) => sum + episode.laps, 0), finished: episodes.every((episode) => episode.finished), eliminated: episodes.some((episode) => episode.eliminated), rewardTotals, episodes };
+  const meanFitness = average((episode) => episode.fitness); const worstFitness = lowerTail((episode) => episode.fitness);
+  const meanProgress = average((episode) => episode.progress); const worstProgress = lowerTail((episode) => episode.progress);
+  return { fitness: meanFitness * 0.7 + worstFitness * 0.3, progress: meanProgress * 0.7 + worstProgress * 0.3, meanProgress, worstProgress,
+    completionRate: average((episode) => episode.finished ? 1 : 0), progressRate: average((episode) => progressPerSecond(episode.progress, episode.ticks)),
+    ticks: episodes.reduce((sum, episode) => sum + episode.ticks, 0), laps: episodes.reduce((sum, episode) => sum + episode.laps, 0), finished: episodes.every((episode) => episode.finished), eliminated: episodes.some((episode) => episode.eliminated), rewardTotals, episodes };
+}
+
+/** Seed an SNN readout from the deterministic heuristic, then let evolution
+ * improve beyond the teacher. This provides useful steering/braking behavior
+ * without making the heuristic part of the deployed controller. */
+export function createHeuristicImitationNetwork(trackRefs: TrackRef[] = [DEFAULT_TRACK], seed = 1, stepsPerTrack = 240, epochs = 2): SpikingNetwork {
+  const routes = trackRefs.length > 0 ? trackRefs.map(resolveTrack) : [DEFAULT_TRACK]; const network = new SpikingNetwork(seed);
+  for (let epoch = 0; epoch < Math.max(1, Math.floor(epochs)); epoch += 1) {
+    routes.forEach((route) => {
+      const car = startPosition(0, route); network.reset(); car.network = network;
+      for (let tick = 0; tick < stepsPerTrack && !car.finished && !car.crashed; tick += 1) {
+        const sensors = sensorValues(car, [car], route); const teacher = heuristicAction(car, [car], route);
+        network.trainActionReadout(sensors, teacher, 0.018 / (epoch + 1));
+        stepCar(car, teacher, [car], route, DEFAULT_REWARD_CONFIG, { ...DEFAULT_PHYSICS_CONFIG, adaptiveTimeLimit: false });
+      }
+    });
+  }
+  network.reset(); return network;
 }
 
 export function createNetworkPopulation(size: number): SpikingNetwork[] {

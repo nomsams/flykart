@@ -1,13 +1,13 @@
 import "./style.css";
 import {
   BrainSnapshot, CAR_WIDTH, CHECKPOINT_COUNT, LANE_SPACING, MAX_ADAPTIVE_EXTENSIONS, Car, DEFAULT_PHYSICS_CONFIG, DEFAULT_REWARD_CONFIG, DEFAULT_TRACK, MAX_TICKS, PhysicsConfig, RewardConfig, RoadObjectKind, STEP, TAU, TRACKS, TrackDefinition, Vec,
-  SpikingNetwork, blendedEvolutionSelectionScore, clamp, compareEvolutionCandidates, createMutationPopulation, createRoadObstacles, evaluateGeneralist, heuristicAction, nearestTrack, pointAtDistance, progressPerSecond, resolveTrack, sensorValues, shouldAcceptEvolutionCandidate, startLine, startPosition, stepCar, trackCheckpoint, trackDiagnostics,
+  SpikingNetwork, blendedEvolutionSelectionScore, clamp, compareEvolutionCandidates, createHeuristicImitationNetwork, createMutationPopulation, createRoadObstacles, evaluateGeneralist, heuristicAction, nearestTrack, physicsForEpisode, pointAtDistance, progressPerSecond, resolveTrack, sensorValues, startLine, startPosition, stepCar, trackCheckpoint, trackDiagnostics,
 } from "./core";
 
 const WIDTH = 960;
 const HEIGHT = 600;
 const MODEL_STORAGE_KEY = "flykart.best-brain.v1";
-const CHECKPOINT_VERSION = 1;
+const CHECKPOINT_VERSION = 2;
 const VISUAL_TRAINING_STEPS_PER_FRAME = 4;
 
 const canvas = document.querySelector<HTMLCanvasElement>("#game");
@@ -42,11 +42,11 @@ const ui = {
   headlessButton: required<HTMLButtonElement>("#headless-train-btn"), stopButton: required<HTMLButtonElement>("#stop-btn"),
   resetButton: required<HTMLButtonElement>("#reset-btn"), saveButton: required<HTMLButtonElement>("#save-btn"), loadButton: required<HTMLButtonElement>("#load-btn"),
   exportButton: required<HTMLButtonElement>("#export-btn"), importButton: required<HTMLButtonElement>("#import-btn"), importFile: required<HTMLInputElement>("#import-file"),
-  population: required<HTMLInputElement>("#population"), generations: required<HTMLInputElement>("#generations"),
-  trackSelect: required<HTMLSelectElement>("#track-select"), trackProvenance: required<HTMLElement>("#track-provenance"), wallsToggle: required<HTMLInputElement>("#walls-toggle"), adaptiveTimeToggle: required<HTMLInputElement>("#adaptive-time-toggle"), adaptiveExtensions: required<HTMLInputElement>("#adaptive-extensions"), ruthlessCullingToggle: required<HTMLInputElement>("#ruthless-culling-toggle"), cullWindowSeconds: required<HTMLInputElement>("#cull-window-seconds"), cullMinProgress: required<HTMLInputElement>("#cull-min-progress"), cullPatience: required<HTMLInputElement>("#cull-patience"), checkpointCount: required<HTMLInputElement>("#checkpoint-count"), ghostEvolutionToggle: required<HTMLInputElement>("#ghost-evolution-toggle"), softContactToggle: required<HTMLInputElement>("#soft-contact-toggle"), obstacleToggle: required<HTMLInputElement>("#obstacle-toggle"), obstacleCount: required<HTMLInputElement>("#obstacle-count"), obstacleKind: required<HTMLSelectElement>("#obstacle-kind"), plateauExplorationToggle: required<HTMLInputElement>("#plateau-exploration-toggle"), plateauPatience: required<HTMLInputElement>("#plateau-patience"), breedingProgressWeight: required<HTMLInputElement>("#breeding-progress-weight"), breedingPriorityValue: required<HTMLOutputElement>("#breeding-priority-value"), breedingProgressMetric: required<HTMLSelectElement>("#breeding-progress-metric"), winnerMatingShare: required<HTMLInputElement>("#winner-mating-share"), curriculumToggle: required<HTMLInputElement>("#curriculum-toggle"),
+  population: required<HTMLInputElement>("#population"), generations: required<HTMLInputElement>("#generations"), trainingSeeds: required<HTMLInputElement>("#training-seeds"), heuristicWarmStartToggle: required<HTMLInputElement>("#heuristic-warm-start-toggle"),
+  trackSelect: required<HTMLSelectElement>("#track-select"), trackProvenance: required<HTMLElement>("#track-provenance"), wallsToggle: required<HTMLInputElement>("#walls-toggle"), domainRandomization: required<HTMLInputElement>("#domain-randomization"), adaptiveTimeToggle: required<HTMLInputElement>("#adaptive-time-toggle"), adaptiveExtensions: required<HTMLInputElement>("#adaptive-extensions"), ruthlessCullingToggle: required<HTMLInputElement>("#ruthless-culling-toggle"), cullWindowSeconds: required<HTMLInputElement>("#cull-window-seconds"), cullMinProgress: required<HTMLInputElement>("#cull-min-progress"), cullPatience: required<HTMLInputElement>("#cull-patience"), checkpointCount: required<HTMLInputElement>("#checkpoint-count"), ghostEvolutionToggle: required<HTMLInputElement>("#ghost-evolution-toggle"), softContactToggle: required<HTMLInputElement>("#soft-contact-toggle"), obstacleToggle: required<HTMLInputElement>("#obstacle-toggle"), obstacleCount: required<HTMLInputElement>("#obstacle-count"), obstacleKind: required<HTMLSelectElement>("#obstacle-kind"), plateauExplorationToggle: required<HTMLInputElement>("#plateau-exploration-toggle"), plateauPatience: required<HTMLInputElement>("#plateau-patience"), breedingProgressWeight: required<HTMLInputElement>("#breeding-progress-weight"), breedingPriorityValue: required<HTMLOutputElement>("#breeding-priority-value"), breedingProgressMetric: required<HTMLSelectElement>("#breeding-progress-metric"), winnerMatingShare: required<HTMLInputElement>("#winner-mating-share"), curriculumToggle: required<HTMLInputElement>("#curriculum-toggle"),
   rewardProgress: required<HTMLInputElement>("#reward-progress"), rewardDirection: required<HTMLInputElement>("#reward-direction"), rewardMoving: required<HTMLInputElement>("#reward-moving"),
   rewardStanding: required<HTMLInputElement>("#reward-standing"), rewardWrong: required<HTMLInputElement>("#reward-wrong"), rewardReverse: required<HTMLInputElement>("#reward-reverse"),
-  rewardOffTrack: required<HTMLInputElement>("#reward-offtrack"), rewardEdge: required<HTMLInputElement>("#reward-edge"), rewardProximity: required<HTMLInputElement>("#reward-proximity"), rewardHazard: required<HTMLInputElement>("#reward-hazard"), rewardCenterline: required<HTMLInputElement>("#reward-centerline"), rewardCollision: required<HTMLInputElement>("#reward-collision"), rewardCrash: required<HTMLInputElement>("#reward-crash"), rewardCheckpoint: required<HTMLInputElement>("#reward-checkpoint"), rewardFinish: required<HTMLInputElement>("#reward-finish"),
+  rewardOffTrack: required<HTMLInputElement>("#reward-offtrack"), rewardEdge: required<HTMLInputElement>("#reward-edge"), rewardProximity: required<HTMLInputElement>("#reward-proximity"), rewardHazard: required<HTMLInputElement>("#reward-hazard"), rewardCenterline: required<HTMLInputElement>("#reward-centerline"), rewardControlChange: required<HTMLInputElement>("#reward-control-change"), rewardControlConflict: required<HTMLInputElement>("#reward-control-conflict"), rewardSpikeEnergy: required<HTMLInputElement>("#reward-spike-energy"), rewardCollision: required<HTMLInputElement>("#reward-collision"), rewardCrash: required<HTMLInputElement>("#reward-crash"), rewardCheckpoint: required<HTMLInputElement>("#reward-checkpoint"), rewardFinish: required<HTMLInputElement>("#reward-finish"),
   mode: required<HTMLElement>("#mode-label"), hint: required<HTMLElement>("#hint-label"), status: required<HTMLElement>("#training-status"),
   generation: required<HTMLElement>("#generation"), fitness: required<HTMLElement>("#fitness"), progress: required<HTMLElement>("#progress"), plateau: required<HTMLElement>("#plateau"), strategy: required<HTMLElement>("#evolution-strategy"), mutationRate: required<HTMLElement>("#mutation-rate"),
   speed: required<HTMLElement>("#speed"), reward: required<HTMLElement>("#reward"), direction: required<HTMLElement>("#direction"), centerline: required<HTMLElement>("#centerline"), traffic: required<HTMLElement>("#traffic-gap"), penalties: required<HTMLElement>("#penalties"), rewardBreakdown: required<HTMLElement>("#reward-breakdown"), bars: required<HTMLElement>("#neural-bars"),
@@ -100,13 +100,18 @@ let trainingTracks: TrackDefinition[] = [DEFAULT_TRACK];
 let trainingScores: number[] = [];
 let trainingProgresses: number[] = [];
 let trainingTicks: number[] = [];
+let trainingProgressRates: number[] = [];
+let trainingFinishCounts: number[] = [];
+let trainingEliminationCounts: number[] = [];
 let trainingTrackIndex = 0;
+let lastCompetitiveCullTick = 0;
 let visualTimer: number | undefined;
 let trainingSession = 0;
 let trainingPopulationSize = 0;
 let requestedGenerations = 0;
 let rewardConfig: RewardConfig = { ...DEFAULT_REWARD_CONFIG };
 let physicsConfig: PhysicsConfig = { ...DEFAULT_PHYSICS_CONFIG };
+let visualEpisodePhysics: PhysicsConfig = { ...DEFAULT_PHYSICS_CONFIG };
 let randomObjectsEnabled = false;
 let randomObjectCount = 0;
 let randomObjectKind: RoadObjectKind | "mixed" = "stalled-car";
@@ -120,6 +125,8 @@ let breedingProgressWeight = 100;
 type BreedingProgressMetric = "distance" | "rate";
 let breedingProgressMetric: BreedingProgressMetric = "distance";
 let trainingWorldSeed = 0;
+let trainingSeedCount = 2;
+let heuristicWarmStart = true;
 type TrainingContextKey = TrackDefinition["id"] | "all";
 type TrainingProvenance = { context: TrainingContextKey; trained: boolean; source: string; bestFitness: number | null; bestProgress: number; finished: boolean; generation: number };
 let activeTrainingContext: TrainingContextKey = DEFAULT_TRACK.id;
@@ -262,6 +269,9 @@ function readRewardConfig(): RewardConfig {
     proximityPenaltyPerSecond: readNumber(ui.rewardProximity, DEFAULT_REWARD_CONFIG.proximityPenaltyPerSecond, 0, 100),
     hazardPenaltyPerSecond: readNumber(ui.rewardHazard, DEFAULT_REWARD_CONFIG.hazardPenaltyPerSecond, 0, 100),
     centerlinePerSecond: readNumber(ui.rewardCenterline, DEFAULT_REWARD_CONFIG.centerlinePerSecond ?? 0, 0, 20),
+    controlChangePerSecond: readNumber(ui.rewardControlChange, DEFAULT_REWARD_CONFIG.controlChangePerSecond ?? 0, 0, 20),
+    controlConflictPerSecond: readNumber(ui.rewardControlConflict, DEFAULT_REWARD_CONFIG.controlConflictPerSecond ?? 0, 0, 20),
+    spikeEnergyPerSecond: readNumber(ui.rewardSpikeEnergy, DEFAULT_REWARD_CONFIG.spikeEnergyPerSecond ?? 0, 0, 20),
     collision: readNumber(ui.rewardCollision, DEFAULT_REWARD_CONFIG.collision, 0, 100),
     crash: readNumber(ui.rewardCrash, DEFAULT_REWARD_CONFIG.crash, 0, 200),
     checkpoint: readNumber(ui.rewardCheckpoint, DEFAULT_REWARD_CONFIG.checkpoint, 0, 1000),
@@ -273,6 +283,7 @@ function readRewardConfig(): RewardConfig {
 function readPhysicsConfig(): PhysicsConfig {
   physicsConfig = {
     wallsEnabled: ui.wallsToggle.checked,
+    domainRandomization: readNumber(ui.domainRandomization, 10, 0, 35) / 100,
     adaptiveTimeLimit: ui.adaptiveTimeToggle.checked,
     maxAdaptiveExtensions: readInteger(ui.adaptiveExtensions, DEFAULT_PHYSICS_CONFIG.maxAdaptiveExtensions ?? 4, 0, MAX_ADAPTIVE_EXTENSIONS),
     ruthlessCulling: ui.ruthlessCullingToggle.checked,
@@ -296,6 +307,8 @@ function readEvolutionConfig(): void {
   winnerMatingShare = readInteger(ui.winnerMatingShare, 80, 50, 95);
   breedingProgressWeight = readInteger(ui.breedingProgressWeight, 100, 0, 100);
   breedingProgressMetric = ui.breedingProgressMetric.value === "rate" ? "rate" : "distance";
+  trainingSeedCount = readInteger(ui.trainingSeeds, 2, 1, 4);
+  heuristicWarmStart = ui.heuristicWarmStartToggle.checked;
   const progressLabel = breedingProgressMetric === "rate" ? "progress/time" : "progress";
   ui.breedingPriorityValue.value = `${breedingProgressWeight}% ${progressLabel} · ${100 - breedingProgressWeight}% reward`;
   ui.breedingPriorityValue.textContent = ui.breedingPriorityValue.value;
@@ -624,6 +637,7 @@ evolutionChart.addEventListener("click", (event) => {
 evolutionChart.addEventListener("pointerleave", () => { hoveredEvolutionIndex = undefined; renderEvolutionChart(); });
 
 function refreshTrainingObstacles(route: TrackDefinition, seed: number): void {
+  visualEpisodePhysics = physicsForEpisode(physicsConfig, seed, route);
   trainingObstacles = randomObjectsEnabled ? createRoadObstacles(trainingObstacleCount(), route, seed, randomObjectKind) : [];
   trainingGhostObstacles = ghostEvolution && fiveBrainEvolution
     // Each candidate gets independent object instances, but the same seeded
@@ -655,7 +669,7 @@ function updateTrackInfo(): void {
 function updateRewardTelemetry(car: Car | undefined): void {
   if (!car) return;
   const breakdown = car.rewardBreakdown;
-  const penalty = breakdown.standingStill + breakdown.wrongDirection + breakdown.reverseProgress + breakdown.offTrack + breakdown.edge + breakdown.proximity + breakdown.hazard + breakdown.collision + breakdown.crash;
+  const penalty = breakdown.standingStill + breakdown.wrongDirection + breakdown.reverseProgress + breakdown.offTrack + breakdown.edge + breakdown.proximity + breakdown.hazard + breakdown.controlChange + breakdown.controlConflict + breakdown.spikeEnergy + breakdown.collision + breakdown.crash;
   ui.reward.textContent = car.lastReward.toFixed(2);
   ui.reward.className = car.lastReward > 0.001 ? "metric-positive" : car.lastReward < -0.001 ? "metric-negative" : "metric-neutral";
   ui.direction.textContent = `${Math.round(clamp((car.forwardAlignment + 1) * 50, 0, 100))}%`;
@@ -671,6 +685,7 @@ function updateRewardTelemetry(car: Car | undefined): void {
   const negative = [
     ["standing", breakdown.standingStill], ["wrong way", breakdown.wrongDirection], ["reverse", breakdown.reverseProgress],
     ["outside", breakdown.offTrack], ["edge", breakdown.edge], ["close traffic", breakdown.proximity], ["hazard", breakdown.hazard],
+    ["control jitter", breakdown.controlChange], ["control conflict", breakdown.controlConflict], ["spike energy", breakdown.spikeEnergy],
     ["collision", breakdown.collision], ["crash", breakdown.crash],
   ] as const;
   ui.rewardBreakdown.replaceChildren();
@@ -689,7 +704,7 @@ function updateRewardTelemetry(car: Car | undefined): void {
 
 function setBusy(value: boolean): void {
   [ui.raceButton, ui.driveButton, ui.visualButton, ui.evolveFiveButton, ui.headlessButton, ui.resetButton, ui.loadButton, ui.importButton].forEach((button) => { button.disabled = value; });
-  [ui.trackSelect, ui.wallsToggle, ui.adaptiveTimeToggle, ui.adaptiveExtensions, ui.ruthlessCullingToggle, ui.cullWindowSeconds, ui.cullMinProgress, ui.cullPatience, ui.checkpointCount, ui.ghostEvolutionToggle, ui.softContactToggle, ui.obstacleToggle, ui.obstacleCount, ui.obstacleKind, ui.plateauExplorationToggle, ui.plateauPatience, ui.breedingProgressWeight, ui.breedingProgressMetric, ui.winnerMatingShare, ui.curriculumToggle, ui.rewardProgress, ui.rewardDirection, ui.rewardMoving, ui.rewardStanding, ui.rewardWrong, ui.rewardReverse, ui.rewardOffTrack, ui.rewardEdge, ui.rewardProximity, ui.rewardHazard, ui.rewardCenterline, ui.rewardCollision, ui.rewardCrash, ui.rewardCheckpoint, ui.rewardFinish].forEach((input) => { input.disabled = value; });
+  [ui.population, ui.generations, ui.trainingSeeds, ui.heuristicWarmStartToggle, ui.trackSelect, ui.wallsToggle, ui.domainRandomization, ui.adaptiveTimeToggle, ui.adaptiveExtensions, ui.ruthlessCullingToggle, ui.cullWindowSeconds, ui.cullMinProgress, ui.cullPatience, ui.checkpointCount, ui.ghostEvolutionToggle, ui.softContactToggle, ui.obstacleToggle, ui.obstacleCount, ui.obstacleKind, ui.plateauExplorationToggle, ui.plateauPatience, ui.breedingProgressWeight, ui.breedingProgressMetric, ui.winnerMatingShare, ui.curriculumToggle, ui.rewardProgress, ui.rewardDirection, ui.rewardMoving, ui.rewardStanding, ui.rewardWrong, ui.rewardReverse, ui.rewardOffTrack, ui.rewardEdge, ui.rewardProximity, ui.rewardHazard, ui.rewardCenterline, ui.rewardControlChange, ui.rewardControlConflict, ui.rewardSpikeEnergy, ui.rewardCollision, ui.rewardCrash, ui.rewardCheckpoint, ui.rewardFinish].forEach((input) => { input.disabled = value; });
   ui.stopButton.disabled = !(value || running);
 }
 
@@ -697,7 +712,7 @@ function createGridCar(lane: number, distanceAlong: number, color: string, name:
   const car = startPosition(lane, route); const sample = pointAtDistance(distanceAlong, route); const normal = { x: -sample.tangent.y, y: sample.tangent.x };
   const start = { x: sample.point.x + normal.x * lane * LANE_SPACING, y: sample.point.y + normal.y * lane * LANE_SPACING };
   car.position = start; car.heading = Math.atan2(sample.tangent.y, sample.tangent.x); car.color = color; car.name = name;
-  const nearest = nearestTrack(car.position, route); car.progress = nearest.progress; car.totalProgress = nearest.progress; car.distanceAlong = nearest.distanceAlong; car.bestProgress = nearest.progress; car.progressWindowStart = car.totalProgress; car.rewardWindowProgressStart = car.totalProgress;
+  const nearest = nearestTrack(car.position, route); car.progress = nearest.progress; car.totalProgress = nearest.progress; car.netProgress = nearest.progress; car.distanceAlong = nearest.distanceAlong; car.bestProgress = nearest.progress; car.progressWindowStart = car.totalProgress; car.rewardWindowProgressStart = car.totalProgress;
   car.checkpointsPassed = Math.min(checkpointCount - 1, Math.floor(nearest.progress * checkpointCount)); car.nextCheckpoint = car.checkpointsPassed >= checkpointCount - 1 ? 0 : car.checkpointsPassed + 1;
   return car;
 }
@@ -965,10 +980,12 @@ function manualAction(): ReturnType<typeof heuristicAction> {
 
 function updateRace(): void {
   if (!running || training) return;
+  const actions = new Map<Car, ReturnType<typeof heuristicAction>>();
+  raceCars.forEach((car) => { if (!car.isObstacle) actions.set(car, car === fly && manualMode ? manualAction() : car.isFly && car.network ? car.network.step(sensorValues(car, raceCars, activeTrack)) : heuristicAction(car, raceCars, activeTrack)); });
   raceCars.forEach((car) => {
     if (car.isObstacle) return;
-    const action = car === fly && manualMode ? manualAction() : car.isFly && car.network ? car.network.step(sensorValues(car, raceCars, activeTrack)) : heuristicAction(car, raceCars, activeTrack);
-    const previousTimeLimit = car.timeLimit; car.action = action;
+    const action = actions.get(car) ?? { steer: 0, throttle: 0, brake: 1 };
+    const previousTimeLimit = car.timeLimit;
     // The watchdog is an evaluation rule, not a race hazard. Race bots finish
     // normally; training candidates are the ones culled for non-progression.
     stepCar(car, action, raceCars, activeTrack, rewardConfig, { ...physicsConfig, ruthlessCulling: false });
@@ -999,6 +1016,11 @@ function updateRace(): void {
       setRunState("Time limit", `Fly pilot reached its ${fly.timeLimit}-tick limit without completing the lap.`, "paused", "TIME LIMIT");
       appendEvent(`time limit reached on ${activeTrack.name} · no crash recorded`);
     }
+    if (fly.crashed && !flyFinishAnnounced) {
+      flyFinishAnnounced = true;
+      setRunState("Crash", `Fly pilot stopped: ${fly.crashReason ?? "terminal collision"}.`, "paused", "CRASH");
+      appendEvent(`crash on ${activeTrack.name} · ${fly.crashReason ?? "terminal collision"}`);
+    }
   }
 }
 
@@ -1006,8 +1028,12 @@ function makeTrainingCar(network: SpikingNetwork, lane = 0, route: TrackDefiniti
 
 function makeFiveBrainCar(network: SpikingNetwork, index: number, route: TrackDefinition): Car {
   const lanes = [-1.15, 1.15, -0.45, 0.45, 0]; const colors = ["#74c0ff", "#f19a69", "#e9d26d", "#b48cff", "#7cf0b6"];
-  const column = index % lanes.length; const row = Math.floor(index / lanes.length);
-  const car = createGridCar(lanes[column], row * 86 + (column === 4 ? 42 : 0), colors[index % colors.length], `brain ${index + 1}`, route);
+  const column = index % lanes.length;
+  // Every genome receives the same scoring origin. Visual duplicates for
+  // populations above five are harmless in ghost/soft-contact modes and are
+  // preferable to gifting later population slots free route progress.
+  const car = createGridCar(lanes[column], 0, colors[index % colors.length], `brain ${index + 1}`, route);
+  car.totalProgress = 0; car.netProgress = 0; car.bestProgress = 0; car.progressWindowStart = 0; car.rewardWindowProgressStart = 0; car.checkpointsPassed = 0; car.nextCheckpoint = 1;
   car.network = network; car.isFly = true; network.reset(); return car;
 }
 
@@ -1019,26 +1045,58 @@ function ensureWorkingCheckpoint(): void {
   if (!bestNetwork && trainingNetworks[0]) bestNetwork = trainingNetworks[0].clone();
 }
 
+function ensureHeuristicWarmStart(): void {
+  if (bestNetwork || !heuristicWarmStart) return;
+  bestNetwork = createHeuristicImitationNetwork(trainingTracks, trainingWorldSeed + 313, trainingTracks.length > 5 ? 260 : 500, 3);
+  warmStartLabel = "heuristic-distilled fly";
+  appendEvent(`heuristic warm start created from ${trainingTracks.length} route${trainingTracks.length === 1 ? "" : "s"} · evolution can now improve beyond the teacher`);
+}
+
+function generationEvaluationSeeds(): number[] {
+  const base = trainingWorldSeed + trainingGeneration * 10007;
+  return Array.from({ length: trainingSeedCount }, (_, index) => base + index * 7919);
+}
+
 function trainFiveBrainStep(): void {
   const route = trainingTracks[trainingTrackIndex];
   const sharedSimulationCars = [...trainingPopulation, ...trainingObstacles];
+  const actions = trainingPopulation.map((car, index) => {
+    if (!car.network || car.crashed || car.finished || car.timedOut || car.eliminated) return undefined;
+    const candidateObstacles = ghostEvolution ? (trainingGhostObstacles[index] ?? []) : trainingObstacles;
+    const simulationCars = ghostEvolution ? [car, ...candidateObstacles] : sharedSimulationCars;
+    return car.network.step(sensorValues(car, simulationCars, route));
+  });
   trainingPopulation.forEach((car, index) => {
     if (!car.network || car.crashed || car.finished || car.timedOut || car.eliminated) return;
     const candidateObstacles = ghostEvolution ? (trainingGhostObstacles[index] ?? []) : trainingObstacles;
     const simulationCars = ghostEvolution ? [car, ...candidateObstacles] : sharedSimulationCars;
     const previousTimeLimit = car.timeLimit;
-    car.action = car.network.step(sensorValues(car, simulationCars, route));
-    stepCar(car, car.action, simulationCars, route, rewardConfig, ghostEvolution ? physicsConfig : { ...physicsConfig, softCollisions: softContactEvolution });
+    const action = actions[index] ?? { steer: 0, throttle: 0, brake: 1 };
+    stepCar(car, action, simulationCars, route, rewardConfig, ghostEvolution ? visualEpisodePhysics : { ...visualEpisodePhysics, softCollisions: softContactEvolution });
     if (car.timeLimit > previousTimeLimit) appendEvent(`${car.name} earned adaptive extension ${car.timeExtensions}/${physicsConfig.maxAdaptiveExtensions ?? MAX_ADAPTIVE_EXTENSIONS} · new limit ${car.timeLimit} ticks`);
   });
+  const cullWindow = Math.max(30, physicsConfig.cullWindowTicks ?? 300);
+  const fleetTick = Math.max(0, ...trainingPopulation.map((car) => car.ticks));
+  if (physicsConfig.ruthlessCulling && fleetTick >= cullWindow * 2 && fleetTick - lastCompetitiveCullTick >= cullWindow) {
+    lastCompetitiveCullTick = fleetTick;
+    const active = trainingPopulation.filter((car) => !car.finished && !car.crashed && !car.timedOut && !car.eliminated)
+      .sort((a, b) => progressPerSecond(b.totalProgress, b.ticks) - progressPerSecond(a.totalProgress, a.ticks));
+    const leaderRate = active.length > 0 ? progressPerSecond(active[0].totalProgress, active[0].ticks) : 0;
+    const survivorCount = Math.max(2, Math.ceil(active.length / 2)); let culled = 0;
+    active.slice(survivorCount).forEach((car) => {
+      const rate = progressPerSecond(car.totalProgress, car.ticks);
+      if (rate < leaderRate * 0.75) { car.eliminated = true; car.eliminationReason = `successive halving: pace ${(rate * 100).toFixed(2)}%/s vs leader ${(leaderRate * 100).toFixed(2)}%/s`; car.speed = 0; culled += 1; }
+    });
+    if (culled > 0) appendEvent(`competitive watchdog culled ${culled} low-pace brain${culled === 1 ? "" : "s"} · top half retained`);
+  }
   const tick = Math.max(0, ...trainingPopulation.map((car) => car.ticks));
   const episodesPerGeneration = Math.max(1, trainingTracks.length);
   const generationEpisodes = trainingPopulationSize * episodesPerGeneration;
   const completedEpisodes = (trainingGeneration - 1) * generationEpisodes + trainingTrackIndex * trainingPopulationSize;
-  const leader = [...trainingPopulation].sort((a, b) => b.score - a.score)[0];
+  const leader = [...trainingPopulation].sort((a, b) => breedingProgressMetric === "rate" ? progressPerSecond(b.totalProgress, b.ticks) - progressPerSecond(a.totalProgress, a.ticks) : b.totalProgress - a.totalProgress || b.score - a.score)[0];
   const displayedTimeLimit = Math.max(MAX_TICKS, ...trainingPopulation.map((car) => car.timeLimit));
   const liveFraction = Math.min(1, tick / MAX_TICKS);
-  setProgress((completedEpisodes + liveFraction * trainingPopulationSize) / Math.max(1, requestedGenerations * generationEpisodes), `generation ${trainingGeneration}/${requestedGenerations} · ${trainingPopulationSize} brains racing · ${route.name}`, `visual race · ${tick}/${displayedTimeLimit} ticks · leader checkpoints ${leader?.checkpointsPassed ?? 0}/${physicsConfig.checkpointCount ?? CHECKPOINT_COUNT} · winner is ranked by averaged fitness`);
+  setProgress((completedEpisodes + liveFraction * trainingPopulationSize) / Math.max(1, requestedGenerations * generationEpisodes), `generation ${trainingGeneration}/${requestedGenerations} · ${trainingPopulationSize} brains racing · ${route.name}`, `visual race · ${tick}/${displayedTimeLimit} ticks · leader checkpoints ${leader?.checkpointsPassed ?? 0}/${physicsConfig.checkpointCount ?? CHECKPOINT_COUNT} · selection uses ${breedingProgressMetric === "rate" ? "progress/time" : "novel coverage"} + reward`);
   const finished = trainingPopulation.every((car) => car.crashed || car.finished || car.timedOut || car.eliminated);
   if (leader) {
     updateRewardTelemetry(leader);
@@ -1046,14 +1104,14 @@ function trainFiveBrainStep(): void {
     ui.progress.textContent = `${Math.round(leader.totalProgress * 100)}%`;
   }
   if (!finished) return;
-  trainingPopulation.forEach((car, index) => { trainingScores[index] += car.score; trainingProgresses[index] += car.totalProgress; trainingTicks[index] += car.ticks; });
+  trainingPopulation.forEach((car, index) => { trainingScores[index] += car.score; trainingProgresses[index] += car.totalProgress; trainingTicks[index] += car.ticks; trainingProgressRates[index] += progressPerSecond(car.totalProgress, car.ticks); trainingFinishCounts[index] += car.finished ? 1 : 0; trainingEliminationCounts[index] += car.eliminated ? 1 : 0; });
   trainingPopulation.forEach(recordTrainingTrace);
-  const currentLeader = [...trainingPopulation].sort((a, b) => b.score - a.score)[0];
+  const currentLeader = [...trainingPopulation].sort((a, b) => breedingProgressMetric === "rate" ? progressPerSecond(b.totalProgress, b.ticks) - progressPerSecond(a.totalProgress, a.ticks) : b.totalProgress - a.totalProgress || b.score - a.score)[0];
   appendEvent(`${trainingPopulationSize}-brain race finished ${route.name} · leader ${currentLeader?.name ?? "unknown"} · fitness ${currentLeader?.score.toFixed(1) ?? "—"}`);
   if (trainingTrackIndex + 1 < trainingTracks.length) {
-    trainingTrackIndex += 1; activeTrack = trainingTracks[trainingTrackIndex];
+    trainingTrackIndex += 1; activeTrack = trainingTracks[trainingTrackIndex]; lastCompetitiveCullTick = 0;
     trainingPopulation = trainingNetworks.map((network, index) => makeFiveBrainCar(network, index, activeTrack)); applyLineageNames();
-      refreshTrainingObstacles(activeTrack, trainingWorldSeed + trainingTrackIndex * 97);
+      refreshTrainingObstacles(activeTrack, trainingWorldSeed + trainingGeneration * 10007 + trainingTrackIndex * 97);
     appendEvent(`${trainingPopulationSize} brains reset for ${activeTrack.name}; previous track scores retained`);
     return;
   }
@@ -1061,6 +1119,8 @@ function trainFiveBrainStep(): void {
     car.score = trainingScores[index] / trainingTracks.length;
     car.totalProgress = trainingProgresses[index] / trainingTracks.length;
     car.ticks = Math.max(1, Math.round(trainingTicks[index] / trainingTracks.length));
+    car.finished = trainingFinishCounts[index] === trainingTracks.length;
+    car.eliminated = trainingEliminationCounts[index] > 0;
   });
   finishVisualGeneration();
 }
@@ -1068,7 +1128,7 @@ function trainFiveBrainStep(): void {
 function trainPopulationStep(): void {
   if (fiveBrainEvolution) { trainFiveBrainStep(); return; }
   const car = trainingPopulation[trainingIndex]; if (!car?.network) return;
-  const cars = [car, ...trainingObstacles]; const previousTimeLimit = car.timeLimit; car.action = car.network.step(sensorValues(car, cars, trainingTracks[trainingTrackIndex])); stepCar(car, car.action, cars, trainingTracks[trainingTrackIndex], rewardConfig, physicsConfig);
+  const cars = [car, ...trainingObstacles]; const previousTimeLimit = car.timeLimit; const action = car.network.step(sensorValues(car, cars, trainingTracks[trainingTrackIndex])); stepCar(car, action, cars, trainingTracks[trainingTrackIndex], rewardConfig, visualEpisodePhysics);
   if (car.timeLimit > previousTimeLimit) appendEvent(`${car.name} earned adaptive extension ${car.timeExtensions}/${physicsConfig.maxAdaptiveExtensions ?? MAX_ADAPTIVE_EXTENSIONS} · new limit ${car.timeLimit} ticks`);
   updateRewardTelemetry(car);
   const episodeCount = Math.max(1, trainingTracks.length); const totalEpisodes = Math.max(1, trainingPopulationSize * episodeCount * requestedGenerations);
@@ -1081,15 +1141,18 @@ function trainPopulationStep(): void {
     trainingScores[trainingIndex] += car.score;
     trainingProgresses[trainingIndex] += car.totalProgress;
     trainingTicks[trainingIndex] += car.ticks;
+    trainingProgressRates[trainingIndex] += progressPerSecond(car.totalProgress, car.ticks);
+    trainingFinishCounts[trainingIndex] += car.finished ? 1 : 0;
+    trainingEliminationCounts[trainingIndex] += car.eliminated ? 1 : 0;
     const terminalReason = car.finished ? " · finish line" : car.eliminated ? ` · eliminated (${car.eliminationReason ?? "insufficient progress"})` : car.crashed ? " · crashed" : car.timedOut ? " · time limit" : "";
     appendEvent(`${car.name} (${trainingIndex + 1}/${trainingPopulationSize}) finished ${route.name} · fitness ${car.score.toFixed(1)}${terminalReason}`);
     if (trainingTrackIndex + 1 < trainingTracks.length) {
       trainingTrackIndex += 1; activeTrack = trainingTracks[trainingTrackIndex];
-      trainingPopulation[trainingIndex] = makeTrainingCar(car.network, (trainingIndex % 3) - 1, trainingTracks[trainingTrackIndex]); trainingPopulation[trainingIndex].name = lineageNameForIndex(trainingIndex);
-      refreshTrainingObstacles(activeTrack, trainingWorldSeed + trainingTrackIndex * 97);
+      trainingPopulation[trainingIndex] = makeTrainingCar(car.network, 0, trainingTracks[trainingTrackIndex]); trainingPopulation[trainingIndex].name = lineageNameForIndex(trainingIndex);
+      refreshTrainingObstacles(activeTrack, trainingWorldSeed + trainingGeneration * 10007 + trainingTrackIndex * 97);
       setProgress((completedEpisodes + 1) / totalEpisodes, `generation ${trainingGeneration}/${requestedGenerations} · ${car.name} (${trainingIndex + 1}/${trainingPopulationSize}) · ${trainingTracks[trainingTrackIndex].name}`, "visual · switching track episode");
     } else {
-      car.score = trainingScores[trainingIndex] / trainingTracks.length; car.totalProgress = trainingProgresses[trainingIndex] / trainingTracks.length; car.ticks = Math.max(1, Math.round(trainingTicks[trainingIndex] / trainingTracks.length));
+      car.score = trainingScores[trainingIndex] / trainingTracks.length; car.totalProgress = trainingProgresses[trainingIndex] / trainingTracks.length; car.ticks = Math.max(1, Math.round(trainingTicks[trainingIndex] / trainingTracks.length)); car.finished = trainingFinishCounts[trainingIndex] === trainingTracks.length; car.eliminated = trainingEliminationCounts[trainingIndex] > 0;
       trainingIndex += 1; trainingTrackIndex = 0;
       if (trainingIndex >= trainingPopulation.length) finishVisualGeneration();
     }
@@ -1097,9 +1160,9 @@ function trainPopulationStep(): void {
 }
 
 function startVisualGeneration(): void {
-  trainingTrackIndex = 0; activeTrack = trainingTracks[0]; trainingScores = trainingNetworks.map(() => 0); trainingProgresses = trainingNetworks.map(() => 0); trainingTicks = trainingNetworks.map(() => 0);
-  trainingPopulation = fiveBrainEvolution ? trainingNetworks.map((network, index) => makeFiveBrainCar(network, index, trainingTracks[0])) : trainingNetworks.map((network, index) => makeTrainingCar(network, (index % 3) - 1, trainingTracks[0])); applyLineageNames();
-  refreshTrainingObstacles(activeTrack, trainingWorldSeed);
+  trainingTrackIndex = 0; lastCompetitiveCullTick = 0; activeTrack = trainingTracks[0]; trainingScores = trainingNetworks.map(() => 0); trainingProgresses = trainingNetworks.map(() => 0); trainingTicks = trainingNetworks.map(() => 0); trainingProgressRates = trainingNetworks.map(() => 0); trainingFinishCounts = trainingNetworks.map(() => 0); trainingEliminationCounts = trainingNetworks.map(() => 0);
+  trainingPopulation = fiveBrainEvolution ? trainingNetworks.map((network, index) => makeFiveBrainCar(network, index, trainingTracks[0])) : trainingNetworks.map((network) => makeTrainingCar(network, 0, trainingTracks[0])); applyLineageNames();
+  refreshTrainingObstacles(activeTrack, trainingWorldSeed + trainingGeneration * 10007);
   trainingIndex = 0;
   trainingPopulation.forEach((car) => car.network?.reset());
   const episodeCount = Math.max(1, trainingTracks.length);
@@ -1112,12 +1175,10 @@ function breed(): void {
   updateLineageEvaluations();
   const evaluated = [...trainingNetworks].map((network, index) => {
     const car = trainingPopulation[index]; const score = car?.score ?? -Infinity; const progress = car?.totalProgress ?? car?.progress ?? 0; const finished = car?.finished ?? false; const ticks = Math.max(1, car?.ticks ?? MAX_TICKS);
-    const progressMetric = breedingProgressMetric === "rate" ? progressPerSecond(progress, ticks) : progress;
-    return { network, score, car, progress, progressMetric, finished, lineageId: trainingLineageIds[index] };
+    const measuredRate = trainingProgressRates[index] > 0 ? trainingProgressRates[index] / Math.max(1, trainingTracks.length) : progressPerSecond(progress, ticks);
+    const progressMetric = breedingProgressMetric === "rate" ? measuredRate : progress;
+    return { index, network, score, car, progress, progressMetric, finished, lineageId: trainingLineageIds[index] };
   });
-  const incumbentRanked = [...evaluated].sort((a, b) => compareEvolutionCandidates({ progress: b.progress, fitness: b.score, finished: b.finished }, { progress: a.progress, fitness: a.score, finished: a.finished }));
-  const candidate = incumbentRanked[0];
-  if (!candidate || !Number.isFinite(candidate.score)) throw new Error("generation produced no finite brain fitness");
   const finiteFitness = evaluated.map((entry) => entry.score).filter(Number.isFinite);
   const fitnessMin = finiteFitness.length > 0 ? Math.min(...finiteFitness) : 0;
   const fitnessMax = finiteFitness.length > 0 ? Math.max(...finiteFitness) : fitnessMin;
@@ -1131,22 +1192,22 @@ function breed(): void {
       return { ...entry, selectionScore: blendedEvolutionSelectionScore({ progress: normalizedMetric, fitness: entry.score, finished: entry.finished }, progressShare, fitnessMin, fitnessMax) };
     })
     .sort((a, b) => b.selectionScore - a.selectionScore || b.progressMetric - a.progressMetric || compareEvolutionCandidates({ progress: b.progress, fitness: b.score, finished: b.finished }, { progress: a.progress, fitness: a.score, finished: a.finished }));
+  const candidate = ranked[0]; const incumbent = ranked.find((entry) => entry.index === 0);
+  if (!candidate || !incumbent || !Number.isFinite(candidate.score)) throw new Error("generation produced no finite brain fitness");
   const winnerProgress = candidate.progress;
-  const progressGain = winnerProgress - previousGenerationProgress;
-  const retainedProgress = Math.max(previousGenerationProgress, winnerProgress);
-  const progressStalled = trainingGeneration > 1 && progressGain < 0.02;
-  const improved = shouldAcceptEvolutionCandidate({ progress: candidate.progress, fitness: candidate.score, finished: candidate.finished }, bestNetwork ? { progress: bestProgressForContext, fitness: bestFitness, finished: bestFinishedForContext } : undefined);
-  const routeStable = Boolean(bestNetwork) && candidate.progress <= bestProgressForContext + 0.005;
-  const rewardGain = Number.isFinite(bestFitness) ? candidate.score - bestFitness : Infinity;
-  const rewardPlateau = trainingGeneration > 1 && Number.isFinite(bestFitness) && routeStable && rewardGain >= 0 && rewardGain <= Math.max(2, Math.abs(bestFitness) * 0.01);
-  const plateauDetected = progressStalled || rewardPlateau || !improved;
-  if (improved) {
-    bestNetwork = candidate.network.clone(); bestFitness = candidate.score; generation = trainingGeneration;
-    bestProgressForContext = clamp(candidate.progress, 0, 1); bestFinishedForContext = candidate.finished;
-  }
-  if (plateauDetected) { plateauStreak += 1; plateauReason = rewardPlateau ? "reward plateau" : progressStalled ? "route plateau" : "candidate rejected"; }
+  const objectiveGain = candidate.progressMetric - previousGenerationProgress;
+  const retainedProgress = Math.max(bestProgressForContext, winnerProgress);
+  const progressStalled = trainingGeneration > 1 && objectiveGain < (breedingProgressMetric === "rate" ? 0.0005 : 0.02);
+  const firstLocalGeneration = !Number.isFinite(bestFitness);
+  const improved = firstLocalGeneration || candidate.index !== 0;
+  const rewardGain = candidate.score - incumbent.score;
+  const rewardPlateau = trainingGeneration > 1 && candidate.index === 0 && Math.abs(rewardGain) <= Math.max(2, Math.abs(incumbent.score) * 0.01);
+  const plateauDetected = progressStalled || rewardPlateau || candidate.index === 0;
+  bestNetwork = candidate.network.clone(); bestFitness = candidate.score; generation = trainingGeneration;
+  bestProgressForContext = clamp(candidate.progress, 0, 1); bestFinishedForContext = candidate.finished;
+  if (plateauDetected) { plateauStreak += 1; plateauReason = rewardPlateau ? "reward plateau" : progressStalled ? "selected-objective plateau" : "incumbent retained"; }
   else { plateauStreak = 0; plateauReason = "none"; }
-  previousGenerationProgress = retainedProgress;
+  previousGenerationProgress = candidate.progressMetric;
   if (plateauDetected) {
     mutationRate = clamp(mutationRate * 1.28 + 0.01, DEFAULT_MUTATION_RATE, 0.65);
     mutationAmount = clamp(mutationAmount * 1.22 + 0.01, DEFAULT_MUTATION_AMOUNT, 0.85);
@@ -1158,23 +1219,20 @@ function breed(): void {
   updateEvolutionTelemetry();
   ui.generation.textContent = `${generation}`; ui.fitness.textContent = bestFitness.toFixed(1); ui.progress.textContent = `${Math.round(retainedProgress * 100)}%`;
   recordEvolutionPoint(candidate.score, winnerProgress, retainedProgress, candidate.lineageId, lineageNodeById(candidate.lineageId)?.name);
-  const result = improved ? `accepted new incumbent ${bestFitness.toFixed(1)}` : `rejected candidate ${candidate.score.toFixed(1)}; incumbent remains ${bestFitness.toFixed(1)}`;
-  const reason = rewardPlateau ? "reward plateau" : progressStalled ? "route progress plateau" : improved ? "progress improved" : "fitness did not improve";
+  const result = improved ? `accepted objective winner ${bestFitness.toFixed(1)}` : `retained incumbent ${bestFitness.toFixed(1)}`;
+  const reason = rewardPlateau ? "reward plateau" : progressStalled ? `${breedingProgressMetric === "rate" ? "progress/time" : "route progress"} plateau` : improved ? "selected objective improved" : "incumbent remained best";
   trainingLineageIds.forEach((id) => { const node = lineageNodeById(id); if (node && node.status !== "immigrant") node.status = "candidate"; });
-  const candidateNode = lineageNodeById(candidate.lineageId); if (candidateNode) candidateNode.status = improved ? "retained" : "rejected";
-  const retainedParentId = improved ? candidate.lineageId : trainingLineageIds[0]; const retainedNode = lineageNodeById(retainedParentId); if (retainedNode) retainedNode.status = "retained";
+  const candidateNode = lineageNodeById(candidate.lineageId); if (candidateNode) candidateNode.status = "retained";
+  const retainedParentId = candidate.lineageId; const retainedNode = lineageNodeById(retainedParentId); if (retainedNode) retainedNode.status = "retained";
   renderLineageTree();
   rememberTrainingContext();
-  // Incumbent acceptance deliberately remains progress-first, but mating must
-  // follow the user's progress/reward ratio. Keeping `candidate` here made
-  // the slider mostly cosmetic because only the runner-up came from `ranked`.
   const winner = ranked[0];
   const runnerUp = ranked[1];
   const winnerShare = winnerMatingShare / 100;
   const runnerUpShare = 1 - winnerShare;
   const winnerParentId = winner.lineageId;
   const runnerUpParentId = runnerUp?.lineageId;
-  appendEvent(`generation ${trainingGeneration} complete · ${result} · ${reason} · plateau ${plateauStreak}/${plateauPatience} · ${exploring ? "exploration burst with random immigrants" : "local mutations"} · mutation ${(mutationRate * 100).toFixed(0)}% / ${(mutationAmount).toFixed(2)} · breeding ranked ${breedingProgressWeight}% ${breedingProgressMetric === "rate" ? "progress/time" : "total progress"} / ${100 - breedingProgressWeight}% normalized reward · protected incumbent mates ${Math.round(winnerShare * 100)}% with blended winner and ${Math.round(runnerUpShare * 100)}% with runner-up`);
+  appendEvent(`generation ${trainingGeneration} complete · ${result} · ${reason} · plateau ${plateauStreak}/${plateauPatience} · ${exploring ? "exploration burst with random immigrants" : "local mutations"} · mutation ${(mutationRate * 100).toFixed(0)}% / ${(mutationAmount).toFixed(2)} · breeding ranked ${breedingProgressWeight}% ${breedingProgressMetric === "rate" ? "progress/time" : "novel coverage"} / ${100 - breedingProgressWeight}% normalized reward · protected incumbent mates ${Math.round(winnerShare * 100)}% with blended winner and ${Math.round(runnerUpShare * 100)}% with runner-up`);
   persistBestBrain();
   trainingNetworks = createMutationPopulation(ranked.length, bestNetwork, trainingWorldSeed + trainingGeneration * 1000, mutationRate, mutationAmount, { plateauStreak: plateauExplorationEnabled ? plateauStreak : 0, plateauPatience, incumbentMatingPool: [winner.network, runnerUp?.network ?? winner.network], incumbentMatingWeights: [winnerMatingShare, 100 - winnerMatingShare] });
   if (trainingGeneration < requestedGenerations) registerNextLineagePopulation(trainingNetworks, trainingGeneration + 1, retainedParentId, winnerParentId, runnerUpParentId, winnerMatingShare, exploring);
@@ -1184,12 +1242,12 @@ function finishVisualGeneration(): void { breed(); if (trainingGeneration >= req
 
 async function runHeadless(): Promise<void> {
   const session = ++trainingSession; clearVisualTimer(); training = true; running = false; visualTraining = false; fiveBrainEvolution = false; ghostEvolution = ui.ghostEvolutionToggle.checked; manualMode = false; trainingGeneration = 1;
-  trainingPopulationSize = readInteger(ui.population, 5, 2, 80); requestedGenerations = readInteger(ui.generations, 100, 1, 10000); trainingTracks = selectedTracks(); rewardConfig = readRewardConfig(); physicsConfig = readPhysicsConfig(); readRoadObjectConfig(); readEvolutionConfig(); activeTrack = trainingTracks[0]; prepareTrainingContext(); trainingWorldSeed = 7000; plateauStreak = 0; plateauReason = "none"; mutationRate = DEFAULT_MUTATION_RATE; mutationAmount = DEFAULT_MUTATION_AMOUNT; previousGenerationProgress = 0; resetEvolutionHistory(); resetLineage(); trainingNetworks = createMutationPopulation(trainingPopulationSize, bestNetwork, trainingWorldSeed, DEFAULT_MUTATION_RATE, DEFAULT_MUTATION_AMOUNT); registerInitialLineagePopulation(trainingNetworks); ensureWorkingCheckpoint(); updateEvolutionTelemetry();
-  beginRun("Headless training", `Evaluating ${trainingPopulationSize} controllers across ${requestedGenerations} generations on ${selectedTrackLabel()}${freshTrainingContext ? ` · new route baseline reset · warm-start from ${warmStartLabel}` : ""}${ghostEvolution ? " in independent candidate worlds" : " with traffic bots"}${randomObjectsEnabled ? ` and ${trainingObstacleCount()} ${randomObjectKind} objects` : ""}${curriculumEnabled ? " on a progressive hazard curriculum" : ""}. Parent ranking uses ${breedingProgressWeight}% ${breedingProgressMetric === "rate" ? "progress/time" : "total progress"} / ${100 - breedingProgressWeight}% normalized reward; ${physicsConfig.ruthlessCulling ? "the progress watchdog is active" : "the progress watchdog is off"}.`, "HEADLESS TRAINING");
+  trainingPopulationSize = readInteger(ui.population, 5, 2, 80); requestedGenerations = readInteger(ui.generations, 100, 1, 10000); trainingTracks = selectedTracks(); rewardConfig = readRewardConfig(); physicsConfig = readPhysicsConfig(); readRoadObjectConfig(); readEvolutionConfig(); activeTrack = trainingTracks[0]; prepareTrainingContext(); trainingWorldSeed = 7000; plateauStreak = 0; plateauReason = "none"; mutationRate = DEFAULT_MUTATION_RATE; mutationAmount = DEFAULT_MUTATION_AMOUNT; previousGenerationProgress = 0; resetEvolutionHistory(); resetLineage(); ensureHeuristicWarmStart(); trainingNetworks = createMutationPopulation(trainingPopulationSize, bestNetwork, trainingWorldSeed, DEFAULT_MUTATION_RATE, DEFAULT_MUTATION_AMOUNT); registerInitialLineagePopulation(trainingNetworks); ensureWorkingCheckpoint(); updateEvolutionTelemetry();
+  beginRun("Headless training", `Evaluating ${trainingPopulationSize} controllers across ${requestedGenerations} generations on ${selectedTrackLabel()} with ${trainingSeedCount} shared rotating seed${trainingSeedCount === 1 ? "" : "s"} per route and ${Math.round((physicsConfig.domainRandomization ?? 0) * 100)}% physics randomization${freshTrainingContext ? ` · new route baseline reset · warm-start from ${warmStartLabel}` : ""}${ghostEvolution ? " in independent candidate worlds" : " with traffic bots"}${randomObjectsEnabled ? ` and ${trainingObstacleCount()} ${randomObjectKind} objects` : ""}${curriculumEnabled ? " on a progressive hazard curriculum" : ""}. Parent ranking uses ${breedingProgressWeight}% ${breedingProgressMetric === "rate" ? "progress/time" : "novel coverage"} / ${100 - breedingProgressWeight}% normalized reward; ${physicsConfig.ruthlessCulling ? "the progress watchdog is active" : "the progress watchdog is off"}.`, "HEADLESS TRAINING");
   setBusy(true); ui.generation.textContent = "0"; ui.fitness.textContent = "—";
   try {
     for (; trainingGeneration <= requestedGenerations && training && trainingSession === session; trainingGeneration += 1) {
-      trainingPopulation = trainingNetworks.map((network) => makeTrainingCar(network, 0, trainingTracks[0])); applyLineageNames();
+      trainingPopulation = trainingNetworks.map((network) => makeTrainingCar(network, 0, trainingTracks[0])); trainingProgressRates = trainingNetworks.map(() => 0); applyLineageNames();
       trainingIndex = 0;
       setRunState("Headless training", `Generation ${trainingGeneration}/${requestedGenerations}: evaluating each candidate across ${trainingTracks.length} track${trainingTracks.length === 1 ? "" : "s"}.`, "running", "HEADLESS TRAINING");
       for (const [index, car] of trainingPopulation.entries()) {
@@ -1199,7 +1257,7 @@ async function runHeadless(): Promise<void> {
         const startedCandidates = (trainingGeneration - 1) * trainingPopulationSize + index;
         setProgress(startedCandidates / totalCandidates, `generation ${trainingGeneration}/${requestedGenerations} · ${lineageNameForIndex(index)} (${index + 1}/${trainingPopulationSize})`, `headless · ${trainingTracks.length} track${trainingTracks.length === 1 ? "" : "s"} · evaluating…`);
         await new Promise<void>((resolve) => setTimeout(resolve, 0));
-        const result = evaluateGeneralist(car.network as SpikingNetwork, trainingTracks, rewardConfig, physicsConfig, ghostEvolution, trainingObstacleCount(), trainingWorldSeed, randomObjectKind); car.score = result.fitness; car.progress = result.progress; car.totalProgress = result.progress; car.finished = result.finished; car.eliminated = result.eliminated; car.ticks = Math.max(1, Math.round(result.ticks / Math.max(1, result.episodes.length))); car.laps = result.laps; car.rewardTotals = result.rewardTotals; car.rewardBreakdown = result.rewardTotals; car.lastReward = 0; car.forwardAlignment = 0;
+        const result = evaluateGeneralist(car.network as SpikingNetwork, trainingTracks, rewardConfig, physicsConfig, ghostEvolution, trainingObstacleCount(), generationEvaluationSeeds(), randomObjectKind); car.score = result.fitness; car.progress = result.progress; car.totalProgress = result.progress; car.finished = result.finished; car.eliminated = result.eliminated; car.ticks = Math.max(1, Math.round(result.ticks / Math.max(1, result.episodes.length))); car.laps = result.laps; car.rewardTotals = result.rewardTotals; car.rewardBreakdown = result.rewardTotals; car.lastReward = 0; car.forwardAlignment = 0; trainingProgressRates[index] = result.progressRate * Math.max(1, trainingTracks.length);
         trainingIndex = index + 1;
         const completedCandidates = (trainingGeneration - 1) * trainingPopulationSize + trainingIndex;
         ui.fitness.textContent = result.fitness.toFixed(1);
@@ -1217,16 +1275,16 @@ async function runHeadless(): Promise<void> {
 
 function startVisualTraining(): void {
   const session = ++trainingSession; clearVisualTimer(); training = true; running = false; visualTraining = true; fiveBrainEvolution = false; manualMode = false; trainingHistory = []; trainingGeneration = 1;
-  trainingPopulationSize = readInteger(ui.population, 5, 2, 80); requestedGenerations = readInteger(ui.generations, 100, 1, 10000); trainingTracks = selectedTracks(); rewardConfig = readRewardConfig(); physicsConfig = readPhysicsConfig(); readRoadObjectConfig(); readEvolutionConfig(); activeTrack = trainingTracks[0]; prepareTrainingContext(); trainingWorldSeed = 5000; plateauStreak = 0; plateauReason = "none"; mutationRate = DEFAULT_MUTATION_RATE; mutationAmount = DEFAULT_MUTATION_AMOUNT; previousGenerationProgress = 0; resetEvolutionHistory(); resetLineage(); trainingNetworks = createMutationPopulation(trainingPopulationSize, bestNetwork, trainingWorldSeed, DEFAULT_MUTATION_RATE, DEFAULT_MUTATION_AMOUNT); registerInitialLineagePopulation(trainingNetworks); ensureWorkingCheckpoint(); updateEvolutionTelemetry();
-  beginRun("Visual training", `Watching ${trainingPopulationSize} candidates drive across ${requestedGenerations} generations on ${selectedTrackLabel()}${freshTrainingContext ? ` · new route baseline reset · warm-start from ${warmStartLabel}` : ""}${randomObjectsEnabled ? ` with ${trainingObstacleCount()} ${randomObjectKind} objects` : ""}${curriculumEnabled ? " on a progressive hazard curriculum" : ""}. Parent ranking uses ${breedingProgressWeight}% ${breedingProgressMetric === "rate" ? "progress/time" : "total progress"} / ${100 - breedingProgressWeight}% normalized reward; ${physicsConfig.ruthlessCulling ? "the progress watchdog is active" : "the progress watchdog is off"}.`, "VISUAL TRAINING");
+  trainingPopulationSize = readInteger(ui.population, 5, 2, 80); requestedGenerations = readInteger(ui.generations, 100, 1, 10000); trainingTracks = selectedTracks(); rewardConfig = readRewardConfig(); physicsConfig = readPhysicsConfig(); readRoadObjectConfig(); readEvolutionConfig(); activeTrack = trainingTracks[0]; prepareTrainingContext(); trainingWorldSeed = 5000; plateauStreak = 0; plateauReason = "none"; mutationRate = DEFAULT_MUTATION_RATE; mutationAmount = DEFAULT_MUTATION_AMOUNT; previousGenerationProgress = 0; resetEvolutionHistory(); resetLineage(); ensureHeuristicWarmStart(); trainingNetworks = createMutationPopulation(trainingPopulationSize, bestNetwork, trainingWorldSeed, DEFAULT_MUTATION_RATE, DEFAULT_MUTATION_AMOUNT); registerInitialLineagePopulation(trainingNetworks); ensureWorkingCheckpoint(); updateEvolutionTelemetry();
+  beginRun("Visual training", `Watching ${trainingPopulationSize} candidates drive across ${requestedGenerations} generations on ${selectedTrackLabel()}${freshTrainingContext ? ` · new route baseline reset · warm-start from ${warmStartLabel}` : ""}${randomObjectsEnabled ? ` with ${trainingObstacleCount()} ${randomObjectKind} objects` : ""}${curriculumEnabled ? " on a progressive hazard curriculum" : ""}. Parent ranking uses ${breedingProgressWeight}% ${breedingProgressMetric === "rate" ? "progress/time" : "novel coverage"} / ${100 - breedingProgressWeight}% normalized reward; ${physicsConfig.ruthlessCulling ? "the progress watchdog is active" : "the progress watchdog is off"}.`, "VISUAL TRAINING");
   setBusy(true); ui.generation.textContent = "0"; ui.fitness.textContent = "—"; startVisualGeneration(); scheduleVisualBatch(session);
 }
 
 function startFiveBrainEvolution(): void {
   const session = ++trainingSession; clearVisualTimer(); training = true; running = false; visualTraining = true; fiveBrainEvolution = true; ghostEvolution = ui.ghostEvolutionToggle.checked; manualMode = false; trainingHistory = []; trainingGeneration = 1;
-  trainingPopulationSize = readInteger(ui.population, 5, 2, 80); requestedGenerations = readInteger(ui.generations, 100, 1, 10000); trainingTracks = selectedTracks(); rewardConfig = readRewardConfig(); physicsConfig = readPhysicsConfig(); readRoadObjectConfig(); readEvolutionConfig(); activeTrack = trainingTracks[0]; prepareTrainingContext(); trainingWorldSeed = 9000; plateauStreak = 0; plateauReason = "none"; mutationRate = DEFAULT_MUTATION_RATE; mutationAmount = DEFAULT_MUTATION_AMOUNT; previousGenerationProgress = 0; resetEvolutionHistory(); resetLineage(); trainingNetworks = createMutationPopulation(trainingPopulationSize, bestNetwork, trainingWorldSeed, DEFAULT_MUTATION_RATE, DEFAULT_MUTATION_AMOUNT); registerInitialLineagePopulation(trainingNetworks); ensureWorkingCheckpoint(); updateEvolutionTelemetry();
+  trainingPopulationSize = readInteger(ui.population, 5, 2, 80); requestedGenerations = readInteger(ui.generations, 100, 1, 10000); trainingTracks = selectedTracks(); rewardConfig = readRewardConfig(); physicsConfig = readPhysicsConfig(); readRoadObjectConfig(); readEvolutionConfig(); activeTrack = trainingTracks[0]; prepareTrainingContext(); trainingWorldSeed = 9000; plateauStreak = 0; plateauReason = "none"; mutationRate = DEFAULT_MUTATION_RATE; mutationAmount = DEFAULT_MUTATION_AMOUNT; previousGenerationProgress = 0; resetEvolutionHistory(); resetLineage(); ensureHeuristicWarmStart(); trainingNetworks = createMutationPopulation(trainingPopulationSize, bestNetwork, trainingWorldSeed, DEFAULT_MUTATION_RATE, DEFAULT_MUTATION_AMOUNT); registerInitialLineagePopulation(trainingNetworks); ensureWorkingCheckpoint(); updateEvolutionTelemetry();
   const mode = ghostEvolution ? "independent candidate worlds (no candidate sensing, collisions, or influence)" : softContactEvolution ? "Ghost contact mode (candidates sense and penalize overlap, but contact is non-blocking)" : "a shared physical track with rigid collision dynamics";
-  beginRun("Population evolution", `Racing ${trainingPopulationSize} brains simultaneously in ${mode} for ${requestedGenerations} generations on ${selectedTrackLabel()}${freshTrainingContext ? ` · new route baseline reset · warm-start from ${warmStartLabel}` : ""}${randomObjectsEnabled ? ` with ${randomObjectCount} ${randomObjectKind} objects` : ""}. Parent ranking uses ${breedingProgressWeight}% ${breedingProgressMetric === "rate" ? "progress/time" : "total progress"} / ${100 - breedingProgressWeight}% normalized reward; ${physicsConfig.ruthlessCulling ? "the progress watchdog is active" : "the progress watchdog is off"}.`, "POPULATION EVOLUTION");
+  beginRun("Population evolution", `Racing ${trainingPopulationSize} brains simultaneously in ${mode} for ${requestedGenerations} generations on ${selectedTrackLabel()}${freshTrainingContext ? ` · new route baseline reset · warm-start from ${warmStartLabel}` : ""}${randomObjectsEnabled ? ` with ${randomObjectCount} ${randomObjectKind} objects` : ""}. Parent ranking uses ${breedingProgressWeight}% ${breedingProgressMetric === "rate" ? "progress/time" : "novel coverage"} / ${100 - breedingProgressWeight}% normalized reward; ${physicsConfig.ruthlessCulling ? "the progress watchdog is active" : "the progress watchdog is off"}.`, "POPULATION EVOLUTION");
   setBusy(true); ui.generation.textContent = "0"; ui.fitness.textContent = "—"; startVisualGeneration(); scheduleVisualBatch(session);
 }
 
@@ -1238,8 +1296,10 @@ function scheduleVisualBatch(session: number): void {
 }
 
 function finishTraining(): void {
+  const validation = bestNetwork ? evaluateGeneralist(bestNetwork.clone(), trainingTracks, rewardConfig, physicsConfig, ghostEvolution, trainingObstacleCount(), [420001], randomObjectKind) : undefined;
   training = false; visualTraining = false; fiveBrainEvolution = false; clearVisualTimer(); trainingPopulation = []; trainingGhostObstacles = []; setBusy(false); launchRace();
-  const detail = `training complete — best fitness ${bestFitness.toFixed(1)} at generation ${generation}; the trained fly is now racing`;
+  const validationDetail = validation ? ` · held-out coverage ${(validation.meanProgress * 100).toFixed(1)}% mean / ${(validation.worstProgress * 100).toFixed(1)}% worst quartile · ${(validation.completionRate * 100).toFixed(0)}% completion` : "";
+  const detail = `training complete — best fitness ${bestFitness.toFixed(1)} at generation ${generation}${validationDetail}; the trained fly is now racing`;
   setRunState("Training complete", detail, "ready", "RACE MODE"); setProgress(1, "100% · complete", "trained controller deployed in race mode"); appendEvent(detail);
 }
 
@@ -1282,6 +1342,7 @@ ui.useLineageButton.addEventListener("click", () => safely(useSelectedLineage));
 ui.downloadLineageButton.addEventListener("click", () => safely(downloadSelectedLineage));
 ui.trackSelect.addEventListener("change", () => { updateTrackInfo(); if (!training) safely(() => { activateStoredContextForRace(); launchRace(); }); });
 ui.wallsToggle.addEventListener("change", () => { physicsConfig = readPhysicsConfig(); appendEvent(physicsConfig.wallsEnabled ? "track walls enabled · off-track recovery is active" : "track walls disabled · cars may leave the road and only receive off-track penalties"); });
+ui.domainRandomization.addEventListener("change", () => { physicsConfig = readPhysicsConfig(); appendEvent(`physics randomization set to ${Math.round((physicsConfig.domainRandomization ?? 0) * 100)}% · grip, engine, and steering vary by episode`); });
 ui.adaptiveTimeToggle.addEventListener("change", () => { physicsConfig = readPhysicsConfig(); appendEvent(physicsConfig.adaptiveTimeLimit ? `adaptive time enabled · up to ${physicsConfig.maxAdaptiveExtensions} evidence-based extensions` : "adaptive time disabled · candidates stop at the base tick limit"); });
 ui.adaptiveExtensions.addEventListener("change", () => { physicsConfig = readPhysicsConfig(); appendEvent(`adaptive extension limit set to ${physicsConfig.maxAdaptiveExtensions}`); });
 ui.ruthlessCullingToggle.addEventListener("change", () => { physicsConfig = readPhysicsConfig(); appendEvent(physicsConfig.ruthlessCulling ? "ruthless progress watchdog enabled · stagnant training candidates will be eliminated" : "progress watchdog disabled"); });
@@ -1297,9 +1358,11 @@ ui.plateauPatience.addEventListener("change", () => { readEvolutionConfig(); upd
 ui.breedingProgressWeight.addEventListener("input", () => { readEvolutionConfig(); });
 ui.breedingProgressWeight.addEventListener("change", () => { readEvolutionConfig(); appendEvent(`breeding priority set to ${breedingProgressWeight}% ${breedingProgressMetric === "rate" ? "progress per time" : "total route progress"} / ${100 - breedingProgressWeight}% normalized reward`); });
 ui.breedingProgressMetric.addEventListener("change", () => { readEvolutionConfig(); appendEvent(`breeding progress metric set to ${breedingProgressMetric === "rate" ? "route progress per second · faster advancement ranks higher" : "total route progress · furthest advancement ranks higher"}`); });
+ui.trainingSeeds.addEventListener("change", () => { readEvolutionConfig(); appendEvent(`${trainingSeedCount} shared training seed${trainingSeedCount === 1 ? "" : "s"} per route · seeds rotate each generation`); });
+ui.heuristicWarmStartToggle.addEventListener("change", () => { readEvolutionConfig(); appendEvent(heuristicWarmStart ? "heuristic warm start enabled for new brains" : "heuristic warm start disabled · evolution begins from the current/random brain"); });
 ui.winnerMatingShare.addEventListener("change", () => { readEvolutionConfig(); appendEvent(`breeding mix set to ${winnerMatingShare}% blended winner / ${100 - winnerMatingShare}% runner-up; incumbent remains protected`); });
 ui.curriculumToggle.addEventListener("change", () => { readEvolutionConfig(); appendEvent(curriculumEnabled ? "progressive hazards enabled · obstacle count ramps with training" : "progressive hazards disabled · obstacle count stays fixed"); });
-[ui.rewardProgress, ui.rewardDirection, ui.rewardMoving, ui.rewardStanding, ui.rewardWrong, ui.rewardReverse, ui.rewardOffTrack, ui.rewardEdge, ui.rewardProximity, ui.rewardHazard, ui.rewardCenterline, ui.rewardCollision, ui.rewardCrash, ui.rewardCheckpoint, ui.rewardFinish].forEach((input) => {
+[ui.rewardProgress, ui.rewardDirection, ui.rewardMoving, ui.rewardStanding, ui.rewardWrong, ui.rewardReverse, ui.rewardOffTrack, ui.rewardEdge, ui.rewardProximity, ui.rewardHazard, ui.rewardCenterline, ui.rewardControlChange, ui.rewardControlConflict, ui.rewardSpikeEnergy, ui.rewardCollision, ui.rewardCrash, ui.rewardCheckpoint, ui.rewardFinish].forEach((input) => {
   input.addEventListener("change", () => { rewardConfig = readRewardConfig(); appendEvent("reward settings updated · new weights apply immediately"); });
 });
 window.addEventListener("keydown", (event) => {

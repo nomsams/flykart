@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  CAR_COLLISION_DIAMETER, CHECKPOINT_COUNT, CLOSE_PROXIMITY_DISTANCE, DEFAULT_PHYSICS_CONFIG, DEFAULT_REWARD_CONFIG, DEFAULT_TRACK, LANE_SPACING, MAX_TICKS, STEP, TRACKS, TRACK_WIDTH, BrainSnapshot, SpikingNetwork, adaptiveTimeLimitForExtensions, createMutationPopulation, createNetworkPopulation, createRoadObstacles,
-  blendedEvolutionSelectionScore, compareEvolutionCandidates, evaluate, evaluateGeneralist, evolutionSelectionScore, heuristicAction, nearestTrack, pointAtDistance, progressPerSecond, resolveTrack, sensorValues, shouldAcceptEvolutionCandidate, startLine, startPosition, stepCar, track, trackCheckpoint, trackDiagnostics,
+  CAR_COLLISION_DIAMETER, CHECKPOINT_COUNT, CLOSE_PROXIMITY_DISTANCE, DEFAULT_PHYSICS_CONFIG, DEFAULT_REWARD_CONFIG, DEFAULT_TRACK, LANE_SPACING, MAX_TICKS, STEP, TRACKS, TRACK_WIDTH, BrainSnapshot, SpikingNetwork, adaptiveTimeLimitForExtensions, createHeuristicImitationNetwork, createMutationPopulation, createNetworkPopulation, createRoadObstacles,
+  blendedEvolutionSelectionScore, compareEvolutionCandidates, evaluate, evaluateGeneralist, evolutionSelectionScore, heuristicAction, nearestTrack, physicsForEpisode, pointAtDistance, progressPerSecond, resolveTrack, sensorValues, shouldAcceptEvolutionCandidate, startLine, startPosition, stepCar, track, trackCheckpoint, trackDiagnostics,
 } from "./core";
 
 const finiteAction = (action: ReturnType<SpikingNetwork["step"]>) => {
@@ -17,7 +17,7 @@ describe("SpikingNetwork", () => {
   it("is deterministic for the same seed and inputs", () => {
     const first = new SpikingNetwork(42);
     const second = new SpikingNetwork(42);
-    const inputs = [0.2, -0.3, 0.1, 0.4, 0.8, 0, -0.2, 0.5, 1];
+    const inputs = [0.2, -0.3, 0.1, 0.4, 0.8, 0, -0.2, 0.5, 1, 0.6, -0.1, 0.2, 0.3, -0.4, 0, 0.5, 1];
     for (let index = 0; index < 20; index += 1) expect(first.step(inputs)).toEqual(second.step(inputs));
   });
 
@@ -68,23 +68,29 @@ describe("SpikingNetwork", () => {
 
   it("resets hidden state and exposes bounded actions", () => {
     const network = new SpikingNetwork(7);
-    for (let index = 0; index < 40; index += 1) finiteAction(network.step([1, 1, 1, 1, 1, 1, 1, 1, 1]));
+    for (let index = 0; index < 40; index += 1) finiteAction(network.step(new Array(17).fill(1)));
     network.reset();
     expect(network.activity().spikes.every((value) => value === 0)).toBe(true);
     expect(network.activity().outputs).toEqual([0, 0, 0, 0]);
   });
 
+  it("keeps an unexcited readout neutral instead of pressing throttle and brake together", () => {
+    const action = new SpikingNetwork(7).step(new Array(17).fill(0));
+    expect(action.throttle).toBe(0);
+    expect(action.brake).toBe(0);
+  });
+
   it("rejects malformed input vectors", () => {
     const network = new SpikingNetwork(1);
     expect(() => network.step([0, 1])).toThrow("invalid neural input vector");
-    expect(() => network.step([NaN, 0, 0, 0, 0, 0, 0, 0, 0])).toThrow("invalid neural input vector");
+    expect(() => network.step([NaN, ...new Array(16).fill(0)])).toThrow("invalid neural input vector");
   });
 
   it("clones weights without sharing mutable neural state", () => {
     const original = new SpikingNetwork(3);
     const clone = original.clone();
     expect(clone.toJSON()).toEqual(original.toJSON());
-    original.step([1, 0, 0, 0, 0, 0, 0, 0, 1]);
+    original.step([1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0]);
     expect(clone.activity().spikes.every((value) => value === 0)).toBe(true);
   });
 
@@ -93,7 +99,7 @@ describe("SpikingNetwork", () => {
     const a = original.mutate(0.15, 0.2, 99).toJSON();
     const b = original.mutate(0.15, 0.2, 99).toJSON();
     expect(a).toEqual(b);
-    expect(a.inputWeights).toHaveLength(48 * 9);
+    expect(a.inputWeights).toHaveLength(48 * 17);
     expect(a.recurrentWeights).toHaveLength(48 * 48);
     expect(a.outputWeights).toHaveLength(48 * 4);
     expect(a.bias).toHaveLength(48);
@@ -110,10 +116,18 @@ describe("SpikingNetwork", () => {
 
   it("loads older three-output checkpoints and keeps their reverse output neutral", () => {
     const source = new SpikingNetwork(13).toJSON();
-    const legacy = { ...source, outputCount: undefined, outputWeights: source.outputWeights.slice(0, 48 * 3) } as BrainSnapshot;
+    const legacyInputs = Array.from({ length: 48 }, (_, neuron) => source.inputWeights.slice(neuron * 17, neuron * 17 + 9)).flat();
+    const legacy = { ...source, version: 1 as const, inputCount: 9, mutationSigma: undefined, inputWeights: legacyInputs, outputCount: undefined, outputWeights: source.outputWeights.slice(0, 48 * 3) } as BrainSnapshot;
     const loaded = SpikingNetwork.fromJSON(legacy);
     expect(loaded.toJSON().outputWeights).toHaveLength(48 * 4);
-    expect(loaded.step([0, 0, 0, 0, 0, 0, 0, 0, 0]).reverse).toBe(0);
+    expect(loaded.step(new Array(17).fill(0)).reverse).toBe(0);
+  });
+
+  it("distills the heuristic deterministically into a compatible network", () => {
+    const first = createHeuristicImitationNetwork([DEFAULT_TRACK], 91, 40, 1).toJSON();
+    const second = createHeuristicImitationNetwork([DEFAULT_TRACK], 91, 40, 1).toJSON();
+    expect(first).toEqual(second);
+    expect(first.version).toBe(2);
   });
 });
 
@@ -128,7 +142,7 @@ describe("track geometry and sensors", () => {
   it("produces a finite, bounded sensor vector", () => {
     const car = startPosition();
     const sensors = sensorValues(car, [car, startPosition(1)]);
-    expect(sensors).toHaveLength(9);
+    expect(sensors).toHaveLength(17);
     sensors.forEach((value) => expect(Number.isFinite(value)).toBe(true));
     expect(sensors.every((value) => value >= -1 && value <= 1)).toBe(true);
   });
@@ -140,6 +154,7 @@ describe("track geometry and sensors", () => {
     expect(sensors[5]).toBeGreaterThan(0);
     expect(sensors[7]).toBeGreaterThan(0.9);
     expect(sensors[8]).toBeGreaterThan(0.5);
+    expect(sensors[9]).toBeGreaterThan(0);
   });
 
   it("reports nearby traffic even before a collision", () => {
@@ -243,6 +258,28 @@ describe("vehicle physics and fitness", () => {
     const car = startPosition();
     for (let index = 0; index < 90; index += 1) stepCar(car, { steer: 0, throttle: 0, brake: 0 }, [car]);
     expect(car.totalProgress).toBe(0);
+  });
+
+  it("does not reward replaying route coverage that was already reached", () => {
+    const car = startPosition();
+    for (let tick = 0; tick < 80; tick += 1) stepCar(car, { steer: 0, throttle: 1, brake: 0 }, [car]);
+    const reached = car.totalProgress;
+    car.netProgress = Math.max(0, reached - 0.02);
+    stepCar(car, { steer: 0, throttle: 0.4, brake: 0 }, [car]);
+    expect(car.totalProgress).toBeCloseTo(reached, 8);
+    expect(car.rewardBreakdown.progress).toBe(0);
+  });
+
+  it("penalizes conflicting controls and exposes a real crash terminal state", () => {
+    const conflict = startPosition();
+    stepCar(conflict, { steer: 0, throttle: 1, brake: 1 }, [conflict]);
+    expect(conflict.rewardBreakdown.controlConflict).toBeGreaterThan(0);
+
+    const crashed = startPosition(); crashed.position = { x: 5000, y: 5000 };
+    stepCar(crashed, { steer: 0, throttle: 1, brake: 0 }, [crashed], DEFAULT_TRACK, DEFAULT_REWARD_CONFIG, { ...DEFAULT_PHYSICS_CONFIG, wallsEnabled: false });
+    expect(crashed.crashed).toBe(true);
+    expect(crashed.crashReason).toContain("off track");
+    expect(crashed.rewardBreakdown.crash).toBe(DEFAULT_REWARD_CONFIG.crash);
   });
 
   it("supports deliberate reverse driving without creating forward progress", () => {
@@ -708,4 +745,14 @@ describe("vehicle physics and fitness", () => {
     expect(Number.isFinite(result.rewardTotals.total)).toBe(true);
     expect(result.ticks).toBeGreaterThan(0);
   }, 15000);
-});
+  });
+
+  it("evaluates shared multiple seeds and reports robust lower-tail metrics", () => {
+    const result = evaluateGeneralist(new SpikingNetwork(32), [DEFAULT_TRACK], DEFAULT_REWARD_CONFIG, { ...DEFAULT_PHYSICS_CONFIG, domainRandomization: 0.1 }, true, 0, [11, 29]);
+    expect(result.episodes).toHaveLength(2);
+    expect(result.worstProgress).toBeLessThanOrEqual(result.meanProgress);
+    expect(result.completionRate).toBeGreaterThanOrEqual(0);
+    expect(Number.isFinite(result.progressRate)).toBe(true);
+    expect(physicsForEpisode({ ...DEFAULT_PHYSICS_CONFIG, domainRandomization: 0.1 }, 11)).toEqual(physicsForEpisode({ ...DEFAULT_PHYSICS_CONFIG, domainRandomization: 0.1 }, 11));
+    expect(physicsForEpisode({ ...DEFAULT_PHYSICS_CONFIG, domainRandomization: 0.1 }, 11)).not.toEqual(physicsForEpisode({ ...DEFAULT_PHYSICS_CONFIG, domainRandomization: 0.1 }, 12));
+  });

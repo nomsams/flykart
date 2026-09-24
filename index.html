@@ -123,8 +123,10 @@
         <aside class="control-panel">
           <section class="panel-section">
             <div class="section-title"><h2>Training lab</h2><span id="training-status" class="status-dot idle">idle</span></div>
-            <label>Population <input id="population" type="number" min="2" max="80" value="5" /></label>
+            <label>Population <input id="population" type="number" min="2" max="80" value="10" /></label>
             <label>Generations <input id="generations" type="number" min="1" max="10000" value="100" /></label>
+            <label>Headless seeds / route <input id="training-seeds" type="number" min="1" max="4" value="2" /></label>
+            <label class="check-row"><input id="heuristic-warm-start-toggle" type="checkbox" checked /> <span>Heuristic warm start <small>distills the reliable hand-coded driver before evolution</small></span></label>
             <label>Track set
               <select id="track-select">
                 <option value="grand-loop" selected>Grand loop · default</option>
@@ -149,6 +151,7 @@
             <p class="reward-field-note"><span class="reward-positive">Green</span> shows centerline/direction reward; <span class="reward-negative">red</span> shows edge pressure at the road boundary. The field is clipped to the asphalt and is visual guidance only—the simulator applies penalties once from each car’s nearest road segment.</p>
             <p id="track-provenance" class="track-provenance">Route provenance · loading</p>
             <label class="check-row"><input id="walls-toggle" type="checkbox" checked /> <span>Track walls <small>recovery clamp (turn off for open track)</small></span></label>
+            <label>Physics randomization (%) <input id="domain-randomization" type="number" min="0" max="35" step="1" value="10" /></label>
             <label class="check-row"><input id="adaptive-time-toggle" type="checkbox" checked /> <span>Adaptive time limit <small>adds one base time window per viable extension</small></span></label>
             <label>Max adaptive extensions <input id="adaptive-extensions" type="number" min="0" max="6" value="4" /></label>
             <label class="check-row"><input id="ruthless-culling-toggle" type="checkbox" checked /> <span>Ruthless progress watchdog <small>eliminates training candidates that spend whole windows going nowhere</small></span></label>
@@ -184,30 +187,33 @@
             </label>
             <label>Winner mating share (%) <input id="winner-mating-share" type="number" min="50" max="95" value="80" /></label>
             <label class="check-row"><input id="curriculum-toggle" type="checkbox" /> <span>Progressive hazards <small>ramps stalled road objects from easy to full difficulty</small></span></label>
-            <p class="microcopy">The population button runs all configured brains simultaneously, including 10+ cars. Choose whether “progress” means total distance or route progress per second, then blend it with reward in clear 10-point ratios (100/0, 90/10, 80/20…). Think of total progress as “who got furthest” and progress per time as “who climbed fastest.” The watchdog is a separate race steward: after its grace windows, it removes candidates that fail to advance and denies adaptive extensions bought with idle reward. The protected incumbent mates with the blended winner for the configured share and the runner-up for the remainder. Ghost contact mode keeps candidate contact non-blocking.</p>
+            <p class="microcopy">Every genome starts from the same scoring origin. Choose whether progress means new route coverage or new coverage per second, then blend it with reward in 10-point ratios (100/0, 90/10, 80/20…). Reversing and replaying a section earns no new coverage. Shared seeds rotate each generation; physics randomization changes grip, engine, and steering while keeping each generation fair. The watchdog removes stagnant candidates and competitively halves a clearly slower simultaneous field.</p>
           </section>
 
           <details class="panel-section reward-settings" open>
             <summary><h2>Reward shaping</h2><span>live settings</span></summary>
             <div class="reward-legend"><span class="reward-positive">+ green = reward</span><span class="reward-negative">− red = penalty</span><span>values are applied per second unless marked otherwise</span></div>
             <div class="reward-fields">
-              <label><span class="reward-positive">+ Progress / sec</span><input id="reward-progress" type="number" min="0" max="100" step="0.5" value="14" /></label>
+              <label><span class="reward-positive">+ New route coverage</span><input id="reward-progress" type="number" min="0" max="100" step="0.5" value="14" /></label>
               <label><span class="reward-positive">+ Right direction / sec</span><input id="reward-direction" type="number" min="0" max="20" step="0.05" value="1.25" /></label>
               <label><span class="reward-positive">+ Moving / sec</span><input id="reward-moving" type="number" min="0" max="20" step="0.05" value="0.2" /></label>
               <label><span class="reward-negative">− Standing still / sec</span><input id="reward-standing" type="number" min="0" max="20" step="0.05" value="0.85" /></label>
               <label><span class="reward-negative">− Wrong direction / sec</span><input id="reward-wrong" type="number" min="0" max="30" step="0.05" value="2.5" /></label>
-              <label><span class="reward-negative">− Reverse progress / sec</span><input id="reward-reverse" type="number" min="0" max="30" step="0.05" value="3" /></label>
+              <label><span class="reward-negative">− Backtracking</span><input id="reward-reverse" type="number" min="0" max="30" step="0.05" value="3" /></label>
               <label><span class="reward-negative">− Outside track / sec</span><input id="reward-offtrack" type="number" min="0" max="200" step="0.5" value="24" /></label>
               <label><span class="reward-negative">− Near edge / sec</span><input id="reward-edge" type="number" min="0" max="20" step="0.05" value="1.2" /></label>
               <label><span class="reward-negative">− Close traffic / sec</span><input id="reward-proximity" type="number" min="0" max="100" step="0.5" value="10" /></label>
               <label><span class="reward-negative">− Hazard contact / sec</span><input id="reward-hazard" type="number" min="0" max="100" step="0.5" value="7.5" /></label>
               <label><span class="reward-positive">+ Centerline / sec</span><input id="reward-centerline" type="number" min="0" max="20" step="0.05" value="0.35" /></label>
+              <label><span class="reward-negative">− Control jitter / sec</span><input id="reward-control-change" type="number" min="0" max="20" step="0.01" value="0.08" /></label>
+              <label><span class="reward-negative">− Throttle + brake / sec</span><input id="reward-control-conflict" type="number" min="0" max="20" step="0.05" value="0.5" /></label>
+              <label><span class="reward-negative">− Spike energy / sec</span><input id="reward-spike-energy" type="number" min="0" max="20" step="0.01" value="0.04" /></label>
               <label><span class="reward-negative">− Collision</span><input id="reward-collision" type="number" min="0" max="100" step="0.5" value="10" /></label>
               <label><span class="reward-negative">− Crash</span><input id="reward-crash" type="number" min="0" max="200" step="1" value="75" /></label>
               <label><span class="reward-positive">+ Checkpoint</span><input id="reward-checkpoint" type="number" min="0" max="1000" step="5" value="100" /></label>
               <label><span class="reward-positive">+ Finish</span><input id="reward-finish" type="number" min="0" max="1000" step="5" value="300" /></label>
             </div>
-            <p class="microcopy">The live “This tick” chips show the exact terms that changed the score. Progress, direction, movement, centerline, checkpoints, and finish are positive. Standing still, wrong direction, reverse progress, edge/off-track time, close traffic, collisions, and crashes are negative. Close-traffic risk rises before contact so the controller learns to avoid pileups.</p>
+            <p class="microcopy">The live “This tick” chips show the exact terms that changed the score. Route coverage is potential-based: replaying the same asphalt cannot earn it twice. Control jitter, pressing throttle and brake together, and excessive spiking cost energy. Close-traffic risk rises before contact so the controller learns to avoid pileups.</p>
           </details>
 
           <section class="panel-section metrics">
