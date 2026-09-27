@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   CAR_COLLISION_DIAMETER, CHECKPOINT_COUNT, CLOSE_PROXIMITY_DISTANCE, DEFAULT_PHYSICS_CONFIG, DEFAULT_REWARD_CONFIG, DEFAULT_TRACK, LANE_SPACING, MAX_TICKS, STEP, TRACKS, TRACK_WIDTH, BrainSnapshot, SpikingNetwork, adaptiveTimeLimitForExtensions, createHeuristicImitationNetwork, createMutationPopulation, createNetworkPopulation, createRoadObstacles,
-  blendedEvolutionSelectionScore, compareEvolutionCandidates, evaluate, evaluateGeneralist, evolutionSelectionScore, heuristicAction, nearestTrack, physicsForEpisode, pointAtDistance, progressPerSecond, resolveTrack, sensorValues, shouldAcceptEvolutionCandidate, startLine, startPosition, stepCar, track, trackCheckpoint, trackDiagnostics,
+  blendedEvolutionSelectionScore, compareEvolutionCandidates, evaluate, evaluateGeneralist, evolutionSelectionScore, heuristicAction, nearestTrack, physicsForEpisode, pointAtDistance, progressPerLapTime, progressPerSecond, resolveTrack, sensorValues, shouldAcceptEvolutionCandidate, startLine, startPosition, stepCar, track, trackCheckpoint, trackDiagnostics,
 } from "./core";
 
 const finiteAction = (action: ReturnType<SpikingNetwork["step"]>) => {
@@ -40,13 +40,23 @@ describe("SpikingNetwork", () => {
     expect(createMutationPopulation(10, parent, 302, 0.12, 0.22, { breedingPool: [parent, partner, thirdParent], parentCount: 3 }).map((network) => network.toJSON())).toEqual(topThree.map((network) => network.toJSON()));
   });
 
-  it("mates every descendant with the incumbent using an 80/20 winner-runner-up schedule", () => {
+  it("keeps most descendants local while reserving controlled crossover slots", () => {
     const incumbent = new SpikingNetwork(51); const winner = new SpikingNetwork(52); const runnerUp = new SpikingNetwork(53);
     const population = createMutationPopulation(11, incumbent, 700, 0.12, 0.22, { incumbentMatingPool: [winner, runnerUp], incumbentMatingWeights: [80, 20] });
     expect(population[0].toJSON()).toEqual(incumbent.toJSON());
     const expectedChild = (mate: SpikingNetwork, index: number) => incumbent.crossover(mate, 700 + 30000 + index * 19, 0.5).mutate(0.12 * 0.85, 0.22 * 0.85, 700 + index + 1).toJSON();
-    expect(population.slice(1, 9).map((network) => network.toJSON())).toEqual(Array.from({ length: 8 }, (_, offset) => expectedChild(winner, offset + 1)));
-    expect(population.slice(9).map((network) => network.toJSON())).toEqual([expectedChild(runnerUp, 9), expectedChild(runnerUp, 10)]);
+    expect(population[1].toJSON()).toEqual(expectedChild(winner, 1));
+    expect(population[6].toJSON()).toEqual(expectedChild(winner, 6));
+    [2, 3, 4, 5, 7, 8, 9, 10].forEach((index) => expect(population[index].toJSON()).toEqual(incumbent.mutate(0.12, 0.22, 700 + index + 1).toJSON()));
+  });
+
+  it("preserves additional exact elites behind the breeding incumbent", () => {
+    const incumbent = new SpikingNetwork(61); const champion = new SpikingNetwork(62); const runnerUp = new SpikingNetwork(63);
+    const population = createMutationPopulation(8, incumbent, 800, 0.1, 0.16, { eliteNetworks: [champion, runnerUp] });
+    expect(population[0].toJSON()).toEqual(incumbent.toJSON());
+    expect(population[1].toJSON()).toEqual(champion.toJSON());
+    expect(population[2].toJSON()).toEqual(runnerUp.toJSON());
+    expect(population[3].toJSON()).not.toEqual(incumbent.toJSON());
   });
 
   it("ranks route completion and coverage above incompatible reward scales", () => {
@@ -341,12 +351,13 @@ describe("vehicle physics and fitness", () => {
   });
 
   it("penalizes close traffic before contact and includes it in the total", () => {
-    const car = startPosition(); const other = startPosition();
+    const car = startPosition(); const clearRoadCar = startPosition(); const other = startPosition();
     const tangent = { x: Math.cos(car.heading), y: Math.sin(car.heading) };
     other.position = { x: car.position.x + tangent.x * (CAR_COLLISION_DIAMETER * 1.2), y: car.position.y + tangent.y * (CAR_COLLISION_DIAMETER * 1.2) };
     stepCar(car, { steer: 0, throttle: 0, brake: 0 }, [car, other]);
+    stepCar(clearRoadCar, { steer: 0, throttle: 0, brake: 0 }, [clearRoadCar]);
     expect(car.rewardBreakdown.proximity).toBeGreaterThan(0);
-    expect(car.lastReward).toBeLessThan(0);
+    expect(car.lastReward).toBeLessThan(clearRoadCar.lastReward);
   });
 
   it("recovers a car from a far edge excursion without killing it", () => {
@@ -365,6 +376,29 @@ describe("vehicle physics and fitness", () => {
     expect(center.rewardBreakdown.centerline).toBeGreaterThan(edge.rewardBreakdown.centerline);
     expect(center.rewardBreakdown.centerline).toBeGreaterThan(0);
     expect(DEFAULT_REWARD_CONFIG.centerlinePerSecond).toBeGreaterThan(0);
+  });
+
+  it("uses the validated reward and penalty preset by default", () => {
+    expect(DEFAULT_REWARD_CONFIG).toMatchObject({
+      progressPerSecond: 14,
+      correctDirectionPerSecond: 5.25,
+      movementPerSecond: 5.2,
+      standingStillPerSecond: 0.85,
+      wrongDirectionPerSecond: 20.5,
+      reverseProgressPerSecond: 5,
+      offTrackPerSecond: 24,
+      edgePenaltyPerSecond: 1.2,
+      proximityPenaltyPerSecond: 1,
+      hazardPenaltyPerSecond: 7.5,
+      centerlinePerSecond: 5.35,
+      controlChangePerSecond: 0.08,
+      controlConflictPerSecond: 0.5,
+      spikeEnergyPerSecond: 0.04,
+      collision: 10,
+      crash: 75,
+      checkpoint: 100,
+      finish: 300,
+    });
   });
 
   it("keeps evaluation finite and bounded in time", () => {
@@ -633,6 +667,12 @@ describe("vehicle physics and fitness", () => {
   it("ranks faster route progress above slower progress when rate is selected", () => {
     expect(progressPerSecond(0.5, 300)).toBeGreaterThan(progressPerSecond(0.7, 900));
     expect(progressPerSecond(0.5, 300)).toBeCloseTo(0.05);
+  });
+
+  it("uses the lap-time budget for incomplete pace so dying early gives no advantage", () => {
+    expect(progressPerLapTime(0.2, 90, false)).toBe(progressPerLapTime(0.2, 900, false));
+    expect(progressPerLapTime(1, 750, true)).toBeGreaterThan(progressPerLapTime(1, 1500, true));
+    expect(progressPerLapTime(0.2, 90, false)).toBeLessThan(progressPerSecond(0.2, 90));
   });
 
   it("denies an adaptive extension when reward is positive but route progress is not viable", () => {

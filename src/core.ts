@@ -55,6 +55,16 @@ export function progressPerSecond(progress: number, ticks: number): number {
   return progress / Math.max(STEP, Math.max(1, ticks) * STEP);
 }
 
+/**
+ * Score lap pace without rewarding an early death. Incomplete attempts are
+ * charged the complete lap-time budget; only a finished lap earns credit for
+ * completing sooner than that budget.
+ */
+export function progressPerLapTime(progress: number, ticks: number, finished = false, lapTimeTicks = MAX_TICKS): number {
+  const denominatorTicks = finished ? Math.max(1, ticks) : Math.max(1, lapTimeTicks);
+  return clamp(progress, 0, 1) / (denominatorTicks * STEP);
+}
+
 export function adaptiveTimeLimitForExtensions(extensionCount: number): number {
   return MAX_TICKS * (1 + clamp(Math.floor(extensionCount), 0, MAX_ADAPTIVE_EXTENSIONS));
 }
@@ -273,16 +283,16 @@ export type RewardConfig = {
 
 export const DEFAULT_REWARD_CONFIG: RewardConfig = {
   progressPerSecond: 14,
-  correctDirectionPerSecond: 1.25,
-  movementPerSecond: 0.2,
+  correctDirectionPerSecond: 5.25,
+  movementPerSecond: 5.2,
   standingStillPerSecond: 0.85,
-  wrongDirectionPerSecond: 2.5,
-  reverseProgressPerSecond: 3,
+  wrongDirectionPerSecond: 20.5,
+  reverseProgressPerSecond: 5,
   offTrackPerSecond: 24,
   edgePenaltyPerSecond: 1.2,
-  proximityPenaltyPerSecond: 10,
+  proximityPenaltyPerSecond: 1,
   hazardPenaltyPerSecond: 7.5,
-  centerlinePerSecond: 0.35,
+  centerlinePerSecond: 5.35,
   controlChangePerSecond: 0.08,
   controlConflictPerSecond: 0.5,
   spikeEnergyPerSecond: 0.04,
@@ -440,7 +450,7 @@ export class SpikingNetwork {
       cursor += 1; const b = hash(cursor) * 2 - 1;
       return Math.sqrt(-2 * Math.log(Math.max(0.0001, (a + 1) / 2))) * Math.cos(TAU * (b + 1) / 2);
     };
-    result.mutationSigma = clamp(this.mutationSigma * Math.exp(noise() * 0.08), 0.25, 4);
+    result.mutationSigma = clamp(this.mutationSigma * Math.exp(noise() * 0.06), 0.5, 2);
     const change = (weights: number[], layerScale: number, limit: number) => weights.forEach((value, index) => {
       if (hash(cursor += 1) < rate) weights[index] = clamp(value + noise() * amount * result.mutationSigma * layerScale, -limit, limit);
     });
@@ -539,7 +549,7 @@ export class SpikingNetwork {
     const outputWeights = snapshot.outputWeights.length === legacyOutputLength ? [...snapshot.outputWeights, ...new Array(result.hiddenCount).fill(0)] : snapshot.outputWeights;
     result.outputWeights.splice(0, result.outputWeights.length, ...outputWeights);
     result.bias.splice(0, result.bias.length, ...snapshot.bias);
-    result.mutationSigma = clamp(snapshot.mutationSigma ?? 1, 0.25, 4);
+    result.mutationSigma = clamp(snapshot.mutationSigma ?? 1, 0.5, 2);
     result.reset(); return result;
   }
 }
@@ -556,6 +566,8 @@ export type MutationPopulationOptions = {
    * slots). */
   incumbentMatingPool?: SpikingNetwork[];
   incumbentMatingWeights?: number[];
+  /** Additional exact elites kept after the breeding incumbent. */
+  eliteNetworks?: SpikingNetwork[];
 };
 
 /**
@@ -565,13 +577,13 @@ export type MutationPopulationOptions = {
  * real escape route from a local optimum while preserving the selected
  * objective winner exactly in slot 1.
  */
-export function createMutationPopulation(size: number, parent: SpikingNetwork | undefined, seed: number, rate = 0.12, amount = 0.22, options: MutationPopulationOptions = {}): SpikingNetwork[] {
+export function createMutationPopulation(size: number, parent: SpikingNetwork | undefined, seed: number, rate = 0.1, amount = 0.16, options: MutationPopulationOptions = {}): SpikingNetwork[] {
   const safeSize = Math.max(1, Math.floor(size));
   const stableParent = parent?.clone() ?? new SpikingNetwork(seed);
   const plateauStreak = Math.max(0, Math.floor(options.plateauStreak ?? 0));
   const plateauPatience = Math.max(1, Math.floor(options.plateauPatience ?? 3));
   const exploring = plateauStreak >= plateauPatience;
-  const immigrantFraction = clamp(options.immigrantFraction ?? 0.2, 0, 1);
+  const immigrantFraction = clamp(options.immigrantFraction ?? 0.1, 0, 1);
   const immigrantCount = exploring ? Math.min(safeSize - 1, Math.max(1, Math.floor((safeSize - 1) * immigrantFraction))) : 0;
   const immigrantStart = safeSize - immigrantCount;
   const breedingPool = (options.breedingPool ?? []).filter((network) => network instanceof SpikingNetwork);
@@ -590,13 +602,18 @@ export function createMutationPopulation(size: number, parent: SpikingNetwork | 
   }
   const parentCount = clamp(Math.floor(options.parentCount ?? 3), 2, 12);
   const parents = breedingPool.length > 0 ? breedingPool.slice(0, parentCount) : [stableParent];
-  const children: SpikingNetwork[] = [stableParent];
-  for (let index = 1; index < safeSize; index += 1) {
+  const exactElites = (options.eliteNetworks ?? []).filter((network) => network instanceof SpikingNetwork).slice(0, 2);
+  const children: SpikingNetwork[] = [stableParent, ...exactElites.map((network) => network.clone())].slice(0, safeSize);
+  const protectedCount = children.length;
+  for (let index = children.length; index < safeSize; index += 1) {
     if (exploring && index >= immigrantStart) {
       children.push(new SpikingNetwork(seed + 90000 + index * 17));
       continue;
     }
-    if (hasIncumbentMating) {
+    // Keep most descendants close to the breeding incumbent. Every fifth
+    // non-elite child is a crossover; the rest are local mutations. This
+    // avoids repeatedly scrambling a recurrent controller's full behavior.
+    if (hasIncumbentMating && (index - protectedCount) % 5 === 0) {
       const mateIndex = matingSchedule[(index - 1) % Math.max(1, matingSchedule.length)] ?? 0;
       const mate = incumbentMatingPool[mateIndex] ?? incumbentMatingPool[0];
       const crossed = stableParent.crossover(mate, seed + 30000 + index * 19, 0.5);
@@ -1080,7 +1097,7 @@ export function stepCar(car: Car, action: Action, others: Car[], trackRef?: Trac
   car.forwardAlignment = alignment; car.lastReward = reward.total; car.rewardBreakdown = reward; addRewards(car.rewardTotals, reward); car.score += reward.total; car.action = { ...action };
 }
 
-export type EvaluationResult = { fitness: number; progress: number; ticks: number; laps: number; finished: boolean; eliminated: boolean; trackId: TrackId; rewardTotals: RewardTotals };
+export type EvaluationResult = { fitness: number; progress: number; ticks: number; laps: number; finished: boolean; crashed: boolean; eliminated: boolean; checkpointsPassed: number; checkpointRate: number; collisions: number; offTrackTicks: number; trackId: TrackId; rewardTotals: RewardTotals };
 
 export function evaluate(network: SpikingNetwork, trackRef: TrackRef = DEFAULT_TRACK, rewardConfig: RewardConfig = DEFAULT_REWARD_CONFIG, physicsConfig: PhysicsConfig = DEFAULT_PHYSICS_CONFIG, ghost = false, obstacleCount = 0, obstacleSeed = 1, obstacleKind: RoadObjectKind | "mixed" = "stalled-car"): EvaluationResult {
   const route = resolveTrack(trackRef); const car = startPosition(0, route); car.network = network; network.reset();
@@ -1098,10 +1115,12 @@ export function evaluate(network: SpikingNetwork, trackRef: TrackRef = DEFAULT_T
     stepCar(car, carAction, cars, route, rewardConfig, episodePhysics);
     if (!ghost) obstacles.forEach((bot, index) => stepCar(bot, botActions[index], cars, route, rewardConfig, { ...episodePhysics, ruthlessCulling: false }));
   }
-  return { fitness: car.score, progress: car.totalProgress, ticks: car.ticks, laps: car.laps, finished: car.finished, eliminated: car.eliminated, trackId: route.id, rewardTotals: { ...car.rewardTotals } };
+  return { fitness: car.score, progress: car.totalProgress, ticks: car.ticks, laps: car.laps, finished: car.finished, crashed: car.crashed, eliminated: car.eliminated,
+    checkpointsPassed: car.checkpointsPassed, checkpointRate: clamp(car.checkpointsPassed / Math.max(1, episodePhysics.checkpointCount ?? CHECKPOINT_COUNT), 0, 1), collisions: car.collisions, offTrackTicks: car.offTrackTicks,
+    trackId: route.id, rewardTotals: { ...car.rewardTotals } };
 }
 
-export type GeneralistEvaluation = { fitness: number; progress: number; meanProgress: number; worstProgress: number; completionRate: number; progressRate: number; ticks: number; laps: number; finished: boolean; eliminated: boolean; rewardTotals: RewardTotals; episodes: EvaluationResult[] };
+export type GeneralistEvaluation = { fitness: number; progress: number; meanProgress: number; worstProgress: number; completionRate: number; checkpointRate: number; crashRate: number; collisionRate: number; offTrackRate: number; progressRate: number; ticks: number; laps: number; finished: boolean; eliminated: boolean; rewardTotals: RewardTotals; episodes: EvaluationResult[] };
 
 export function evaluateGeneralist(network: SpikingNetwork, trackRefs: TrackRef[] = TRACKS, rewardConfig: RewardConfig = DEFAULT_REWARD_CONFIG, physicsConfig: PhysicsConfig = DEFAULT_PHYSICS_CONFIG, ghost = false, obstacleCount = 0, obstacleSeed: number | number[] = 1, obstacleKind: RoadObjectKind | "mixed" = "stalled-car"): GeneralistEvaluation {
   const routes = trackRefs.length > 0 ? trackRefs.map(resolveTrack) : [DEFAULT_TRACK];
@@ -1117,7 +1136,9 @@ export function evaluateGeneralist(network: SpikingNetwork, trackRefs: TrackRef[
   const meanFitness = average((episode) => episode.fitness); const worstFitness = lowerTail((episode) => episode.fitness);
   const meanProgress = average((episode) => episode.progress); const worstProgress = lowerTail((episode) => episode.progress);
   return { fitness: meanFitness * 0.7 + worstFitness * 0.3, progress: meanProgress * 0.7 + worstProgress * 0.3, meanProgress, worstProgress,
-    completionRate: average((episode) => episode.finished ? 1 : 0), progressRate: average((episode) => progressPerSecond(episode.progress, episode.ticks)),
+    completionRate: average((episode) => episode.finished ? 1 : 0), checkpointRate: average((episode) => episode.checkpointRate), crashRate: average((episode) => episode.crashed ? 1 : 0),
+    collisionRate: average((episode) => episode.collisions), offTrackRate: average((episode) => episode.offTrackTicks / Math.max(1, episode.ticks)),
+    progressRate: average((episode) => progressPerLapTime(episode.progress, episode.ticks, episode.finished)),
     ticks: episodes.reduce((sum, episode) => sum + episode.ticks, 0), laps: episodes.reduce((sum, episode) => sum + episode.laps, 0), finished: episodes.every((episode) => episode.finished), eliminated: episodes.some((episode) => episode.eliminated), rewardTotals, episodes };
 }
 
