@@ -69,7 +69,7 @@
 10. Fine-Tuning & Parameter-Efficient Adaptation (LoRA Matrix Decomposition -> Math -> Parameter Reduction Worked Example).
 11. Neuroevolution & Micro-NEAT Mathematics (Gene Barcodes, Speciation Metric).
 12. Interactive In-Browser Laboratories & Chart.js Benchmark Simulator.
-13. Math Formula ELI9 Cheatsheet & Examples.
+13. Math Formula ELI14 Cheatsheet & Examples.
 14. Optimization, Training Dynamics & Loss Landscapes.
 15. Real-World AI Systems, Sim-to-Real Transfer & Deployment Engineering.
 -->
@@ -87,6 +87,7 @@
                 </div>
             </div>
             <nav class="hidden lg:flex items-center gap-2.5 max-w-[52vw] overflow-x-auto pb-1 text-[11px] font-semibold text-slate-600 [&_a]:whitespace-nowrap">
+                <a href="#model-ladder" class="hover:text-violet-600 transition">Start · Model Ladder</a>
                 <a href="#biophysics" class="hover:text-indigo-600 transition">1. Biophysics</a>
                 <a href="#topologies" class="hover:text-indigo-600 transition">2. Box Topologies</a>
                 <a href="#connectome" class="hover:text-indigo-600 transition">3. Brain Matrix</a>
@@ -99,7 +100,7 @@
                 <a href="#lora-finetuning" class="hover:text-indigo-600 transition">10. LoRA Adaptation</a>
                 <a href="#micro-neat" class="hover:text-amber-600 transition">11. Micro-NEAT</a>
                 <a href="#interactive-labs" class="hover:text-amber-600 transition">12. Live Labs</a>
-                <a href="#eli9-math" class="hover:text-emerald-600 transition">13. ELI9 Math</a>
+                <a href="#eli14-math" class="hover:text-emerald-600 transition">13. ELI14 Math</a>
                 <a href="#optimization" class="hover:text-emerald-600 transition">14. Optimization</a>
                 <a href="#real-world-ai" class="hover:text-rose-600 transition">15. Real-World AI</a>
             </nav>
@@ -114,6 +115,272 @@
 
     <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-16">
 
+        <!-- GUIDED BOOK: THE COMPRESSION LADDER -->
+        <section id="model-ladder" class="space-y-6" aria-labelledby="model-ladder-title">
+            <div class="book-intro">
+                <p class="eyebrow">Start here · an ELI14 engineering story with the mathematics left intact</p>
+                <h2 id="model-ladder-title">How much brain can we afford to keep?</h2>
+                <p>Nature runs a wet, noisy, event-driven computer on roughly the power budget of a dim light bulb. Our job is awkward: translate that machinery into mathematics and silicon without asking a data center to imitate every ion. The red thread through these five chapters is <strong>compression</strong>: what biological detail do we discard, how much compute do we save, and what capability disappears with it?</p>
+                <div class="compression-ladder" aria-label="Five chapter compression ladder">
+                    <a href="#guided-chapter-1"><b>01 · Observe</b>Salty battery</a>
+                    <a href="#guided-chapter-2"><b>02 · Abstract</b>Circuit board</a>
+                    <a href="#guided-chapter-3"><b>03 · Compress</b>ANN matrix</a>
+                    <a href="#guided-chapter-4"><b>04 · Restore time</b>Spiking network</a>
+                    <a href="#guided-chapter-5"><b>05 · Physicalize</b>Neuromorphic silicon</a>
+                </div>
+            </div>
+
+            <article id="guided-chapter-1" class="book-chapter">
+                <div class="chapter-heading">
+                    <div>
+                        <span class="chapter-number">Chapter 1 · Nature's masterpiece</span>
+                        <h3>The Salty Battery</h3>
+                    </div>
+                    <p class="chapter-question">Question: what is the real biological machine before we simplify anything?</p>
+                </div>
+                <div class="chapter-stack">
+                    <div class="chapter-panel">
+                        <h4>💡 THE ELI14 / PLAIN-ENGLISH ANALOGY</h4>
+                        <p>A neuron is a battery behind a leaky dam. Sodium and potassium ions are water stored at different heights. The membrane is the dam; ion channels are floodgates with voltage-sensitive locks. An electrode adds a known shove, and a voltmeter watches the water pressure change. Open sodium gates and positive charge rushes in; open potassium gates and it flows back out. That fast gate choreography is an action potential—not magic, just electrochemistry moving with excellent timing.</p>
+                    </div>
+                    <div class="chapter-panel formula">
+                        <h4>🧮 THE FORMULA &amp; CIRCUIT BOX</h4>
+                        <p>The Nernst equation gives the balancing voltage for one ion, while GHK combines several permeable ions. Hodgkin–Huxley then makes the channel conductances change with voltage and time:</p>
+                        <div class="chapter-equation">
+                            $$E_{ion}=\frac{RT}{zF}\ln\left(\frac{[ion]_{out}}{[ion]_{in}}\right)$$
+                            $$C_m\frac{dV_m}{dt}=\bar g_{Na}m^3h(E_{Na}-V_m)+\bar g_Kn^4(E_K-V_m)+g_L(E_L-V_m)+I_{app}$$
+                            $$\frac{dm}{dt}=\alpha_m(V_m)(1-m)-\beta_m(V_m)m,\quad
+                            \frac{dh}{dt}=\alpha_h(V_m)(1-h)-\beta_h(V_m)h,\quad
+                            \frac{dn}{dt}=\alpha_n(V_m)(1-n)-\beta_n(V_m)n$$
+                        </div>
+                        <ul>
+                            <li>$C_m$ is membrane capacitance: how much charge must move to change voltage.</li>
+                            <li>$V_m$ is membrane voltage; $I_{app}$ is injected or synaptic current.</li>
+                            <li>$\bar g_{Na},\bar g_K,g_L$ are maximum sodium, potassium, and leak conductances.</li>
+                            <li>$E_{Na},E_K,E_L$ are reversal potentials—the voltage each channel pulls toward.</li>
+                            <li>$m$ opens sodium activation gates, $h$ closes sodium inactivation gates, and $n$ opens potassium gates. Their powers approximate multiple gates that must align.</li>
+                        </ul>
+                    </div>
+                    <div class="chapter-panel">
+                        <h4>⚖️ THE TRADE-OFF SCORECARD</h4>
+                        <div class="scorecard">
+                            <div><span>Biological realism</span><strong>High for squid-axon spike generation</strong></div>
+                            <div><span>Indicative cost</span><strong>≈1,200 FLOPs per simulated ms per neuron</strong></div>
+                            <div><span>Best used for</span><strong>Ion-channel research, drug effects, detailed electrophysiology</strong></div>
+                        </div>
+                        <p class="cost-note">FLOP counts are order-of-magnitude teaching estimates, not hardware benchmarks. Solver, timestep, channel count, precision, and implementation can move them dramatically.</p>
+                    </div>
+                    <div class="chapter-panel">
+                        <h4>📜 HISTORICAL ANECDOTE &amp; REAL-WORLD CAVEAT</h4>
+                        <p>Hodgkin and Huxley built their 1952 model from voltage-clamp experiments on the giant squid axon. The famous hand-calculation story matters because it exposes the price of realism: even one axon demanded months of numerical labor with a hand-cranked calculator. Yet this “detailed” model still represents a small membrane patch, not dendritic geometry, metabolism, glia, molecular noise, or the thousands of channel variants in real nervous systems.</p>
+                    </div>
+                    <div class="compression-step"><strong>Compression question:</strong> Can we keep charge storage, leakage, and spike timing while throwing away the individual sodium and potassium gates?</div>
+                    <p class="chapter-links">Continue in the illustrated workbench: <a href="#biophysics">experimental pipeline, Nernst, GHK, and Figures 1–3</a>.</p>
+                </div>
+            </article>
+
+            <article id="guided-chapter-2" class="book-chapter">
+                <div class="chapter-heading">
+                    <div>
+                        <span class="chapter-number">Chapter 2 · The first abstraction</span>
+                        <h3>The Circuit Board</h3>
+                    </div>
+                    <p class="chapter-question">Question: how do we turn wet biology into a cheap electrical state machine?</p>
+                </div>
+                <div class="chapter-stack">
+                    <div class="chapter-panel">
+                        <h4>💡 THE ELI14 / PLAIN-ENGLISH ANALOGY</h4>
+                        <p>Replace the membrane with a rechargeable bucket and every complicated ion channel with one drain. Input current fills the bucket; the drain leaks faster as the level rises. When the water reaches a painted line, ring a bell, empty the bucket, and start again. That is the Leaky Integrate-and-Fire neuron. It remembers recent input, forgets old input, and spikes—without simulating a single molecular gate having an existential crisis.</p>
+                    </div>
+                    <div class="chapter-panel formula">
+                        <h4>🧮 THE FORMULA &amp; CIRCUIT BOX</h4>
+                        <div class="chapter-equation">
+                            $$C_m\frac{dV_m}{dt}=-g_L(V_m-E_L)+I_{ext}(t)$$
+                            $$\tau_m\frac{dV_m}{dt}=-(V_m-V_{rest})+R_mI_{ext}(t),\qquad \tau_m=R_mC_m$$
+                            $$V_m\ge V_{th}\Rightarrow \text{emit spike},\quad V_m\leftarrow V_{reset}\quad\text{for a refractory interval}$$
+                        </div>
+                        <ul>
+                            <li>$R_m=1/g_L$ is membrane resistance; $g_L$ is leak conductance.</li>
+                            <li>$C_m$ stores charge and $\tau_m$ sets how quickly old evidence fades.</li>
+                            <li>$E_L$ or $V_{rest}$ is the voltage the leak pulls toward.</li>
+                            <li>$V_{th}$, $V_{reset}$, and the refractory period replace the entire biological spike waveform with three rules.</li>
+                        </ul>
+                    </div>
+                    <div class="chapter-panel">
+                        <h4>⚖️ THE TRADE-OFF SCORECARD</h4>
+                        <div class="scorecard">
+                            <div><span>Biological realism</span><strong>Medium-low: timing and leakage, little channel biology</strong></div>
+                            <div><span>Indicative cost</span><strong>≈5 FLOPs per simulated ms per neuron</strong></div>
+                            <div><span>Best used for</span><strong>Large SNNs, control, event sensors, neuromorphic deployment</strong></div>
+                        </div>
+                        <p class="cost-note">The estimate assumes a simple fixed-step update. Synapses, refractory logic, sparse routing, and memory traffic also cost time and energy.</p>
+                    </div>
+                    <div class="chapter-panel">
+                        <h4>📜 HISTORICAL ANECDOTE &amp; REAL-WORLD CAVEAT</h4>
+                        <p>Louis Lapicque described an integrate-and-fire-style electrical neuron in 1907—decades before digital computers. The model's great trick is also its blind spot: it declares a spike but does not generate the spike shape. Adaptation, bursting, rebound, channel-specific drugs, and dendritic computation require extra state or a richer model.</p>
+                    </div>
+                    <div class="compression-step"><strong>Detail discarded:</strong> voltage-gated sodium and potassium kinetics. <strong>What we kept:</strong> charge, leak, time, threshold, reset. The reward is roughly two orders of magnitude less arithmetic.</div>
+                    <p class="chapter-links">See the physical mapping in <a href="#biophysics">Figures 4–6: RC circuit, LIF dynamics, and the abstraction ladder</a>.</p>
+                </div>
+            </article>
+
+            <article id="guided-chapter-3" class="book-chapter">
+                <div class="chapter-heading">
+                    <div>
+                        <span class="chapter-number">Chapter 3 · The great simplification</span>
+                        <h3>The Matrix-Multiplication Neuron</h3>
+                    </div>
+                    <p class="chapter-question">Question: what happens when we throw away internal time so GPUs can sprint?</p>
+                </div>
+                <div class="chapter-stack">
+                    <div class="chapter-panel">
+                        <h4>💡 THE ELI14 / PLAIN-ENGLISH ANALOGY</h4>
+                        <p>An ANN neuron is a mixing desk. Each input is a microphone, each weight is its volume knob, and the bias is the house engineer quietly nudging the master level. Add every channel, then pass the total through a soft dimmer switch. Unlike a biological neuron, the desk has no membrane, no stored charge, and no personal history. Hand it a snapshot; it returns a number.</p>
+                    </div>
+                    <div class="chapter-panel formula">
+                        <h4>🧮 THE FORMULA &amp; CIRCUIT BOX</h4>
+                        <div class="chapter-equation">
+                            $$z=\sum_{i=1}^{n}w_ix_i+b=\mathbf{w}^{T}\mathbf{x}+b$$
+                            $$\sigma(z)=\frac{1}{1+e^{-z}},\qquad \operatorname{ReLU}(z)=\max(0,z)$$
+                            $$\mathbf{Y}=\phi(\mathbf{X}\mathbf{W}+\mathbf{b})$$
+                        </div>
+                        <ul>
+                            <li>$x_i$ is a feature, $w_i$ is learned influence, and $b$ shifts the decision boundary.</li>
+                            <li>$z$ is linear evidence; $\phi$ adds the nonlinearity required to stack useful layers.</li>
+                            <li>Batching many neurons turns dot products into dense matrix multiplication—the operation GPUs adore.</li>
+                            <li>A dense layer with $N_{in}$ inputs and $N_{out}$ outputs performs $O(N_{in}N_{out})$ multiply-accumulates per example.</li>
+                        </ul>
+                    </div>
+                    <div class="chapter-panel">
+                        <h4>⚖️ THE TRADE-OFF SCORECARD</h4>
+                        <div class="scorecard">
+                            <div><span>Biological realism</span><strong>Low: no membrane state, ion channels, or native spike time</strong></div>
+                            <div><span>Computational cost</span><strong>Dense $O(N_{in}N_{out})$ per layer; extremely optimized in batches</strong></div>
+                            <div><span>Best used for</span><strong>Vision, language, regression, large differentiable models</strong></div>
+                        </div>
+                    </div>
+                    <div class="chapter-panel">
+                        <h4>📜 HISTORICAL ANECDOTE &amp; REAL-WORLD CAVEAT</h4>
+                        <p>McCulloch and Pitts proposed a binary logical neuron in 1943. Later differentiable activations made gradient training practical, and modern accelerators turned whole layers into vast matrix operations. The catch is architectural: dense, synchronous evaluation often moves and multiplies values even when nothing interesting changed. Hardware makes that fast, but fast is not the same as free—memory movement and always-on computation dominate real energy bills.</p>
+                    </div>
+                    <div class="compression-step"><strong>Detail discarded:</strong> continuous membrane dynamics and spike timing. <strong>What we gained:</strong> simple gradients, batching, and industrial-strength matrix kernels. A brilliant bargain—until time or energy is the signal.</div>
+                    <p class="chapter-links">Work through the arithmetic in <a href="#topologies">the artificial-neuron, sigmoid, series, and parallel diagrams</a>.</p>
+                </div>
+            </article>
+
+            <article id="guided-chapter-4" class="book-chapter">
+                <div class="chapter-heading">
+                    <div>
+                        <span class="chapter-number">Chapter 4 · Reintroducing time</span>
+                        <h3>The Efficient Spiking Middle</h3>
+                    </div>
+                    <p class="chapter-question">Question: can we recover useful neural timing without paying the Hodgkin–Huxley bill?</p>
+                </div>
+                <div class="chapter-stack">
+                    <div class="chapter-panel">
+                        <h4>💡 THE ELI14 / PLAIN-ENGLISH ANALOGY</h4>
+                        <p>ANNs mail a complete spreadsheet every clock tick. SNNs send a short message only when something happens. LIF is the basic doorbell; Izhikevich is the talented drummer that can tap steadily, burst, chatter, pause, and adapt. Spike-Timing Dependent Plasticity (STDP) is the band learning by timing: if one player consistently cues another, strengthen that connection; if the order is backwards, weaken it.</p>
+                    </div>
+                    <div class="chapter-panel formula">
+                        <h4>🧮 THE FORMULA &amp; CIRCUIT BOX</h4>
+                        <p>The Izhikevich model uses a fast voltage variable $v$ and a slower recovery variable $u$:</p>
+                        <div class="chapter-equation">
+                            $$\frac{dv}{dt}=0.04v^2+5v+140-u+I,\qquad \frac{du}{dt}=a(bv-u)$$
+                            $$v\ge30\text{ mV}\Rightarrow v\leftarrow c,\quad u\leftarrow u+d$$
+                            $$\Delta w_{ij}=
+                            \begin{cases}
+                            a^+w_{ij}(1-w_{ij}), & t_{post}>t_{pre}\quad\text{(potentiation)}\\
+                            a^-w_{ij}(1-w_{ij}), & t_{post}<t_{pre}\quad\text{(depression)}
+                            \end{cases}$$
+                        </div>
+                        <ul>
+                            <li>$v$ is membrane voltage; $u$ represents slower recovery and adaptation.</li>
+                            <li>$a,b,c,d$ tune recovery speed, sensitivity, reset voltage, and post-spike adaptation.</li>
+                            <li>$I$ is total input current. Changing four parameters reproduces regular spiking, bursting, chattering, adaptation, and many other firing patterns.</li>
+                            <li>$t_{pre}$ and $t_{post}$ are spike times; $a^+&gt;0$ strengthens and $a^-&lt;0$ weakens a synapse. “Fire together, wire together” is catchy, but order and delay decide the sign.</li>
+                        </ul>
+                    </div>
+                    <div class="chapter-panel">
+                        <h4>⚖️ THE TRADE-OFF SCORECARD</h4>
+                        <div class="scorecard">
+                            <div><span>Biological realism</span><strong>Medium: temporal state and rich firing patterns, abstract channels</strong></div>
+                            <div><span>Indicative cost</span><strong>LIF ≈5; Izhikevich ≈13 FLOPs/ms/neuron</strong></div>
+                            <div><span>Best used for</span><strong>Event vision, temporal control, sparse sensing, neural-dynamics studies</strong></div>
+                        </div>
+                        <p class="cost-note">Sparse spikes save work only when software and hardware skip inactive operations. A clock-stepped SNN on a GPU may still update every silent neuron.</p>
+                    </div>
+                    <div class="chapter-panel">
+                        <h4>📜 HISTORICAL ANECDOTE &amp; REAL-WORLD CAVEAT</h4>
+                        <p>Eugene Izhikevich introduced this practical model in 2003 to bridge a stubborn gap: simple integrate-and-fire neurons were cheap but behaviorally narrow, while conductance models were expressive but costly. The model can reproduce more than twenty recognizable firing regimes, but matching a spike pattern is not the same as reproducing the molecular mechanism that caused it.</p>
+                    </div>
+                    <div class="compression-step"><strong>Detail restored:</strong> time, sparse events, recovery, and adaptation. <strong>Detail still compressed:</strong> explicit ion channels and cellular morphology. This is the engineering middle, not a tiny Hodgkin–Huxley clone.</div>
+                    <p class="chapter-links">Follow the event pipeline in <a href="#topologies">the three-generation roadmap, ANN/SNN comparison, Izhikevich animation, inhibition, and image-classification figures</a>.</p>
+                </div>
+            </article>
+
+            <article id="guided-chapter-5" class="book-chapter">
+                <div class="chapter-heading">
+                    <div>
+                        <span class="chapter-number">Chapter 5 · From math to silicon</span>
+                        <h3>Make the Hardware Behave Like the Model</h3>
+                    </div>
+                    <p class="chapter-question">Question: why simulate event-driven brains on machines built for dense clocked arithmetic?</p>
+                </div>
+                <div class="chapter-stack">
+                    <div class="chapter-panel">
+                        <h4>💡 THE ELI14 / PLAIN-ENGLISH ANALOGY</h4>
+                        <p>A normal camera records 4K video sixty times per second, including thousands of identical frames of an empty hallway. A motion sensor sleeps until a pixel changes. Neuromorphic hardware tries to be the motion sensor: wake the relevant circuits, move a tiny event, then go quiet. Memristor crossbars go one step further by storing each synaptic “volume knob” where the electrical multiplication happens—no warehouse clerk shuttling weights back and forth.</p>
+                    </div>
+                    <div class="chapter-panel formula">
+                        <h4>🧮 THE FORMULA &amp; CIRCUIT BOX</h4>
+                        <div class="chapter-equation">
+                            $$I_{ij}=G_{ij}V_i\qquad\text{(Ohm's law)}$$
+                            $$I_j=\sum_i I_{ij}=\sum_iG_{ij}V_i\qquad\text{(Kirchhoff's current law)}$$
+                            $$\mathbf{I}=\mathbf{G}^{T}\mathbf{V}$$
+                        </div>
+                        <ul>
+                            <li>$V_i$ encodes an input value or event on row $i$.</li>
+                            <li>$G_{ij}$ is the programmed conductance of a memristive device—the physical synaptic weight.</li>
+                            <li>$I_j$ is the column current, so the crossbar performs many multiply-accumulates through circuit physics in parallel.</li>
+                            <li>Chips such as Intel Loihi 2 route spikes and update local neuron state without treating every event as a dense GPU matrix.</li>
+                        </ul>
+                    </div>
+                    <div class="chapter-panel">
+                        <h4>⚖️ THE TRADE-OFF SCORECARD</h4>
+                        <div class="scorecard">
+                            <div><span>Biological realism</span><strong>Model-dependent; hardware is event-driven, not literally biological</strong></div>
+                            <div><span>Computational cost</span><strong>Activity-dependent; potential low energy, but conversion and routing matter</strong></div>
+                            <div><span>Best used for</span><strong>Always-on edge sensing, robots, low-latency event streams</strong></div>
+                        </div>
+                    </div>
+                    <div class="chapter-panel">
+                        <h4>📜 HISTORICAL ANECDOTE &amp; REAL-WORLD CAVEAT</h4>
+                        <p>Leon Chua described the memristor theoretically in 1971; decades later, nanoscale resistive-memory devices made crossbar computing an engineering target. Reality is less tidy than the whiteboard: device variability, drift, limited endurance, wire resistance, ADC/DAC energy, routing congestion, and training-to-hardware mismatch can consume the promised efficiency.</p>
+                    </div>
+                    <div class="compression-step"><strong>Final lesson:</strong> do not optimize neuron equations in isolation. Count memory movement, spike routing, converters, idle power, latency tails, and accuracy loss. The cheapest equation can be expensive on the wrong machine.</div>
+
+                    <div class="chapter-panel">
+                        <h4>📊 THE DECISION MATRIX</h4>
+                        <div class="overflow-x-auto">
+                            <table class="decision-table">
+                                <thead><tr><th>Model</th><th>State / ODEs</th><th>Indicative compute</th><th>Biology retained</th><th>Choose it when…</th></tr></thead>
+                                <tbody>
+                                    <tr><td>Hodgkin–Huxley</td><td>4 coupled states: $V,m,h,n$</td><td>≈1,200 FLOPs/ms/neuron</td><td>Na⁺, K⁺, leak kinetics and spike waveform</td><td>Channel mechanisms and electrophysiology are the research question.</td></tr>
+                                    <tr><td>McCulloch–Pitts</td><td>No ODE; binary threshold</td><td>$O(N)$ inputs/neuron</td><td>Weighted integration and hard decision only</td><td>You need logic-like binary units or historical intuition.</td></tr>
+                                    <tr><td>ANN + ReLU/sigmoid</td><td>No persistent neuron state</td><td>Dense $O(N_{in}N_{out})$/layer</td><td>Weighted sum and nonlinear response</td><td>Accuracy, gradients, batching, and mature GPU tooling dominate.</td></tr>
+                                    <tr><td>LIF</td><td>1 membrane ODE + reset</td><td>≈5 FLOPs/ms/neuron</td><td>Integration, leakage, threshold, spike time</td><td>You need large, fast, event-driven networks or control.</td></tr>
+                                    <tr><td>Izhikevich</td><td>2 ODEs + reset</td><td>≈13 FLOPs/ms/neuron</td><td>Adaptation, bursting, rebound, diverse firing</td><td>Temporal behavior matters but conductance detail does not.</td></tr>
+                                    <tr><td>Memristive SNN</td><td>Depends on neuron model</td><td>Event/device dependent</td><td>Event flow plus physical in-memory weights</td><td>Edge energy and latency justify specialized hardware complexity.</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <p class="cost-note"><strong>Rule of thumb:</strong> begin with the simplest model that expresses the task's necessary state. Add biological detail only when an ablation or deployment test proves the missing mechanism matters.</p>
+                    </div>
+                    <p class="chapter-links">Finish with <a href="#topologies">neuromorphic image recognition and the plausibility-versus-FLOPS figure</a>, then use the remaining compendium as the technical reference shelf.</p>
+                </div>
+            </article>
+        </section>
+
         <!-- SECTION 1: Biophysics & Electrochemical Equations -->
         <section id="biophysics" class="space-y-6">
             <div class="border-l-4 border-indigo-600 pl-4">
@@ -124,7 +391,7 @@
             </div>
             <div class="analogy-card"><strong>Mental model: a battery behind a leaky dam</strong><p>Ion concentration is stored water pressure, the membrane is the dam, channels are gates, and voltage is the counter-pressure. Nernst describes one gate, GHK combines several gates, and LIF tracks a leaky reservoir filling toward a spill threshold.</p><span class="analogy-limit">Where it breaks: real neurons have nonlinear channel kinetics and spatial structure that a single bucket or circuit cannot capture.</span></div>
 
-            <!-- Conceptual ELI7 Explanation -->
+            <!-- Conceptual ELI14 Explanation -->
             <div class="bg-indigo-50/70 rounded-xl p-5 border border-indigo-200 text-slate-700 text-sm leading-relaxed space-y-2">
                 <strong class="text-indigo-950 font-bold block text-base">🧸 Biological Neurons as Salty Batteries</strong>
                 <p>
@@ -227,9 +494,9 @@
                         </div>
                     </div>
 
-                    <!-- ELI9 Explanation Block for Nernst -->
+                    <!-- ELI14 Explanation Block for Nernst -->
                     <div class="bg-indigo-50 p-4 rounded-lg border border-indigo-200 space-y-2 text-xs text-slate-800">
-                        <strong class="text-indigo-950 font-bold block text-sm">🧸 4. ELI9: Nernst Potential</strong>
+                        <strong class="text-indigo-950 font-bold block text-sm">🧠 4. ELI14: Nernst Potential</strong>
                         <p>
                             Imagine a playground slide with marbles. If you put many marbles at the top (inside the cell) and only a few at the bottom (outside), the marbles really want to roll down the slide. The Nernst equation tells you how strong a “magic hand” (electric voltage) must push the marbles back up so that, on average, as many marbles go down as come up, and the flow balances out.
                         </p>
@@ -294,9 +561,9 @@
                         <p class="text-[11px] text-cyan-900">This simplified steady-state calculation shows the direction of travel: increasing sodium permeability moves $V_m$ sharply toward $E_{Na}$. A full action-potential model also includes time-varying channel kinetics.</p>
                     </div>
 
-                    <!-- ELI9 Explanation Block for GHK -->
+                    <!-- ELI14 Explanation Block for GHK -->
                     <div class="bg-cyan-50 p-4 rounded-lg border border-cyan-200 space-y-2 text-xs text-slate-800">
-                        <strong class="text-cyan-950 font-bold block text-sm">🧸 4. ELI9: GHK Membrane Voltage</strong>
+                        <strong class="text-cyan-950 font-bold block text-sm">🧠 4. ELI14: GHK Membrane Voltage</strong>
                         <p>
                             Think of the cell membrane like a door with three kinds of animals wanting to get through: cats ($K^+$), dogs ($Na^+$), and birds ($Cl^-$). Each animal has its own “door preference” $P_{ion}$: some doors are more open to cats than dogs, etc. The GHK equation looks at how many animals are inside and outside and how open the door is for each species, then tells you the overall “push” of electricity across the door that balances all of them at once.
                         </p>
@@ -359,9 +626,9 @@
                         <p class="text-[11px] text-emerald-900">The second rise is smaller than the first because voltage above rest increases the opposing leak current. With constant input, the voltage approaches an asymptote instead of rising linearly forever.</p>
                     </div>
 
-                    <!-- ELI9 Explanation Block for LIF -->
+                    <!-- ELI14 Explanation Block for LIF -->
                     <div class="bg-emerald-50 p-4 rounded-lg border border-emerald-200 space-y-2 text-xs text-slate-800">
-                        <strong class="text-emerald-950 font-bold block text-sm">🧸 4. ELI9: LIF Neuron</strong>
+                        <strong class="text-emerald-950 font-bold block text-sm">🧠 4. ELI14: LIF Neuron</strong>
                         <p>
                             Picture a leaky bucket under a dripping tap. The water level is the membrane voltage. When you turn on the tap (incoming current), water fills the bucket, but tiny holes in the bucket let water leak out at the same time. The LIF equation says how fast the water level rises or falls based on the tap strength and the leak rate.
                         </p>
@@ -481,9 +748,9 @@
                     </div>
                 </div>
 
-                <!-- ELI9 Explanation Block for Dot Product Neuron -->
+                <!-- ELI14 Explanation Block for Dot Product Neuron -->
                 <div class="bg-amber-50 p-4 rounded-lg border border-amber-200 space-y-2 text-xs text-slate-800">
-                    <strong class="text-amber-950 font-bold block text-sm">🧸 ELI9: Single Neuron Dot Product</strong>
+                    <strong class="text-amber-950 font-bold block text-sm">🧠 ELI14: Single Neuron Dot Product</strong>
                     <p>
                         Imagine you are grading homework with three questions. Each question score $x_i$ is multiplied by how important that question is $w_i$ (its weight). You add them all together and then add a bonus or penalty $b$. That total score is $z$. Finally, you decide if the student passes: if the score is negative, you say “0, no pass”; if positive, you let it through. That pass/no-pass is the activation $\sigma(z)$.
                     </p>
@@ -586,9 +853,9 @@
                     </div>
                 </div>
 
-                <!-- ELI9 Explanation Block for Series -->
+                <!-- ELI14 Explanation Block for Series -->
                 <div class="bg-indigo-50 p-4 rounded-lg border border-indigo-200 space-y-2 text-xs text-slate-800">
-                    <strong class="text-indigo-950 font-bold block text-sm">🧸 ELI9: Series Deep Network</strong>
+                    <strong class="text-indigo-950 font-bold block text-sm">🧠 ELI14: Series Deep Network</strong>
                     <p>
                         Think of building a LEGO car in two steps. In step one, you connect basic bricks to make a rough car shape (Stage 1). In step two, you add details like windows and wheels (Stage 2). The first stage turns raw blocks into a simple object; the second stage turns that object into something more refined.
                     </p>
@@ -664,9 +931,9 @@
                     </div>
                 </div>
 
-                <!-- ELI9 Explanation Block for Parallel/Residual -->
+                <!-- ELI14 Explanation Block for Parallel/Residual -->
                 <div class="bg-emerald-50 p-4 rounded-lg border border-emerald-200 space-y-2 text-xs text-slate-800">
-                    <strong class="text-emerald-950 font-bold block text-sm">🧸 ELI9: Parallel Branches & Skip Connections</strong>
+                    <strong class="text-emerald-950 font-bold block text-sm">🧠 ELI14: Parallel Branches & Skip Connections</strong>
                     <p>
                         Imagine three friends looking at the same race track drawing. Friend A focuses on the curves, Friend B focuses on the track borders, and Friend C just copies the original picture. At the end, you combine their views to get a richer understanding of the track.
                     </p>
@@ -683,7 +950,7 @@
                 </div>
                 <p class="text-xs text-slate-700">A conventional ANN typically recomputes real-valued activations at every layer. An SNN instead maintains membrane state and communicates with sparse spikes. A connection's weight still controls influence, but <em>when</em> spikes arrive becomes part of the message.</p>
                 <div class="analogy-card"><strong>Mental model: photographs versus motion-sensitive alarms</strong><p>An ANN layer receives a complete snapshot and processes every pixel-like value. An SNN can remain quiet until an event arrives, like an alarm that reports a door opening rather than continuously transmitting “door still closed.” This can save energy on event-driven hardware.</p><span class="analogy-limit">Where it breaks: practical SNN implementations may still update states in fixed simulation steps, and sparse activity does not automatically guarantee lower end-to-end energy.</span></div>
-                <div class="figure-grid three">
+                <div class="figure-grid">
                     <figure class="knowledge-figure compact">
                         <img src="./assets/Schematic-illustration-of-neuromorphic-system-a-Biological-model-the-biological-neuron.webp" alt="Biological spike transmission compared with an artificial spiking neuron using weighted input, summation, and threshold" loading="lazy" decoding="async">
                         <figcaption><span class="figure-kicker">Figure 12 · Translation</span><strong>Biological vs. Artificial Spiking Neuron</strong>Presynaptic events cross weighted synapses, alter a state variable, and produce an output only after threshold. The artificial model preserves this causal skeleton while omitting most cellular chemistry.<span class="figure-copy">The membrane state acts like a running tab: recent events contribute until leakage erases their influence.</span></figcaption>
@@ -691,10 +958,6 @@
                     <figure class="knowledge-figure compact">
                         <img src="./assets/Comparisons-of-ANNs-and-spiking-neural-networks-SNNs-in-terms-of-neuron-neural-network.webp" alt="Comparison of artificial neural networks and spiking neural networks from neuron representation to memristor hardware" loading="lazy" decoding="async">
                         <figcaption><span class="figure-kicker">Figure 13 · Full comparison</span><strong>Architectural Comparison: ANNs vs. SNNs</strong>ANNs encode values primarily in activation magnitude; SNNs can encode information in spike rate, order, latency, or exact timing. The diagram follows that difference from neuron equations through network communication to candidate memristive hardware.<span class="figure-copy">Dense multiplication resembles every office sending a full report each clock cycle; spikes resemble short messages sent only when something changes.</span></figcaption>
-                    </figure>
-                    <figure class="knowledge-figure compact">
-                        <img src="./assets/ann%20vs%20SNN.webp" alt="Alternative architectural comparison between conventional ANNs and spiking neural networks" loading="lazy" decoding="async">
-                        <figcaption><span class="figure-kicker">Figure 14 · Alternative view</span><strong>Architectural Comparison: ANNs vs. SNNs</strong>This second layout reinforces the same distinction from another angle: continuous-valued layer activations versus event streams and stateful neurons. Compare the communication paths and hardware mappings, not just the node icons.<span class="figure-copy">Use both views as cross-checks: if a concept appears in different visual vocabularies, it is easier to separate the underlying mechanism from one diagram's notation.</span></figcaption>
                     </figure>
                 </div>
             </div>
@@ -708,11 +971,11 @@
                 <div class="figure-grid">
                     <figure class="knowledge-figure">
                         <img src="./assets/ocrspiking.png" alt="Spiking neural network processing an image through spike trains, excitatory weights, and inhibitory weights" loading="lazy" decoding="async">
-                        <figcaption><span class="figure-kicker">Figure 15 · Inside the network</span><strong>Spiking Neural Network Image Processing</strong>Input pixels become temporal spike trains. Excitatory connections raise selected neurons toward threshold, while inhibitory connections suppress competitors. Through learning, different units specialize in recurring spatial-temporal patterns.<span class="figure-copy">Analogy: several detectives hear the same clues, but each clue supports some hypotheses and weakens others; the first coherent case to accumulate enough evidence wins.</span></figcaption>
+                        <figcaption><span class="figure-kicker">Figure 14 · Inside the network</span><strong>Spiking Neural Network Image Processing</strong>Input pixels become temporal spike trains. Excitatory connections raise selected neurons toward threshold, while inhibitory connections suppress competitors. Through learning, different units specialize in recurring spatial-temporal patterns.<span class="figure-copy">Analogy: several detectives hear the same clues, but each clue supports some hypotheses and weakens others; the first coherent case to accumulate enough evidence wins.</span></figcaption>
                     </figure>
                     <figure class="knowledge-figure">
                         <img src="./assets/Simulated-neuromorphic-system-for-image-recognition-a-Illustration-for-memristor-based.png" alt="Neuromorphic image recognition system encoding images into spikes and classifying by output spike count" loading="lazy" decoding="async">
-                        <figcaption><span class="figure-kicker">Figure 16 · System view</span><strong>Simulated Neuromorphic Image Recognition</strong>An encoder converts an image into events, multiple spiking layers transform those events, and the readout assigns the class with the strongest response—often the largest spike count in a time window. Memristor conductance can physically store synaptic weights near the compute path.<span class="figure-copy">For FlyKart, replace image pixels with ray distances and motion signals, and replace the class readout with steering, throttle, and brake populations.</span></figcaption>
+                        <figcaption><span class="figure-kicker">Figure 15 · System view</span><strong>Simulated Neuromorphic Image Recognition</strong>An encoder converts an image into events, multiple spiking layers transform those events, and the readout assigns the class with the strongest response—often the largest spike count in a time window. Memristor conductance can physically store synaptic weights near the compute path.<span class="figure-copy">For FlyKart, replace image pixels with ray distances and motion signals, and replace the class readout with steering, throttle, and brake populations.</span></figcaption>
                     </figure>
                 </div>
             </div>
@@ -726,15 +989,15 @@
                 <div class="figure-grid three">
                     <figure class="knowledge-figure compact">
                         <img src="./assets/izhik.gif" alt="Animated gallery of tonic spiking, bursting, adaptation, and other Izhikevich neuron patterns" loading="lazy" decoding="async">
-                        <figcaption><span class="figure-kicker">Figure 17 · Single-neuron time</span><strong>Diversity of Neuronal Spiking Patterns</strong>The Izhikevich model generates tonic spiking, bursting, adaptation, rebound, and other response types with only a few state variables. These patterns give networks different temporal tools—clocks, novelty detectors, integrators, and short-lived memory.<span class="figure-copy">Analogy: the neurons share an instrument design but play different rhythms because their parameters are tuned differently.</span></figcaption>
+                        <figcaption><span class="figure-kicker">Figure 16 · Single-neuron time</span><strong>Diversity of Neuronal Spiking Patterns</strong>The Izhikevich model generates tonic spiking, bursting, adaptation, rebound, and other response types with only a few state variables. These patterns give networks different temporal tools—clocks, novelty detectors, integrators, and short-lived memory.<span class="figure-copy">Analogy: the neurons share an instrument design but play different rhythms because their parameters are tuned differently.</span></figcaption>
                     </figure>
                     <figure class="knowledge-figure compact">
                         <img src="./assets/excitoryvsinhibitoryizhikevich.webp" alt="Raster plot of excitatory and inhibitory neurons producing alpha and gamma population rhythms" loading="lazy" decoding="async">
-                        <figcaption><span class="figure-kicker">Figure 18 · Population time</span><strong>Network Spiking Activity and Rhythms</strong>Each raster mark is one spike from one neuron. Excitatory cells spread activity; inhibitory cells restrain and synchronize it. Their feedback can produce collective alpha- and gamma-band rhythms that no isolated neuron contains.<span class="figure-copy">Like a crowd alternating cheers and hushes, global rhythm emerges from many local interactions rather than a central conductor.</span></figcaption>
+                        <figcaption><span class="figure-kicker">Figure 17 · Population time</span><strong>Network Spiking Activity and Rhythms</strong>Each raster mark is one spike from one neuron. Excitatory cells spread activity; inhibitory cells restrain and synchronize it. Their feedback can produce collective alpha- and gamma-band rhythms that no isolated neuron contains.<span class="figure-copy">Like a crowd alternating cheers and hushes, global rhythm emerges from many local interactions rather than a central conductor.</span></figcaption>
                     </figure>
                     <figure class="knowledge-figure compact">
                         <img src="./assets/newimage.png" alt="Neural circuit comparing full and partial lateral inhibition from cuneate nucleus to somatosensory cortex" loading="lazy" decoding="async">
-                        <figcaption><span class="figure-kicker">Figure 19 · Competition</span><strong>Excitatory and Inhibitory Synaptic Inhibition Model</strong>Lateral inhibition lets a strongly activated pathway suppress neighbors. Full versus partial inhibition changes how sharply the network separates nearby signals, trading clean contrast against the risk of erasing weaker but useful evidence.<span class="figure-copy">It is the neural equivalent of sharpening an image: emphasize local winners, but avoid turning subtle detail into black or white.</span></figcaption>
+                        <figcaption><span class="figure-kicker">Figure 18 · Competition</span><strong>Excitatory and Inhibitory Synaptic Inhibition Model</strong>Lateral inhibition lets a strongly activated pathway suppress neighbors. Full versus partial inhibition changes how sharply the network separates nearby signals, trading clean contrast against the risk of erasing weaker but useful evidence.<span class="figure-copy">It is the neural equivalent of sharpening an image: emphasize local winners, but avoid turning subtle detail into black or white.</span></figcaption>
                     </figure>
                 </div>
             </div>
@@ -744,7 +1007,7 @@
                 <p>Biological realism and engineering usefulness are separate axes. More ion-channel detail can explain more physiology, but it also increases computation, parameters, and calibration burden.</p>
                 <figure class="knowledge-figure">
                     <img src="./assets/Izhikevich%20%20Trade-off-between-biological-plausibility-with-respect-to-a-number-of-features-known-to.webp" alt="Scatter plot comparing neuron models by computational cost and biological plausibility" loading="lazy" decoding="async">
-                    <figcaption><span class="figure-kicker">Figure 20 · Engineering decision</span><strong>Model Efficiency vs. Biological Plausibility</strong>Integrate-and-fire models occupy the inexpensive, abstract end; Hodgkin–Huxley models reproduce more biological features at much higher cost; Izhikevich-style models aim for a useful middle. Select by required behavior, timestep budget, network size, and target hardware—not by realism alone.<span class="figure-copy">For a real-time racer, LIF may be ideal if temporal accumulation and sparse control are enough. Move to richer dynamics only when an evaluation shows that missing adaptation, bursting, or rebound materially limits driving.</span></figcaption>
+                    <figcaption><span class="figure-kicker">Figure 19 · Engineering decision</span><strong>Model Efficiency vs. Biological Plausibility</strong>Integrate-and-fire models occupy the inexpensive, abstract end; Hodgkin–Huxley models reproduce more biological features at much higher cost; Izhikevich-style models aim for a useful middle. Select by required behavior, timestep budget, network size, and target hardware—not by realism alone.<span class="figure-copy">For a real-time racer, LIF may be ideal if temporal accumulation and sparse control are enough. Move to richer dynamics only when an evaluation shows that missing adaptation, bursting, or rebound materially limits driving.</span></figcaption>
                 </figure>
             </div>
         </section>
@@ -821,9 +1084,9 @@
                     </table>
                 </div>
 
-                <!-- ELI9 Connectome Explanation -->
+                <!-- ELI14 Connectome Explanation -->
                 <div class="bg-slate-50 p-4 rounded-lg border border-slate-200 space-y-2 text-xs text-slate-800">
-                    <strong class="text-slate-900 font-bold block text-sm">🧸 ELI9: Brain Size vs AI Size</strong>
+                    <strong class="text-slate-900 font-bold block text-sm">🧠 ELI14: Brain Size vs AI Size</strong>
                     <p>
                         Think of neurons like light bulbs in a city at night. A worm is a tiny village with a few hundred bulbs; a fruit fly is a small town; a human brain is a megacity with billions of lights and trillions of connections. Your FlyKart AI is like a clever little robot with only a handful of bulbs, but they are wired very efficiently to control racing karts in a game.
                     </p>
@@ -884,9 +1147,9 @@
                     </div>
                 </div>
 
-                <!-- ELI9 for Heuristics -->
+                <!-- ELI14 for Heuristics -->
                 <div class="bg-slate-50 p-4 rounded-lg border border-slate-200 space-y-2 text-xs text-slate-800">
-                    <strong class="text-slate-900 font-bold block text-sm">🧸 ELI9: Simple Network Building Rules</strong>
+                    <strong class="text-slate-900 font-bold block text-sm">🧠 ELI14: Simple Network Building Rules</strong>
                     <p>
                         These formulas are like rules for building toy car tracks. If you make the track too huge and complicated (too many weights) compared to the number of races you run (training examples), you overfit: the cars memorize one race instead of learning general driving.
                     </p>
@@ -934,10 +1197,10 @@
                     </div>
                 </div>
 
-                <!-- ELI9 for SVD & Roofline -->
+                <!-- ELI14 for SVD & Roofline -->
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
                     <div class="bg-slate-50 p-4 rounded-lg border border-slate-200 space-y-2 text-slate-800">
-                        <strong class="text-slate-900 font-bold block text-sm">🧸 ELI9: SVD Matrix Compression</strong>
+                        <strong class="text-slate-900 font-bold block text-sm">🧠 ELI14: SVD Matrix Compression</strong>
                         <p>
                             Think of a big image made out of many tiny dots (pixels). SVD says: “We can redraw this picture using only a few special patterns,” like basic shapes and shades, instead of every single dot. Keeping only the biggest singular values is like keeping only the most important patterns in the picture.
                         </p>
@@ -946,7 +1209,7 @@
                         </p>
                     </div>
                     <div class="bg-slate-50 p-4 rounded-lg border border-slate-200 space-y-2 text-slate-800">
-                        <strong class="text-slate-900 font-bold block text-sm">🧸 ELI9: Roofline Model</strong>
+                        <strong class="text-slate-900 font-bold block text-sm">🧠 ELI14: Roofline Model</strong>
                         <p>
                             Imagine filling buckets with water from a tap. If the tap is slow (low bandwidth), no matter how many buckets you have (compute units), you can’t fill them fast. If the tap is very fast but you only have a few buckets, then the buckets limit you.
                         </p>
@@ -979,9 +1242,9 @@
                     Calculates pairwise similarity between Query ($\mathbf{Q}$) and Key ($\mathbf{K}$) vectors, scaled by $\sqrt{d_k}$ to prevent gradient vanishing in Softmax, then weights Value ($\mathbf{V}$) vectors.
                 </p>
 
-                <!-- ELI9 Attention -->
+                <!-- ELI14 Attention -->
                 <div class="bg-emerald-50 p-4 rounded-lg border border-emerald-200 space-y-2 text-xs text-slate-800">
-                    <strong class="text-emerald-950 font-bold block text-sm">🧸 ELI9: Attention Mechanism</strong>
+                    <strong class="text-emerald-950 font-bold block text-sm">🧠 ELI14: Attention Mechanism</strong>
                     <p>
                         Imagine reading a story and trying to understand one word. Your brain looks back at other words and decides which ones matter most for understanding the current word. Attention does the same for a machine: each Query word asks, “Which Key words should I care about?” and then takes a weighted mix of the Value vectors from those important words.
                     </p>
@@ -1032,9 +1295,9 @@
                     </div>
                 </div>
 
-                <!-- ELI9 Quantization -->
+                <!-- ELI14 Quantization -->
                 <div class="bg-slate-50 mt-4 p-4 rounded-lg border border-slate-200 space-y-2 text-xs text-slate-800">
-                    <strong class="text-slate-900 font-bold block text-sm">🧸 ELI9: Quantization & Bits per Weight</strong>
+                    <strong class="text-slate-900 font-bold block text-sm">🧠 ELI14: Quantization & Bits per Weight</strong>
                     <p>
                         Imagine storing numbers on cards. FP32 uses big cards with very detailed numbers (32 bits), while INT4 uses tiny cards with rough numbers (4 bits). If your model has billions of weights, using big cards fills many boxes (VRAM). Using smaller cards saves boxes but the numbers are less precise.
                     </p>
@@ -1120,9 +1383,9 @@
                     <p class="text-[11px] text-indigo-900">Each thread owns one pixel. Real kernels must still guard with <code>if (x &lt; width &amp;&amp; y &lt; height)</code> because the final block may extend beyond the image.</p>
                 </div>
 
-                <!-- ELI9 CUDA -->
+                <!-- ELI14 CUDA -->
                 <div class="bg-slate-50 p-4 rounded-lg border border-slate-200 space-y-2 text-xs text-slate-800">
-                    <strong class="text-slate-900 font-bold block text-sm">🧸 ELI9: Threads & Blocks</strong>
+                    <strong class="text-slate-900 font-bold block text-sm">🧠 ELI14: Threads & Blocks</strong>
                     <p>
                         Imagine a huge classroom with thousands of students solving math problems. You group students into tables of 32 (warps), several tables form a group (block), and many groups fill the room (grid). Each student solves a small part of the big problem.
                     </p>
@@ -1194,9 +1457,9 @@
                     <p class="text-[11px] text-cyan-900">This moderate overlap may be below a training match or NMS threshold, depending on the detector and task. IoU thresholds are design choices, not universal constants.</p>
                 </div>
 
-                <!-- ELI9 IoU -->
+                <!-- ELI14 IoU -->
                 <div class="bg-cyan-50 p-4 rounded-lg border border-cyan-200 space-y-2 text-xs text-slate-800">
-                    <strong class="text-cyan-950 font-bold block text-sm">🧸 ELI9: Box Overlap & IoU</strong>
+                    <strong class="text-cyan-950 font-bold block text-sm">🧠 ELI14: Box Overlap & IoU</strong>
                     <p>
                         Imagine drawing two rectangles on a piece of paper around the same toy car: one drawn by you, one by your friend. The overlap area shows how much you agree. IoU is “agreement area” divided by “total area covered by both drawings.”
                     </p>
@@ -1268,9 +1531,9 @@
                     <p class="text-[11px] text-amber-900">Higher $T$ reveals more class similarity but makes the target flatter. The usual $T^2$ factor compensates for the smaller gradients; $T$ and the hard-label mixture weight $\alpha$ must be validated together.</p>
                 </div>
 
-                <!-- ELI9 Distillation -->
+                <!-- ELI14 Distillation -->
                 <div class="bg-amber-50 p-4 rounded-lg border border-amber-200 space-y-2 text-xs text-slate-800">
-                    <strong class="text-amber-950 font-bold block text-sm">🧸 ELI9: Teacher & Student Models</strong>
+                    <strong class="text-amber-950 font-bold block text-sm">🧠 ELI14: Teacher & Student Models</strong>
                     <p>
                         Imagine a very smart teacher who not only says “the answer is 5” but also says “3 is pretty close, 1 is very wrong.” A smaller student can learn more quickly if it copies both the correct answer and these extra hints.
                     </p>
@@ -1355,9 +1618,9 @@
                     <p class="text-[11px] text-emerald-900">Doubling rank doubles adapter parameters and possible update capacity, but it does not guarantee better validation performance. Rank, target modules, data volume, and regularization should be tuned as one system.</p>
                 </div>
 
-                <!-- ELI9 LoRA -->
+                <!-- ELI14 LoRA -->
                 <div class="bg-emerald-50 p-4 rounded-lg border border-emerald-200 space-y-2 text-xs text-slate-800">
-                    <strong class="text-emerald-950 font-bold block text-sm">🧸 ELI9: Small Tweaks on Big Models</strong>
+                    <strong class="text-emerald-950 font-bold block text-sm">🧠 ELI14: Small Tweaks on Big Models</strong>
                     <p>
                         Imagine you have a giant cookbook with thousands of recipes (the base model) but you’re only allowed to write tiny sticky notes instead of changing the pages. LoRA is like adding small sticky notes (matrices A and B) that slightly adjust how you read the original recipe, without rewriting the whole book.
                     </p>
@@ -1389,9 +1652,9 @@
                     Aligns genomes across generations using historical innovation numbers. $E$ represents Excess genes, $D$ represents Disjoint genes, and $\bar{\Delta W}$ is average weight difference.
                 </p>
 
-                <!-- ELI9 NEAT -->
+                <!-- ELI14 NEAT -->
                 <div class="bg-amber-50 p-4 rounded-lg border border-amber-200 space-y-2 text-xs text-slate-800">
-                    <strong class="text-amber-950 font-bold block text-sm">🧸 ELI9: Species Distance in Evolving Networks</strong>
+                    <strong class="text-amber-950 font-bold block text-sm">🧠 ELI14: Species Distance in Evolving Networks</strong>
                     <p>
                         Imagine two toy cars that have different sets of upgrades: one has a spoiler and neon lights, the other has off-road tires and a new engine. NEAT compares their “upgrade lists” and counts which upgrades are extra, which don’t match (disjoint), and how different the shared upgrades are.
                     </p>
@@ -1600,9 +1863,9 @@
                     </p>
                 </div>
 
-                <!-- ELI9 Reward -->
+                <!-- ELI14 Reward -->
                 <div class="bg-slate-50 rounded-lg p-3 border border-slate-200 text-[11px] mt-3">
-                    <strong class="block text-slate-900 mb-1">🧸 ELI9: Reward as Scorekeeping</strong>
+                    <strong class="block text-slate-900 mb-1">🧠 ELI14: Reward as Scorekeeping</strong>
                     <p>
                         The reward function is just a score system for your kart driver. You give points for moving forward, subtract points for crashing, and subtract a little for jerky steering. The kart tries to learn how to get the highest total score over time, just like a player trying to beat their best lap.
                     </p>
@@ -1610,10 +1873,10 @@
             </div>
         </section>
 
-        <!-- SECTION 13: Math Formula ELI9 Cheatsheet & Examples -->
-        <section id="eli9-math" class="space-y-6">
+        <!-- SECTION 13: Math Formula ELI14 Cheatsheet & Examples -->
+        <section id="eli14-math" class="space-y-6">
             <div class="border-l-4 border-emerald-500 pl-4">
-                <h2 class="text-2xl sm:text-3xl font-extrabold text-slate-900">13. Math Formula ELI9 Cheatsheet & Examples</h2>
+                <h2 class="text-2xl sm:text-3xl font-extrabold text-slate-900">13. Math Formula ELI14 Cheatsheet & Examples</h2>
                 <p class="text-slate-600 text-sm sm:text-base mt-1">
                     Side-by-side explanations of key formulas used above, with intuitive analogies and simple numeric examples.
                 </p>
@@ -1625,7 +1888,7 @@
                 <div class="bg-white rounded-xl p-4 border border-slate-200 shadow-sm space-y-2">
                     <h3 class="font-bold text-slate-900 text-sm">🧪 Nernst & GHK (Ion Voltages)</h3>
                     <p><strong>Formal Idea:</strong> Voltage is set by the ratio of ion concentrations inside vs outside and by which ions can cross the membrane.</p>
-                    <p><strong>ELI9 Analogy:</strong> Marbles on a slide (Nernst) and multiple animal species at a door (GHK) together tell you how strong an electric “force” is needed to balance everything.</p>
+                    <p><strong>ELI14 Analogy:</strong> Marbles on a slide (Nernst) and several crowds using differently sized doors (GHK) tell you how much electrical “counter-slope” is needed to balance diffusion.</p>
                     <p><strong>Mini Example:</strong> If $[K^+]_{in}$ is 10x $[K^+]_{out}$, Nernst says the cell needs a negative voltage to keep potassium from rushing out. Doubling sodium permeability pulls the membrane potential closer to sodium’s voltage, like letting more dogs through the door than cats.</p>
                 </div>
 
@@ -1633,7 +1896,7 @@
                 <div class="bg-white rounded-xl p-4 border border-slate-200 shadow-sm space-y-2">
                     <h3 class="font-bold text-slate-900 text-sm">🧪 Dot Product Neuron $z = \sum w_i x_i + b$</h3>
                     <p><strong>Formal Idea:</strong> $z$ is a weighted sum of inputs plus a bias, then $y = \sigma(z)$ transforms it non-linearly.</p>
-                    <p><strong>ELI9 Analogy:</strong> Weighted homework scores plus a bonus. If the final score is high, the neuron says “yes”; if low, it says “no” or a small value.</p>
+                    <p><strong>ELI14 Analogy:</strong> Weighted exam sections plus a curve. The activation turns the total evidence into a decision strength, while training changes how much each section counts.</p>
                     <p><strong>Mini Example:</strong> Inputs $[1, 0, 1]$ and weights $[2, -1, 0.5]$ with bias $b=0$ give $z = 2\cdot1 + (-1)\cdot0 + 0.5\cdot1 = 2.5$. A sigmoid activation returns about $0.924$, meaning the neuron is highly “confident” this pattern matches.</p>
                 </div>
 
@@ -1641,7 +1904,7 @@
                 <div class="bg-white rounded-xl p-4 border border-slate-200 shadow-sm space-y-2">
                     <h3 class="font-bold text-slate-900 text-sm">🧪 Scaled Dot-Product Attention</h3>
                     <p><strong>Formal Idea:</strong> Similarity scores $\mathbf{Q} \mathbf{K}^T$ are normalized with softmax and used to blend Values $\mathbf{V}$.</p>
-                    <p><strong>ELI9 Analogy:</strong> For each word in a sentence, you look back at other words and choose how much to “listen” to each one when deciding what this word means.</p>
+                    <p><strong>ELI14 Analogy:</strong> Each word runs a tiny relevance vote over the other words, then blends their information in proportion to the vote.</p>
                     <p><strong>Mini Example:</strong> If a Query word has similarity scores [2, 0, -1] to three Keys, softmax turns that into soft weights like [0.7, 0.2, 0.1]. The output is a mixture of their Value vectors with these weights, like averaging three hints with different importance.</p>
                 </div>
 
@@ -1649,7 +1912,7 @@
                 <div class="bg-white rounded-xl p-4 border border-slate-200 shadow-sm space-y-2">
                     <h3 class="font-bold text-slate-900 text-sm">🧪 Gradient Descent (Training Rule)</h3>
                     <p><strong>Formula:</strong> $$w_{\text{new}} = w_{\text{old}} - \eta \frac{\partial \mathcal{L}}{\partial w}$$</p>
-                    <p><strong>ELI9 Analogy:</strong> You are walking down a hill in fog, taking small steps in the direction where the ground slopes downward (negative gradient) to reach the valley (low loss).</p>
+                    <p><strong>ELI14 Analogy:</strong> You are descending a mountain in fog. The gradient is the local slope, and the learning rate decides whether you take cautious steps or accidentally leap across the valley.</p>
                     <p><strong>Mini Example:</strong> Suppose loss $\mathcal{L}(w) = (w - 3)^2$ and current weight $w=5$. Then $\frac{\partial \mathcal{L}}{\partial w} = 2(w-3) = 4$. With learning rate $\eta=0.1$, you update to $w_{\text{new}} = 5 - 0.1\cdot4 = 4.6$, moving closer to the optimum at $w=3$.</p>
                 </div>
 
@@ -1657,7 +1920,7 @@
                 <div class="bg-white rounded-xl p-4 border border-slate-200 shadow-sm space-y-2">
                     <h3 class="font-bold text-slate-900 text-sm">🧪 Cross-Entropy Loss</h3>
                     <p><strong>Formula:</strong> $$\mathcal{L}_{CE} = -\sum_i y_i \log p_i$$</p>
-                    <p><strong>ELI9 Analogy:</strong> If the true answer is “cat” (one-hot $y$) and you predict probabilities for cat/dog/bird, the loss measures how surprised you would be if a friend secretly picked cat and you had bet on your distribution.</p>
+                    <p><strong>ELI14 Analogy:</strong> If the answer is “cat,” cross-entropy charges you according to how little probability you wagered on cat. Confidently betting on dog is expensive; cautious uncertainty is less embarrassing.</p>
                     <p><strong>Mini Example:</strong> True label cat, predicted $p = [0.8, 0.1, 0.1]$. Loss is $-\log(0.8) \approx 0.223$. If instead you predicted $p = [0.2, 0.4, 0.4]$, loss is $-\log(0.2) \approx 1.609$, much worse.</p>
                 </div>
 
@@ -1665,7 +1928,7 @@
                 <div class="bg-white rounded-xl p-4 border border-slate-200 shadow-sm space-y-2">
                     <h3 class="font-bold text-slate-900 text-sm">🧪 L2 Regularization (Weight Decay)</h3>
                     <p><strong>Formula:</strong> $$\mathcal{L}_{\text{total}} = \mathcal{L}_{\text{task}} + \lambda \sum_i w_i^2$$</p>
-                    <p><strong>ELI9 Analogy:</strong> Imagine you add a “tidiness penalty” for using too many big knobs in your machine. The more you twist weights away from zero, the more you pay, so you keep them small to avoid overcomplicating the model.</p>
+                    <p><strong>ELI14 Analogy:</strong> Weight decay is a storage fee for oversized knobs. A weight must improve the prediction enough to justify taking up extra “complexity rent.”</p>
                     <p><strong>Mini Example:</strong> If task loss is 0.5 and you have weights [1, 2, -1], the penalty is $\lambda(1^2+2^2+1^2) = \lambda(6)$. With $\lambda=0.05$, total loss becomes $0.5 + 0.3 = 0.8$, gently encouraging smaller weights.</p>
                 </div>
             </div>
@@ -1693,7 +1956,7 @@
 
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div class="bg-slate-50 rounded-lg p-3 border border-slate-200 space-y-2">
-                        <strong class="block text-slate-900 mb-1">🧸 ELI9: Momentum</strong>
+                        <strong class="block text-slate-900 mb-1">🧠 ELI14: Momentum</strong>
                         <p>
                             Instead of changing direction instantly every time the slope adjusts, momentum lets you keep some of your previous push, like riding a bicycle downhill—you don’t stop after each meter to re-evaluate; you keep rolling and only slightly adjust steering.
                         </p>
@@ -1712,7 +1975,7 @@
                 </p>
 
                 <div class="bg-slate-50 rounded-lg p-3 border border-slate-200 space-y-2">
-                    <strong class="block text-slate-900 mb-1">🧸 ELI9: Learning Rate as Step Size</strong>
+                    <strong class="block text-slate-900 mb-1">🧠 ELI14: Learning Rate as Step Size</strong>
                     <p>
                         Early training is like exploring a new town: you take big steps to quickly find interesting places. Later, once you’re near the best park (minimum), you take smaller steps so you don’t overshoot. The learning rate schedule shrinks your step size over time for this reason.
                     </p>
@@ -1785,7 +2048,7 @@
                     </table>
                 </div>
                 <div class="bg-indigo-50 p-4 rounded-lg border border-indigo-200 text-xs">
-                    <strong class="text-indigo-950 block mb-1">🧸 ELI9: Randomize the things reality will randomize</strong>
+                    <strong class="text-indigo-950 block mb-1">🧠 ELI14: Randomize the things reality will randomize</strong>
                     Train the driver on sunny, dark, slippery, delayed, and noisy tracks—but choose the ranges from real measurements. If you randomize impossible worlds too aggressively, the controller spends capacity solving problems it will never face.
                 </div>
             </div>
