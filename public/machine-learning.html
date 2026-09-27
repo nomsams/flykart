@@ -132,6 +132,26 @@
                 </p>
             </div>
 
+            <div class="figure-story">
+                <h3>From a laboratory measurement to a neuron equation</h3>
+                <p>These three views describe one experiment at different levels. The electrode is the physical intervention, the two traces are the measured cause and effect, and the capacitor circuit is the compact model that lets us predict the effect.</p>
+                <div class="figure-sequence"><strong>Read left to right:</strong> inject a known current → record the voltage response → replace the membrane with electrical components that reproduce the same response. It is like pushing a swing, watching its motion, and then writing down the spring-and-damper model that explains it.</div>
+                <div class="figure-grid three">
+                    <figure class="knowledge-figure compact">
+                        <img src="./assets/experiment%20jellyfish%20experiment.webp" alt="Experimental apparatus injecting current into a neuron while recording its action potential" loading="lazy" decoding="async">
+                        <figcaption><span class="figure-kicker">Figure 1 · Observe</span><strong>Hodgkin–Huxley Experimental Setup</strong>Current is injected into a biological neuron while voltage is measured. The input is controlled; the action-potential spike is the response. This is the experimental foundation beneath mathematical neuron models.<span class="figure-copy">Think of it as a wind-tunnel test: apply a precisely known force, measure the system's response, and infer the hidden dynamics.</span></figcaption>
+                    </figure>
+                    <figure class="knowledge-figure compact">
+                        <img src="./assets/experiment%20jellyfish%20experiment%203.webp" alt="Injected current step and resulting membrane-potential rise over time" loading="lazy" decoding="async">
+                        <figcaption><span class="figure-kicker">Figure 2 · Measure</span><strong>Membrane Potential Response to Injected Current</strong>The upper trace is a step of injected current; the lower trace shows voltage accumulating over time. A membrane does not teleport to its new voltage—it charges, much like a reservoir level rises while water flows in.<span class="figure-copy">The initially smooth rise reveals capacitance. If the stimulus is strong enough, active ion channels can turn that graded response into a spike.</span></figcaption>
+                    </figure>
+                    <figure class="knowledge-figure compact">
+                        <img src="./assets/experiment%20jellyfish%20experiment%202.webp" alt="Equivalent electrical circuit with a membrane capacitor, current source, and voltage reader" loading="lazy" decoding="async">
+                        <figcaption><span class="figure-kicker">Figure 3 · Model</span><strong>Equivalent Electrical Circuit of a Cell Membrane</strong>The lipid membrane separates charge and therefore behaves like a capacitor. Ion channels supply conductive paths, the current source represents experimental or synaptic input, and the voltmeter reads membrane potential.<span class="figure-copy">This is a map, not a claim that a cell literally contains electronic parts: the components reproduce the same input–output behavior.</span></figcaption>
+                    </figure>
+                </div>
+            </div>
+
             <!-- Equations Breakdown with Worked Examples -->
             <div class="space-y-6">
 
@@ -349,6 +369,25 @@
                             If the bucket gets full enough (hits a threshold), you dump it out quickly (the neuron fires an action potential and resets), then start filling again. The math simply tracks the balance between “fill” and “leak” every tiny time step.
                         </p>
                     </div>
+
+                    <div class="figure-story">
+                        <h3>Why the LIF equation has exactly these terms</h3>
+                        <p>Each symbol in the differential equation corresponds to a visible circuit element. The diagrams then show how that continuous voltage becomes a discrete spike and how richer models add biological detail.</p>
+                        <div class="figure-grid three">
+                            <figure class="knowledge-figure compact">
+                                <img src="./assets/neuron-RC_circuit.png" alt="RC circuit model of a cell membrane with capacitor, channel resistance, and equilibrium battery" loading="lazy" decoding="async">
+                                <figcaption><span class="figure-kicker">Figure 4 · Circuit</span><strong>The RC Circuit Model of a Cell Membrane</strong>The capacitor $C_m$ stores separated charge; the ion-channel resistor lets charge leak; the battery represents an ion's equilibrium potential. Input current must both charge the capacitor and replace charge escaping through the channel.<span class="figure-copy">Analogy: a flexible water tank stores pressure, a small drain leaks it away, and an inlet adds new water.</span></figcaption>
+                            </figure>
+                            <figure class="knowledge-figure compact">
+                                <img src="./assets/leakandintegrate.png" alt="Leaky integrate-and-fire neuron accumulating weighted input spikes until threshold" loading="lazy" decoding="async">
+                                <figcaption><span class="figure-kicker">Figure 5 · Dynamics</span><strong>Leaky Integrate-and-Fire (LIF) Dynamics</strong>Incoming weighted spikes create small voltage jumps. Between inputs, the voltage decays toward rest. Enough closely spaced excitation crosses threshold, emits an output spike, and resets the state.<span class="figure-copy">Timing matters: several weak pushes close together can open the gate; the same pushes spread far apart leak away before they combine.</span></figcaption>
+                            </figure>
+                            <figure class="knowledge-figure compact">
+                                <img src="./assets/The-figure-of-Synapse-and-Neuron-models-with-their-equivalent-analog-circuits-including.webp" alt="Biological synapse and neuron models alongside equivalent analog circuits including Hodgkin-Huxley and LIF" loading="lazy" decoding="async">
+                                <figcaption><span class="figure-kicker">Figure 6 · Abstraction ladder</span><strong>Biological Neurons and Equivalent Analog Circuits</strong>Biology can be translated into differential-equation and circuit abstractions at several fidelities. Hodgkin–Huxley resolves voltage-dependent conductances; LIF compresses them into integration, leakage, threshold, and reset.<span class="figure-copy">Choosing a model is like choosing map detail: use street-level detail for channel physiology, but a transit map may be enough for network-scale routing.</span></figcaption>
+                            </figure>
+                        </div>
+                    </div>
                 </div>
 
             </div>
@@ -363,6 +402,15 @@
                 </p>
             </div>
             <div class="analogy-card"><strong>Mental model: workshop, relay race, and expert committee</strong><p>A neuron is one workshop turning supplies into an output. Layers in series are a relay race where each runner transforms the baton. Parallel branches are an expert committee whose members inspect different evidence before their reports are combined.</p><span class="analogy-limit">Where it breaks: neural representations are distributed; one box rarely corresponds to one human-readable idea.</span></div>
+
+            <div class="figure-story">
+                <h3>A roadmap through three generations of neural computing</h3>
+                <p>The field did not simply replace one neuron with another. Each generation changed what carries information: a binary decision, a continuous activation, or an event whose timing matters.</p>
+                <figure class="knowledge-figure">
+                    <img src="./assets/ANN2SNN.webp" alt="Roadmap from neurobiology through first-generation binary neurons and second-generation ANNs to third-generation SNNs" loading="lazy" decoding="async">
+                    <figcaption><span class="figure-kicker">Figure 7 · Historical roadmap</span><strong>The Three Generations of Neural Networks</strong>First-generation McCulloch–Pitts neurons emit binary states. Second-generation ANNs pass real-valued activations and learn with differentiable optimization. Third-generation SNNs restore internal state and spike timing, exchanging dense, clocked messages for sparse events.<span class="figure-copy">Analogy: the generations communicate like on/off telegrams, continuously valued phone calls, and precisely timed drum beats. None is universally “better”; the useful representation depends on the task and hardware.</span></figcaption>
+                </figure>
+            </div>
 
             <!-- BOX MODEL 1: SINGLE NEURON ANATOMY & INFORMATION FLOW -->
             <div class="bg-white rounded-xl p-6 border border-slate-200 shadow-sm space-y-4">
@@ -442,6 +490,30 @@
                     <p>
                         In our example, the weighted sum is \(-0.9\), so the neuron says “this pattern doesn’t look like what I care about” and outputs zero. The ReLU is like a teacher who never gives negative points, only zero or higher.
                     </p>
+                </div>
+
+                <div class="figure-story">
+                    <h3>One artificial neuron, unpacked in four passes</h3>
+                    <p>Follow the same computation from structure to equation to graph. The repeated views are deliberate: they connect the geometric picture to the algebra instead of asking you to memorize either in isolation.</p>
+                    <div class="figure-sequence"><strong>Computation:</strong> multiply each input by its weight → add the products and bias → pass the result $z$ through an activation → use the resulting $y$ as a feature, decision score, or input to the next layer.</div>
+                    <div class="figure-grid">
+                        <figure class="knowledge-figure compact">
+                            <img src="./assets/1740315449168_artificial%20neuron%20model%203.jpg" alt="Artificial neuron combining input and weight matrices through a dot product and activation" loading="lazy" decoding="async">
+                            <figcaption><span class="figure-kicker">Figure 8 · Linear core</span><strong>The Math Behind an Artificial Neuron</strong>The dot product pairs every feature $x_i$ with a learned importance $w_i$. Positive weights support a pattern, negative weights oppose it, and large magnitudes make a feature influential.<span class="figure-copy">Analogy: a mixing desk turns each microphone up or down before combining all channels into one signal.</span></figcaption>
+                        </figure>
+                        <figure class="knowledge-figure compact">
+                            <img src="./assets/1740315449168_artificial%20neuron%20model%202.jpg" alt="Weighted sum in an artificial neuron and the mathematical sigmoid formula" loading="lazy" decoding="async">
+                            <figcaption><span class="figure-kicker">Figure 9 · Nonlinearity</span><strong>Artificial Neuron: The Sigmoid Formula</strong>After the weighted sum $z$, sigmoid computes $\sigma(z)=1/(1+e^{-z})$. The exponential makes the response nonlinear, allowing stacked layers to model more than one large linear transformation.<span class="figure-copy">It behaves like a soft dimmer switch: very negative evidence approaches 0, very positive evidence approaches 1, and uncertainty lives near 0.5.</span></figcaption>
+                        </figure>
+                        <figure class="knowledge-figure compact">
+                            <img src="./assets/1740315449168_artificial%20neuron%20model.jpg" alt="Artificial neuron computation beside the S-shaped sigmoid activation graph" loading="lazy" decoding="async">
+                            <figcaption><span class="figure-kicker">Figure 10 · Shape</span><strong>Artificial Neuron: Sigmoid Activation Graph</strong>The S-curve shows how all real input scores are compressed into $(0,1)$. Its steep middle is sensitive to changes; its flat ends saturate, where large changes in $z$ barely alter the output.<span class="figure-copy">That saturation is useful for probability-like outputs but can weaken gradients in deep hidden layers.</span></figcaption>
+                        </figure>
+                        <figure class="knowledge-figure compact">
+                            <img src="./assets/1740315449168_artificial%20neuron%20model%202.jpg" alt="Complete artificial neuron with weighted sum and value located on a sigmoid curve" loading="lazy" decoding="async">
+                            <figcaption><span class="figure-kicker">Figure 11 · End-to-end</span><strong>Artificial Neuron: Weighted Sum to Sigmoid</strong>This combined view locates the calculated weighted sum on the activation curve. It makes the boundary explicit: weights perform evidence aggregation; the activation transforms that evidence into a bounded nonlinear response.<span class="figure-copy">During training, backpropagation adjusts the weights so relevant examples land on the desired side of the curve.</span></figcaption>
+                        </figure>
+                    </div>
                 </div>
             </div>
 
@@ -602,6 +674,78 @@
                         The skip connection is Friend C: it makes sure you always keep some of the raw picture. This helps deep networks learn without “forgetting” the original input, preventing information from getting too distorted as it passes through many layers.
                     </p>
                 </div>
+            </div>
+
+            <div class="bg-white rounded-xl p-6 border border-slate-200 shadow-sm space-y-4">
+                <div class="flex items-center justify-between border-b border-slate-100 pb-2">
+                    <h3 class="font-bold text-slate-900 text-base text-violet-900">2.4 From Dense Activations to Timed Spikes</h3>
+                    <span class="text-xs font-mono bg-violet-100 text-violet-900 px-2 py-0.5 rounded font-bold">ANN → SNN</span>
+                </div>
+                <p class="text-xs text-slate-700">A conventional ANN typically recomputes real-valued activations at every layer. An SNN instead maintains membrane state and communicates with sparse spikes. A connection's weight still controls influence, but <em>when</em> spikes arrive becomes part of the message.</p>
+                <div class="analogy-card"><strong>Mental model: photographs versus motion-sensitive alarms</strong><p>An ANN layer receives a complete snapshot and processes every pixel-like value. An SNN can remain quiet until an event arrives, like an alarm that reports a door opening rather than continuously transmitting “door still closed.” This can save energy on event-driven hardware.</p><span class="analogy-limit">Where it breaks: practical SNN implementations may still update states in fixed simulation steps, and sparse activity does not automatically guarantee lower end-to-end energy.</span></div>
+                <div class="figure-grid three">
+                    <figure class="knowledge-figure compact">
+                        <img src="./assets/Schematic-illustration-of-neuromorphic-system-a-Biological-model-the-biological-neuron.webp" alt="Biological spike transmission compared with an artificial spiking neuron using weighted input, summation, and threshold" loading="lazy" decoding="async">
+                        <figcaption><span class="figure-kicker">Figure 12 · Translation</span><strong>Biological vs. Artificial Spiking Neuron</strong>Presynaptic events cross weighted synapses, alter a state variable, and produce an output only after threshold. The artificial model preserves this causal skeleton while omitting most cellular chemistry.<span class="figure-copy">The membrane state acts like a running tab: recent events contribute until leakage erases their influence.</span></figcaption>
+                    </figure>
+                    <figure class="knowledge-figure compact">
+                        <img src="./assets/Comparisons-of-ANNs-and-spiking-neural-networks-SNNs-in-terms-of-neuron-neural-network.webp" alt="Comparison of artificial neural networks and spiking neural networks from neuron representation to memristor hardware" loading="lazy" decoding="async">
+                        <figcaption><span class="figure-kicker">Figure 13 · Full comparison</span><strong>Architectural Comparison: ANNs vs. SNNs</strong>ANNs encode values primarily in activation magnitude; SNNs can encode information in spike rate, order, latency, or exact timing. The diagram follows that difference from neuron equations through network communication to candidate memristive hardware.<span class="figure-copy">Dense multiplication resembles every office sending a full report each clock cycle; spikes resemble short messages sent only when something changes.</span></figcaption>
+                    </figure>
+                    <figure class="knowledge-figure compact">
+                        <img src="./assets/ann%20vs%20SNN.webp" alt="Alternative architectural comparison between conventional ANNs and spiking neural networks" loading="lazy" decoding="async">
+                        <figcaption><span class="figure-kicker">Figure 14 · Alternative view</span><strong>Architectural Comparison: ANNs vs. SNNs</strong>This second layout reinforces the same distinction from another angle: continuous-valued layer activations versus event streams and stateful neurons. Compare the communication paths and hardware mappings, not just the node icons.<span class="figure-copy">Use both views as cross-checks: if a concept appears in different visual vocabularies, it is easier to separate the underlying mechanism from one diagram's notation.</span></figcaption>
+                    </figure>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-xl p-6 border border-slate-200 shadow-sm space-y-4">
+                <div class="flex items-center justify-between border-b border-slate-100 pb-2">
+                    <h3 class="font-bold text-slate-900 text-base text-indigo-900">2.5 How an SNN Classifies an Image</h3>
+                    <span class="text-xs font-mono bg-indigo-100 text-indigo-900 px-2 py-0.5 rounded font-bold">Encode → Compete → Read</span>
+                </div>
+                <div class="figure-sequence"><strong>End-to-end pipeline:</strong> convert pixel intensity or sensor events into spike trains → integrate them through excitatory weights → use inhibition to prevent every unit from firing together → decode an output from spike counts, first-spike time, or population activity.</div>
+                <div class="figure-grid">
+                    <figure class="knowledge-figure">
+                        <img src="./assets/ocrspiking.png" alt="Spiking neural network processing an image through spike trains, excitatory weights, and inhibitory weights" loading="lazy" decoding="async">
+                        <figcaption><span class="figure-kicker">Figure 15 · Inside the network</span><strong>Spiking Neural Network Image Processing</strong>Input pixels become temporal spike trains. Excitatory connections raise selected neurons toward threshold, while inhibitory connections suppress competitors. Through learning, different units specialize in recurring spatial-temporal patterns.<span class="figure-copy">Analogy: several detectives hear the same clues, but each clue supports some hypotheses and weakens others; the first coherent case to accumulate enough evidence wins.</span></figcaption>
+                    </figure>
+                    <figure class="knowledge-figure">
+                        <img src="./assets/Simulated-neuromorphic-system-for-image-recognition-a-Illustration-for-memristor-based.png" alt="Neuromorphic image recognition system encoding images into spikes and classifying by output spike count" loading="lazy" decoding="async">
+                        <figcaption><span class="figure-kicker">Figure 16 · System view</span><strong>Simulated Neuromorphic Image Recognition</strong>An encoder converts an image into events, multiple spiking layers transform those events, and the readout assigns the class with the strongest response—often the largest spike count in a time window. Memristor conductance can physically store synaptic weights near the compute path.<span class="figure-copy">For FlyKart, replace image pixels with ray distances and motion signals, and replace the class readout with steering, throttle, and brake populations.</span></figcaption>
+                    </figure>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-xl p-6 border border-slate-200 shadow-sm space-y-4">
+                <div class="flex items-center justify-between border-b border-slate-100 pb-2">
+                    <h3 class="font-bold text-slate-900 text-base text-cyan-900">2.6 Time, Excitation, Inhibition, and Population Codes</h3>
+                    <span class="text-xs font-mono bg-cyan-100 text-cyan-900 px-2 py-0.5 rounded font-bold">Network Dynamics</span>
+                </div>
+                <p class="text-xs text-slate-700">A useful SNN is more than many threshold units. Individual neuron dynamics determine possible spike patterns; excitation propagates evidence; inhibition creates contrast and stability; populations encode information in coordinated activity.</p>
+                <div class="figure-grid three">
+                    <figure class="knowledge-figure compact">
+                        <img src="./assets/izhik.gif" alt="Animated gallery of tonic spiking, bursting, adaptation, and other Izhikevich neuron patterns" loading="lazy" decoding="async">
+                        <figcaption><span class="figure-kicker">Figure 17 · Single-neuron time</span><strong>Diversity of Neuronal Spiking Patterns</strong>The Izhikevich model generates tonic spiking, bursting, adaptation, rebound, and other response types with only a few state variables. These patterns give networks different temporal tools—clocks, novelty detectors, integrators, and short-lived memory.<span class="figure-copy">Analogy: the neurons share an instrument design but play different rhythms because their parameters are tuned differently.</span></figcaption>
+                    </figure>
+                    <figure class="knowledge-figure compact">
+                        <img src="./assets/excitoryvsinhibitoryizhikevich.webp" alt="Raster plot of excitatory and inhibitory neurons producing alpha and gamma population rhythms" loading="lazy" decoding="async">
+                        <figcaption><span class="figure-kicker">Figure 18 · Population time</span><strong>Network Spiking Activity and Rhythms</strong>Each raster mark is one spike from one neuron. Excitatory cells spread activity; inhibitory cells restrain and synchronize it. Their feedback can produce collective alpha- and gamma-band rhythms that no isolated neuron contains.<span class="figure-copy">Like a crowd alternating cheers and hushes, global rhythm emerges from many local interactions rather than a central conductor.</span></figcaption>
+                    </figure>
+                    <figure class="knowledge-figure compact">
+                        <img src="./assets/newimage.png" alt="Neural circuit comparing full and partial lateral inhibition from cuneate nucleus to somatosensory cortex" loading="lazy" decoding="async">
+                        <figcaption><span class="figure-kicker">Figure 19 · Competition</span><strong>Excitatory and Inhibitory Synaptic Inhibition Model</strong>Lateral inhibition lets a strongly activated pathway suppress neighbors. Full versus partial inhibition changes how sharply the network separates nearby signals, trading clean contrast against the risk of erasing weaker but useful evidence.<span class="figure-copy">It is the neural equivalent of sharpening an image: emphasize local winners, but avoid turning subtle detail into black or white.</span></figcaption>
+                    </figure>
+                </div>
+            </div>
+
+            <div class="figure-story">
+                <h3>Choose the cheapest neuron model that preserves the behavior you need</h3>
+                <p>Biological realism and engineering usefulness are separate axes. More ion-channel detail can explain more physiology, but it also increases computation, parameters, and calibration burden.</p>
+                <figure class="knowledge-figure">
+                    <img src="./assets/Izhikevich%20%20Trade-off-between-biological-plausibility-with-respect-to-a-number-of-features-known-to.webp" alt="Scatter plot comparing neuron models by computational cost and biological plausibility" loading="lazy" decoding="async">
+                    <figcaption><span class="figure-kicker">Figure 20 · Engineering decision</span><strong>Model Efficiency vs. Biological Plausibility</strong>Integrate-and-fire models occupy the inexpensive, abstract end; Hodgkin–Huxley models reproduce more biological features at much higher cost; Izhikevich-style models aim for a useful middle. Select by required behavior, timestep budget, network size, and target hardware—not by realism alone.<span class="figure-copy">For a real-time racer, LIF may be ideal if temporal accumulation and sparse control are enough. Move to richer dynamics only when an evaluation shows that missing adaptation, bursting, or rebound materially limits driving.</span></figcaption>
+                </figure>
             </div>
         </section>
 
