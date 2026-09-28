@@ -121,11 +121,12 @@
                 <p class="eyebrow">Start here · an ELI14 engineering story with the mathematics left intact</p>
                 <h2 id="model-ladder-title">From one neuron to a spiking machine</h2>
                 <p>Begin with one quiet nerve cell. Follow a signal as it starts, travels down an axon, crosses a synapse, and becomes input to the next cell. Only after that physical story is clear do we turn the cell into circuits, algorithms, and silicon. The question connecting every chapter is simple: <strong>which parts of the neuron must an engineer keep, and which parts can be simplified safely?</strong></p>
-                <div class="compression-ladder" aria-label="Five chapter compression ladder">
+                <div class="compression-ladder" aria-label="Seven-step model compression ladder">
                     <a href="#guided-chapter-1"><b>01 · Meet the neuron</b>Traveling spike</a>
                     <a href="#guided-myelin"><b>01B · Insulate</b>Myelin and regeneration</a>
                     <a href="#guided-chapter-2"><b>02 · Abstract</b>Circuit board</a>
                     <a href="#guided-chapter-3"><b>03 · Compress</b>ANN matrix</a>
+                    <a href="#guided-training"><b>03B · Learn</b>Loss landscape</a>
                     <a href="#guided-chapter-4"><b>04 · Restore time</b>Spiking network</a>
                     <a href="#guided-chapter-5"><b>05 · Physicalize</b>Neuromorphic silicon</a>
                 </div>
@@ -154,7 +155,36 @@
                         </div>
                     </div>
                     <div class="chapter-panel">
-                        <h4>2 · HOW AN ACTION POTENTIAL STARTS AND PROPAGATES</h4>
+                        <h4>2 · MEASURE THE QUIET CELL BEFORE MAKING IT FIRE</h4>
+                        <p>A neuron at rest is already an electrical system. Put one electrode in the cytosol and a reference electrode in the surrounding fluid, and the voltmeter reads roughly <strong>−70 mV</strong>: the inside is negative relative to the outside. The meter is not detecting a stockpile of electrons. It measures the voltage produced by unequal ion concentrations and selective membrane permeability.</p>
+                        <div class="figure-grid">
+                            <figure class="knowledge-figure compact">
+                                <img src="./assets/0-axonsquidmeasurment.webp" alt="Intracellular microelectrode measuring the resting voltage of a squid giant axon" loading="lazy" decoding="async">
+                                <figcaption><span class="figure-kicker">Measurement A · Establish the baseline</span><strong>Intracellular recording of a giant axon</strong>The intracellular electrode samples the cytosol while the extracellular electrode defines the reference. The difference between them is the membrane potential $V_m=V_{inside}-V_{outside}$.</figcaption>
+                            </figure>
+                            <figure class="knowledge-figure compact">
+                                <img src="./assets/1-squidsquidsetup.jpg" alt="Amplifier circuit measuring voltage between an intracellular microelectrode and grounded bath reference" loading="lazy" decoding="async">
+                                <figcaption><span class="figure-kicker">Measurement B · Read a tiny voltage safely</span><strong>The biological measurement is an amplifier circuit</strong>A high-input-impedance amplifier prevents the measuring instrument from draining the cell. Ground defines $0\text{ V}$; the displayed value is the difference between the internal probe and that reference.</figcaption>
+                            </figure>
+                        </div>
+                    </div>
+                    <div class="chapter-panel formula">
+                        <h4>3 · 1.1 NERNST FIRST, THEN 1.2 GHK</h4>
+                        <p><strong>Nernst asks about one ion:</strong> what voltage would exactly balance that ion's urge to diffuse down its concentration gradient? <strong>GHK asks about the real membrane:</strong> when several ions can cross at once, where does their permeability-weighted compromise voltage settle?</p>
+                        <div class="chapter-equation">
+                            $$\text{1.1 Nernst:}\qquad E_{ion}=\frac{RT}{zF}\ln\left(\frac{[ion]_{out}}{[ion]_{in}}\right)$$
+                            $$\text{1.2 GHK:}\qquad V_m=\frac{RT}{F}\ln\left(\frac{P_K[K^+]_o+P_{Na}[Na^+]_o+P_{Cl}[Cl^-]_i}{P_K[K^+]_i+P_{Na}[Na^+]_i+P_{Cl}[Cl^-]_o}\right)$$
+                        </div>
+                        <ul>
+                            <li>$R$ is the gas constant, $T$ is absolute temperature, $F$ is Faraday's constant, and $z$ is ion charge.</li>
+                            <li>$[ion]_{in}$ and $[ion]_{out}$ are concentrations; $P_{ion}$ says how easily that ion crosses the membrane.</li>
+                            <li>Typical values put $E_K$ near $-90\text{ mV}$ and $E_{Na}$ near $+60\text{ mV}$. At rest, $P_K\gg P_{Na}$, so $V_m$ sits much closer to potassium's value.</li>
+                            <li>Opening sodium channels changes $P_{Na}$, so GHK predicts the voltage moving toward $E_{Na}$. That is the chemical reason the rising phase can happen.</li>
+                        </ul>
+                        <p class="cost-note"><strong>Analogy:</strong> Nernst gives each ion its preferred thermostat setting. GHK combines the settings using how open each ion's door is. The most open door gets the strongest vote. Full numerical examples appear in the detailed <a href="#biophysics">biophysics reference</a>.</p>
+                    </div>
+                    <div class="chapter-panel">
+                        <h4>4 · HOW AN ACTION POTENTIAL STARTS AND PROPAGATES</h4>
                         <p>At rest, the inside of the neuron is electrically negative relative to the outside. Incoming signals slightly raise or lower that voltage. If the axon hillock reaches threshold, nearby sodium channels open and positive sodium ions enter. That patch of membrane becomes positive, which pushes the next patch to threshold. The process repeats down the axon like a line of falling dominoes.</p>
                         <ol class="propagation-steps">
                             <li><strong>Rest:</strong> ion pumps and leak channels maintain concentration gradients and a negative resting voltage.</li>
@@ -166,6 +196,77 @@
                         </ol>
                         <p class="cost-note">In myelinated axons, the spike is regenerated mainly at gaps called nodes of Ranvier, so it appears to jump from node to node. This saltatory conduction is faster and more energy-efficient than regenerating continuously along every micrometre.</p>
                         <p><strong>Connection to SNNs:</strong> a spiking neural network usually keeps the event—“this neuron fired at this time”—but does not simulate sodium ions physically traveling through the model. Later chapters show exactly which biological details are retained and which are compressed.</p>
+                    </div>
+                    <div class="figure-story">
+                        <h3>Watch the local channel sequence become a traveling wave</h3>
+                        <p>The diagrams move from a simple ion-level story to a millisecond-by-millisecond account. A spike travels because each patch of membrane excites the next one; the same ions do not race from the soma to the terminal.</p>
+                        <div class="figure-grid three">
+                            <figure class="knowledge-figure compact">
+                                <img src="./assets/Screenshot_127.png" alt="Sequential sodium influx and potassium efflux along an axon" loading="lazy" decoding="async">
+                                <figcaption><span class="figure-kicker">Propagation A · Ion sequence</span><strong>Sodium starts; potassium restores</strong>Local $Na^+$ influx depolarizes one patch. $K^+$ efflux then repolarizes it while current spreading inside the axon brings the next patch to threshold.</figcaption>
+                            </figure>
+                            <figure class="knowledge-figure compact">
+                                <img src="./assets/Action%20Potential.gif" alt="Animated action potential propagating along an axon" loading="lazy" decoding="async">
+                                <figcaption><span class="figure-kicker">Propagation B · Motion</span><strong>The voltage pattern moves, not one packet of charge</strong>Each adjacent membrane segment recreates the event. The animation makes the hand-off visible in time.</figcaption>
+                            </figure>
+                            <figure class="knowledge-figure compact">
+                                <img src="./assets/2-actionpotentialpropagation.jpg" alt="Action potential moving along an axon over three milliseconds with sodium-channel states" loading="lazy" decoding="async">
+                                <figcaption><span class="figure-kicker">Propagation C · Channel state</span><strong>Voltage and gate state over 0–2 ms</strong>Open channels mark the rising front, inactivated channels create the refractory wake, and closed-but-ready channels wait ahead.</figcaption>
+                            </figure>
+                        </div>
+                    </div>
+
+                    <div id="ion-transport-lab" class="ap-lab">
+                        <div class="ap-lab-heading">
+                            <div>
+                                <span class="chapter-number">Interactive ion-transport lab</span>
+                                <h4>Scrub Through Na⁺ Influx, K⁺ Efflux, and Propagation</h4>
+                                <p>Drag the spike phase manually or play it. The membrane cross-section shows which ions cross; the axon strip shows the active front and refractory wake moving from segment to segment.</p>
+                            </div>
+                            <span id="ionStatusTag" class="ap-status">Resting · −70 mV</span>
+                        </div>
+                        <div class="ap-lab-grid">
+                            <div>
+                                <div class="ap-canvas-shell">
+                                    <canvas id="ionTransportCanvas" width="900" height="360" aria-label="Interactive sodium and potassium transport during action-potential propagation"></canvas>
+                                </div>
+                                <div class="lab-legend" aria-label="Ion transport legend">
+                                    <span><i style="--legend:#67e8f9"></i>Na⁺ entering</span>
+                                    <span><i style="--legend:#fbbf24"></i>K⁺ leaving</span>
+                                    <span><i style="--legend:#ef6f61"></i>depolarized front</span>
+                                    <span><i style="--legend:#8f80d6"></i>refractory wake</span>
+                                </div>
+                            </div>
+                            <div class="ap-controls">
+                                <label for="ionPhaseInput"><span>Spike phase</span><output id="ionPhaseValue">0%</output></label>
+                                <input id="ionPhaseInput" type="range" min="0" max="100" value="0" step="1">
+                                <p>Scrub from rest through sodium-driven rise, potassium-driven recovery, and forward propagation.</p>
+
+                                <label for="ionNaInput"><span>Na⁺ conductance scale</span><output id="ionNaValue">1.0×</output></label>
+                                <input id="ionNaInput" type="range" min="0.4" max="2" value="1" step="0.1">
+                                <p>Higher sodium conductance makes the regenerative upstroke steeper and more positive.</p>
+
+                                <label for="ionKInput"><span>K⁺ conductance scale</span><output id="ionKValue">1.0×</output></label>
+                                <input id="ionKInput" type="range" min="0.4" max="2" value="1" step="0.1">
+                                <p>Higher potassium conductance strengthens repolarization and the after-hyperpolarization.</p>
+
+                                <div class="ap-buttons">
+                                    <button id="playIonBtn" type="button">Play transport</button>
+                                    <button id="resetIonBtn" type="button">Reset</button>
+                                </div>
+                                <div class="ap-readouts">
+                                    <div><span>Phase</span><strong id="ionPhaseReadout">rest</strong></div>
+                                    <div><span>Voltage</span><strong id="ionVoltageReadout">−70 mV</strong></div>
+                                    <div><span>Dominant flow</span><strong id="ionFlowReadout">leak</strong></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="lab-definition">
+                            <div><strong>Na⁺ is local positive feedback</strong><span>Depolarization opens sodium channels; sodium entry causes more depolarization and opens more channels.</span></div>
+                            <div><strong>K⁺ is delayed recovery</strong><span>Potassium channels open more slowly. Outward positive current pulls voltage back down.</span></div>
+                            <div><strong>Propagation is regeneration</strong><span>Axial current triggers the next segment. The refractory segment behind cannot immediately restart the wave.</span></div>
+                        </div>
+                        <p class="ap-lab-note">This widget is a qualitative gate-and-propagation model, not a numerical Hodgkin–Huxley solver. Its job is to make direction, timing, and regeneration visible before the full differential equations.</p>
                     </div>
 
                     <div id="action-potential-lab" class="ap-lab">
@@ -227,16 +328,85 @@
                         <p class="ap-lab-note"><strong>Try this:</strong> lower the current below threshold and watch the membrane charge and decay without firing. Then increase $\tau_m$: the same neuron remembers the input longer. Turn myelin off to compare continuous regeneration with node-to-node propagation.</p>
                     </div>
 
+                    <div class="chapter-panel formula">
+                        <h4>5 · READ LAB 1 LIKE AN ELECTRICAL ENGINEER</h4>
+                        <p>The passive membrane is a <strong>parallel RC network</strong>. The lipid bilayer is the capacitor $C_m$. Open resting channels form a leak conductance $g_L=1/R_m$. The leak reversal potential $E_L$ behaves like a battery in series with the leak branch. Kirchhoff's current law says the injected current must split between charging the capacitor and flowing through the resistor.</p>
+                        <div class="chapter-equation">
+                            $$I_{ext}=I_C+I_R=C_m\frac{dV_m}{dt}+\frac{V_m-E_L}{R_m}$$
+                            $$\tau_m=R_mC_m,\qquad V_m(t)=V_\infty+(V_0-V_\infty)e^{-t/\tau_m}$$
+                            $$f_c=\frac{1}{2\pi R_mC_m}=\frac{1}{2\pi\tau_m}$$
+                        </div>
+                        <div class="figure-grid">
+                            <figure class="knowledge-figure compact">
+                                <img src="./assets/2-backyardbrains-formulas.png" alt="Membrane time constant formula relating resistance and capacitance" loading="lazy" decoding="async">
+                                <figcaption><span class="figure-kicker">RC engineering plate · Time constant</span><strong>$\tau_m=R_mC_m$ sets the response speed</strong>After one time constant, a step response has completed $1-e^{-1}\approx63.2\%$ of its rise. During decay, $e^{-1}\approx36.8\%$ of the original difference remains.</figcaption>
+                            </figure>
+                            <div class="chapter-panel gentle-start">
+                                <h4>What those terms mean on a bench</h4>
+                                <ul>
+                                    <li><strong>High $R_m$:</strong> less current escapes, larger voltage gain $\Delta V=I R_m$, and longer memory.</li>
+                                    <li><strong>High $C_m$:</strong> more charge $Q=C_mV$ is required to change voltage, so the response is slower.</li>
+                                    <li><strong>Low-pass behavior:</strong> slow inputs pass; very fast fluctuations are attenuated because the capacitor cannot change voltage instantly.</li>
+                                    <li><strong>Active spike:</strong> voltage-gated conductances make the circuit nonlinear. Past threshold, sodium positive feedback overwhelms the passive RC prediction.</li>
+                                </ul>
+                            </div>
+                        </div>
+                        <p class="cost-note"><strong>Concrete example:</strong> $R_m=10\text{ M}\Omega$ and $C_m=1\text{ nF}$ give $\tau_m=10\text{ ms}$ and $f_c\approx15.9\text{ Hz}$. A $2\text{ nA}$ DC input targets a $20\text{ mV}$ shift, but after $10\text{ ms}$ the membrane has moved only $12.6\text{ mV}$ toward it.</p>
+                    </div>
+
+                    <div id="rc-circuit-lab" class="ap-lab">
+                        <div class="ap-lab-heading">
+                            <div>
+                                <span class="chapter-number">Interactive RC engineering lab</span>
+                                <h4>Change Resistance and Capacitance, Then Apply a Current Step</h4>
+                                <p>The circuit and voltage trace update together. Watch how resistance controls gain while the product of resistance and capacitance controls response speed.</p>
+                            </div>
+                            <span id="rcStatusTag" class="ap-status">Input off</span>
+                        </div>
+                        <div class="ap-lab-grid">
+                            <div class="ap-canvas-shell">
+                                <canvas id="rcCircuitCanvas" width="900" height="360" aria-label="Interactive parallel RC membrane circuit and step response"></canvas>
+                            </div>
+                            <div class="ap-controls">
+                                <label for="rcResistanceInput"><span>Resistance R</span><output id="rcResistanceValue">10 MΩ</output></label>
+                                <input id="rcResistanceInput" type="range" min="1" max="30" value="10" step="1">
+                                <p>Higher resistance means less leak and a larger steady voltage change for the same current.</p>
+
+                                <label for="rcCapacitanceInput"><span>Capacitance C</span><output id="rcCapacitanceValue">1.0 nF</output></label>
+                                <input id="rcCapacitanceInput" type="range" min="0.2" max="3" value="1" step="0.1">
+                                <p>Higher capacitance stores more charge and slows the response.</p>
+
+                                <label for="rcCurrentInput"><span>Current step I</span><output id="rcCurrentValue">2.0 nA</output></label>
+                                <input id="rcCurrentInput" type="range" min="0.2" max="4" value="2" step="0.1">
+
+                                <div class="ap-buttons">
+                                    <button id="rcStepBtn" type="button">Apply current</button>
+                                    <button id="rcResetBtn" type="button">Reset</button>
+                                </div>
+                                <div class="ap-readouts">
+                                    <div><span>Time constant</span><strong id="rcTauReadout">10.0 ms</strong></div>
+                                    <div><span>Cutoff</span><strong id="rcCutoffReadout">15.9 Hz</strong></div>
+                                    <div><span>Membrane</span><strong id="rcVoltageReadout">−70.0 mV</strong></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="lab-definition">
+                            <div><strong>Change R only</strong><span>The target shift $IR$ and time constant $RC$ both grow. The curve rises farther and more slowly.</span></div>
+                            <div><strong>Change C only</strong><span>The final voltage is unchanged, but reaching it takes longer because more charge must be stored.</span></div>
+                            <div><strong>Switch the source off</strong><span>The same time constant controls exponential discharge back toward the leak battery $E_L$.</span></div>
+                        </div>
+                    </div>
+
                     <div class="chapter-panel">
-                        <h4>3 · FROM ONE NEURON TO A BRAIN</h4>
+                        <h4>6 · FROM ONE NEURON TO A BRAIN</h4>
                         <p>One spike means very little by itself. Brains use networks: some neurons excite their neighbors, others inhibit them, and each cell receives signals from many sources. Meaning appears in <strong>patterns across a population</strong>—which neurons fire, how often they fire, and in what order. Connections also change with experience, allowing the network to learn. SNNs borrow this network idea while replacing living cells with mathematical state variables and timed events.</p>
                     </div>
                     <div class="chapter-panel">
-                        <h4>4 · 📜 THE HODGKIN–HUXLEY QUESTION</h4>
+                        <h4>7 · 📜 THE HODGKIN–HUXLEY QUESTION</h4>
                         <p>In the 1930s and 1940s, Alan Hodgkin and Andrew Huxley wanted to identify the mechanism behind this traveling spike. They used the <strong>giant axon of the squid</strong>, whose unusual width allowed electrodes to be inserted with the equipment of the era. By controlling membrane voltage and measuring the resulting currents, they could separate the fast inward sodium current from the slower outward potassium current.</p>
                     </div>
                     <div class="figure-story">
-                        <h3>5 · The experiment and the first model</h3>
+                        <h3>8 · The experiment and the first model</h3>
                         <p>Follow the evidence in the same order the researchers encountered it: apparatus, measured response, then the simplest circuit that could explain the response.</p>
                         <div class="figure-grid three">
                             <figure class="knowledge-figure compact">
@@ -254,15 +424,15 @@
                         </div>
                     </div>
                     <div class="chapter-panel">
-                        <h4>6 · 🔎 WHAT THEY FOUND—and what you are looking at</h4>
+                        <h4>9 · 🔎 WHAT THEY FOUND—and what you are looking at</h4>
                         <p>The membrane does two jobs at once. Its lipid layer stores separated charge; selective channels let particular ions cross. Hodgkin and Huxley separated a fast inward sodium current from a slower outward potassium current. Sodium drives the rising edge of a spike, potassium helps bring voltage back down, and a smaller leak current is always present. Figure 2 reveals storage; Figure 3 turns that observation into components; the full model lets those channel conductances open and close over time.</p>
                     </div>
                     <div class="chapter-panel">
-                        <h4>7 · 💡 THE ELI14 / PLAIN-ENGLISH MODEL</h4>
+                        <h4>10 · 💡 THE ELI14 / PLAIN-ENGLISH MODEL</h4>
                         <p>A neuron is a battery behind a leaky dam. Ion concentration differences are stored water pressure. The membrane is the dam, and channels are automatic floodgates. Sodium gates open quickly and start the surge; potassium gates answer more slowly and restore order. The spike is therefore a timed hand-off between two gate systems—not a mysterious bolt of biological lightning.</p>
                     </div>
                     <div class="chapter-panel">
-                        <h4>8 · ⚖️ THE ENGINEERING TRADE-OFF</h4>
+                        <h4>11 · ⚖️ THE ENGINEERING TRADE-OFF</h4>
                         <div class="scorecard">
                             <div><span>Biological realism</span><strong>High for squid-axon spike generation</strong></div>
                             <div><span>Indicative cost</span><strong>≈1,200 FLOPs per simulated ms per neuron</strong></div>
@@ -271,7 +441,7 @@
                         <p class="cost-note">FLOP counts are order-of-magnitude teaching estimates, not hardware benchmarks. Solver, timestep, channel count, precision, and implementation can move them dramatically.</p>
                     </div>
                     <div class="chapter-panel formula">
-                        <h4>9 · 🧮 THE MATHEMATICAL MODEL</h4>
+                        <h4>12 · 🧮 THE MATHEMATICAL MODEL</h4>
                         <p>The Nernst equation gives one ion's balancing voltage. Hodgkin–Huxley adds the time-varying conductances inferred from the experiment:</p>
                         <div class="chapter-equation">
                             $$E_{ion}=\frac{RT}{zF}\ln\left(\frac{[ion]_{out}}{[ion]_{in}}\right)$$
@@ -305,6 +475,24 @@
                         <h4>1 · THE DISTANCE PROBLEM</h4>
                         <p>Voltage spreading through a passive cable fades with distance because charge leaks through the membrane and must charge each new patch. A long axon therefore cannot simply send one weak analogue voltage from end to end. It repeatedly <strong>regenerates</strong> the action potential so the spike reaches the terminal at full amplitude.</p>
                     </div>
+                    <div class="figure-story">
+                        <h3>Three engineering versions of the same biological cable</h3>
+                        <p>Compare the voltage recorded at three points. The progression is the chapter's core argument: passive cable loses amplitude; active channels restore amplitude everywhere; myelin avoids rebuilding the signal continuously and concentrates regeneration at nodes.</p>
+                        <div class="figure-grid three">
+                            <figure class="knowledge-figure compact">
+                                <img src="./assets/1-backyardbrains-thedecayingvoltageofaneuronwithoutions.png" alt="Injected voltage decaying across three electrodes along a passive axon" loading="lazy" decoding="async">
+                                <figcaption><span class="figure-kicker">Cable A · Passive decay</span><strong>No active channels: every recording is smaller</strong>Current spreads longitudinally but leaks across the membrane, producing approximately exponential loss with distance.</figcaption>
+                            </figure>
+                            <figure class="knowledge-figure compact">
+                                <img src="./assets/1-backyardbrains-thedecayingvoltageofaneuronwithionchannels.png" alt="Voltage regenerated by ion channels along an unmyelinated axon" loading="lazy" decoding="async">
+                                <figcaption><span class="figure-kicker">Cable B · Continuous regeneration</span><strong>Active channels rebuild the spike</strong>Each neighboring segment reaches threshold and produces a new full-amplitude event. Reliability improves, but channels must operate along the entire axon.</figcaption>
+                            </figure>
+                            <figure class="knowledge-figure compact">
+                                <img src="./assets/1-backyardbrains-thedecayingvoltageofaneuronwithionchannelsinranviercells.png" alt="Myelinated axon regenerating action potentials at nodes of Ranvier" loading="lazy" decoding="async">
+                                <figcaption><span class="figure-kicker">Cable C · Saltatory conduction</span><strong>Insulate the cable; regenerate at nodes</strong>Myelin reduces internode leakage and capacitance. Dense channels at the exposed nodes restore the all-or-none spike.</figcaption>
+                            </figure>
+                        </div>
+                    </div>
                     <div class="chapter-panel gentle-start">
                         <h4>2 · THE INSULATED-CABLE ANALOGY</h4>
                         <p>Myelin is electrical insulation wrapped around sections of axon. In the central nervous system it is produced by oligodendrocytes; in the peripheral nervous system, by Schwann cells. The uncovered gaps are <strong>nodes of Ranvier</strong>, packed with voltage-gated sodium channels. Current travels quickly beneath an insulated segment, then the next node rebuilds the spike.</p>
@@ -332,9 +520,13 @@
                     </div>
                     <div class="chapter-panel formula">
                         <h4>5 · 🧮 THE CABLE RELATIONSHIPS</h4>
+                        <figure class="knowledge-figure compact mb-4">
+                            <img src="./assets/2-backyardbrains-formulas-withmyelin.png" alt="Axonal length constant formula relating membrane and internal resistance" loading="lazy" decoding="async">
+                            <figcaption><span class="figure-kicker">Cable engineering plate · Length constant</span><strong>$\lambda$ measures how far passive voltage can reach</strong>A larger membrane resistance $r_m$ reduces outward leak; a smaller internal resistance $r_i$ makes forward current easier. Myelin improves the first term dramatically.</figcaption>
+                        </figure>
                         <div class="chapter-equation">
                             $$I_m=C_m\frac{dV_m}{dt}+\frac{V_m-E_L}{R_m}$$
-                            $$\tau_m=R_mC_m,\qquad \lambda\propto\sqrt{\frac{r_m}{r_i}},\qquad t_{delay}=\frac{L}{v}$$
+                            $$\tau_m=R_mC_m,\qquad V(x)=V_0e^{-x/\lambda},\qquad \lambda\propto\sqrt{\frac{r_m}{r_i}},\qquad t_{delay}=\frac{L}{v}$$
                         </div>
                         <ul>
                             <li>$r_m$ is membrane resistance per unit length; raising it lets voltage spread farther before leaking away.</li>
@@ -477,24 +669,46 @@
                             </figure>
                         </div>
                     </div>
+                    <div class="chapter-panel formula">
+                        <h4>3 · ONE MATRIX MULTIPLICATION, WITH EVERY NUMBER SHOWN</h4>
+                        <p>One neuron uses a dot product. A layer puts many neuron weight vectors side by side, so all neurons run together as a matrix multiplication.</p>
+                        <div class="chapter-equation">
+                            $$\mathbf{x}=\begin{bmatrix}2 & -1 & 3\end{bmatrix},\quad
+                            \mathbf{W}=\begin{bmatrix}0.5 & -1\\1 & 2\\-0.5 & 0.25\end{bmatrix},\quad
+                            \mathbf{b}=\begin{bmatrix}0.5 & -0.25\end{bmatrix}$$
+                            $$\mathbf{z}=\mathbf{xW}+\mathbf{b}
+                            =\begin{bmatrix}
+                            2(0.5)+(-1)(1)+3(-0.5)+0.5 &
+                            2(-1)+(-1)(2)+3(0.25)-0.25
+                            \end{bmatrix}
+                            =\begin{bmatrix}-1 & -3.5\end{bmatrix}$$
+                            $$\operatorname{ReLU}(\mathbf{z})=\begin{bmatrix}0 & 0\end{bmatrix}$$
+                        </div>
+                        <ul>
+                            <li>Shape check: $(1\times3)(3\times2)=(1\times2)$. The touching dimensions must match; the outside dimensions describe the output.</li>
+                            <li>Each column of $\mathbf W$ belongs to one output neuron. Each row corresponds to one input feature.</li>
+                            <li>For a batch, $\mathbf X\in\mathbb R^{B\times D_{in}}$ multiplies $\mathbf W\in\mathbb R^{D_{in}\times D_{out}}$, producing $\mathbf Z\in\mathbb R^{B\times D_{out}}$.</li>
+                        </ul>
+                    </div>
                     <div class="chapter-panel">
-                        <h4>3 · 🔎 WHAT CHANGED—and what was lost</h4>
+                        <h4>4 · 🔎 WHAT CHANGED—and what was lost</h4>
                         <p>The ANN retains weighted influence and nonlinear decisions. It discards ion chemistry, charge leakage, spike shape, and usually the neuron's own continuous state. That makes training far easier: thousands of neurons become one matrix multiplication. But temporal meaning must now be rebuilt with recurrence, convolutions, attention, or explicit position and time features.</p>
                     </div>
                     <div class="chapter-panel">
-                        <h4>4 · 💡 THE ELI14 / PLAIN-ENGLISH MODEL</h4>
+                        <h4>5 · 💡 THE ELI14 / PLAIN-ENGLISH MODEL</h4>
                         <p>An ANN neuron is a mixing desk. Inputs are microphones, weights are volume knobs, and bias is the engineer nudging the master level. The activation is a soft dimmer switch applied to the final mix. The desk has no membrane and no memory of yesterday's song; hand it a snapshot and it returns a number.</p>
                     </div>
                     <div class="chapter-panel">
-                        <h4>5 · ⚖️ THE ENGINEERING TRADE-OFF</h4>
-                        <div class="scorecard">
-                            <div><span>Biological realism</span><strong>Low: no membrane state, ion channels, or native spike time</strong></div>
-                            <div><span>Computational cost</span><strong>Dense $O(N_{in}N_{out})$ per layer; extremely optimized in batches</strong></div>
-                            <div><span>Best used for</span><strong>Vision, language, regression, large differentiable models</strong></div>
+                        <h4>6 · THE ENGINEERING TRADE-OFF</h4>
+                        <div class="scorecard" aria-label="Artificial neural network engineering trade-off">
+                            <div><span>Biological realism</span><strong>Low — no membrane state, ion channels, or native spike timing</strong></div>
+                            <div><span>Compute</span><strong>Each dense layer uses input width × output width multiply-accumulates per example</strong></div>
+                            <div><span>Best fit</span><strong>Vision, language, regression, and other differentiable prediction tasks</strong></div>
                         </div>
+                        <p class="cost-note">The benefit is regular, batch-friendly computation. The cost grows with both layer widths, while memory movement and activation storage may dominate on real hardware.</p>
                     </div>
                     <div class="chapter-panel formula">
-                        <h4>6 · 🧮 THE MATHEMATICAL MODEL</h4>
+                        <h4>7 · 🧮 THE MATHEMATICAL MODEL</h4>
                         <div class="chapter-equation">
                             $$z=\sum_{i=1}^{n}w_ix_i+b=\mathbf{w}^{T}\mathbf{x}+b$$
                             $$\sigma(z)=\frac{1}{1+e^{-z}},\qquad \operatorname{ReLU}(z)=\max(0,z)$$
@@ -508,6 +722,119 @@
                         <p>The caveat: dense synchronous evaluation often moves values even when nothing interesting changed. GPUs make this fast, but memory movement and always-on computation still consume energy.</p>
                     </div>
                     <div class="compression-step"><strong>Detail discarded:</strong> continuous membrane dynamics and spike timing. <strong>What we gained:</strong> simple gradients, batching, and industrial-strength matrix kernels. A brilliant bargain—until time or energy is the signal.</div>
+                </div>
+            </article>
+
+            <article id="guided-training" class="book-chapter">
+                <div class="chapter-heading">
+                    <div>
+                        <span class="chapter-number">Chapter 3B · How the model learns</span>
+                        <h3>Gradient Descent on a Mountain Map</h3>
+                    </div>
+                    <p class="chapter-question">Question: how do weights find a good solution when the landscape contains many valleys?</p>
+                </div>
+                <div class="chapter-stack">
+                    <div class="chapter-panel gentle-start">
+                        <h4>1 · TURN MODEL ERROR INTO TERRAIN</h4>
+                        <p>Imagine every possible set of network weights as a location on a topographic map. Horizontal position represents parameter values; altitude represents loss. Mountaintops are bad settings with large error. Valleys are better settings. Training means moving through this landscape toward lower ground.</p>
+                        <p><strong>Important:</strong> not every mountain is the highest, and not every valley is the deepest. A nearby valley may be a local minimum while a better solution exists beyond a ridge. In modern networks the “map” has millions or billions of dimensions, so the two-dimensional picture is an analogy—not a literal surface we can draw.</p>
+                    </div>
+                    <div class="chapter-panel formula">
+                        <h4>2 · GRADIENT DESCENT FOLLOWS THE LOCAL SLOPE</h4>
+                        <div class="chapter-equation">
+                            $$\boldsymbol{\theta}_{t+1}=\boldsymbol{\theta}_t-\eta\nabla_{\boldsymbol{\theta}}\mathcal L(\boldsymbol{\theta}_t)$$
+                            $$\mathbf v_t=\beta\mathbf v_{t-1}+(1-\beta)\nabla\mathcal L(\boldsymbol{\theta}_t),\qquad
+                            \boldsymbol{\theta}_{t+1}=\boldsymbol{\theta}_t-\eta\mathbf v_t$$
+                        </div>
+                        <ul>
+                            <li>$\boldsymbol{\theta}$ contains all trainable weights and biases.</li>
+                            <li>$\mathcal L$ is the loss; its gradient points uphill fastest, so subtracting it moves downhill.</li>
+                            <li>$\eta$ is the learning rate. Too small crawls; too large can leap across a valley and diverge.</li>
+                            <li>$\beta$ gives momentum memory, smoothing zig-zags and carrying motion through shallow roughness.</li>
+                        </ul>
+                    </div>
+                    <div class="chapter-panel">
+                        <h4>3 · THE LANDSCAPE HAS MORE THAN VALLEY BOTTOMS</h4>
+                        <div class="scorecard">
+                            <div><span>Local minimum</span><strong>Lower than nearby points, but not necessarily the best location on the full map</strong></div>
+                            <div><span>Saddle</span><strong>Downhill in one direction and uphill in another; a common high-dimensional obstacle</strong></div>
+                            <div><span>Flat basin</span><strong>Many nearby settings perform similarly; often more robust to noise and small shifts</strong></div>
+                        </div>
+                    </div>
+                    <div class="chapter-panel formula">
+                        <h4>4 · EVOLUTION SENDS OUT A SEARCH PARTY</h4>
+                        <p>Gradient descent asks one hiker to feel the slope under their boots. Evolutionary search sends a population of scouts in different directions, evaluates them, keeps promising candidates, and mutates or recombines them to create the next generation.</p>
+                        <div class="chapter-equation">
+                            $$\boldsymbol{\theta}^{(i)}_{offspring}=\boldsymbol{\theta}_{parent}+\sigma\boldsymbol{\varepsilon}^{(i)},\qquad
+                            \boldsymbol{\varepsilon}^{(i)}\sim\mathcal N(\mathbf0,\mathbf I)$$
+                            $$\text{parents}=\operatorname{SelectBest}\left(\{\boldsymbol{\theta}^{(i)}\},\;-\mathcal L(\boldsymbol{\theta}^{(i)})\right)$$
+                        </div>
+                        <p>The mutation scale $\sigma$ controls exploration. Small mutations polish one valley; large mutations can cross ridges but waste more evaluations. Evolution does not require a differentiable loss, which is useful for discrete structures, sparse rewards, simulators, or controllers whose failures make gradients unreliable. Its price is sample cost: many candidates must be tested.</p>
+                    </div>
+
+                    <div id="optimizer-landscape-lab" class="ap-lab">
+                        <div class="ap-lab-heading">
+                            <div>
+                                <span class="chapter-number">Interactive optimization lab</span>
+                                <h4>Explore the Same Landscape with Gradients or Evolution</h4>
+                                <p>Click anywhere on the map to choose a starting point. Step the optimizer and watch whether it follows a nearby valley or explores broadly enough to find a deeper basin.</p>
+                            </div>
+                            <span id="optimizerStatusTag" class="ap-status">Ready · step 0</span>
+                        </div>
+                        <div class="ap-lab-grid">
+                            <div>
+                                <div class="ap-canvas-shell">
+                                    <canvas id="optimizerCanvas" width="900" height="430" aria-label="Interactive topographic loss landscape with gradient and evolutionary optimization paths"></canvas>
+                                </div>
+                                <div class="lab-legend">
+                                    <span><i style="--legend:#f8fafc"></i>high loss</span>
+                                    <span><i style="--legend:#173f35"></i>low loss</span>
+                                    <span><i style="--legend:#fbbf24"></i>current/best</span>
+                                    <span><i style="--legend:#67e8f9"></i>candidate scouts</span>
+                                </div>
+                            </div>
+                            <div class="ap-controls">
+                                <label for="optimizerMode"><span>Search method</span></label>
+                                <select id="optimizerMode">
+                                    <option value="gradient">Gradient descent</option>
+                                    <option value="evolution">Evolutionary exploration</option>
+                                    <option value="hybrid">Hybrid: explore then descend</option>
+                                </select>
+
+                                <label for="optimizerRateInput"><span>Learning rate η</span><output id="optimizerRateValue">0.12</output></label>
+                                <input id="optimizerRateInput" type="range" min="0.01" max="0.35" value="0.12" step="0.01">
+                                <p>Controls how far the gradient hiker moves on each step.</p>
+
+                                <label for="optimizerExploreInput"><span>Mutation scale σ</span><output id="optimizerExploreValue">0.70</output></label>
+                                <input id="optimizerExploreInput" type="range" min="0.1" max="1.6" value="0.7" step="0.05">
+
+                                <label for="optimizerPopulationInput"><span>Population</span><output id="optimizerPopulationValue">16</output></label>
+                                <input id="optimizerPopulationInput" type="range" min="4" max="40" value="16" step="2">
+
+                                <div class="ap-buttons three">
+                                    <button id="optimizerStepBtn" type="button">One step</button>
+                                    <button id="optimizerRunBtn" type="button">Run 25</button>
+                                    <button id="optimizerResetBtn" type="button">Reset</button>
+                                </div>
+                                <div class="ap-readouts">
+                                    <div><span>Step</span><strong id="optimizerStepReadout">0</strong></div>
+                                    <div><span>Loss</span><strong id="optimizerLossReadout">—</strong></div>
+                                    <div><span>Position</span><strong id="optimizerPositionReadout">—</strong></div>
+                                </div>
+                            </div>
+                        </div>
+                        <p class="ap-lab-note"><strong>Try this:</strong> start in the upper-right basin. Gradient descent may settle in the first low place it can reach. Switch to evolution and increase $\sigma$ so some scouts cross the ridge. Hybrid search uses exploration early, then local gradients for precise finishing.</p>
+                    </div>
+
+                    <div class="chapter-panel">
+                        <h4>5 · WHICH SEARCH METHOD SHOULD AN ENGINEER USE?</h4>
+                        <div class="scorecard">
+                            <div><span>Backpropagation</span><strong>Efficient when the model and loss are differentiable and training data provide dense feedback</strong></div>
+                            <div><span>Evolution</span><strong>Useful for topology, discrete decisions, non-differentiable simulators, and broad behavioral exploration</strong></div>
+                            <div><span>Hybrid</span><strong>Evolve structures, initial policies, or diverse candidates; fine-tune differentiable weights with gradients</strong></div>
+                        </div>
+                    </div>
+                    <div class="compression-step"><strong>Red-thread connection:</strong> the neuron model controls what can be optimized cheaply. ANNs expose smooth derivatives for backpropagation; event timing, discrete topology, or black-box fitness may justify surrogate gradients, evolutionary search, or a hybrid.</div>
                 </div>
             </article>
 
@@ -576,6 +903,60 @@
                     <div class="compression-step"><strong>Detail restored:</strong> internal time, sparse events, temporal coding, and local timing-based learning. <strong>Detail still compressed:</strong> explicit ion channels, dendritic geometry, and molecular plasticity.</div>
                 </div>
             </article>
+
+            <div id="model-comparison-lab" class="ap-lab">
+                <div class="ap-lab-heading">
+                    <div>
+                        <span class="chapter-number">Interactive model-comparison lab</span>
+                        <h4>Give ANN, LIF, and an SNN the Same Input</h4>
+                        <p>The ANN returns one instantaneous activation. The LIF neuron carries voltage through time and emits threshold events. The SNN combines several such neurons into a timed population code.</p>
+                    </div>
+                    <span id="modelStatusTag" class="ap-status">Ready · shared stimulus</span>
+                </div>
+                <div class="ap-lab-grid">
+                    <div>
+                        <div class="ap-canvas-shell">
+                            <canvas id="modelComparisonCanvas" width="900" height="430" aria-label="Interactive comparison of ANN activation, LIF voltage, and SNN spike raster"></canvas>
+                        </div>
+                        <div class="lab-legend">
+                            <span><i style="--legend:#fbbf24"></i>input</span>
+                            <span><i style="--legend:#67e8f9"></i>membrane voltage</span>
+                            <span><i style="--legend:#ef6f61"></i>spike</span>
+                            <span><i style="--legend:#c4b5fd"></i>population event</span>
+                        </div>
+                    </div>
+                    <div class="ap-controls">
+                        <label for="modelInputStrength"><span>Input strength x</span><output id="modelInputValue">1.20</output></label>
+                        <input id="modelInputStrength" type="range" min="0" max="2.5" value="1.2" step="0.05">
+
+                        <label for="modelWeightInput"><span>Synaptic weight w</span><output id="modelWeightValue">1.50</output></label>
+                        <input id="modelWeightInput" type="range" min="-2" max="3" value="1.5" step="0.1">
+                        <p>ANN evidence is $z=wx+b$. In the temporal models, the same product becomes input drive.</p>
+
+                        <label for="modelTauInput"><span>LIF time constant</span><output id="modelTauValue">20 ms</output></label>
+                        <input id="modelTauInput" type="range" min="5" max="50" value="20" step="1">
+
+                        <label for="modelThresholdInput"><span>Spike threshold</span><output id="modelThresholdValue">−55 mV</output></label>
+                        <input id="modelThresholdInput" type="range" min="-65" max="-45" value="-55" step="1">
+
+                        <div class="ap-buttons">
+                            <button id="runModelComparisonBtn" type="button">Run timeline</button>
+                            <button id="resetModelComparisonBtn" type="button">Reset</button>
+                        </div>
+                        <div class="ap-readouts">
+                            <div><span>ANN output</span><strong id="annOutputReadout">—</strong></div>
+                            <div><span>LIF spikes</span><strong id="lifSpikeReadout">—</strong></div>
+                            <div><span>SNN events</span><strong id="snnSpikeReadout">—</strong></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="lab-definition">
+                    <div><strong>ANN · value code</strong><span>One forward pass maps the current feature vector to continuous activations. No internal membrane clock is required.</span></div>
+                    <div><strong>LIF · neuron model</strong><span>Voltage integrates drive, leaks toward rest, crosses threshold, emits a spike, and resets.</span></div>
+                    <div><strong>SNN · network architecture</strong><span>Many stateful spiking neurons exchange events. Information can live in spike count, latency, order, or synchrony.</span></div>
+                </div>
+                <p class="ap-lab-note"><strong>Important distinction:</strong> LIF is a model for an individual spiking neuron; an SNN is a network that may use LIF, Izhikevich, or another spiking model as its units.</p>
+            </div>
 
             <article id="guided-chapter-5" class="book-chapter">
                 <div class="chapter-heading">
@@ -673,41 +1054,6 @@
 
             <!-- Equations Breakdown with Worked Examples -->
             <div class="space-y-6">
-
-                <!-- 1.0 Passive RC Membrane -->
-                <div class="bg-white rounded-xl p-6 border border-slate-200 shadow-sm space-y-4">
-                    <div class="flex items-center justify-between border-b border-slate-100 pb-2">
-                        <h3 class="font-bold text-slate-900 text-base text-emerald-900">1.0 Start with the Passive RC Membrane</h3>
-                        <span class="text-xs font-mono bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded font-bold">Charge · Leak · Decay</span>
-                    </div>
-                    <div class="space-y-2 text-xs text-slate-700">
-                        <strong class="text-slate-900 text-sm block">What the squid experiment showed before the spike:</strong>
-                        <p>A small current does not change membrane voltage instantly. Voltage bends toward a new level, then relaxes when the current stops. This is the signature of a capacitor charging through a resistance—the same passive curve shown in Figure 2 and plotted as the grey reference in Lab 1.</p>
-                    </div>
-                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                        <div class="p-4 bg-slate-900 text-emerald-300 rounded-lg text-center font-mono text-sm overflow-x-auto">
-                            $$I_{ext}(t)=C_m\frac{dV_m}{dt}+g_L(V_m-E_L)$$
-                            $$\tau_m=R_mC_m,\qquad R_m=\frac{1}{g_L}$$
-                            $$V_\infty=E_L+R_mI_{ext}$$
-                        </div>
-                        <div class="p-4 bg-slate-900 text-amber-300 rounded-lg text-center font-mono text-sm overflow-x-auto">
-                            $$V_m(t)=V_\infty+\big(V_0-V_\infty\big)e^{-t/\tau_m}$$
-                            $$I_{ext}=0:\quad V_m(t)=E_L+\big(V_{peak}-E_L\big)e^{-t/\tau_m}$$
-                        </div>
-                    </div>
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
-                        <div class="p-3 rounded-lg border border-slate-200 bg-slate-50"><strong class="block text-slate-900">Capacitance $C_m$</strong><span class="text-slate-600">Stores separated charge. Larger capacitance means more charge is needed for the same voltage change.</span></div>
-                        <div class="p-3 rounded-lg border border-slate-200 bg-slate-50"><strong class="block text-slate-900">Resistance $R_m$</strong><span class="text-slate-600">Opposes leak current. Larger resistance lets injected charge remain effective for longer.</span></div>
-                        <div class="p-3 rounded-lg border border-slate-200 bg-slate-50"><strong class="block text-slate-900">Time constant $\tau_m$</strong><span class="text-slate-600">After one $\tau_m$, voltage has covered about $63.2\%$ of the journey to its new level.</span></div>
-                    </div>
-                    <div class="bg-emerald-50/70 p-4 rounded-lg border border-emerald-200 text-xs text-slate-800 space-y-2">
-                        <strong class="text-emerald-950 block text-sm">Worked example: charge, then decay</strong>
-                        <p>Let $R_m=10\text{ M}\Omega$, $C_m=1\text{ nF}$, $E_L=V_0=-70\text{ mV}$, and $I_{ext}=2\text{ nA}$. Then $\tau_m=10\text{ ms}$ and $V_\infty=-70+(10\text{ M}\Omega)(2\text{ nA})=-50\text{ mV}$.</p>
-                        <p>After one time constant: $V_m(10\text{ ms})=-50+(-70+50)e^{-1}\approx-57.36\text{ mV}$. If the membrane had reached $-50\text{ mV}$ and input were switched off, one time constant later it would decay to $-70+20e^{-1}\approx-62.64\text{ mV}$.</p>
-                    </div>
-                    <div class="compression-step"><strong>Connection to Hodgkin–Huxley:</strong> this RC model explains the passive charging envelope. Hodgkin and Huxley retained $C_m$ but replaced one fixed leak with voltage-dependent sodium and potassium conductances. Those active conductances create the regenerative spike that a passive RC circuit cannot.</div>
-                    <p class="chapter-links"><a href="#action-potential-lab">Open Lab 1</a> to change $I_{ext}$ and $\tau_m$ and compare passive decay with active spiking.</p>
-                </div>
 
                 <!-- 1.1 Nernst Potential -->
                 <div class="bg-white rounded-xl p-6 border border-slate-200 shadow-sm space-y-4">
@@ -860,10 +1206,45 @@
                     </div>
                 </div>
 
-                <!-- 1.3 Leaky Integrate-and-Fire -->
+                <!-- 1.3 Passive RC Membrane -->
                 <div class="bg-white rounded-xl p-6 border border-slate-200 shadow-sm space-y-4">
                     <div class="flex items-center justify-between border-b border-slate-100 pb-2">
-                        <h3 class="font-bold text-slate-900 text-base text-emerald-900">1.3 Leaky Integrate-and-Fire (LIF) Equivalent Circuit Differential Equation</h3>
+                        <h3 class="font-bold text-slate-900 text-base text-emerald-900">1.3 Passive RC Membrane in Electrical-Engineering Terms</h3>
+                        <span class="text-xs font-mono bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded font-bold">Charge · Leak · Decay</span>
+                    </div>
+                    <div class="space-y-2 text-xs text-slate-700">
+                        <strong class="text-slate-900 text-sm block">What the squid experiment showed before the spike:</strong>
+                        <p>A small current does not change membrane voltage instantly. Voltage bends toward a new level, then relaxes when the current stops. This is the signature of a capacitor charging through a resistance—the same passive curve plotted as the grey reference in Lab 1.</p>
+                    </div>
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                        <div class="p-4 bg-slate-900 text-emerald-300 rounded-lg text-center font-mono text-sm overflow-x-auto">
+                            $$I_{ext}(t)=C_m\frac{dV_m}{dt}+g_L(V_m-E_L)$$
+                            $$\tau_m=R_mC_m,\qquad R_m=\frac{1}{g_L}$$
+                            $$V_\infty=E_L+R_mI_{ext}$$
+                        </div>
+                        <div class="p-4 bg-slate-900 text-amber-300 rounded-lg text-center font-mono text-sm overflow-x-auto">
+                            $$V_m(t)=V_\infty+\big(V_0-V_\infty\big)e^{-t/\tau_m}$$
+                            $$I_{ext}=0:\quad V_m(t)=E_L+\big(V_{peak}-E_L\big)e^{-t/\tau_m}$$
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+                        <div class="p-3 rounded-lg border border-slate-200 bg-slate-50"><strong class="block text-slate-900">Capacitance $C_m$</strong><span class="text-slate-600">Stores separated charge. Larger capacitance means more charge is needed for the same voltage change.</span></div>
+                        <div class="p-3 rounded-lg border border-slate-200 bg-slate-50"><strong class="block text-slate-900">Resistance $R_m$</strong><span class="text-slate-600">Opposes leak current. Larger resistance lets injected charge remain effective for longer.</span></div>
+                        <div class="p-3 rounded-lg border border-slate-200 bg-slate-50"><strong class="block text-slate-900">Time constant $\tau_m$</strong><span class="text-slate-600">After one $\tau_m$, voltage has covered about $63.2\%$ of the journey to its new level.</span></div>
+                    </div>
+                    <div class="bg-emerald-50/70 p-4 rounded-lg border border-emerald-200 text-xs text-slate-800 space-y-2">
+                        <strong class="text-emerald-950 block text-sm">Worked example: charge, then decay</strong>
+                        <p>Let $R_m=10\text{ M}\Omega$, $C_m=1\text{ nF}$, $E_L=V_0=-70\text{ mV}$, and $I_{ext}=2\text{ nA}$. Then $\tau_m=10\text{ ms}$ and $V_\infty=-70+(10\text{ M}\Omega)(2\text{ nA})=-50\text{ mV}$.</p>
+                        <p>After one time constant: $V_m(10\text{ ms})=-50+(-70+50)e^{-1}\approx-57.36\text{ mV}$. If the membrane had reached $-50\text{ mV}$ and input were switched off, one time constant later it would decay to $-70+20e^{-1}\approx-62.64\text{ mV}$.</p>
+                    </div>
+                    <div class="compression-step"><strong>Connection to Hodgkin–Huxley:</strong> this RC model explains the passive charging envelope. Hodgkin and Huxley retained $C_m$ but replaced one fixed leak with voltage-dependent sodium and potassium conductances. Those active conductances create the regenerative spike that a passive RC circuit cannot.</div>
+                    <p class="chapter-links"><a href="#action-potential-lab">Return to Lab 1</a> to change $I_{ext}$ and $\tau_m$ and compare passive decay with active spiking.</p>
+                </div>
+
+                <!-- 1.4 Leaky Integrate-and-Fire -->
+                <div class="bg-white rounded-xl p-6 border border-slate-200 shadow-sm space-y-4">
+                    <div class="flex items-center justify-between border-b border-slate-100 pb-2">
+                        <h3 class="font-bold text-slate-900 text-base text-emerald-900">1.4 Leaky Integrate-and-Fire (LIF) Equivalent Circuit Differential Equation</h3>
                         <span class="text-xs font-mono bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded font-bold">Spiking Dynamics</span>
                     </div>
 
@@ -1307,50 +1688,87 @@
                 <h3 class="font-bold text-slate-900 text-base flex items-center gap-2">
                     📐 Network Design Rules of Thumb
                 </h3>
+                <p class="text-xs text-slate-700">There is no universal formula for the perfect hidden-layer width. Treat architecture as a budgeted experiment: start with the smallest plausible model, measure validation performance and real latency, then add capacity only where evidence says the model is underfitting.</p>
 
-                <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
-                    <div class="bg-slate-50 p-4 rounded-lg border border-slate-200 space-y-2">
-                        <span class="text-xs font-bold text-amber-800 uppercase tracking-wider block">1. Hidden Layer Sizing</span>
-                        <div class="text-xs space-y-1 text-slate-700 font-mono">
-                            <p>$N_h = \frac{N_{in} + N_{out}}{2}$</p>
-                            <p>$N_h = \frac{2}{3} N_{in} + N_{out}$</p>
-                            <p class="text-[11px] font-sans text-slate-500 mt-1">Prevents over-fitting while preserving feature capacity.</p>
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    <div class="bg-slate-900 text-slate-100 p-4 rounded-xl text-xs space-y-3">
+                        <strong class="text-amber-300 block text-sm">The variables you must keep straight</strong>
+                        <div class="grid grid-cols-2 gap-2 text-[11px]">
+                            <span>$D_{in}$: input features</span><span>$D_{out}$: outputs/classes</span>
+                            <span>$L$: trainable layers</span><span>$H_l$: width of layer $l$</span>
+                            <span>$B$: batch size</span><span>$N$: training examples</span>
+                            <span>$P$: trainable parameters</span><span>$T$: sequence/time steps</span>
+                            <span>$\eta$: learning rate</span><span>$\lambda$: regularization strength</span>
+                            <span>$p$: dropout probability</span><span>$\tau$: SNN memory timescale</span>
                         </div>
                     </div>
-
-                    <div class="bg-slate-50 p-4 rounded-lg border border-slate-200 space-y-2">
-                        <span class="text-xs font-bold text-indigo-800 uppercase tracking-wider block">2. Data-to-Weight Ratio</span>
-                        <div class="text-xs space-y-1 text-slate-700 font-mono">
-                            <p>$N_{samples} \ge 10 \times N_{weights}$</p>
-                            <p class="text-[11px] font-sans text-slate-500 mt-1">If training data is less than $10\times$ parameters, use dropout or weight decay!</p>
+                    <div class="bg-slate-900 text-slate-100 p-4 rounded-xl text-xs space-y-3">
+                        <strong class="text-cyan-300 block text-sm">Turn the architecture into a budget</strong>
+                        <div class="font-mono text-center text-emerald-300">
+                            $$P_{dense}=(D_{in}+1)D_{out}$$
+                            $$\text{MACs}\approx D_{in}D_{out},\qquad \text{FLOPs}\approx2D_{in}D_{out}$$
+                            $$M_{weights}=P\times\text{bytes per weight}$$
                         </div>
-                    </div>
-
-                    <div class="bg-slate-50 p-4 rounded-lg border border-slate-200 space-y-2">
-                        <span class="text-xs font-bold text-cyan-800 uppercase tracking-wider block">3. Depth vs Width</span>
-                        <div class="text-xs space-y-1 text-slate-700">
-                            <p class="text-[11px]">Deeper networks excel at hierarchical abstractions; wider networks memorize patterns faster.</p>
-                        </div>
-                    </div>
-
-                    <div class="bg-slate-50 p-4 rounded-lg border border-slate-200 space-y-2">
-                        <span class="text-xs font-bold text-emerald-800 uppercase tracking-wider block">4. Laptop CPU Bound</span>
-                        <div class="text-xs space-y-1 text-slate-700 font-mono">
-                            <p>$N_{weights} &lt; 3,000$</p>
-                            <p class="text-[11px] font-sans text-slate-500 mt-1">Guarantees zero-lag 60 FPS in JavaScript for 5 parallel karts!</p>
-                        </div>
+                        <p class="text-slate-300">The $+1$ accounts for one bias per output. Runtime also includes activations, nonlinearities, routing, framework overhead, and memory traffic.</p>
                     </div>
                 </div>
 
-                <!-- ELI14 for Heuristics -->
+                <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+                    <div class="bg-amber-50 p-4 rounded-lg border border-amber-200 space-y-2 text-xs text-slate-700">
+                        <span class="font-bold text-amber-900 uppercase tracking-wider block">1 · Establish a baseline</span>
+                        <p>Try a linear model or one hidden layer first. If training and validation scores are both poor, add width/features. If training is strong and validation is weak, capacity is not the first problem—improve data, regularization, or augmentation.</p>
+                    </div>
+                    <div class="bg-indigo-50 p-4 rounded-lg border border-indigo-200 space-y-2 text-xs text-slate-700">
+                        <span class="font-bold text-indigo-900 uppercase tracking-wider block">2 · Width vs depth</span>
+                        <p>Width gives each stage more simultaneous features. Depth composes features into hierarchies. Add depth when the task is compositional; use residual connections and normalization when deeper optimization becomes unstable.</p>
+                    </div>
+                    <div class="bg-cyan-50 p-4 rounded-lg border border-cyan-200 space-y-2 text-xs text-slate-700">
+                        <span class="font-bold text-cyan-900 uppercase tracking-wider block">3 · Match the structure</span>
+                        <p>Vectors → MLP. Images → convolution or vision transformer. Sequences → recurrence, temporal convolution, or attention. Sparse events → SNN. The right inductive bias often beats merely adding neurons.</p>
+                    </div>
+                    <div class="bg-emerald-50 p-4 rounded-lg border border-emerald-200 space-y-2 text-xs text-slate-700">
+                        <span class="font-bold text-emerald-900 uppercase tracking-wider block">4 · Benchmark the product</span>
+                        <p>Measure median and tail latency, memory, energy, and accuracy on target hardware. A parameter threshold cannot guarantee frame rate: layout, batching, browser load, and memory access matter.</p>
+                    </div>
+                </div>
+
+                <div class="bg-violet-50/70 p-4 rounded-lg border border-violet-200 space-y-3 text-xs text-slate-800">
+                    <strong class="text-violet-950 block text-sm">Worked FlyKart controller: $16\rightarrow32\rightarrow16\rightarrow3$</strong>
+                    <p>Assume 16 sensor values, two hidden layers, and 3 outputs for steering, throttle, and brake.</p>
+                    <div class="font-mono bg-white border border-violet-200 rounded-lg p-3 space-y-1 text-[11px]">
+                        <div>Layer 1: $(16+1)\times32=544$ parameters</div>
+                        <div>Layer 2: $(32+1)\times16=528$ parameters</div>
+                        <div>Output: $(16+1)\times3=51$ parameters</div>
+                        <div>Total: $P=1,123$ parameters; MACs $=16\times32+32\times16+16\times3=1,072$ per kart step</div>
+                        <div>At 14 karts and 60 steps/s: $1,072\times14\times60=900,480$ MAC/s, about $1.8$ MFLOP/s before overhead.</div>
+                    </div>
+                    <p><strong>How to iterate:</strong> if the model cannot fit even a small clean training set, try $32\rightarrow64\rightarrow32\rightarrow3$. If it fits training but fails new tracks, do not immediately grow it—randomize tracks, inspect sensors, penalize brittle behavior, and use held-out track layouts.</p>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                    <div class="bg-slate-50 p-4 rounded-lg border border-slate-200 space-y-2 text-slate-800">
+                        <strong class="text-slate-900 block text-sm">Data and generalization rules</strong>
+                        <ul class="list-disc pl-4 space-y-1">
+                            <li>Split by scenario, user, track, or time—not random near-duplicates—so validation tests real generalization.</li>
+                            <li>No fixed “10 samples per weight” law survives across modern models. Data diversity, noise, augmentation, priors, and regularization matter more than one ratio.</li>
+                            <li>Plot training and validation curves. Their gap is more informative than parameter count alone.</li>
+                            <li>Change one major variable at a time and record the accuracy/latency/energy Pareto frontier.</li>
+                        </ul>
+                    </div>
+                    <div class="bg-slate-50 p-4 rounded-lg border border-slate-200 space-y-2 text-slate-800">
+                        <strong class="text-slate-900 block text-sm">SNN-specific knobs</strong>
+                        <ul class="list-disc pl-4 space-y-1">
+                            <li>$\Delta t$ trades simulation accuracy against update cost; smaller is not automatically better.</li>
+                            <li>$\tau_m$ controls how long evidence persists; threshold and reset control firing frequency.</li>
+                            <li>Track spikes per neuron per second, not only parameter count: dense firing destroys event-driven savings.</li>
+                            <li>Start feed-forward, then add recurrence only when the task genuinely needs memory.</li>
+                        </ul>
+                    </div>
+                </div>
+
                 <div class="bg-slate-50 p-4 rounded-lg border border-slate-200 space-y-2 text-xs text-slate-800">
-                    <strong class="text-slate-900 font-bold block text-sm">🧠 ELI14: Simple Network Building Rules</strong>
-                    <p>
-                        These formulas are like rules for building toy car tracks. If you make the track too huge and complicated (too many weights) compared to the number of races you run (training examples), you overfit: the cars memorize one race instead of learning general driving.
-                    </p>
-                    <p>
-                        The thumb rules say: keep hidden layers somewhere between inputs and outputs, make sure you have many more examples than knobs to tune, and remember that your laptop has a limit—too many weights and it will lag just like a game with too many graphics.
-                    </p>
+                    <strong class="text-slate-900 font-bold block text-sm">🧠 ELI14: Build the smallest bridge that passes the load test</strong>
+                    <p>Inputs and outputs tell you where the bridge begins and ends. Width is the number of lanes; depth is the number of connected spans; parameters are bolts you must store and tune. Begin small, drive increasingly difficult test vehicles across it, and reinforce the part that actually bends. More concrete everywhere is expensive and can hide a bad design.</p>
                 </div>
             </div>
         </section>
@@ -1360,10 +1778,64 @@
             <div class="border-l-4 border-indigo-600 pl-4">
                 <h2 class="text-2xl sm:text-3xl font-extrabold text-slate-900">5. Linear Algebra, SVD & Hardware Roofline Bounds</h2>
                 <p class="text-slate-600 text-sm sm:text-base mt-1">
-                    Matrix decomposition and compute intensity vs memory bandwidth bounds.
+                    Matrix multiplication, dimensions, determinants, eigenvectors, stability, decomposition, and compute-intensity versus memory-bandwidth bounds.
                 </p>
             </div>
             <div class="analogy-card"><strong>Mental model: SVD sorts the useful directions; roofline finds the slow station</strong><p>SVD is like rotating a messy warehouse so the busiest aisles come first, then discarding rarely used aisles. The roofline model is a kitchen: speed is capped either by how fast ingredients arrive or by how fast cooks can process them.</p><span class="analogy-limit">Where it breaks: real kernels also pay synchronization, launch, cache, layout, and control-flow costs.</span></div>
+
+            <div class="bg-white rounded-xl p-6 border border-slate-200 shadow-sm space-y-5">
+                <h3 class="font-bold text-slate-900 text-base">🧮 The Linear-Algebra Toolkit Behind a Network</h3>
+                <p class="text-xs text-slate-700">Matrices are not decoration around neural networks—they are how thousands of dot-product neurons are scheduled together. Determinants and eigenvectors are less common in the forward pass, but they explain geometry, invertibility, repeated dynamics, PCA, and why recurrent signals or gradients can explode or vanish.</p>
+
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+                    <div class="bg-slate-900 text-slate-100 p-4 rounded-xl text-xs space-y-3">
+                        <strong class="text-emerald-300 block text-sm">1 · Matrix multiplication is many weighted votes</strong>
+                        <div class="text-center font-mono text-amber-300">
+                            $$\mathbf C=\mathbf A\mathbf B,\qquad C_{ij}=\sum_{k=1}^{n}A_{ik}B_{kj}$$
+                            $$\mathbf X_{B\times D_{in}}\mathbf W_{D_{in}\times D_{out}}=\mathbf Z_{B\times D_{out}}$$
+                        </div>
+                        <p class="text-slate-300">Row $i$ selects one example; column $j$ selects one output neuron; index $k$ walks over every input feature. GPUs accelerate the repeated multiply-add pattern.</p>
+                    </div>
+                    <div class="bg-slate-900 text-slate-100 p-4 rounded-xl text-xs space-y-3">
+                        <strong class="text-cyan-300 block text-sm">2 · Shape arithmetic prevents silent design errors</strong>
+                        <div class="text-center font-mono text-cyan-200">
+                            $$(64\times16)(16\times32)=(64\times32)$$
+                            $$P=(16+1)32=544$$
+                        </div>
+                        <p class="text-slate-300">A batch of 64 karts, each with 16 sensors, enters 32 neurons. The layer owns $16\times32$ weights and 32 biases. If the inner dimensions disagree, the multiplication is undefined.</p>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+                    <div class="bg-amber-50 p-4 rounded-xl border border-amber-200 text-xs text-slate-800 space-y-3">
+                        <strong class="text-amber-950 block text-sm">3 · Determinant: does a transformation squash space?</strong>
+                        <div class="font-mono text-center bg-white rounded-lg border border-amber-200 p-3">
+                            $$\det\begin{bmatrix}a&b\\c&d\end{bmatrix}=ad-bc$$
+                            $$\mathbf A=\begin{bmatrix}3&1\\2&4\end{bmatrix}\Rightarrow\det(\mathbf A)=12-2=10$$
+                        </div>
+                        <p>$|\det(\mathbf A)|=10$ means the transformation multiplies two-dimensional area by 10. A negative determinant also flips orientation. If $\det(\mathbf A)=0$, at least one dimension collapses and no exact inverse exists.</p>
+                        <p><strong>Why ML cares:</strong> determinants appear in invertible networks, Gaussian densities, normalizing flows, covariance analysis, and change-of-variables formulas. Ordinary dense layers rarely calculate a determinant during inference.</p>
+                    </div>
+                    <div class="bg-indigo-50 p-4 rounded-xl border border-indigo-200 text-xs text-slate-800 space-y-3">
+                        <strong class="text-indigo-950 block text-sm">4 · Eigenvectors: directions a transformation does not turn</strong>
+                        <div class="font-mono text-center bg-white rounded-lg border border-indigo-200 p-3">
+                            $$\mathbf A\mathbf v=\lambda\mathbf v,\qquad
+                            \mathbf A=\begin{bmatrix}2&1\\1&2\end{bmatrix}$$
+                            $$\mathbf v_+=\begin{bmatrix}1\\1\end{bmatrix},\ \lambda_+=3;\qquad
+                            \mathbf v_-=\begin{bmatrix}1\\-1\end{bmatrix},\ \lambda_-=1$$
+                        </div>
+                        <p>The first direction keeps its orientation and becomes three times longer; the second keeps its orientation and length. Eigenvectors reveal the natural modes of a linear transformation.</p>
+                        <p><strong>Why ML cares:</strong> covariance eigenvectors are PCA directions. For repeated dynamics, $\mathbf A^t\mathbf v=\lambda^t\mathbf v$: $|\lambda|&lt;1$ decays, $|\lambda|&gt;1$ grows, and $|\lambda|\approx1$ preserves memory.</p>
+                    </div>
+                </div>
+
+                <div class="bg-rose-50 p-4 rounded-xl border border-rose-200 text-xs text-slate-800 space-y-2">
+                    <strong class="text-rose-950 block text-sm">5 · From eigenvalues to stable recurrent and spiking networks</strong>
+                    <p>A nonlinear network has no single global matrix, so inspect the local <strong>Jacobian</strong> $\mathbf J=\partial\mathbf f/\partial\mathbf x$. Across time, sensitivities multiply:</p>
+                    <div class="font-mono text-center bg-white rounded-lg border border-rose-200 p-3">$$\frac{\partial\mathbf x_T}{\partial\mathbf x_0}=\mathbf J_{T-1}\mathbf J_{T-2}\cdots\mathbf J_0$$</div>
+                    <p>If dominant singular values repeatedly exceed 1, states and gradients tend to grow; far below 1, they tend to vanish. Residual connections, gated recurrence, normalization, careful initialization, and gradient clipping are engineering tools for keeping useful signals in a workable range.</p>
+                </div>
+            </div>
 
             <div class="bg-white rounded-xl p-6 border border-slate-200 shadow-sm space-y-4">
                 <h3 class="font-bold text-slate-900 text-base">🧮 Matrix Singular Value Decomposition (SVD) & Roofline Bounds</h3>
@@ -1869,7 +2341,13 @@
                 </p>
             </div>
             <div class="analogy-card"><strong>Mental model: a wind tunnel for ideas</strong><p>Each lab isolates one force—spiking, breeding, capacity, perception, or reward—so you can change a knob and watch the response. Like a wind tunnel, it builds intuition before the pieces meet in a full vehicle.</p><span class="analogy-limit">Where it breaks: isolated demonstrations remove interactions and failure modes that appear only in the complete system.</span></div>
-            <a href="#action-potential-lab" class="block p-4 rounded-xl border border-violet-300 bg-violet-50 text-sm text-violet-950 hover:border-violet-500 transition"><strong>Lab 1 · Charge, Fire, Propagate, Recover</strong><span class="block text-xs text-slate-600 mt-1">RC charging and decay, active spiking, myelin, and axonal propagation are introduced with the biological foundations near the beginning of this guide.</span></a>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <a href="#ion-transport-lab" class="block p-4 rounded-xl border border-cyan-300 bg-cyan-50 text-sm text-cyan-950 hover:border-cyan-500 transition"><strong>Ion Transport · Na⁺ and K⁺</strong><span class="block text-xs text-slate-600 mt-1">Scrub through channel timing and watch the regenerative front move along neighboring axon segments.</span></a>
+                <a href="#action-potential-lab" class="block p-4 rounded-xl border border-violet-300 bg-violet-50 text-sm text-violet-950 hover:border-violet-500 transition"><strong>Lab 1 · Charge, Fire, Propagate</strong><span class="block text-xs text-slate-600 mt-1">Compare passive charging, threshold firing, recovery, and myelinated propagation.</span></a>
+                <a href="#rc-circuit-lab" class="block p-4 rounded-xl border border-emerald-300 bg-emerald-50 text-sm text-emerald-950 hover:border-emerald-500 transition"><strong>RC Circuit · Resistance and Capacitance</strong><span class="block text-xs text-slate-600 mt-1">Apply and remove a current step while changing gain, time constant, cutoff frequency, and decay.</span></a>
+                <a href="#model-comparison-lab" class="block p-4 rounded-xl border border-amber-300 bg-amber-50 text-sm text-amber-950 hover:border-amber-500 transition"><strong>ANN vs LIF vs SNN</strong><span class="block text-xs text-slate-600 mt-1">Give three abstractions the same stimulus and compare values, voltages, spikes, and population events.</span></a>
+                <a href="#optimizer-landscape-lab" class="block p-4 rounded-xl border border-rose-300 bg-rose-50 text-sm text-rose-950 hover:border-rose-500 transition md:col-span-2"><strong>Optimization Landscape · Gradient Descent vs Evolution</strong><span class="block text-xs text-slate-600 mt-1">Click a starting point on the loss map, then compare local slope-following with population exploration.</span></a>
+            </div>
 
             <!-- LAB 2: Micro-Kart Track Visualizer -->
             <div class="bg-white rounded-xl p-5 border border-slate-200 shadow-sm space-y-4">
@@ -2594,6 +3072,735 @@
         bioTauInput.addEventListener('input', updateBioControls);
         bioMyelinToggle.addEventListener('change', resetBioLab);
         updateBioControls();
+
+        // --- INTERACTIVE ION TRANSPORT ---
+        const ionCanvas = document.getElementById('ionTransportCanvas');
+        const ionCtx = ionCanvas.getContext('2d');
+        const ionPhaseInput = document.getElementById('ionPhaseInput');
+        const ionNaInput = document.getElementById('ionNaInput');
+        const ionKInput = document.getElementById('ionKInput');
+        const playIonBtn = document.getElementById('playIonBtn');
+        let ionAnimating = false;
+        let ionAnimationStart = 0;
+
+        function ionVoltageAt(phase) {
+            const naScale = Number(ionNaInput.value);
+            const kScale = Number(ionKInput.value);
+            const peak = 30 + 12 * (naScale - 1);
+            const trough = -82 - 6 * (kScale - 1);
+            if (phase < 0.12) return -70;
+            if (phase < 0.35) return -70 + (peak + 70) * ((phase - 0.12) / 0.23);
+            if (phase < 0.62) return peak + (trough - peak) * ((phase - 0.35) / 0.27);
+            if (phase < 0.86) return trough + (-70 - trough) * ((phase - 0.62) / 0.24);
+            return -70;
+        }
+
+        function ionPhaseInfo(phase) {
+            if (phase < 0.12) return ['rest', 'leak'];
+            if (phase < 0.35) return ['depolarizing', 'Na⁺ inward'];
+            if (phase < 0.62) return ['repolarizing', 'K⁺ outward'];
+            if (phase < 0.86) return ['refractory', 'K⁺ outward'];
+            return ['recovered', 'leak'];
+        }
+
+        function drawIonArrow(x, y1, y2, color, label) {
+            ionCtx.strokeStyle = color;
+            ionCtx.fillStyle = color;
+            ionCtx.lineWidth = 3;
+            ionCtx.beginPath();
+            ionCtx.moveTo(x, y1);
+            ionCtx.lineTo(x, y2);
+            ionCtx.stroke();
+            const direction = Math.sign(y2 - y1) || 1;
+            ionCtx.beginPath();
+            ionCtx.moveTo(x, y2);
+            ionCtx.lineTo(x - 5, y2 - 8 * direction);
+            ionCtx.lineTo(x + 5, y2 - 8 * direction);
+            ionCtx.closePath();
+            ionCtx.fill();
+            ionCtx.font = '700 12px system-ui';
+            ionCtx.fillText(label, x + 8, (y1 + y2) / 2 + 4);
+        }
+
+        function drawIonTransport() {
+            const phase = Number(ionPhaseInput.value) / 100;
+            const voltage = ionVoltageAt(phase);
+            const info = ionPhaseInfo(phase);
+            ionCtx.clearRect(0, 0, ionCanvas.width, ionCanvas.height);
+            ionCtx.fillStyle = '#101a16';
+            ionCtx.fillRect(0, 0, ionCanvas.width, ionCanvas.height);
+
+            // Voltage trace
+            const gx = 42, gy = 28, gw = 380, gh = 168;
+            ionCtx.strokeStyle = '#456054';
+            ionCtx.lineWidth = 1;
+            ionCtx.strokeRect(gx, gy, gw, gh);
+            ionCtx.fillStyle = '#b8c8be';
+            ionCtx.font = '11px system-ui';
+            ionCtx.fillText('membrane voltage', gx, 18);
+            ionCtx.fillText('+40 mV', 4, gy + 6);
+            ionCtx.fillText('−70 mV', 4, gy + gh - 17);
+            ionCtx.beginPath();
+            for (let i = 0; i <= 100; i++) {
+                const x = gx + (i / 100) * gw;
+                const v = ionVoltageAt(i / 100);
+                const y = gy + (40 - v) / 130 * gh;
+                if (i === 0) ionCtx.moveTo(x, y); else ionCtx.lineTo(x, y);
+            }
+            ionCtx.strokeStyle = '#67e8f9';
+            ionCtx.lineWidth = 3;
+            ionCtx.stroke();
+            const markerX = gx + phase * gw;
+            const markerY = gy + (40 - voltage) / 130 * gh;
+            ionCtx.fillStyle = '#fbbf24';
+            ionCtx.beginPath();
+            ionCtx.arc(markerX, markerY, 6, 0, Math.PI * 2);
+            ionCtx.fill();
+
+            // Membrane cross-section
+            const mx = 505, my = 72, mw = 330;
+            ionCtx.fillStyle = '#20362d';
+            ionCtx.fillRect(mx, my, mw, 88);
+            ionCtx.strokeStyle = '#8ca397';
+            ionCtx.lineWidth = 7;
+            ionCtx.beginPath(); ionCtx.moveTo(mx, my + 33); ionCtx.lineTo(mx + mw, my + 33); ionCtx.stroke();
+            ionCtx.beginPath(); ionCtx.moveTo(mx, my + 54); ionCtx.lineTo(mx + mw, my + 54); ionCtx.stroke();
+            ionCtx.fillStyle = '#b8c8be';
+            ionCtx.font = '11px system-ui';
+            ionCtx.fillText('outside', mx, my - 10);
+            ionCtx.fillText('cytosol', mx, my + 82);
+            if (phase >= 0.12 && phase < 0.42) {
+                for (let i = 0; i < 5; i++) drawIonArrow(mx + 55 + i * 55, my - 6, my + 78, '#67e8f9', 'Na⁺');
+            } else if (phase >= 0.35 && phase < 0.86) {
+                for (let i = 0; i < 5; i++) drawIonArrow(mx + 55 + i * 55, my + 78, my - 6, '#fbbf24', 'K⁺');
+            } else {
+                ionCtx.fillStyle = '#789084';
+                ionCtx.font = '700 13px system-ui';
+                ionCtx.fillText('voltage-gated channels mostly closed', mx + 32, my + 47);
+            }
+
+            // Propagating axon
+            const axonY = 285;
+            const segments = 9;
+            const segmentW = 82;
+            const startX = 64;
+            const travel = clamp01((phase - 0.08) / 0.82);
+            const active = Math.min(segments - 1, Math.floor(travel * segments));
+            ionCtx.fillStyle = '#b8c8be';
+            ionCtx.font = '11px system-ui';
+            ionCtx.fillText('regenerative propagation along neighboring membrane segments', startX, 230);
+            for (let i = 0; i < segments; i++) {
+                const x = startX + i * segmentW;
+                let color = '#29473a';
+                if (phase >= 0.08 && i === active) color = '#ef6f61';
+                else if (phase >= 0.08 && i < active) color = '#8f80d6';
+                ionCtx.fillStyle = color;
+                ionCtx.fillRect(x, axonY - 25, segmentW - 8, 50);
+                ionCtx.fillStyle = '#eef6f0';
+                ionCtx.font = '700 11px system-ui';
+                ionCtx.fillText(String(i + 1), x + 31, axonY + 4);
+            }
+            ionCtx.fillStyle = '#b8c8be';
+            ionCtx.font = '11px system-ui';
+            ionCtx.fillText('refractory wake', startX, 338);
+            ionCtx.fillText('active front →', startX + 570, 338);
+
+            document.getElementById('ionPhaseValue').textContent = Math.round(phase * 100) + '%';
+            document.getElementById('ionNaValue').textContent = Number(ionNaInput.value).toFixed(1) + '×';
+            document.getElementById('ionKValue').textContent = Number(ionKInput.value).toFixed(1) + '×';
+            document.getElementById('ionPhaseReadout').textContent = info[0];
+            document.getElementById('ionVoltageReadout').textContent = voltage.toFixed(0).replace('-', '−') + ' mV';
+            document.getElementById('ionFlowReadout').textContent = info[1];
+            const ionTag = document.getElementById('ionStatusTag');
+            ionTag.textContent = info[0] + ' · ' + voltage.toFixed(0).replace('-', '−') + ' mV';
+            ionTag.className = 'ap-status' + (info[0] === 'depolarizing' ? ' firing' : (info[0] === 'repolarizing' || info[0] === 'refractory' ? ' recovering' : ''));
+        }
+
+        function animateIonTransport(timestamp) {
+            if (!ionAnimating) return;
+            if (!ionAnimationStart) ionAnimationStart = timestamp;
+            const progress = Math.min(1, (timestamp - ionAnimationStart) / 4600);
+            ionPhaseInput.value = String(Math.round(progress * 100));
+            drawIonTransport();
+            if (progress < 1) {
+                requestAnimationFrame(animateIonTransport);
+            } else {
+                ionAnimating = false;
+                ionAnimationStart = 0;
+                playIonBtn.textContent = 'Play transport';
+            }
+        }
+
+        function stopIonAnimation() {
+            ionAnimating = false;
+            ionAnimationStart = 0;
+            playIonBtn.textContent = 'Play transport';
+        }
+
+        playIonBtn.addEventListener('click', () => {
+            if (ionAnimating) {
+                stopIonAnimation();
+                return;
+            }
+            ionAnimating = true;
+            ionAnimationStart = 0;
+            ionPhaseInput.value = '0';
+            playIonBtn.textContent = 'Pause';
+            requestAnimationFrame(animateIonTransport);
+        });
+        document.getElementById('resetIonBtn').addEventListener('click', () => {
+            stopIonAnimation();
+            ionPhaseInput.value = '0';
+            drawIonTransport();
+        });
+        [ionPhaseInput, ionNaInput, ionKInput].forEach(input => input.addEventListener('input', () => {
+            stopIonAnimation();
+            drawIonTransport();
+        }));
+        drawIonTransport();
+
+        // --- INTERACTIVE RC CIRCUIT ---
+        const rcCanvas = document.getElementById('rcCircuitCanvas');
+        const rcCtx = rcCanvas.getContext('2d');
+        const rcResistanceInput = document.getElementById('rcResistanceInput');
+        const rcCapacitanceInput = document.getElementById('rcCapacitanceInput');
+        const rcCurrentInput = document.getElementById('rcCurrentInput');
+        const rcStepBtn = document.getElementById('rcStepBtn');
+        const RC_REST = -70;
+        const rcState = { on: false, voltage: RC_REST, startVoltage: RC_REST, elapsed: 0, lastFrame: 0, running: false };
+
+        function rcValues() {
+            const resistance = Number(rcResistanceInput.value);
+            const capacitance = Number(rcCapacitanceInput.value);
+            const current = Number(rcCurrentInput.value);
+            const tau = resistance * capacitance;
+            return {
+                resistance,
+                capacitance,
+                current,
+                tau,
+                cutoff: 1000 / (2 * Math.PI * tau),
+                target: rcState.on ? RC_REST + resistance * current : RC_REST
+            };
+        }
+
+        function drawRCCircuit() {
+            const values = rcValues();
+            rcCtx.clearRect(0, 0, rcCanvas.width, rcCanvas.height);
+            rcCtx.fillStyle = '#101a16';
+            rcCtx.fillRect(0, 0, rcCanvas.width, rcCanvas.height);
+            rcCtx.fillStyle = '#b8c8be';
+            rcCtx.font = '700 12px system-ui';
+            rcCtx.fillText('PARALLEL RC MEMBRANE', 36, 27);
+            rcCtx.fillText('STEP RESPONSE', 440, 27);
+
+            // Circuit
+            rcCtx.strokeStyle = '#91aa9c';
+            rcCtx.lineWidth = 3;
+            rcCtx.beginPath();
+            rcCtx.moveTo(70, 74); rcCtx.lineTo(330, 74);
+            rcCtx.moveTo(70, 286); rcCtx.lineTo(330, 286);
+            rcCtx.moveTo(70, 74); rcCtx.lineTo(70, 286);
+            rcCtx.stroke();
+            rcCtx.fillStyle = rcState.on ? '#fbbf24' : '#4d6659';
+            rcCtx.beginPath(); rcCtx.arc(70, 180, 24, 0, Math.PI * 2); rcCtx.fill();
+            rcCtx.fillStyle = '#101a16';
+            rcCtx.font = '900 14px system-ui';
+            rcCtx.fillText('I', 66, 185);
+            // Resistor branch
+            rcCtx.strokeStyle = '#ef6f61';
+            rcCtx.beginPath(); rcCtx.moveTo(180, 74); rcCtx.lineTo(180, 104);
+            for (let i = 0; i < 6; i++) {
+                rcCtx.lineTo(168 + (i % 2) * 24, 120 + i * 18);
+            }
+            rcCtx.lineTo(180, 256); rcCtx.lineTo(180, 286); rcCtx.stroke();
+            // Capacitor branch
+            rcCtx.strokeStyle = '#67e8f9';
+            rcCtx.beginPath(); rcCtx.moveTo(280, 74); rcCtx.lineTo(280, 157); rcCtx.stroke();
+            rcCtx.beginPath(); rcCtx.moveTo(252, 157); rcCtx.lineTo(308, 157); rcCtx.stroke();
+            rcCtx.beginPath(); rcCtx.moveTo(252, 178); rcCtx.lineTo(308, 178); rcCtx.stroke();
+            rcCtx.beginPath(); rcCtx.moveTo(280, 178); rcCtx.lineTo(280, 286); rcCtx.stroke();
+            rcCtx.fillStyle = '#efb3aa'; rcCtx.font = '12px system-ui';
+            rcCtx.fillText('R = ' + values.resistance.toFixed(0) + ' MΩ', 137, 320);
+            rcCtx.fillStyle = '#9eeaf5';
+            rcCtx.fillText('C = ' + values.capacitance.toFixed(1) + ' nF', 247, 320);
+
+            // Graph
+            const gx = 440, gy = 48, gw = 410, gh = 245;
+            rcCtx.strokeStyle = '#456054'; rcCtx.lineWidth = 1;
+            rcCtx.strokeRect(gx, gy, gw, gh);
+            const high = Math.max(-35, RC_REST + values.resistance * values.current + 8);
+            const low = RC_REST - 8;
+            const mapY = v => gy + (high - v) / (high - low) * gh;
+            rcCtx.strokeStyle = '#526d60';
+            rcCtx.beginPath(); rcCtx.moveTo(gx, mapY(RC_REST)); rcCtx.lineTo(gx + gw, mapY(RC_REST)); rcCtx.stroke();
+            rcCtx.fillStyle = '#b8c8be'; rcCtx.font = '11px system-ui';
+            rcCtx.fillText(high.toFixed(0) + ' mV', gx + 4, gy + 13);
+            rcCtx.fillText('−70 mV', gx + 4, mapY(RC_REST) - 5);
+            rcCtx.fillText('0', gx, gy + gh + 18);
+            rcCtx.fillText('5τ', gx + gw - 15, gy + gh + 18);
+            rcCtx.beginPath();
+            for (let i = 0; i <= 120; i++) {
+                const t = i / 120 * 5 * values.tau;
+                const v = values.target + (rcState.startVoltage - values.target) * Math.exp(-t / values.tau);
+                const x = gx + (t / (5 * values.tau)) * gw;
+                const y = mapY(v);
+                if (i === 0) rcCtx.moveTo(x, y); else rcCtx.lineTo(x, y);
+            }
+            rcCtx.strokeStyle = rcState.on ? '#fbbf24' : '#67e8f9';
+            rcCtx.lineWidth = 3; rcCtx.stroke();
+            const markerT = Math.min(5 * values.tau, rcState.elapsed);
+            const markerX = gx + markerT / (5 * values.tau) * gw;
+            rcCtx.fillStyle = '#ef6f61';
+            rcCtx.beginPath(); rcCtx.arc(markerX, mapY(rcState.voltage), 6, 0, Math.PI * 2); rcCtx.fill();
+            const tauX = gx + gw / 5;
+            rcCtx.strokeStyle = '#8f80d6'; rcCtx.setLineDash([5, 5]);
+            rcCtx.beginPath(); rcCtx.moveTo(tauX, gy); rcCtx.lineTo(tauX, gy + gh); rcCtx.stroke();
+            rcCtx.setLineDash([]);
+            rcCtx.fillStyle = '#c4b5fd'; rcCtx.fillText('1τ = 63.2%', tauX + 5, gy + 18);
+
+            document.getElementById('rcResistanceValue').textContent = values.resistance.toFixed(0) + ' MΩ';
+            document.getElementById('rcCapacitanceValue').textContent = values.capacitance.toFixed(1) + ' nF';
+            document.getElementById('rcCurrentValue').textContent = values.current.toFixed(1) + ' nA';
+            document.getElementById('rcTauReadout').textContent = values.tau.toFixed(1) + ' ms';
+            document.getElementById('rcCutoffReadout').textContent = values.cutoff.toFixed(1) + ' Hz';
+            document.getElementById('rcVoltageReadout').textContent = rcState.voltage.toFixed(1).replace('-', '−') + ' mV';
+            const rcTag = document.getElementById('rcStatusTag');
+            rcTag.textContent = rcState.on ? 'Input on · charging' : (rcState.voltage > RC_REST + 0.1 ? 'Input off · discharging' : 'Input off');
+            rcTag.className = 'ap-status' + (rcState.on ? ' firing' : (rcState.voltage > RC_REST + 0.1 ? ' recovering' : ''));
+            rcStepBtn.textContent = rcState.on ? 'Remove current' : 'Apply current';
+        }
+
+        function animateRC(timestamp) {
+            if (!rcState.running) return;
+            if (!rcState.lastFrame) rcState.lastFrame = timestamp;
+            const values = rcValues();
+            const simulatedDt = Math.min(5, (timestamp - rcState.lastFrame) * 0.12);
+            rcState.lastFrame = timestamp;
+            rcState.elapsed += simulatedDt;
+            rcState.voltage = values.target + (rcState.voltage - values.target) * Math.exp(-simulatedDt / values.tau);
+            drawRCCircuit();
+            if (Math.abs(rcState.voltage - values.target) > 0.02 && rcState.elapsed < values.tau * 8) {
+                requestAnimationFrame(animateRC);
+            } else {
+                rcState.running = false;
+                rcState.lastFrame = 0;
+            }
+        }
+
+        function restartRCAnimation() {
+            rcState.startVoltage = rcState.voltage;
+            rcState.elapsed = 0;
+            rcState.lastFrame = 0;
+            rcState.running = true;
+            requestAnimationFrame(animateRC);
+        }
+
+        rcStepBtn.addEventListener('click', () => {
+            rcState.on = !rcState.on;
+            restartRCAnimation();
+        });
+        document.getElementById('rcResetBtn').addEventListener('click', () => {
+            rcState.on = false;
+            rcState.running = false;
+            rcState.voltage = RC_REST;
+            rcState.startVoltage = RC_REST;
+            rcState.elapsed = 0;
+            rcState.lastFrame = 0;
+            drawRCCircuit();
+        });
+        [rcResistanceInput, rcCapacitanceInput, rcCurrentInput].forEach(input => input.addEventListener('input', () => {
+            rcState.on = false;
+            rcState.running = false;
+            rcState.voltage = RC_REST;
+            rcState.startVoltage = RC_REST;
+            rcState.elapsed = 0;
+            rcState.lastFrame = 0;
+            drawRCCircuit();
+        }));
+        drawRCCircuit();
+
+        // --- ANN / LIF / SNN MODEL COMPARATOR ---
+        const modelCanvas = document.getElementById('modelComparisonCanvas');
+        const modelCtx = modelCanvas.getContext('2d');
+        const modelInputStrength = document.getElementById('modelInputStrength');
+        const modelWeightInput = document.getElementById('modelWeightInput');
+        const modelTauInput = document.getElementById('modelTauInput');
+        const modelThresholdInput = document.getElementById('modelThresholdInput');
+        let modelTimeline = 100;
+        let modelAnimationRunning = false;
+        let modelAnimationStart = 0;
+
+        function simulateModelComparison() {
+            const input = Number(modelInputStrength.value);
+            const weight = Number(modelWeightInput.value);
+            const tau = Number(modelTauInput.value);
+            const threshold = Number(modelThresholdInput.value);
+            const drive = input * weight;
+            const ann = 1 / (1 + Math.exp(-(drive - 0.5)));
+            const lifTrace = [];
+            const lifSpikes = [];
+            let voltage = -70;
+            let refractory = 0;
+            const snnSpikes = [[], [], [], [], []];
+            const snnVoltage = [-70, -70, -70, -70, -70];
+            const snnRefractory = [0, 0, 0, 0, 0];
+            const scales = [0.72, 0.88, 1, 1.14, 1.3];
+            for (let t = 0; t <= 100; t++) {
+                if (refractory > 0) {
+                    refractory--;
+                    voltage = -70;
+                } else {
+                    voltage += (-(voltage + 70) + drive * 18) / tau;
+                    if (voltage >= threshold) {
+                        lifSpikes.push(t);
+                        voltage = -70;
+                        refractory = 3;
+                    }
+                }
+                lifTrace.push(voltage);
+                for (let n = 0; n < scales.length; n++) {
+                    if (snnRefractory[n] > 0) {
+                        snnRefractory[n]--;
+                        snnVoltage[n] = -70;
+                    } else {
+                        const pulse = (t % 20 < 11 ? 1 : 0.35);
+                        snnVoltage[n] += (-(snnVoltage[n] + 70) + drive * scales[n] * pulse * 19) / (tau * (0.82 + n * 0.09));
+                        if (snnVoltage[n] >= threshold + (n - 2) * 1.5) {
+                            snnSpikes[n].push(t);
+                            snnVoltage[n] = -70;
+                            snnRefractory[n] = 3;
+                        }
+                    }
+                }
+            }
+            return { input, weight, tau, threshold, drive, ann, lifTrace, lifSpikes, snnSpikes };
+        }
+
+        function drawModelComparison() {
+            const result = simulateModelComparison();
+            modelCtx.clearRect(0, 0, modelCanvas.width, modelCanvas.height);
+            modelCtx.fillStyle = '#101a16';
+            modelCtx.fillRect(0, 0, modelCanvas.width, modelCanvas.height);
+            modelCtx.fillStyle = '#eef6f0';
+            modelCtx.font = '800 13px system-ui';
+            modelCtx.fillText('ANN · instantaneous value', 28, 28);
+            modelCtx.fillText('LIF · one stateful spiking neuron', 28, 146);
+            modelCtx.fillText('SNN · population spike raster', 28, 302);
+
+            // ANN bar
+            modelCtx.fillStyle = '#29473a';
+            modelCtx.fillRect(210, 48, 620, 38);
+            modelCtx.fillStyle = '#fbbf24';
+            modelCtx.fillRect(210, 48, 620 * result.ann, 38);
+            modelCtx.fillStyle = '#eef6f0';
+            modelCtx.font = '12px system-ui';
+            modelCtx.fillText('z = wx − 0.5 = ' + (result.drive - 0.5).toFixed(2), 28, 66);
+            modelCtx.fillText('sigmoid = ' + result.ann.toFixed(3), 28, 84);
+            modelCtx.fillText('0', 210, 105);
+            modelCtx.fillText('1', 824, 105);
+
+            // LIF trace
+            const gx = 150, gy = 160, gw = 680, gh = 112;
+            const mapX = t => gx + t / 100 * gw;
+            const mapY = v => gy + (-40 - v) / 38 * gh;
+            modelCtx.strokeStyle = '#456054'; modelCtx.lineWidth = 1;
+            modelCtx.strokeRect(gx, gy, gw, gh);
+            modelCtx.strokeStyle = '#ef6f61'; modelCtx.setLineDash([5, 5]);
+            modelCtx.beginPath(); modelCtx.moveTo(gx, mapY(result.threshold)); modelCtx.lineTo(gx + gw, mapY(result.threshold)); modelCtx.stroke();
+            modelCtx.setLineDash([]);
+            modelCtx.fillStyle = '#efb3aa'; modelCtx.fillText('threshold', 65, mapY(result.threshold) + 4);
+            modelCtx.beginPath();
+            result.lifTrace.forEach((v, t) => {
+                const x = mapX(t), y = mapY(v);
+                if (t === 0) modelCtx.moveTo(x, y); else modelCtx.lineTo(x, y);
+            });
+            modelCtx.strokeStyle = '#67e8f9'; modelCtx.lineWidth = 3; modelCtx.stroke();
+            result.lifSpikes.forEach(t => {
+                modelCtx.strokeStyle = '#ef6f61'; modelCtx.lineWidth = 2;
+                modelCtx.beginPath(); modelCtx.moveTo(mapX(t), gy); modelCtx.lineTo(mapX(t), gy + gh); modelCtx.stroke();
+            });
+
+            // SNN raster
+            const rasterTop = 320;
+            result.snnSpikes.forEach((spikes, neuron) => {
+                const y = rasterTop + neuron * 19;
+                modelCtx.strokeStyle = '#385348';
+                modelCtx.beginPath(); modelCtx.moveTo(gx, y); modelCtx.lineTo(gx + gw, y); modelCtx.stroke();
+                modelCtx.fillStyle = '#b8c8be';
+                modelCtx.fillText('N' + (neuron + 1), 118, y + 4);
+                spikes.forEach(t => {
+                    modelCtx.strokeStyle = neuron % 2 ? '#c4b5fd' : '#fbbf24';
+                    modelCtx.lineWidth = 3;
+                    modelCtx.beginPath(); modelCtx.moveTo(mapX(t), y - 6); modelCtx.lineTo(mapX(t), y + 6); modelCtx.stroke();
+                });
+            });
+            const markerX = mapX(modelTimeline);
+            modelCtx.strokeStyle = 'rgba(255,255,255,.7)';
+            modelCtx.lineWidth = 1;
+            modelCtx.beginPath(); modelCtx.moveTo(markerX, 40); modelCtx.lineTo(markerX, 416); modelCtx.stroke();
+
+            const snnTotal = result.snnSpikes.reduce((sum, spikes) => sum + spikes.length, 0);
+            document.getElementById('modelInputValue').textContent = result.input.toFixed(2);
+            document.getElementById('modelWeightValue').textContent = result.weight.toFixed(2);
+            document.getElementById('modelTauValue').textContent = result.tau.toFixed(0) + ' ms';
+            document.getElementById('modelThresholdValue').textContent = result.threshold.toFixed(0).replace('-', '−') + ' mV';
+            document.getElementById('annOutputReadout').textContent = result.ann.toFixed(3);
+            document.getElementById('lifSpikeReadout').textContent = String(result.lifSpikes.length);
+            document.getElementById('snnSpikeReadout').textContent = String(snnTotal);
+            document.getElementById('modelStatusTag').textContent = modelAnimationRunning ? 'Running · ' + Math.round(modelTimeline) + ' ms' : 'Ready · shared stimulus';
+        }
+
+        function animateModelComparison(timestamp) {
+            if (!modelAnimationRunning) return;
+            if (!modelAnimationStart) modelAnimationStart = timestamp;
+            modelTimeline = Math.min(100, (timestamp - modelAnimationStart) / 24);
+            drawModelComparison();
+            if (modelTimeline < 100) requestAnimationFrame(animateModelComparison);
+            else {
+                modelAnimationRunning = false;
+                modelAnimationStart = 0;
+                document.getElementById('runModelComparisonBtn').textContent = 'Run timeline';
+                drawModelComparison();
+            }
+        }
+
+        function resetModelComparison() {
+            modelAnimationRunning = false;
+            modelAnimationStart = 0;
+            modelTimeline = 100;
+            document.getElementById('runModelComparisonBtn').textContent = 'Run timeline';
+            drawModelComparison();
+        }
+
+        document.getElementById('runModelComparisonBtn').addEventListener('click', () => {
+            modelAnimationRunning = true;
+            modelAnimationStart = 0;
+            modelTimeline = 0;
+            document.getElementById('runModelComparisonBtn').textContent = 'Running…';
+            requestAnimationFrame(animateModelComparison);
+        });
+        document.getElementById('resetModelComparisonBtn').addEventListener('click', resetModelComparison);
+        [modelInputStrength, modelWeightInput, modelTauInput, modelThresholdInput].forEach(input => input.addEventListener('input', resetModelComparison));
+        resetModelComparison();
+
+        // --- GRADIENT DESCENT / EVOLUTION LANDSCAPE ---
+        const optimizerCanvas = document.getElementById('optimizerCanvas');
+        const optimizerCtx = optimizerCanvas.getContext('2d');
+        const optimizerMode = document.getElementById('optimizerMode');
+        const optimizerRateInput = document.getElementById('optimizerRateInput');
+        const optimizerExploreInput = document.getElementById('optimizerExploreInput');
+        const optimizerPopulationInput = document.getElementById('optimizerPopulationInput');
+        const optimizerState = { x: 3.15, y: 2.35, step: 0, path: [], candidates: [], running: false, runTarget: 0, lastRunFrame: 0, seed: 24681357 };
+        const optimizerBounds = { xmin: -4, xmax: 4, ymin: -3, ymax: 3 };
+
+        function landscapeLoss(x, y) {
+            const globalWell = 4.8 * Math.exp(-(((x + 1.75) ** 2) / 0.72 + ((y + 1.05) ** 2) / 0.65));
+            const localWell = 3.25 * Math.exp(-(((x - 1.75) ** 2) / 0.9 + ((y - 1.2) ** 2) / 0.78));
+            const ridge = 0.35 * Math.sin(1.7 * x) * Math.cos(1.45 * y);
+            return 4.5 + 0.07 * (x * x + y * y) - globalWell - localWell + ridge;
+        }
+
+        function landscapeGradient(x, y) {
+            const h = 0.015;
+            return {
+                x: (landscapeLoss(x + h, y) - landscapeLoss(x - h, y)) / (2 * h),
+                y: (landscapeLoss(x, y + h) - landscapeLoss(x, y - h)) / (2 * h)
+            };
+        }
+
+        function optimizerRandom() {
+            optimizerState.seed = (1664525 * optimizerState.seed + 1013904223) >>> 0;
+            return optimizerState.seed / 4294967296;
+        }
+
+        function optimizerGaussian() {
+            const u = Math.max(1e-9, optimizerRandom());
+            const v = optimizerRandom();
+            return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+        }
+
+        function clampOptimizerPoint(point) {
+            return {
+                x: Math.max(optimizerBounds.xmin, Math.min(optimizerBounds.xmax, point.x)),
+                y: Math.max(optimizerBounds.ymin, Math.min(optimizerBounds.ymax, point.y))
+            };
+        }
+
+        function optimizerStep() {
+            const mode = optimizerMode.value;
+            const useEvolution = mode === 'evolution' || (mode === 'hybrid' && optimizerState.step < 9);
+            if (useEvolution) {
+                const sigma = Number(optimizerExploreInput.value);
+                const population = Number(optimizerPopulationInput.value);
+                const candidates = [{ x: optimizerState.x, y: optimizerState.y, loss: landscapeLoss(optimizerState.x, optimizerState.y) }];
+                for (let i = 1; i < population; i++) {
+                    let point;
+                    if (i % 7 === 0) {
+                        point = {
+                            x: optimizerBounds.xmin + optimizerRandom() * (optimizerBounds.xmax - optimizerBounds.xmin),
+                            y: optimizerBounds.ymin + optimizerRandom() * (optimizerBounds.ymax - optimizerBounds.ymin)
+                        };
+                    } else {
+                        point = clampOptimizerPoint({
+                            x: optimizerState.x + sigma * optimizerGaussian(),
+                            y: optimizerState.y + sigma * optimizerGaussian()
+                        });
+                    }
+                    candidates.push({ x: point.x, y: point.y, loss: landscapeLoss(point.x, point.y) });
+                }
+                candidates.sort((a, b) => a.loss - b.loss);
+                optimizerState.candidates = candidates;
+                optimizerState.x = candidates[0].x;
+                optimizerState.y = candidates[0].y;
+            } else {
+                const gradient = landscapeGradient(optimizerState.x, optimizerState.y);
+                const rate = Number(optimizerRateInput.value);
+                const point = clampOptimizerPoint({
+                    x: optimizerState.x - rate * gradient.x,
+                    y: optimizerState.y - rate * gradient.y
+                });
+                optimizerState.x = point.x;
+                optimizerState.y = point.y;
+                optimizerState.candidates = [];
+            }
+            optimizerState.step++;
+            optimizerState.path.push({ x: optimizerState.x, y: optimizerState.y });
+            drawOptimizerLandscape();
+        }
+
+        function optimizerMapX(x) {
+            return (x - optimizerBounds.xmin) / (optimizerBounds.xmax - optimizerBounds.xmin) * optimizerCanvas.width;
+        }
+
+        function optimizerMapY(y) {
+            return optimizerCanvas.height - (y - optimizerBounds.ymin) / (optimizerBounds.ymax - optimizerBounds.ymin) * optimizerCanvas.height;
+        }
+
+        function drawOptimizerLandscape() {
+            const cell = 10;
+            const samples = [];
+            let minLoss = Infinity, maxLoss = -Infinity;
+            for (let py = 0; py < optimizerCanvas.height; py += cell) {
+                for (let px = 0; px < optimizerCanvas.width; px += cell) {
+                    const x = optimizerBounds.xmin + (px / optimizerCanvas.width) * (optimizerBounds.xmax - optimizerBounds.xmin);
+                    const y = optimizerBounds.ymax - (py / optimizerCanvas.height) * (optimizerBounds.ymax - optimizerBounds.ymin);
+                    const loss = landscapeLoss(x, y);
+                    samples.push({ px, py, loss });
+                    minLoss = Math.min(minLoss, loss);
+                    maxLoss = Math.max(maxLoss, loss);
+                }
+            }
+            samples.forEach(sample => {
+                const raw = (sample.loss - minLoss) / (maxLoss - minLoss);
+                const band = Math.floor(raw * 10) / 10;
+                const r = Math.round(20 + band * 210);
+                const g = Math.round(68 + band * 155);
+                const b = Math.round(55 + band * 190);
+                optimizerCtx.fillStyle = 'rgb(' + r + ',' + g + ',' + b + ')';
+                optimizerCtx.fillRect(sample.px, sample.py, cell + 1, cell + 1);
+            });
+
+            optimizerCtx.fillStyle = 'rgba(10,25,20,.72)';
+            optimizerCtx.fillRect(14, 12, 322, 54);
+            optimizerCtx.fillStyle = '#f8fafc';
+            optimizerCtx.font = '800 13px system-ui';
+            optimizerCtx.fillText('LOSS TOPOGRAPHY · DARK = DEEP VALLEY', 25, 34);
+            optimizerCtx.font = '11px system-ui';
+            optimizerCtx.fillText('Click the map to move the starting point', 25, 53);
+
+            if (optimizerState.path.length > 1) {
+                optimizerCtx.strokeStyle = '#fbbf24';
+                optimizerCtx.lineWidth = 3;
+                optimizerCtx.beginPath();
+                optimizerState.path.forEach((point, index) => {
+                    const x = optimizerMapX(point.x), y = optimizerMapY(point.y);
+                    if (index === 0) optimizerCtx.moveTo(x, y); else optimizerCtx.lineTo(x, y);
+                });
+                optimizerCtx.stroke();
+            }
+            optimizerState.candidates.forEach((candidate, index) => {
+                optimizerCtx.fillStyle = index === 0 ? '#fbbf24' : 'rgba(103,232,249,.8)';
+                optimizerCtx.beginPath();
+                optimizerCtx.arc(optimizerMapX(candidate.x), optimizerMapY(candidate.y), index === 0 ? 6 : 3.5, 0, Math.PI * 2);
+                optimizerCtx.fill();
+            });
+            optimizerCtx.fillStyle = '#fbbf24';
+            optimizerCtx.strokeStyle = '#101a16';
+            optimizerCtx.lineWidth = 2;
+            optimizerCtx.beginPath();
+            optimizerCtx.arc(optimizerMapX(optimizerState.x), optimizerMapY(optimizerState.y), 8, 0, Math.PI * 2);
+            optimizerCtx.fill(); optimizerCtx.stroke();
+
+            const loss = landscapeLoss(optimizerState.x, optimizerState.y);
+            document.getElementById('optimizerRateValue').textContent = Number(optimizerRateInput.value).toFixed(2);
+            document.getElementById('optimizerExploreValue').textContent = Number(optimizerExploreInput.value).toFixed(2);
+            document.getElementById('optimizerPopulationValue').textContent = optimizerPopulationInput.value;
+            document.getElementById('optimizerStepReadout').textContent = String(optimizerState.step);
+            document.getElementById('optimizerLossReadout').textContent = loss.toFixed(3);
+            document.getElementById('optimizerPositionReadout').textContent = optimizerState.x.toFixed(1) + ', ' + optimizerState.y.toFixed(1);
+            document.getElementById('optimizerStatusTag').textContent = (optimizerState.running ? 'Running' : 'Ready') + ' · step ' + optimizerState.step;
+        }
+
+        function resetOptimizer(x = 3.15, y = 2.35) {
+            optimizerState.running = false;
+            optimizerState.x = x;
+            optimizerState.y = y;
+            optimizerState.step = 0;
+            optimizerState.path = [{ x, y }];
+            optimizerState.candidates = [];
+            optimizerState.lastRunFrame = 0;
+            optimizerState.seed = 24681357;
+            document.getElementById('optimizerRunBtn').textContent = 'Run 25';
+            drawOptimizerLandscape();
+        }
+
+        function animateOptimizer(timestamp) {
+            if (!optimizerState.running) return;
+            if (!optimizerState.lastRunFrame || timestamp - optimizerState.lastRunFrame > 110) {
+                optimizerState.lastRunFrame = timestamp;
+                optimizerStep();
+            }
+            if (optimizerState.step < optimizerState.runTarget) {
+                requestAnimationFrame(animateOptimizer);
+            } else {
+                optimizerState.running = false;
+                optimizerState.lastRunFrame = 0;
+                document.getElementById('optimizerRunBtn').textContent = 'Run 25';
+                drawOptimizerLandscape();
+            }
+        }
+
+        document.getElementById('optimizerStepBtn').addEventListener('click', () => {
+            optimizerState.running = false;
+            document.getElementById('optimizerRunBtn').textContent = 'Run 25';
+            optimizerStep();
+        });
+        document.getElementById('optimizerRunBtn').addEventListener('click', () => {
+            if (optimizerState.running) {
+                optimizerState.running = false;
+                document.getElementById('optimizerRunBtn').textContent = 'Run 25';
+                drawOptimizerLandscape();
+                return;
+            }
+            optimizerState.running = true;
+            optimizerState.runTarget = optimizerState.step + 25;
+            optimizerState.lastRunFrame = 0;
+            document.getElementById('optimizerRunBtn').textContent = 'Stop';
+            requestAnimationFrame(animateOptimizer);
+        });
+        document.getElementById('optimizerResetBtn').addEventListener('click', () => resetOptimizer());
+        optimizerCanvas.addEventListener('click', event => {
+            const rect = optimizerCanvas.getBoundingClientRect();
+            const px = (event.clientX - rect.left) / rect.width * optimizerCanvas.width;
+            const py = (event.clientY - rect.top) / rect.height * optimizerCanvas.height;
+            const x = optimizerBounds.xmin + px / optimizerCanvas.width * (optimizerBounds.xmax - optimizerBounds.xmin);
+            const y = optimizerBounds.ymax - py / optimizerCanvas.height * (optimizerBounds.ymax - optimizerBounds.ymin);
+            resetOptimizer(x, y);
+        });
+        [optimizerRateInput, optimizerExploreInput, optimizerPopulationInput].forEach(input => input.addEventListener('input', drawOptimizerLandscape));
+        optimizerMode.addEventListener('change', () => resetOptimizer(optimizerState.x, optimizerState.y));
+        resetOptimizer();
 
         // --- SECTION 6: Quantization Calculator ---
         let selectedQuantFormat = 'fp32';

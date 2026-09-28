@@ -237,13 +237,13 @@ body.compendium { color: var(--ink); background: var(--paper); }
 .figure-sequence { margin: 0 0 18px; padding: 12px 14px; border-radius: 12px; color: #4c5b4f; background: var(--green-soft); font-size: .74rem; line-height: 1.55; }
 .figure-sequence strong { color: var(--green); }
 
-/* Five-chapter guided route: the biological-realism / compute-cost red thread */
+/* Guided route: the biological-realism / compute-cost red thread */
 .book-intro { position: relative; overflow: hidden; padding: clamp(25px, 5vw, 54px); border: 1px solid #cfc8ee; border-radius: 26px; color: #f6f3ff; background: linear-gradient(135deg, #26213f 0%, #3f356f 55%, #214f3b 130%); box-shadow: 0 24px 80px rgba(38, 33, 63, .16); }
-.book-intro::after { content: "biology → circuit → matrix → spike → silicon"; position: absolute; right: -20px; bottom: 12px; color: rgba(255,255,255,.07); font: 500 clamp(1.25rem, 3.5vw, 3.3rem) Georgia, serif; white-space: nowrap; }
+.book-intro::after { content: "biology → circuit → matrix → learn → spike → silicon"; position: absolute; right: -20px; bottom: 12px; color: rgba(255,255,255,.07); font: 500 clamp(1.25rem, 3.5vw, 3.3rem) Georgia, serif; white-space: nowrap; }
 .book-intro .eyebrow { margin: 0 0 10px; color: #d8e985; font-size: .64rem; font-weight: 900; letter-spacing: .16em; text-transform: uppercase; }
 .book-intro h2 { max-width: 850px; margin: 0; font: 500 clamp(2rem, 5vw, 4.2rem)/1 Georgia, "Times New Roman", serif; letter-spacing: -.035em; }
 .book-intro > p:not(.eyebrow) { max-width: 760px; margin: 18px 0 0; color: #d7d1ed; font-size: .92rem; line-height: 1.7; }
-.compression-ladder { position: relative; z-index: 1; display: grid; grid-template-columns: repeat(6, minmax(0,1fr)); gap: 7px; margin-top: 28px; }
+.compression-ladder { position: relative; z-index: 1; display: grid; grid-template-columns: repeat(7, minmax(0,1fr)); gap: 7px; margin-top: 28px; }
 .compression-ladder a { padding: 12px; border: 1px solid rgba(255,255,255,.16); border-radius: 12px; color: #eeeaff; background: rgba(255,255,255,.06); text-decoration: none; font-size: .68rem; line-height: 1.35; }
 .compression-ladder a:hover { border-color: #d8e985; background: rgba(216,233,133,.1); }
 .compression-ladder b { display: block; margin-bottom: 4px; color: #d8e985; }
@@ -285,6 +285,7 @@ body.compendium { color: var(--ink); background: var(--paper); }
 .ap-controls label:not(.ap-toggle) { display: flex; justify-content: space-between; gap: 10px; color: var(--ink); font-size: .72rem; font-weight: 800; }
 .ap-controls output { color: var(--violet); font-family: ui-monospace,monospace; }
 .ap-controls input[type="range"] { width: 100%; margin: 8px 0 3px; accent-color: var(--violet); }
+.ap-controls select { width: 100%; margin: 7px 0 14px; padding: 8px 9px; border: 1px solid #cfc8ee; border-radius: 8px; color: var(--ink); background: var(--white); font-size: .7rem; font-weight: 800; }
 .ap-controls > p { margin: 0 0 14px; color: var(--muted); font-size: .65rem; line-height: 1.4; }
 .ap-toggle { display: flex; align-items: center; gap: 9px; margin: 4px 0 14px; padding: 10px; border-radius: 10px; background: var(--green-soft); cursor: pointer; }
 .ap-toggle input { accent-color: var(--green); }
@@ -292,6 +293,7 @@ body.compendium { color: var(--ink); background: var(--paper); }
 .ap-toggle strong { color: var(--green); font-size: .71rem; }
 .ap-toggle small { color: var(--muted); font-size: .61rem; }
 .ap-buttons { display: grid; grid-template-columns: 1fr auto; gap: 7px; }
+.ap-buttons.three { grid-template-columns: repeat(3,minmax(0,1fr)); }
 .ap-buttons button { min-height: 36px; padding: 7px 10px; border: 1px solid #a79bd7; border-radius: 9px; font-size: .68rem; font-weight: 900; }
 .ap-buttons button:first-child { color: white; background: var(--violet); }
 .ap-readouts { display: grid; grid-template-columns: repeat(3,1fr); gap: 5px; margin-top: 10px; }
@@ -305,6 +307,13 @@ body.compendium { color: var(--ink); background: var(--paper); }
 .ap-explanation-grid p { margin: 5px 0 8px; color: var(--muted); font-size: .64rem; line-height: 1.45; }
 .mini-equation { padding: 8px; overflow-x: auto; border-radius: 8px; color: #d8e985; background: #17271f; font-size: .68rem; text-align: center; }
 .ap-lab-note { margin: 11px 0 0; padding: 10px 12px; border-radius: 9px; color: #5f5882; background: #e8e4f5; font-size: .68rem; line-height: 1.5; }
+.lab-legend { display: flex; flex-wrap: wrap; gap: 7px 13px; margin-top: 10px; color: var(--muted); font-size: .62rem; }
+.lab-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.lab-legend i { width: 9px; height: 9px; border-radius: 50%; background: var(--legend, var(--violet)); }
+.lab-definition { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 8px; margin-top: 12px; }
+.lab-definition div { padding: 11px; border: 1px solid #d9d3c7; border-radius: 10px; background: rgba(255,255,255,.8); }
+.lab-definition strong { display: block; color: var(--ink); font-size: .7rem; }
+.lab-definition span { display: block; margin-top: 4px; color: var(--muted); font-size: .62rem; line-height: 1.45; }
 .chapter-panel.formula { color: #e9f4ea; border-color: #263f33; background: #17271f; }
 .chapter-panel.formula h4 { color: #d8e985; }
 .chapter-panel.formula p, .chapter-panel.formula li { color: #cad7ce; }
@@ -336,6 +345,7 @@ body.compendium { color: var(--ink); background: var(--paper); }
   .signal-path i { transform: rotate(90deg); text-align: center; }
   .ap-lab-grid { grid-template-columns: 1fr; }
   .ap-explanation-grid { grid-template-columns: 1fr; }
+  .lab-definition { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 700px) {
