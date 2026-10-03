@@ -80,6 +80,39 @@ Everything below is reproduced by `npm run vision:experiments` and shown, with t
 - **The 3D claim**: the "world" is a software-rendered perspective view of a flat plane with upright objects (48×24 pixels). It exercises the same camera → estimates → controller path as a game engine would, but it has no slopes, shadows, textures or weather.
 - Not done: quality-diversity / novelty search for the evolutionary stage, learned gating or mixture-of-experts fusion, surrogate-gradient training of the spiking controller, training in the browser (training is Node-only; the browser runs, imports and exports).
 
+## FlyKart Vision at robot scale: a low camera and an HC-SR04 sonar
+
+The **Sensor head** menu in `vision.html` switches the kart to the scale of a real robot: 26 × 17 cm, wheels 11.5 cm apart, and the camera and an ultrasonic ranger both mounted 6.5 cm above the floor. One simulator pixel is taken to be 1.1 cm, so the 24 × 14 px kart is about 26 × 15 cm and its top speed (90 px/s) about 1 m/s. The kart's handling is still the original FlyKart's; nothing claims the real robot drives the same way. The original kart profile (camera 16 cm up, no sonar) is unchanged and its bundled files keep working.
+
+**The sonar is a basic HC-SR04, not an idealised distance reading** (`src/vision/sonar.ts`, `robot.ts`): a roughly 15° beam that returns the *nearest* echo from 2 cm to 4 m, one ping about every 66 ms, range noise that grows with distance, quantisation, a per-run speed-of-sound error, rare ghost echoes, weak echoes from thin, small, far or slanted targets, and no echo at all from things lower than about 1.6 cm (paint, kerbs, oil, ponds). It hears cones, barriers, other karts, trees, rocks and walls. It knows how far, not which way. Gantries over the gates are raised on this profile so the beam passes underneath.
+
+**How it is used**
+
+- The controller reads two more inputs (how close the echo is, how strong it was): 17 → **19 inputs** → 48 → 4. `widenBrain` adds them with zero weights, so a v1 brain widened this way drives exactly as before until evolution gives them a job; **Export for FlyKart v1** drops them (`narrowBrain`), and the original app refuses a 19-input file with an explanation instead of misbehaving.
+- The **camera network also takes the echo** as extra inputs beside the speed and last commands, so it learns to combine what it sees with what it hears.
+- Training uses the sonar throughout: the controller is evolved first through synthetic noise (including episodes where the camera misses every vehicle, so the sonar is sometimes the only warning), then by driving whole episodes through the real robot camera network by day and by night; the camera networks are trained by DAgger at 6.5 cm with the sonar in the loop; the open-world pair is trained the same way.
+- A hand-wired braking reflex was tried first and was worse: a robot that stops in front of a cone keeps touching it (67 collisions against 40 with the sonar off). Starting the sonar weights at zero and letting evolution decide worked better.
+- Ocelli (the fly's three simple eyes) are not modelled.
+
+```bash
+npm run robot:controller             # sonar controller through synthetic noise (about 40 min)
+npm run robot:train                  # camera network at 6.5 cm, sonar as an input
+npm run robot:controller-camera      # evolve the controller driving through that camera network
+npm run robot:world-controller; npm run robot:world-train; npm run robot:world-controller-camera
+npm run robot:experiments            # -> public/vision/robot/results.json, shown in the Evidence tab
+npm run robot:camera                 # a sheet of what the 6.5 cm camera sees
+```
+
+**What was measured** (held-out tracks and worlds, 16 episodes per row, so a lap or two or a few collisions is noise):
+
+| Question | Result |
+|---|---|
+| Does the sonar get in the way on an empty road or hurt on flat hazards? | No: 12/16 laps with it, 12/16 without it (empty road); the same with oil slicks, which it cannot hear. |
+| Does it reduce collisions in daylight traffic? | **No.** The same brain with its sonar silenced: 12/16 laps, 40.8 s mean lap, 61 collisions; with the sonar on: 11/16 laps, 31.1 s, 90 collisions. It drives through traffic faster, not more carefully. |
+| At night? | Laps 8/16 with against 9/16 without, quicker (30.6 s against 36.8 s), collisions 61 against 66. Evolving through the real camera is what made the difference between 0–1 and 8–9 night laps. |
+| Does the echo make the camera network more accurate? | **Not measurably.** Same teacher and data, with and without the echo as an input: traffic closeness R² 0.81 against 0.80, obstacle 0.41 against 0.43. Its value here is that the whole stack is trained with the sonar in the loop. From 6.5 cm the road geometry is harder to read than from 16 cm (curvature R² roughly 0 to 0.4 against 0.59) while traffic is easier (closeness 0.8). |
+| Open world | Camera + sonar 3.44 goals per run and 6/16 crashes against 2.88 and 7/16 camera only. |
+
 ## Run locally
 
 ```bash

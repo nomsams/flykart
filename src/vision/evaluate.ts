@@ -3,6 +3,7 @@ import { RoadObjectKind, TrackRef } from "../core";
 import type { Style } from "./camera";
 import { TrackEpisode } from "./episode";
 import { VisionDriver } from "./pipeline";
+import { SensorProfile } from "./robot";
 
 export type DriveSpec = {
   track: TrackRef; seed: number;
@@ -10,6 +11,8 @@ export type DriveSpec = {
   styleStrength?: number; style?: Style; physicsVariation?: number; maxTicks?: number; walls?: boolean;
   /** Record how far the estimates the controller used were from the truth (costs a little time). */
   measureError?: boolean;
+  /** Sensor head: omit for the original camera-only kart. */
+  profile?: SensorProfile;
   /** Called every tick with the live episode (for dashboards and tracing). */
   onTick?: (episode: TrackEpisode, driver: VisionDriver) => void;
   /** Called before each tick to change the driver (for example to fade the feeling channels during a lap). */
@@ -26,7 +29,7 @@ export type DriveResult = {
 export function driveEpisode(driver: VisionDriver, spec: DriveSpec): DriveResult {
   const episode = new TrackEpisode({
     track: spec.track, seed: spec.seed, rivals: spec.rivals, roadObjects: spec.roadObjects, objectKind: spec.objectKind ?? "mixed",
-    styleStrength: spec.styleStrength ?? 0, style: spec.style, physicsVariation: spec.physicsVariation, maxTicks: spec.maxTicks ?? 4500, walls: spec.walls, headless: driver.options.perceiver === null,
+    styleStrength: spec.styleStrength ?? 0, style: spec.style, physicsVariation: spec.physicsVariation, maxTicks: spec.maxTicks ?? 4500, walls: spec.walls, headless: driver.options.perceiver === null, profile: spec.profile,
   });
   episode.car.network = driver.options.controller;
   driver.reset();

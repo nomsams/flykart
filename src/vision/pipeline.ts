@@ -10,6 +10,7 @@ import { trackDomain } from "./domains";
 import { Cue, FusionConfig, Fused, createFused, defaultFusion, fuseCues, privilegedCue, visionCue } from "./fusion";
 import { MushroomBody } from "./memory";
 import { Perceiver, Perception, VISION_STRIDE } from "./perception";
+import { assembleInputs } from "./inputs";
 
 /**
  * belief          - fuse the cues first, then decide once (the recommended design)
@@ -28,6 +29,8 @@ export type DriverOptions = {
   learnMemory?: boolean;
   /** Give the controller no information about the surroundings at all (all estimates zero): the baseline that shows how much the walls alone achieve. */
   blind?: boolean;
+  /** Ignore the sonar even if the controller has sonar inputs (they are fed zeros): the camera-only control. */
+  sonarOff?: boolean;
   /** Needed by "action-average": a second controller that reads the privileged channels only. */
   feelingController?: SpikingNetwork | null;
 };
@@ -50,7 +53,7 @@ export class VisionDriver {
   fusion: FusionConfig;
   mode: DriverMode;
   readonly fused: Fused;
-  readonly sensors = new Array<number>(17).fill(0);
+  readonly sensors: number[];
   perception: Perception | null = null;
   /** The lap memory's opinion at the last camera frame (null when it has nothing to say). */
   memoryCue: { mean: Float32Array; variance: Float32Array } | null = null;
@@ -58,7 +61,7 @@ export class VisionDriver {
   private readonly feelingScratch: { mean: Float32Array; variance: Float32Array };
   private readonly memoryScratch: { mean: Float32Array; variance: Float32Array };
   private readonly provisional: Fused;
-  private readonly feelingSensors = new Array<number>(17).fill(0);
+  private readonly feelingSensors: number[];
   private lastGates = 0; private sinceGate = 0;
   private started = false;
 
@@ -68,6 +71,7 @@ export class VisionDriver {
     const n = this.domain.estimateCount;
     const scratch = () => ({ mean: new Float32Array(n), variance: new Float32Array(n) });
     this.visionScratch = scratch(); this.feelingScratch = scratch(); this.memoryScratch = scratch();
+    this.sensors = new Array<number>(options.controller.inputCount).fill(0); this.feelingSensors = new Array<number>(options.controller.inputCount).fill(0);
     this.fused = createFused(3, n); this.provisional = createFused(2, n);
     this.fusion = { ...defaultFusion(n), ...options.fusion };
     this.mode = options.mode ?? "belief";
@@ -92,7 +96,7 @@ export class VisionDriver {
     if (this.options.blind) { this.fused.mean.fill(0); this.fused.variance.fill(1); }
     else if (perceiver && (!this.started || episode.tick % VISION_STRIDE === 0)) {
       this.started = true; seen = true;
-      this.perception = perceiver.see(episode.render(), body);
+      this.perception = perceiver.see(episode.render(), this.options.sonarOff && body.sonarCloseness !== undefined ? { ...body, sonarCloseness: 0, sonarStrength: 0 } : body);
       const cues: (Cue | null)[] = [visionCue(this.perception.mean, this.perception.variance, this.fusion, this.visionScratch), this.mode === "belief" ? privilegedCue(episode.truth(), this.fusion, this.feelingScratch) : null];
       if (memory && lap) {
         fuseCues(cues, this.provisional);
@@ -106,7 +110,8 @@ export class VisionDriver {
       const truth = episode.truth();
       for (let c = 0; c < n; c += 1) { this.fused.mean[c] = truth[c]; this.fused.variance[c] = 1e-3; }
     }
-    this.domain.sensors(this.fused.mean, episode.mission(), body, this.sensors);
+    const sonar = this.options.sonarOff ? null : episode.sonar();
+    assembleInputs(this.domain, this.fused.mean, episode.mission(), body, sonar, controller.inputCount, this.sensors);
     let action: Action;
     if (this.mode === "vision-action" && this.perception) {
       const [steer, drive, reverse] = this.perception.action;
@@ -116,7 +121,7 @@ export class VisionDriver {
     } else {
       action = controller.step(this.sensors);
       if (this.mode === "action-average" && this.options.feelingController) {
-        const feeling = this.options.feelingController.step(this.domain.sensors(episode.truth(), episode.mission(), body, this.feelingSensors));
+        const feeling = this.options.feelingController.step(assembleInputs(this.domain, episode.truth(), episode.mission(), body, sonar, this.options.feelingController.inputCount, this.feelingSensors));
         const w = Math.max(0, Math.min(1, this.fusion.fade));
         action = { steer: feeling.steer * w + action.steer * (1 - w), throttle: feeling.throttle * w + action.throttle * (1 - w), brake: feeling.brake * w + action.brake * (1 - w), reverse: (feeling.reverse ?? 0) * w + (action.reverse ?? 0) * (1 - w) };
       }

@@ -3,13 +3,15 @@
 import { TRACKS, createRoadObstacles, pointAtDistance, startPosition } from "../src/core";
 import { DEFAULT_CAMERA, DEFAULT_STYLE, frameLength, frameToRgba, randomStyle, renderFrame } from "../src/vision/camera";
 import { TrackScene } from "../src/vision/trackScene";
+import { profileById } from "../src/vision/robot";
 import { mulberry32 } from "../src/vision/rng";
 import { montage, writePng } from "./png";
 
 const out = process.argv[2] ?? "camera-preview.png";
 const images: { rgba: Uint8ClampedArray; width: number; height: number }[] = [];
 const random = mulberry32(5);
-const config = DEFAULT_CAMERA;
+const profile = profileById(process.argv[3]);
+const config = profile.camera;
 const frame = new Float32Array(frameLength(config));
 const route = TRACKS.find((track) => track.id === "grand-loop")!;
 const views = [
@@ -32,7 +34,7 @@ for (const view of views) {
   const others = [car];
   if (view.rivals) { const rival = startPosition(0, r); const ahead = pointAtDistance(view.at + 90, r); rival.position = { x: ahead.point.x + normal.x * 18, y: ahead.point.y + normal.y * 18 }; rival.heading = Math.atan2(ahead.tangent.y, ahead.tangent.x); others.push(rival); }
   if (view.objects) others.push(...createRoadObstacles(view.objects, r, view.at, "mixed").map((o) => { const near = pointAtDistance(view.at + 70 + Math.floor(Math.random() * 40), r); o.position = { x: near.point.x + normal.x * (Math.random() - 0.5) * 60, y: near.point.y + normal.y * (Math.random() - 0.5) * 60 }; return o; }));
-  const scene = new TrackScene(r, view.style ? randomStyle(random, 1) : DEFAULT_STYLE);
+  const scene = new TrackScene(r, view.style ? randomStyle(random, 1) : DEFAULT_STYLE, 8, profile.gantry);
   scene.setTraffic(others, car);
   renderFrame(scene, { x: car.position.x, y: car.position.y, heading: car.heading }, config, frame, random);
   images.push({ rgba: frameToRgba(frame, config), width: config.width, height: config.height });

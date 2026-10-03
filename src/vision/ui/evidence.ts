@@ -68,6 +68,27 @@ function worldHtml(results: any): string {
   return `<h2>5 · The open world</h2><p>${esc(w.description)}</p>${table(["Driver", "Goals per run", "Crashes", "Collisions per run"], body)}`;
 }
 
+function robotHtml(robot: any): string {
+  if (!robot?.track && !robot?.world) return "";
+  let html = `<h2>6 · Robot scale: a camera 6.5 cm up and an HC-SR04 sonar</h2><p>The same kart, scaled to the real robot (26 × 17 cm, wheels 11.5 cm apart, one pixel = 1.1 cm), with the camera and a basic HC-SR04 mounted 6.5 cm above the floor. The sonar has a beam about 15° wide, reports the nearest echo from 2 cm to 4 m about fifteen times a second, is noisy, can lose thin or slanted targets, and cannot hear flat things such as paint, kerbs, oil or ponds. “Sonar off” is the very same brain with the sonar input held at zero, so each pair differs only in whether the robot can hear. Tracks are ones the networks never trained on.</p>`;
+  const t = robot.track;
+  if (t?.scenarios) {
+    for (const scenario of t.scenarios) {
+      const rows = scenario.rows.map((r: any) => [esc(r.label), `${r.laps}/${r.episodes}`, pct(r.progress), seconds(r.meanLapSeconds), r.collisions, r.crashes]);
+      const bump = scenario.rows.map((r: any) => [undefined, undefined, undefined, undefined, r.collisions === Math.min(...scenario.rows.filter((x: any) => x.label.split(" · ")[0] === r.label.split(" · ")[0]).map((x: any) => x.collisions)) ? "good" : undefined, undefined]);
+      html += `<h3>${esc(scenario.label)}</h3><p class="note">${esc(scenario.note)}</p>${table(["Driver", "Laps", "Progress", "Mean lap", "Collisions", "Crashes"], rows, bump)}`;
+    }
+    html += `<p class="note">${esc(t.episodesPerCell)} episodes per row on ${esc(t.suite.join(", "))}. Collisions are separate hits on another kart or a road object.</p>`;
+  }
+  const w = robot.world;
+  if (w?.rows) {
+    const rows = w.rows.map((r: any) => [esc(r.label), r.goals.toFixed(2), `${r.crashes}/${r.worlds}`, r.pondCrashes, r.collisions.toFixed(1)]);
+    html += `<h3>The open world at robot scale</h3><p class="note">Trees, rocks and a fence the sonar can hear; ponds and mud it cannot.</p>${table(["Driver", "Goals per run", "Crashes", "Drove into a pond", "Collisions per run"], rows)}`;
+  }
+  if (robot.summary) html += `<p>${esc(robot.summary)}</p>`;
+  return html;
+}
+
 function ablationsHtml(results: any): string {
   let html = "";
   const a = results?.architecture;
@@ -79,10 +100,10 @@ function ablationsHtml(results: any): string {
   if (p?.rows) {
     html += `<h3>Push-pull motor outputs versus steer / throttle / brake / reverse</h3><p>${esc(p.description)} Seeds: ${esc(p.seeds)}.</p>` + table(["Output layout", "Laps on the 7 tracks it learned from", "Laps on 11 unseen tracks"], Object.entries(p.rows).map(([name, r]: [string, any]) => [esc(name === "standard" ? "steer, throttle, brake, reverse (as built)" : "left, right, forward, back (opposing pairs)"), `${r.trained.laps}/${r.trained.episodes} (${pct(r.trained.progress / r.trained.episodes)} progress)`, `${r.unseen.laps}/${r.unseen.episodes} (${pct(r.unseen.progress / r.unseen.episodes)} progress)`]));
   }
-  return html ? `<h2>6 · Things that were tried and did not pay off</h2>${html}` : "";
+  return html ? `<h2>7 · Things that were tried and did not pay off</h2>${html}` : "";
 }
 
-export function renderEvidence(results: any, controllerResults: any): string {
+export function renderEvidence(results: any, controllerResults: any, robotResults: any = null): string {
   if (!results && !controllerResults) return `<div class="prose"><p class="muted">No measurements were bundled with this build. Run <code>npm run vision:experiments</code> to produce <code>public/vision/results.json</code>.</p></div>`;
   return `<div class="prose wide">
     <h2 style="margin-top:6px">What was measured</h2>
@@ -93,6 +114,7 @@ export function renderEvidence(results: any, controllerResults: any): string {
     ${closedLoopHtml(results)}
     ${memoryHtml(results)}
     ${worldHtml(results)}
+    ${robotHtml(robotResults)}
     ${ablationsHtml(results)}
     <p class="note">Generated ${esc(results?.generatedAt ?? controllerResults?.generatedAt ?? "")}</p>
   </div>`;

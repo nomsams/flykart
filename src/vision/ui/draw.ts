@@ -31,6 +31,20 @@ export function drawEye(canvas: HTMLCanvasElement, frame: Float32Array, config: 
 
 /* ------------------------------ top views ------------------------------ */
 
+/** What the top views need to show of the sonar: where it points, how far it heard, and whether it is switched on. */
+export type SonarView = { x: number; y: number; heading: number; rangePx: number; echo: boolean; on: boolean };
+
+/** The HC-SR04's beam: a narrow amber wedge (about 15 degrees wide) with an arc where the echo came back. */
+function drawSonarBeam(context: CanvasRenderingContext2D, sonar: SonarView, reach = 230): void {
+  const half = (15 * Math.PI) / 360;
+  const grad = context.createRadialGradient(sonar.x, sonar.y, 2, sonar.x, sonar.y, reach);
+  grad.addColorStop(0, sonar.on ? "rgba(255,176,64,.42)" : "rgba(160,160,160,.16)"); grad.addColorStop(1, "rgba(255,176,64,0)");
+  context.fillStyle = grad; context.beginPath(); context.moveTo(sonar.x, sonar.y); context.arc(sonar.x, sonar.y, reach, sonar.heading - half, sonar.heading + half); context.closePath(); context.fill();
+  if (sonar.on && sonar.echo) {
+    context.strokeStyle = "#ffb040"; context.lineWidth = 2.4; context.beginPath(); context.arc(sonar.x, sonar.y, Math.max(3, sonar.rangePx), sonar.heading - half * 1.6, sonar.heading + half * 1.6); context.stroke();
+  }
+}
+
 const carShapes = (context: CanvasRenderingContext2D, car: { x: number; y: number; heading: number }, length: number, width: number, color: string, outline?: string): void => {
   context.save(); context.translate(car.x, car.y); context.rotate(car.heading);
   context.fillStyle = color; context.beginPath(); context.roundRect(-length / 2, -width / 2, length, width, 3); context.fill();
@@ -39,7 +53,7 @@ const carShapes = (context: CanvasRenderingContext2D, car: { x: number; y: numbe
   context.restore();
 };
 
-export function drawTrackMap(canvas: HTMLCanvasElement, route: TrackDefinition, car: Car, others: Car[], hfov: number, extras: { nextGate?: { x: number; y: number }; label?: string } = {}): void {
+export function drawTrackMap(canvas: HTMLCanvasElement, route: TrackDefinition, car: Car, others: Car[], hfov: number, extras: { nextGate?: { x: number; y: number }; label?: string; sonar?: SonarView | null } = {}): void {
   const context = fit(canvas); const W = Number(canvas.dataset.w), H = Number(canvas.dataset.h);
   context.clearRect(0, 0, W, H); context.fillStyle = "#0b1117"; context.fillRect(0, 0, W, H);
   const scale = Math.min(W / 780, H / 500); context.save(); context.translate(W / 2, H / 2); context.scale(scale, scale);
@@ -64,6 +78,7 @@ export function drawTrackMap(canvas: HTMLCanvasElement, route: TrackDefinition, 
   const cone = context.createRadialGradient(car.position.x, car.position.y, 4, car.position.x, car.position.y, 190);
   cone.addColorStop(0, "rgba(114,184,255,.30)"); cone.addColorStop(1, "rgba(114,184,255,0)");
   context.fillStyle = cone; context.beginPath(); context.moveTo(car.position.x, car.position.y); context.arc(car.position.x, car.position.y, 190, car.heading - hfov / 2, car.heading + hfov / 2); context.closePath(); context.fill();
+  if (extras.sonar) drawSonarBeam(context, extras.sonar);
   if (extras.nextGate) { context.strokeStyle = "rgba(243,201,107,.55)"; context.setLineDash([3, 5]); context.lineWidth = 1.2; context.beginPath(); context.moveTo(car.position.x, car.position.y); context.lineTo(extras.nextGate.x, extras.nextGate.y); context.stroke(); context.setLineDash([]); }
   if (car.trail.length > 1) { context.strokeStyle = "rgba(255,209,102,.4)"; context.lineWidth = 2; context.beginPath(); car.trail.forEach((p, i) => (i === 0 ? context.moveTo(p.x, p.y) : context.lineTo(p.x, p.y))); context.stroke(); }
   carShapes(context, { x: car.position.x, y: car.position.y, heading: car.heading }, 24, 14, "#ffd166", "#fff6d6");
@@ -71,7 +86,7 @@ export function drawTrackMap(canvas: HTMLCanvasElement, route: TrackDefinition, 
   if (extras.label) { context.fillStyle = COLORS.text; context.font = "600 12px system-ui, sans-serif"; context.fillText(extras.label, 14, H - 14); }
 }
 
-export function drawWorldMap(canvas: HTMLCanvasElement, world: WorldDef, kart: WorldKart, goal: { x: number; y: number }, scan: { truth: ArrayLike<number>; seen: ArrayLike<number> | null; sigma: ArrayLike<number> | null }, label: string): void {
+export function drawWorldMap(canvas: HTMLCanvasElement, world: WorldDef, kart: WorldKart, goal: { x: number; y: number }, scan: { truth: ArrayLike<number>; seen: ArrayLike<number> | null; sigma: ArrayLike<number> | null }, label: string, sonar: SonarView | null = null): void {
   const context = fit(canvas); const W = Number(canvas.dataset.w), H = Number(canvas.dataset.h);
   context.clearRect(0, 0, W, H); context.fillStyle = "#0b1117"; context.fillRect(0, 0, W, H);
   const scale = Math.min(W, H) / (world.half * 2 + 36); context.save(); context.translate(W / 2, H / 2); context.scale(scale, scale);
@@ -95,6 +110,7 @@ export function drawWorldMap(canvas: HTMLCanvasElement, world: WorldDef, kart: W
     draw(scan.truth[k], "rgba(242,246,252,.55)", 2);
     if (scan.seen) draw(scan.seen[k], COLORS.camera, 3);
   }
+  if (sonar) drawSonarBeam(context, sonar);
   carShapes(context, { x: kart.x, y: kart.y, heading: kart.heading }, 24, 14, "#ffd166", "#fff6d6");
   context.restore();
   context.fillStyle = COLORS.text; context.font = "600 12px system-ui, sans-serif"; context.fillText(label, 14, H - 14);
@@ -199,4 +215,30 @@ export function estimateRows(domain: Domain, truth: ArrayLike<number>, mean: Arr
     memory: memoryOn && memory && memory[c] !== 0 ? memory[c] : null,
     shares: weights ? [weights[0][c], weights[1][c], weights[2] ? weights[2][c] : 0] : undefined,
   }));
+}
+
+/* ------------------------------ sonar trace ------------------------------ */
+
+export type SonarSample = { cm: number; echo: boolean; strength: number };
+
+/**
+ * The last few seconds of what the HC-SR04 reported. Each column is one ping: its height is the distance it measured
+ * (nearer is lower), its brightness the strength of the echo. Pings that heard nothing leave the column empty.
+ */
+export function drawSonarTrace(canvas: HTMLCanvasElement, samples: SonarSample[], on: boolean, maxCm = 200): void {
+  const context = fit(canvas); const W = Number(canvas.dataset.w), H = Number(canvas.dataset.h);
+  context.clearRect(0, 0, W, H); context.fillStyle = "#0b1117"; context.fillRect(0, 0, W, H);
+  const left = 44, right = 8, top = 8, bottom = 22; const plotW = W - left - right, plotH = H - top - bottom;
+  context.font = "11px system-ui, sans-serif"; context.fillStyle = COLORS.dim; context.strokeStyle = COLORS.grid; context.lineWidth = 1;
+  for (const cm of [0, 50, 100, 150, 200]) {
+    const y = top + plotH * (1 - cm / maxCm); context.beginPath(); context.moveTo(left, y); context.lineTo(W - right, y); context.stroke(); context.fillText(`${cm} cm`, 4, y + 4);
+  }
+  if (!on) { context.fillStyle = COLORS.dim; context.font = "600 13px system-ui, sans-serif"; context.fillText("sonar switched off", left + 12, top + plotH / 2); return; }
+  const columns = 240; const barWidth = plotW / columns; const start = Math.max(0, samples.length - columns);
+  for (let i = start; i < samples.length; i += 1) {
+    const sample = samples[i]; if (!sample.echo) continue;
+    const x = left + (i - start) * barWidth; const height = plotH * Math.min(1, sample.cm / maxCm); const level = Math.min(1, Math.log(Math.max(1, sample.strength)) / Math.log(40));
+    context.fillStyle = `rgba(255,${Math.round(150 + 70 * level)},${Math.round(40 + 60 * level)},${0.35 + 0.65 * level})`; context.fillRect(x, top + plotH - height, Math.max(1, barWidth), Math.max(2, height));
+  }
+  context.fillStyle = COLORS.dim; context.fillText("older", left, H - 6); context.fillText("now", W - right - 24, H - 6);
 }

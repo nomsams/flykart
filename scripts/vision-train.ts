@@ -3,30 +3,32 @@
 //   round 1+  the camera pipeline drives, the privileged controller keeps labelling, we retrain on everything
 // Evaluation always uses tracks / worlds the network never trained on.
 //   npx vite-node scripts/vision-train.ts --domain=track --teacher=public/vision/controller.json --out=public/vision/vision-net.json
+//   add --profile=robot to train for the robot's low camera, with the sonar in the loop (teacher and output default to public/vision/robot/)
 //   npx vite-node scripts/vision-train.ts --domain=world --teacher=public/vision/world-controller.json --out=public/vision/world-vision-net.json
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { SpikingNetwork, TRACKS } from "../src/core";
-import { DEFAULT_CAMERA } from "../src/vision/camera";
+import { profileById } from "../src/vision/robot";
 import { VisionCnn } from "../src/vision/cnn";
 import { collect, collectTrafficBursts, collectWorldBursts, trackFactory, worldFactory } from "../src/vision/dagger";
 import type { Domain } from "../src/vision/domain";
 import { trackDomain, worldDomain } from "../src/vision/domains";
 import { driveEpisode, formatSummary, summarise } from "../src/vision/evaluate";
-import { Perceiver, defaultSpec, netFromModel, serialiseModel } from "../src/vision/perception";
+import { BODY_INPUTS, BODY_INPUTS_WITH_SONAR, Perceiver, defaultSpec, netFromModel, serialiseModel } from "../src/vision/perception";
 import { VisionDriver } from "../src/vision/pipeline";
 import { proceduralTrack } from "../src/vision/proceduralTracks";
 import { VisionDataset, computeTargetScale, evaluateVision, trainVision } from "../src/vision/train";
-import { WORLD_CAMERA } from "../src/vision/world/worldDomain";
 import { driveWorldEpisode } from "../src/vision/world/worldRun";
 
 const args = new Map(process.argv.slice(2).map((arg) => { const [key, value] = arg.replace(/^--/, "").split("="); return [key, value ?? "true"] as const; }));
 const num = (key: string, fallback: number): number => Number(args.get(key) ?? fallback);
 const kind = args.get("domain") ?? "track";
 const domain: Domain = kind === "world" ? worldDomain : trackDomain;
-const camera = kind === "world" ? WORLD_CAMERA : DEFAULT_CAMERA;
-const teacherFile = args.get("teacher") ?? (kind === "world" ? "public/vision/world-controller.json" : "public/vision/controller.json");
-const out = args.get("out") ?? (kind === "world" ? "public/vision/world-vision-net.json" : "public/vision/vision-net.json");
+const profile = profileById(args.get("profile"));
+const camera = kind === "world" ? profile.worldCamera : profile.camera;
+const folder = profile.id === "robot" ? "public/vision/robot/" : "public/vision/";
+const teacherFile = args.get("teacher") ?? folder + (kind === "world" ? "world-controller.json" : "controller.json");
+const out = args.get("out") ?? folder + (kind === "world" ? "world-vision-net.json" : "vision-net.json");
 const capacity = num("capacity", 34000), rounds = num("rounds", 3), episodes0 = num("episodes0", 60), episodesN = num("episodes", 36), ticks = num("ticks", 420);
 const epochs0 = num("epochs0", 6), epochsN = num("epochs", 4), frames = num("frames", 2);
 const bursts0 = num("bursts0", 4500), burstsN = num("bursts", 1500), proceduralCount = num("generated", 36);
@@ -45,12 +47,14 @@ const testTracks = [...heldOutNamed.map((id) => named.find((track) => track.id =
 const groupIds = new Map([...trainTracks, ...testTracks].map((track, index) => [track.id, index] as const));
 const groupOf = (track: unknown) => groupIds.get(typeof track === "string" ? track : (track as { id: string }).id) ?? -1;
 let worldSeed = 1000; const trainSeed = () => (worldSeed += 1); let validationSeed = 90000; const testSeed = () => (validationSeed += 1);
-const makeTrain = kind === "world" ? worldFactory({ seeds: trainSeed, ticks }) : trackFactory(trainTracks, groupOf, { ticks });
-const makeValidation = kind === "world" ? worldFactory({ seeds: testSeed, ticks }) : trackFactory(testTracks, groupOf, { ticks });
+const makeTrain = kind === "world" ? worldFactory({ seeds: trainSeed, ticks, profile }) : trackFactory(trainTracks, groupOf, { ticks, profile });
+const makeValidation = kind === "world" ? worldFactory({ seeds: testSeed, ticks, profile }) : trackFactory(testTracks, groupOf, { ticks, profile });
 
-const data = new VisionDataset(capacity, camera.width, camera.height, domain.estimateCount);
-const validation = new VisionDataset(8000, camera.width, camera.height, domain.estimateCount);
-const spec = defaultSpec(frames, domain.estimateCount, inputMode, spatial);
+// On a robot with a sonar the camera network reads the echo too (closeness and strength), so it learns to combine them.
+const bodyCount = profile.sonar && !args.has("no-sonar-input") ? BODY_INPUTS_WITH_SONAR : BODY_INPUTS;
+const data = new VisionDataset(capacity, camera.width, camera.height, domain.estimateCount, bodyCount);
+const validation = new VisionDataset(8000, camera.width, camera.height, domain.estimateCount, bodyCount);
+const spec = defaultSpec(frames, domain.estimateCount, inputMode, spatial, bodyCount);
 const net = resume ? netFromModel(JSON.parse(readFileSync(resume, "utf8"))) : new VisionCnn(spec, 3);
 const log: unknown[] = [];
 
@@ -59,10 +63,10 @@ function closedLoop(perceiver: Perceiver | null, options: { blind?: boolean; str
   const controller = teacher.clone();
   const driver = new VisionDriver({ perceiver, controller, domain, blind: options.blind, fusion: { fade: 0 } });
   if (kind === "world") {
-    const results = Array.from({ length: 10 }, (_, i) => driveWorldEpisode(driver, { seed: 70000 + i, density: 0.3 + (i % 4) * 0.2, maxTicks: 1500, styleStrength: 0.4 }));
+    const results = Array.from({ length: 10 }, (_, i) => driveWorldEpisode(driver, { seed: 70000 + i, density: 0.3 + (i % 4) * 0.2, maxTicks: 1500, styleStrength: 0.4, profile }));
     return { goalsPerRun: results.reduce((s, r) => s + r.goals, 0) / results.length, crashes: results.filter((r) => r.crashed).length, collisions: results.reduce((s, r) => s + r.collisions, 0) / results.length };
   }
-  return summarise(testTracks.map((track, i) => driveEpisode(driver, { track, seed: 7 + i, styleStrength: 0.4, maxTicks: 3000, walls: !options.strict })));
+  return summarise(testTracks.map((track, i) => driveEpisode(driver, { track, seed: 7 + i, styleStrength: 0.4, maxTicks: 3000, walls: !options.strict, profile })));
 }
 const show = (value: unknown): string => (kind === "world" ? (() => { const v = value as { goalsPerRun: number; crashes: number; collisions: number }; return `${v.goalsPerRun.toFixed(1)} goals per run, ${v.crashes}/10 crashes, ${v.collisions.toFixed(1)} collisions`; })() : formatSummary(value as ReturnType<typeof summarise>));
 
@@ -76,13 +80,13 @@ const show = (value: unknown): string => (kind === "world" ? (() => { const v = 
 console.log(`${domain.title}: teacher ${teacherFile}; net ${net.parameterCount} params, ${net.macs} MACs/frame`);
 
 collect({ domain, newEpisode: makeValidation, episodes: kind === "world" ? 20 : 22, ticks, seed: 99, teacher, perceiver: null, studentShare: 0, mixedShare: 0, dart: 0.25, dataset: validation });
-if (kind === "track") collectTrafficBursts({ tracks: testTracks, groupOf, bursts: 700, seed: 98, teacher, dataset: validation });
-else collectWorldBursts({ bursts: 600, seed: 98, teacher, dataset: validation });
+if (kind === "track") collectTrafficBursts({ tracks: testTracks, groupOf, bursts: 700, seed: 98, teacher, dataset: validation, profile });
+else collectWorldBursts({ bursts: 600, seed: 98, teacher, dataset: validation, profile });
 console.log(`validation: ${validation.size} frames from held-out ${kind === "world" ? "worlds" : "tracks"} (${stamp()})`);
 
 let stats = collect({ domain, newEpisode: makeTrain, episodes: episodes0, ticks, seed: 1, teacher, perceiver: null, studentShare: 0, mixedShare: 0, dart: 0.25, dataset: data });
-if (kind === "track") collectTrafficBursts({ tracks: trainTracks, groupOf, bursts: bursts0, seed: 2, teacher, dataset: data });
-else collectWorldBursts({ bursts: bursts0, seed: 2, teacher, dataset: data });
+if (kind === "track") collectTrafficBursts({ tracks: trainTracks, groupOf, bursts: bursts0, seed: 2, teacher, dataset: data, profile });
+else collectWorldBursts({ bursts: bursts0, seed: 2, teacher, dataset: data, profile });
 console.log(`round 0: ${data.size} frames from ${stats.episodes} teacher episodes and ${bursts0} short scenes (${stamp()})`);
 let targetScale = computeTargetScale(data);
 
@@ -112,8 +116,8 @@ let perceiver = fit("round 0", epochs0, 2e-3);
 for (let round = 1; round <= rounds && !data.full; round += 1) {
   stats = collect({ domain, newEpisode: makeTrain, episodes: episodesN, ticks, seed: 100 + round, teacher, perceiver, studentShare: 0.85, mixedShare: 0.3, dart: 0.25, dataset: data });
   console.log(`round ${round}: ${data.size} frames; the student drove ${stats.student.episodes} episodes: ${stats.student.laps} finished, mean progress ${(stats.student.meanProgress * 100).toFixed(0)}%, ${stats.student.crashes} crashes (${stamp()})`);
-  if (kind === "track") collectTrafficBursts({ tracks: trainTracks, groupOf, bursts: burstsN, seed: 200 + round, teacher, dataset: data });
-  else collectWorldBursts({ bursts: burstsN, seed: 200 + round, teacher, dataset: data });
+  if (kind === "track") collectTrafficBursts({ tracks: trainTracks, groupOf, bursts: burstsN, seed: 200 + round, teacher, dataset: data, profile });
+  else collectWorldBursts({ bursts: burstsN, seed: 200 + round, teacher, dataset: data, profile });
   perceiver = fit(`round ${round}`, epochsN, 1.2e-3);
 }
 // Make the network's own error bars honest: stretch each predicted variance by how overconfident it was on tracks it never saw.

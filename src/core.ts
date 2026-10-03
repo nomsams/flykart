@@ -404,7 +404,8 @@ export type BrainSnapshot = {
 };
 
 export class SpikingNetwork {
-  readonly inputCount = 17;
+  /** 17 for the original sensor vector; 19 when a sonar's two extra inputs are appended (see FlyKart Vision). */
+  readonly inputCount: number;
   readonly hiddenCount = 48;
   private readonly inputWeights: number[];
   private readonly recurrentWeights: number[];
@@ -417,7 +418,8 @@ export class SpikingNetwork {
   private mutationSigma = 1;
   private readonly snapshot: NeuronSnapshot;
 
-  constructor(seed = Math.random()) {
+  constructor(seed = Math.random(), inputCount = 17) {
+    this.inputCount = inputCount;
     const random = () => hash(seed += 1.234567) * 2 - 1;
     this.inputWeights = Array.from({ length: this.hiddenCount * this.inputCount }, () => random() * 0.8);
     this.recurrentWeights = Array.from({ length: this.hiddenCount * this.hiddenCount }, () => random() * 0.16);
@@ -433,7 +435,7 @@ export class SpikingNetwork {
   }
 
   clone(): SpikingNetwork {
-    const result = new SpikingNetwork(0.5);
+    const result = new SpikingNetwork(0.5, this.inputCount);
     result.inputWeights.splice(0, result.inputWeights.length, ...this.inputWeights);
     result.recurrentWeights.splice(0, result.recurrentWeights.length, ...this.recurrentWeights);
     result.outputWeights.splice(0, result.outputWeights.length, ...this.outputWeights);
@@ -536,12 +538,12 @@ export class SpikingNetwork {
   static fromJSON(snapshot: BrainSnapshot): SpikingNetwork {
     const arrays = [snapshot.inputWeights, snapshot.recurrentWeights, snapshot.outputWeights, snapshot.bias];
     const legacyInputCount = 9;
-    const supportedInputCount = snapshot.version === 1 ? legacyInputCount : 17;
+    const supportedInputCount = snapshot.version === 1 ? legacyInputCount : snapshot.inputCount === 19 ? 19 : 17;
     if (![1, 2].includes(snapshot.version) || snapshot.inputCount !== supportedInputCount || snapshot.hiddenCount !== 48 || arrays.some((value) => !Array.isArray(value) || value.some((item) => !Number.isFinite(item)))) throw new Error("checkpoint format does not match this FlyKart build");
     const legacyOutputLength = snapshot.hiddenCount * 3;
     const currentOutputLength = snapshot.hiddenCount * 4;
     if (snapshot.inputWeights.length !== snapshot.inputCount * snapshot.hiddenCount || snapshot.recurrentWeights.length !== snapshot.hiddenCount ** 2 || (snapshot.outputWeights.length !== legacyOutputLength && snapshot.outputWeights.length !== currentOutputLength) || snapshot.bias.length !== snapshot.hiddenCount) throw new Error("checkpoint dimensions are invalid");
-    const result = new SpikingNetwork(0.5);
+    const result = new SpikingNetwork(0.5, snapshot.version === 1 ? 17 : snapshot.inputCount);
     if (snapshot.inputCount === result.inputCount) result.inputWeights.splice(0, result.inputWeights.length, ...snapshot.inputWeights);
     else {
       result.inputWeights.fill(0);
@@ -611,7 +613,7 @@ export function createMutationPopulation(size: number, parent: SpikingNetwork | 
   const protectedCount = children.length;
   for (let index = children.length; index < safeSize; index += 1) {
     if (exploring && index >= immigrantStart) {
-      children.push(new SpikingNetwork(seed + 90000 + index * 17));
+      children.push(new SpikingNetwork(seed + 90000 + index * 17, stableParent.inputCount));
       continue;
     }
     // Keep most descendants close to the breeding incumbent. Every fifth

@@ -4,6 +4,7 @@
 // what lets the same logic carry from a lap of asphalt to a field of trees.
 import type { Action } from "../core";
 import type { Proprioception } from "./interface";
+import type { SonarReading } from "./sonar";
 
 export interface VisionEpisode {
   readonly done: boolean;
@@ -17,6 +18,8 @@ export interface VisionEpisode {
   /** Values that come from a planner or compass rather than the camera, such as the bearing of the next goal. */
   mission(): number[];
   step(action: Action): void;
+  /** The sonar's latest reading (held between pings), or null when the robot has none. */
+  sonar(): SonarReading | null;
   /** Bookkeeping for the lap memory; null where laps do not exist. */
   lapContext(): { gate: number; heading: number; x: number; y: number; speed: number } | null;
   /** How the episode is going: laps cover a fraction of the track, worlds count goals reached. */

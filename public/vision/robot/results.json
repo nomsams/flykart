@@ -1,0 +1,302 @@
+{
+ "generatedAt": "2026-10-03T18:42:42.062Z",
+ "profile": "robot",
+ "note": "full run",
+ "track": {
+  "suite": [
+   "mountain-pass",
+   "needle-eye",
+   "rainbow-rally",
+   "oval-sprint",
+   "gen-17000",
+   "gen-17400",
+   "gen-17800",
+   "gen-18201"
+  ],
+  "episodesPerCell": 16,
+  "scenarios": [
+   {
+    "id": "empty",
+    "label": "Empty road",
+    "note": "No obstacles: does the sonar get in the way?",
+    "rows": [
+     {
+      "label": "Exact numbers · kart controller (no sonar inputs)",
+      "laps": 14,
+      "episodes": 16,
+      "progress": 0.9974806029703007,
+      "meanLapSeconds": 23.876190476190477,
+      "collisions": 0,
+      "crashes": 0
+     },
+     {
+      "label": "Exact numbers · robot controller, sonar off",
+      "laps": 12,
+      "episodes": 16,
+      "progress": 0.9220270843399695,
+      "meanLapSeconds": 42.57222222222223,
+      "collisions": 0,
+      "crashes": 0
+     },
+     {
+      "label": "Exact numbers · robot controller, sonar on",
+      "laps": 10,
+      "episodes": 16,
+      "progress": 0.9215234196217371,
+      "meanLapSeconds": 32.01,
+      "collisions": 0,
+      "crashes": 0
+     },
+     {
+      "label": "Camera only · kart controller",
+      "laps": 12,
+      "episodes": 16,
+      "progress": 0.8038055184947726,
+      "meanLapSeconds": 28.15555555555555,
+      "collisions": 0,
+      "crashes": 0
+     },
+     {
+      "label": "Camera only · robot controller, sonar off",
+      "laps": 12,
+      "episodes": 16,
+      "progress": 0.8045342120435715,
+      "meanLapSeconds": 27.550000000000008,
+      "collisions": 0,
+      "crashes": 0
+     },
+     {
+      "label": "Camera + sonar · robot controller",
+      "laps": 12,
+      "episodes": 16,
+      "progress": 0.8045342120435715,
+      "meanLapSeconds": 28.058333333333337,
+      "collisions": 0,
+      "crashes": 0
+     }
+    ]
+   },
+   {
+    "id": "obstacles",
+    "label": "Cones, barriers and stalled cars",
+    "note": "Three objects and one moving rival per lap.",
+    "rows": [
+     {
+      "label": "Exact numbers · kart controller (no sonar inputs)",
+      "laps": 12,
+      "episodes": 16,
+      "progress": 0.9988614064180087,
+      "meanLapSeconds": 30.863888888888884,
+      "collisions": 67,
+      "crashes": 0
+     },
+     {
+      "label": "Exact numbers · robot controller, sonar off",
+      "laps": 11,
+      "episodes": 16,
+      "progress": 0.9098686476692784,
+      "meanLapSeconds": 44.084848484848486,
+      "collisions": 57,
+      "crashes": 0
+     },
+     {
+      "label": "Exact numbers · robot controller, sonar on",
+      "laps": 11,
+      "episodes": 16,
+      "progress": 0.9472029330989447,
+      "meanLapSeconds": 36.57878787878788,
+      "collisions": 72,
+      "crashes": 0
+     },
+     {
+      "label": "Camera only · kart controller",
+      "laps": 9,
+      "episodes": 16,
+      "progress": 0.7427222078222232,
+      "meanLapSeconds": 23.914814814814818,
+      "collisions": 50,
+      "crashes": 0
+     },
+     {
+      "label": "Camera only · robot controller, sonar off",
+      "laps": 12,
+      "episodes": 16,
+      "progress": 0.8042426645857944,
+      "meanLapSeconds": 40.830555555555556,
+      "collisions": 61,
+      "crashes": 0
+     },
+     {
+      "label": "Camera + sonar · robot controller",
+      "laps": 11,
+      "episodes": 16,
+      "progress": 0.8041990771598766,
+      "meanLapSeconds": 31.08787878787879,
+      "collisions": 90,
+      "crashes": 0
+     }
+    ]
+   },
+   {
+    "id": "obstacles-night",
+    "label": "The same, at night",
+    "note": "The camera is dim and noisy; the sonar does not care about light.",
+    "rows": [
+     {
+      "label": "Camera only · kart controller",
+      "laps": 7,
+      "episodes": 16,
+      "progress": 0.589977225104181,
+      "meanLapSeconds": 49.67142857142858,
+      "collisions": 43,
+      "crashes": 0
+     },
+     {
+      "label": "Camera only · robot controller, sonar off",
+      "laps": 9,
+      "episodes": 16,
+      "progress": 0.7411076371922536,
+      "meanLapSeconds": 36.81111111111111,
+      "collisions": 66,
+      "crashes": 0
+     },
+     {
+      "label": "Camera + sonar · robot controller",
+      "laps": 8,
+      "episodes": 16,
+      "progress": 0.7319758615142882,
+      "meanLapSeconds": 30.625,
+      "collisions": 61,
+      "crashes": 0
+     }
+    ]
+   },
+   {
+    "id": "flat",
+    "label": "Oil slicks (flat, invisible to sound)",
+    "note": "Control: a hazard the sonar cannot hear, so it should not help.",
+    "rows": [
+     {
+      "label": "Exact numbers · kart controller (no sonar inputs)",
+      "laps": 13,
+      "episodes": 16,
+      "progress": 0.9992254556299517,
+      "meanLapSeconds": 36.55897435897435,
+      "collisions": 0,
+      "crashes": 0
+     },
+     {
+      "label": "Exact numbers · robot controller, sonar off",
+      "laps": 12,
+      "episodes": 16,
+      "progress": 0.9483060140304999,
+      "meanLapSeconds": 34.797222222222224,
+      "collisions": 0,
+      "crashes": 0
+     },
+     {
+      "label": "Exact numbers · robot controller, sonar on",
+      "laps": 12,
+      "episodes": 16,
+      "progress": 0.9482622104166482,
+      "meanLapSeconds": 34.37222222222222,
+      "collisions": 0,
+      "crashes": 0
+     },
+     {
+      "label": "Camera only · kart controller",
+      "laps": 10,
+      "episodes": 16,
+      "progress": 0.7411670144672496,
+      "meanLapSeconds": 25.536666666666665,
+      "collisions": 0,
+      "crashes": 0
+     },
+     {
+      "label": "Camera only · robot controller, sonar off",
+      "laps": 12,
+      "episodes": 16,
+      "progress": 0.8046191840579722,
+      "meanLapSeconds": 30.719444444444445,
+      "collisions": 0,
+      "crashes": 0
+     },
+     {
+      "label": "Camera + sonar · robot controller",
+      "laps": 12,
+      "episodes": 16,
+      "progress": 0.8045810841175978,
+      "meanLapSeconds": 33.59444444444444,
+      "collisions": 0,
+      "crashes": 0
+     }
+    ]
+   }
+  ],
+  "hasEyes": true
+ },
+ "world": {
+  "rows": [
+   {
+    "id": "feel-deaf",
+    "label": "Exact numbers · sonar off",
+    "worlds": 16,
+    "goals": 2.375,
+    "collisions": 1.75,
+    "crashes": 4,
+    "pondCrashes": 1
+   },
+   {
+    "id": "feel-sonar",
+    "label": "Exact numbers · sonar on",
+    "worlds": 16,
+    "goals": 2.5625,
+    "collisions": 1.5625,
+    "crashes": 4,
+    "pondCrashes": 2
+   },
+   {
+    "id": "cam-deaf",
+    "label": "Camera only",
+    "worlds": 16,
+    "goals": 2.875,
+    "collisions": 2.9375,
+    "crashes": 7,
+    "pondCrashes": 2
+   },
+   {
+    "id": "cam-sonar",
+    "label": "Camera + sonar",
+    "worlds": 16,
+    "goals": 3.4375,
+    "collisions": 2.5,
+    "crashes": 6,
+    "pondCrashes": 2
+   }
+  ],
+  "hasEyes": true
+ },
+ "summary": "What the numbers say, without rounding in the sonar's favour. (1) The sonar does not help on an empty road or against flat hazards such as oil, exactly as it should not. (2) In daylight traffic the same brain with its sonar switched off finished 12/16 laps in 40.8 s with 61 collisions; with the sonar on it finished 11/16 in 31.1 s with 90 collisions, so it drives through traffic faster but does not hit less. (3) At night the camera struggles and the sonar makes little difference to laps (8/16 against 9/16) but laps are quicker (30.6 s against 36.8 s); the robot controller was evolved through the real camera and finishes 8 to 9 of 16 where the earlier controller finished 0 to 1. (4) In the open world, camera plus sonar reached 3.44 goals per run with 6/16 crashes against 2.88 goals and 7/16 crashes camera only. These are 16 episodes per row on tracks and worlds never trained on, so differences of a lap or two, or a few collisions, are within noise. A first attempt that wired the sonar in as a braking reflex made things worse (67 collisions against 40 with exact numbers) because a robot that stops in front of a cone keeps touching it; starting the sonar weights at zero and letting evolution decide worked better. Giving the camera network the echo as an input made no measurable difference to its held-out accuracy in a controlled comparison with the same teacher and data (traffic closeness R² 0.81 with the echo, 0.80 without; obstacle 0.41 against 0.43), so its value here is that the whole stack was trained with the sonar in the loop, not a more accurate camera. From 6.5 cm the road geometry is harder to read than from 16 cm (curvature R² about 0 to 0.4 against 0.59), while traffic is easier (closeness 0.8).",
+ "training": {
+  "controller": "evolved from the camera-only robust controller with two zero-weight sonar inputs, 60 generations through synthetic noise and episodes where the camera misses every vehicle, then 30 generations driving whole episodes through the robot camera network with the sonar in the loop (day, night and varied looks).",
+  "cameraNet": "DAgger at 6.5 cm with the sonar's closeness and strength as extra network inputs; teacher is the sonar controller.",
+  "world": "world controller started from the camera-only one with zero sonar weights, 30 generations with the world camera network and sonar in the loop; world camera network takes the echo as input."
+ },
+ "cameraNetComparison": {
+  "note": "Same teacher (the zero-init sonar controller), same collected data, camera network with and without the echo as an input; held-out tracks, last round.",
+  "withEcho": {
+   "headingError": 0.37,
+   "curvature": -0.08,
+   "trafficClose": 0.81,
+   "trafficAhead": 0.73,
+   "obstacle": 0.41
+  },
+  "withoutEcho": {
+   "headingError": 0.39,
+   "curvature": 0.06,
+   "trafficClose": 0.8,
+   "trafficAhead": 0.74,
+   "obstacle": 0.43
+  }
+ }
+}

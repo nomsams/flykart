@@ -7,14 +7,13 @@ import { controllerCheckpoint, exportAsFlyKartV1, exportVisionBrain, importFile 
 import type { VisionModel } from "./perception";
 import { DriverMode } from "./pipeline";
 import { Assets, loadAssets } from "./ui/assets";
-import { drawBrain, drawEstimates, drawEye, drawKenyon, drawTrace, drawTrackMap, drawWorldMap, estimateRows } from "./ui/draw";
+import { SonarView, drawBrain, drawEstimates, drawEye, drawKenyon, drawSonarTrace, drawTrace, drawTrackMap, drawWorldMap, estimateRows } from "./ui/draw";
 import { renderEvidence } from "./ui/evidence";
 import { HOW_IT_WORKS } from "./ui/how";
 import { LapRecord, TrackSession, WorldDriverKind, WorldSession } from "./ui/sessions";
 import { trackDomain, worldDomain } from "./domains";
-import { WORLD_CAMERA } from "./world/worldDomain";
 import { proceduralTrack } from "./proceduralTracks";
-import { DEFAULT_CAMERA } from "./camera";
+import { CM_PER_PIXEL, KART_PROFILE, MOUNT, ROBOT, ROBOT_PROFILE, SensorProfile } from "./robot";
 
 const $ = <T extends HTMLElement>(id: string): T => { const element = document.getElementById(id); if (!element) throw new Error(`missing element #${id}`); return element as T; };
 
@@ -32,6 +31,7 @@ const state = {
   lapsLeft: 0, lapNumber: 0, laps: [] as LapRecord[],
   fade: 0, mode: "belief" as DriverMode,
   tab: "track",
+  profile: "kart" as "kart" | "robot", sonarOn: true,
   last: 0, accumulator: { track: 0, world: 0 },
 };
 
@@ -45,6 +45,7 @@ function showTab(name: string): void {
     const button = $(`tab-btn-${id}`); button.classList.toggle("active", selected); button.setAttribute("aria-selected", String(selected));
   }
   if (name === "world" && !state.world) buildWorld();
+  if (state.assets) updateProfileUi();
   history.replaceState(null, "", `#${name}`);
 }
 
@@ -73,18 +74,23 @@ function updateModeNote(): void {
 
 /* ------------------------------- brains ------------------------------- */
 
+const robotAssets = () => state.assets?.robot ?? null;
+const sensorProfile = (): SensorProfile => (state.profile === "robot" ? ROBOT_PROFILE : KART_PROFILE);
+
 function controllerChoices(): { id: string; label: string; snapshot: BrainSnapshot | null }[] {
   const assets = state.assets!;
   const list = [
-    { id: "robust", label: "Robust controller (evolved for imperfect eyes)", snapshot: assets.robust },
+    { id: "robust", label: state.profile === "robot" ? "Robust kart controller (no sonar inputs)" : "Robust controller (evolved for imperfect eyes)", snapshot: assets.robust },
     { id: "v1", label: "Original FlyKart demo brain (exact numbers only)", snapshot: assets.v1 },
   ];
+  if (state.profile === "robot" && robotAssets()?.controller) list.unshift({ id: "robot", label: "Robot controller (evolved with the sonar)", snapshot: robotAssets()!.controller });
   if (state.imported) list.push({ id: "imported", label: `Imported: ${state.imported.name}`, snapshot: state.imported.snapshot });
   return list;
 }
 
 function eyesChoices(): { id: string; label: string; model: VisionModel | null }[] {
-  const list = [{ id: "bundled", label: "Bundled camera network", model: state.assets!.vision }, { id: "none", label: "None (original FlyKart, exact numbers)", model: null }];
+  const bundled = state.profile === "robot" ? robotAssets()?.vision ?? null : state.assets!.vision;
+  const list = [{ id: "bundled", label: state.profile === "robot" ? "Robot camera network (trained at 6.5 cm)" : "Bundled camera network", model: bundled }, { id: "none", label: "None (original FlyKart, exact numbers)", model: null }];
   if (state.importedVision) list.splice(1, 0, { id: "imported", label: "Imported camera network", model: state.importedVision });
   return list;
 }
@@ -103,7 +109,7 @@ function refreshBrainSelects(prefer?: { controller?: string; eyes?: string }): v
 
 function currentController(): BrainSnapshot {
   const id = ($("track-controller") as HTMLSelectElement).value;
-  return (controllerChoices().find((choice) => choice.id === id)?.snapshot ?? state.assets!.robust ?? state.assets!.v1)!;
+  return (controllerChoices().find((choice) => choice.id === id)?.snapshot ?? (state.profile === "robot" ? robotAssets()?.controller : null) ?? state.assets!.robust ?? state.assets!.v1)!;
 }
 function currentVision(): VisionModel | null {
   const id = ($("track-eyes") as HTMLSelectElement).value;
@@ -113,6 +119,8 @@ function currentVision(): VisionModel | null {
 function describeBrain(): void {
   const controller = ($("track-controller") as HTMLSelectElement).value; const eyes = ($("track-eyes") as HTMLSelectElement).value;
   const parts: string[] = [];
+  if (controller === "robot") parts.push("Starts as the robust controller with two extra inputs for the sonar, then evolved with the sonar in the loop: it also reads how close the nearest echo is and how strong it was.");
+  if (currentController().inputCount > 17 && !sensorProfile().sonar) parts.push("This controller listens to a sonar, which the camera-only kart does not have; those inputs stay silent.");
   if (controller === "v1") parts.push("This is the demo brain from the original FlyKart guide. It never saw noise, so camera errors upset it more.");
   if (controller === "imported" && state.imported) parts.push(state.imported.info);
   if (eyes === "none") parts.push("No camera: the controller reads exact numbers, exactly as in FlyKart v1.");
@@ -127,11 +135,12 @@ function buildTrack(options: { keepMemory?: boolean } = {}): void {
   const memoryOn = $<HTMLInputElement>("memory-on").checked;
   if (!options.keepMemory) { state.memory.forget(); state.lapNumber = 0; state.laps = []; renderLapTable(); }
   state.track = new TrackSession({
-    trackId: select.value, rivals: Number($<HTMLSelectElement>("track-rivals").value), objects: Number($<HTMLSelectElement>("track-objects").value), style: Number($<HTMLInputElement>("track-style").value),
+    trackId: select.value, rivals: Number($<HTMLSelectElement>("track-rivals").value), objects: Number($<HTMLSelectElement>("track-objects").value), style: Number($<HTMLInputElement>("track-style").value), profile: sensorProfile(), sonarOn: state.sonarOn,
     walls: $<HTMLInputElement>("track-walls").checked, controller: currentController(), vision: currentVision(), fade: state.fade, mode: state.mode, memory: memoryOn ? state.memory : null, seed: 7,
   });
   $("track-caption").textContent = state.track.route.name;
   $("eye-note").textContent = state.track.perceiver ? "Gates are yellow bands under gantries; the finish is chequered; kerbs alternate red and white. Other karts, cones and barriers stand on the road." : "The camera is not used in this mode; this is what it would see.";
+  updateProfileUi();
   paintTrack();
 }
 
@@ -157,7 +166,9 @@ function setStatus(which: "track" | "world", text: string): void { $(`${which}-s
 function paintTrack(): void {
   const session = state.track; if (!session) return;
   const episode = session.episode; const car = episode.car; const driver = session.driver;
-  drawTrackMap($("track-map") as HTMLCanvasElement, session.route, car, episode.cars, DEFAULT_CAMERA.hfov, { nextGate: episode.nextGate(), label: `progress ${(car.totalProgress * 100).toFixed(0)}%   speed ${car.speed.toFixed(0)}   time ${(car.ticks / 30).toFixed(1)} s   gates ${car.checkpointsPassed}` });
+  const reading = episode.sonar();
+  const sonarView: SonarView | null = reading ? { x: car.position.x + Math.cos(car.heading) * MOUNT.forward, y: car.position.y + Math.sin(car.heading) * MOUNT.forward, heading: car.heading, rangePx: reading.range, echo: reading.echo, on: state.sonarOn } : null;
+  drawTrackMap($("track-map") as HTMLCanvasElement, session.route, car, episode.cars, episode.camera.hfov, { sonar: sonarView, nextGate: episode.nextGate(), label: `progress ${(car.totalProgress * 100).toFixed(0)}%   speed ${car.speed.toFixed(0)}   time ${(car.ticks / 30).toFixed(1)} s   gates ${car.checkpointsPassed}` });
   if (!session.perceiver) episode.render();
   drawEye($("track-eye") as HTMLCanvasElement, episode.frame, episode.camera);
   const truth = episode.truth(session.lastTruth); const perception = driver.perception;
@@ -169,17 +180,38 @@ function paintTrack(): void {
   const gate = car.checkpointsPassed % memory.config.gates;
   const cells: number[] = []; for (let j = gate; j < memory.kenyonCount; j += memory.config.gates) cells.push(j);
   drawKenyon($("memory-cells") as HTMLCanvasElement, cells, new Set(Array.from(memory.active).filter((j) => j >= 0)), (j) => memory.isTaught(j), (j) => memory.cellDistance(j), on);
+  if (reading) { drawSonarTrace($("sonar-canvas") as HTMLCanvasElement, session.sonarTrace, state.sonarOn); $("sonar-status").textContent = !state.sonarOn ? "switched off" : reading.echo ? `${(reading.range * CM_PER_PIXEL).toFixed(0)} cm · echo strength ${reading.strength.toFixed(1)}` : "no echo within 4 m"; }
   drawTrace($("memory-trace") as HTMLCanvasElement, session.trace, "bend 150 px ahead   white: truth · blue: camera · violet: memory · green: used");
   $("memory-status").textContent = on ? `lap ${memory.lap + 1} · ${memory.taughtCells} of ${memory.kenyonCount} cells taught · ${memory.remembering ? "recalling an earlier lap" : "nothing remembered here yet"}` : "off";
+}
+
+/* ------------------------------- sensor head ------------------------------- */
+
+function updateProfileUi(): void {
+  const robot = state.profile === "robot";
+  $("sonar-row").hidden = !robot; $("sonar-panel").hidden = !robot || state.tab !== "track"; $("world-sonar-box").hidden = !robot;
+  $("profile-note").textContent = robot
+    ? `Robot scale: ${ROBOT.lengthCm} × ${ROBOT.widthCm} cm body, wheels ${ROBOT.wheelbaseCm} cm apart, and the camera and the HC-SR04 sonar both ${ROBOT.mountHeightCm} cm above the floor (one simulator pixel is ${CM_PER_PIXEL} cm, so the 24 × 14 px kart is about 26 × 15 cm). From that height the road is seen almost edge-on, the ground just ahead of the wheels is hidden, and gantries are raised so the sonar can pass beneath them.${robotAssets()?.vision ? "" : " The robot camera network is not bundled in this build: eyes are off."}`
+    : "The original FlyKart Vision kart: a camera 16 cm up and no sonar. The robot profile adds the HC-SR04 and drops the camera to 6.5 cm.";
+}
+
+function setProfile(next: "kart" | "robot"): void {
+  state.profile = next; $<HTMLSelectElement>("profile").value = next;
+  state.memory.forget(); state.laps = []; state.lapNumber = 0; renderLapTable();
+  const hasEyes = next === "robot" ? Boolean(robotAssets()?.vision) : Boolean(state.assets!.vision);
+  refreshBrainSelects({ controller: next === "robot" && robotAssets()?.controller ? "robot" : "robust", eyes: hasEyes ? "bundled" : "none" });
+  buildTrack();
+  if (state.tab === "world") buildWorld(); else state.world = null;
 }
 
 /* ------------------------------- world session ------------------------------- */
 
 function buildWorld(): void {
   const assets = state.assets!; const kind = $<HTMLSelectElement>("world-driver").value as WorldDriverKind;
-  const controller = state.importedWorld?.controller ?? assets.worldController ?? assets.robust!;
-  const vision = state.importedWorld?.vision ?? assets.worldVision;
-  state.world = new WorldSession({ seed: Number($<HTMLInputElement>("world-seed").value), density: Number($<HTMLInputElement>("world-density").value), style: Number($<HTMLInputElement>("world-style").value), kind, fade: Number($<HTMLInputElement>("world-fade").value), controller, vision });
+  const robotWorld = state.profile === "robot" ? robotAssets() : null;
+  const controller = state.importedWorld?.controller ?? robotWorld?.worldController ?? assets.worldController ?? assets.robust!;
+  const vision = state.importedWorld?.vision ?? (state.profile === "robot" ? robotWorld?.worldVision ?? null : assets.worldVision);
+  state.world = new WorldSession({ profile: sensorProfile(), sonarOn: state.sonarOn, seed: Number($<HTMLInputElement>("world-seed").value), density: Number($<HTMLInputElement>("world-density").value), style: Number($<HTMLInputElement>("world-style").value), kind, fade: Number($<HTMLInputElement>("world-fade").value), controller, vision });
   $("world-brain-info").textContent = !assets.worldController ? "The trained world controller was not found; the track controller is being used instead, which does not understand this world." : !vision && (kind === "vision" || kind === "both") ? "The world camera network was not found, so the kart is driving without eyes." : "";
   $("world-caption").textContent = `world ${$<HTMLInputElement>("world-seed").value}`;
   paintWorld();
@@ -189,10 +221,13 @@ function paintWorld(): void {
   const session = state.world; if (!session) return;
   const episode = session.episode; const sim = episode.sim; const driver = session.driver;
   const truth = episode.truth(session.lastTruth); const perception = driver?.perception ?? null;
+  const reading = episode.sonar();
+  const sonarView: SonarView | null = reading ? { x: sim.kart.x + Math.cos(sim.kart.heading) * MOUNT.forward, y: sim.kart.y + Math.sin(sim.kart.heading) * MOUNT.forward, heading: sim.kart.heading, rangePx: reading.range, echo: reading.echo, on: state.sonarOn } : null;
   drawWorldMap($("world-map") as HTMLCanvasElement, sim.world, sim.kart, { x: sim.status.goalX, y: sim.status.goalY }, { truth, seen: perception ? perception.mean : null, sigma: perception ? perception.variance : null },
-    `goals ${sim.status.goals}   speed ${sim.kart.speed.toFixed(0)}   ${sim.surface}${sim.status.crashed ? "   " + sim.status.crashReason : ""}`);
+    `goals ${sim.status.goals}   speed ${sim.kart.speed.toFixed(0)}   ${sim.surface}${sim.status.crashed ? "   " + sim.status.crashReason : ""}`, sonarView);
+  $("world-sonar").textContent = !reading ? "—" : !state.sonarOn ? "off" : reading.echo ? `${(reading.range * CM_PER_PIXEL).toFixed(0)} cm` : "clear";
   if (!perception) episode.render();
-  drawEye($("world-eye") as HTMLCanvasElement, episode.frame, WORLD_CAMERA);
+  drawEye($("world-eye") as HTMLCanvasElement, episode.frame, episode.camera);
   const rows = driver ? estimateRows(worldDomain, truth, perception ? perception.mean : null, perception ? perception.variance : null, driver.fused.mean, perception ? driver.fused.weights : null) : estimateRows(worldDomain, truth, null, null, truth, null);
   drawEstimates($("world-estimates") as HTMLCanvasElement, rows, [-1, 1]);
   const activity = session.controller.activity(); drawBrain($("world-brain") as HTMLCanvasElement, activity.spikes, activity.outputs);
@@ -243,6 +278,7 @@ async function importBrain(file: File): Promise<void> {
       state.imported = { name: file.name.replace(/\.json$/i, ""), snapshot: imported.controller.snapshot, info: `Imported ${imported.kind === "v1-brain" ? "FlyKart v1 brain" : "vision brain"}${meta.generation !== null ? `, generation ${meta.generation}` : ""}${meta.fitness !== null ? `, fitness ${meta.fitness.toFixed(0)}` : ""}. ${imported.warnings.join(" ")}` };
       prefer.controller = "imported";
     }
+    if (imported.profile === "robot" && state.profile !== "robot" && state.assets?.robot) { state.profile = "robot"; $<HTMLSelectElement>("profile").value = "robot"; notes.push("This brain was made for the robot sensor head (camera 6.5 cm up and a sonar), so that profile was selected."); }
     if (imported.vision && imported.vision.domain !== "world") { state.importedVision = imported.vision; prefer.eyes = "imported"; }
     if (imported.world) state.importedWorld = { controller: imported.world.controller.snapshot, vision: imported.world.vision };
     if (imported.memory) { state.memory = MushroomBody.fromJSON(imported.memory); $<HTMLInputElement>("memory-on").checked = true; notes.push("The lap memory in the file was restored: the first lap will already recall the bends."); }
@@ -255,13 +291,19 @@ async function importBrain(file: File): Promise<void> {
   }
 }
 
+function worldExportSource(): { controller: BrainSnapshot; vision: VisionModel | null } | null {
+  const assets = state.assets; if (!assets) return null;
+  if (state.profile === "robot" && assets.robot?.worldController) return { controller: assets.robot.worldController, vision: assets.robot.worldVision };
+  return assets.worldController ? { controller: assets.worldController, vision: assets.worldVision } : null;
+}
+
 function exportVision(): void {
   const snapshot = currentController(); const vision = currentVision();
   const memoryOn = $<HTMLInputElement>("memory-on").checked;
   download("flykart-vision-brain.json", exportVisionBrain({
-    name: "FlyKart vision brain", controller: controllerCheckpoint(snapshot, { track: "all", provenance: [{ context: "vision", trained: true, source: "exported from FlyKart Vision" }] }), vision,
+    name: "FlyKart vision brain", profile: state.profile, controller: controllerCheckpoint(snapshot, { track: "all", provenance: [{ context: "vision", trained: true, source: "exported from FlyKart Vision" }] }), vision,
     fusion: { fade: state.fade, mode: state.mode, visionTemperature: 1 }, memory: memoryOn ? state.memory.toJSON() : null,
-    world: state.assets?.worldController ? { controller: controllerCheckpoint(state.assets.worldController, { domain: "world", track: "open world" }), vision: state.assets.worldVision } : null,
+    world: worldExportSource() ? { controller: controllerCheckpoint(worldExportSource()!.controller, { domain: "world", track: "open world" }), vision: worldExportSource()!.vision } : null,
   }));
 }
 
@@ -275,6 +317,9 @@ async function boot(): Promise<void> {
   fillSelect($("track-select") as HTMLSelectElement, [...named.map((t) => ({ id: t.id, label: t.name })), ...generated.map((t, i) => ({ id: t.id, label: `Generated track ${i + 1} (never trained on)` }))], "grand-loop");
   refreshBrainSelects({ controller: "robust", eyes: assets.vision ? "bundled" : "none" });
   $("fade-label").textContent = fadeLabel(0); updateModeNote();
+  if (!assets.robot) { const option = $<HTMLSelectElement>("profile").querySelector("option[value=robot]") as HTMLOptionElement; option.disabled = true; option.textContent += " (not bundled in this build)"; }
+  $<HTMLSelectElement>("profile").addEventListener("change", (event) => setProfile((event.target as HTMLSelectElement).value === "robot" ? "robot" : "kart"));
+  $<HTMLInputElement>("sonar-on").addEventListener("change", (event) => { state.sonarOn = (event.target as HTMLInputElement).checked; if (state.track) state.track.driver.options.sonarOff = !state.sonarOn; if (state.world?.driver) state.world.driver.options.sonarOff = !state.sonarOn; });
 
   document.querySelectorAll<HTMLButtonElement>(".tab").forEach((button) => button.addEventListener("click", () => showTab(button.id.replace("tab-btn-", ""))));
   $<HTMLInputElement>("fade").addEventListener("input", (event) => setFade(Number((event.target as HTMLInputElement).value)));
@@ -298,7 +343,7 @@ async function boot(): Promise<void> {
   $("world-fade").addEventListener("input", () => { if (state.world?.driver) state.world.driver.fusion.fade = Number($<HTMLInputElement>("world-fade").value); });
 
   $("how").innerHTML = HOW_IT_WORKS;
-  $("evidence").innerHTML = renderEvidence(assets.results, assets.controllerResults);
+  $("evidence").innerHTML = renderEvidence(assets.results, assets.controllerResults, assets.robotResults);
   buildTrack(); paintTrack();
   const wanted = location.hash.replace("#", ""); if (["world", "evidence", "how"].includes(wanted)) showTab(wanted);
   if (problems.length) console.warn("FlyKart Vision: bundled files not found:", problems.join(", "));

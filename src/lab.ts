@@ -87,7 +87,7 @@ const finiteOrNull = (value: unknown): number | null => (typeof value === "numbe
 /** Accepts a downloaded "flykart-brain" checkpoint, the wrapper stored in
  * localStorage, or a bare network snapshot. Older 9-sensor brains are upgraded
  * exactly as the simulator does it. */
-export function parseBrainFile(text: string): BrainFile {
+export function parseBrainFile(text: string, options: { allowSonar?: boolean } = {}): BrainFile {
   let raw: unknown;
   try { raw = JSON.parse(text); } catch { throw new Error("That file is not valid JSON."); }
   if (typeof raw !== "object" || raw === null || Array.isArray(raw)) throw new Error("Expected a JSON object with a FlyKart network in it.");
@@ -98,6 +98,7 @@ export function parseBrainFile(text: string): BrainFile {
   const source = networkRaw as BrainSnapshot;
   let network: SpikingNetwork;
   try { network = SpikingNetwork.fromJSON(source); } catch (error) { throw new Error(error instanceof Error ? error.message : "The network weights could not be read."); }
+  if (network.inputCount !== INPUT_COUNT && !options.allowSonar) throw new Error("This brain reads a sonar as well as the 17 usual sensors; open it in FlyKart Vision.");
   const provenance = Array.isArray(object.provenance) ? (object.provenance as Record<string, unknown>[]) : [];
   const lineage = typeof object.lineage === "object" && object.lineage !== null ? (object.lineage as { name?: unknown; generation?: unknown; parents?: unknown }) : null;
   return {

@@ -30,7 +30,8 @@ export const TRAFFIC_ESTIMATES = [8, 9, 10, 11, 12] as const;
 /** Controller inputs that the body provides itself. */
 export const PROPRIOCEPTION_SENSORS = [3, 14, 15] as const;
 export const PROPRIOCEPTION_COUNT = 3;
-export type Proprioception = { speed: number; lastSteer: number; lastDrive: number };
+/** What the body knows without looking. `sonarCloseness` and `sonarStrength` are present only on a robot with a sonar. */
+export type Proprioception = { speed: number; lastSteer: number; lastDrive: number; sonarCloseness?: number; sonarStrength?: number };
 
 /** Build the controller's 17 inputs from camera estimates and the body's own feedback. */
 export function sensorsFromEstimates(estimates: ArrayLike<number>, body: Proprioception, out: number[] = new Array(17).fill(0)): number[] {

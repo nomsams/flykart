@@ -22,7 +22,7 @@ export class TrackScene implements Scene {
   private oil: { x: number; y: number }[] = [];
   private readonly half: number;
 
-  constructor(readonly route: TrackDefinition, public style: Style, readonly gateCount = 8) {
+  constructor(readonly route: TrackDefinition, public style: Style, readonly gateCount = 8, gantry: { z0: number; z1: number } = { z0: 14, z1: 19 }) {
     const n = route.points.length;
     this.ax = new Float64Array(n); this.ay = new Float64Array(n); this.dx = new Float64Array(n); this.dy = new Float64Array(n);
     this.length2 = new Float64Array(n); this.cumulative = new Float64Array(n); this.segmentLength = new Float64Array(n);
@@ -37,8 +37,8 @@ export class TrackScene implements Scene {
       this.gateDistances.push(gate.distanceAlong);
       const heading = Math.atan2(gate.tangent.y, gate.tangent.x);
       const span = this.half + 5;
-      const post = (side: number): Sprite => ({ x: gate.point.x + gate.normal.x * span * side, y: gate.point.y + gate.normal.y * span * side, heading, width: 3, length: 3, z0: 0, z1: 17, color: index === 0 ? [0.95, 0.95, 0.95] : [0.95, 0.72, 0.1], shape: "post" });
-      this.gantries.push(post(-1), post(1), { x: gate.point.x, y: gate.point.y, heading, width: span * 2, length: 2.4, z0: 14, z1: 19, color: index === 0 ? [0.96, 0.96, 0.96] : [1, 0.82, 0.25], shape: "banner" });
+      const post = (side: number): Sprite => ({ x: gate.point.x + gate.normal.x * span * side, y: gate.point.y + gate.normal.y * span * side, heading, width: 3, length: 3, z0: 0, z1: gantry.z1 - 2, color: index === 0 ? [0.95, 0.95, 0.95] : [0.95, 0.72, 0.1], shape: "post" });
+      this.gantries.push(post(-1), post(1), { x: gate.point.x, y: gate.point.y, heading, width: span * 2, length: 2.4, z0: gantry.z0, z1: gantry.z1, color: index === 0 ? [0.96, 0.96, 0.96] : [1, 0.82, 0.25], shape: "banner" });
     }
   }
 

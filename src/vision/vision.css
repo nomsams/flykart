@@ -72,3 +72,7 @@ label.inline { display: inline-flex; gap: 6px; margin: 0; }
 .verdict.fail { border-color: #7a3b43; } .verdict.fail b::before { content: "✗ "; color: #ff9c9c; }
 @media (max-width: 920px) { .views { grid-template-columns: 1fr; } .memory-grid { grid-template-columns: 1fr; } }
 @media (max-width: 620px) { .lap-row { grid-template-columns: 2.4em 1fr 1fr; } .lap-row > :nth-child(n+4) { display: none; } .toolbar .status { margin-left: 0; width: 100%; } }
+
+.profile-bar { margin: 12px 0 0; }
+.profile-bar .profile-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 22px; }
+.profile-bar .profile-row select { min-width: 17rem; }

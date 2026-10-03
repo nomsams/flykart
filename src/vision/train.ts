@@ -24,10 +24,10 @@ export class VisionDataset {
   readonly frameLength: number;
   size = 0;
 
-  constructor(readonly capacity: number, readonly width: number, readonly height: number, readonly estimateCount: number) {
+  constructor(readonly capacity: number, readonly width: number, readonly height: number, readonly estimateCount: number, readonly bodyCount: number = BODY_INPUTS) {
     this.frameLength = 3 * width * height;
     this.frames = new Uint8Array(capacity * this.frameLength);
-    this.previous = new Int32Array(capacity); this.body = new Float32Array(capacity * BODY_INPUTS);
+    this.previous = new Int32Array(capacity); this.body = new Float32Array(capacity * this.bodyCount);
     this.targets = new Float32Array(capacity * estimateCount); this.action = new Float32Array(capacity * ACTION_GUESS_COUNT);
     this.episode = new Int32Array(capacity); this.group = new Int32Array(capacity);
   }
@@ -40,7 +40,7 @@ export class VisionDataset {
     const i = this.size++; const base = i * this.frameLength;
     for (let k = 0; k < this.frameLength; k += 1) this.frames[base + k] = Math.round(frame[k] * 255);
     this.previous[i] = previous < 0 ? i : previous;
-    for (let k = 0; k < BODY_INPUTS; k += 1) this.body[i * BODY_INPUTS + k] = body[k];
+    for (let k = 0; k < this.bodyCount; k += 1) this.body[i * this.bodyCount + k] = body[k] ?? 0;
     for (let k = 0; k < this.estimateCount; k += 1) this.targets[i * this.estimateCount + k] = targets[k];
     for (let k = 0; k < ACTION_GUESS_COUNT; k += 1) this.action[i * ACTION_GUESS_COUNT + k] = action[k];
     this.episode[i] = episode; this.group[i] = group;
@@ -113,7 +113,7 @@ export function trainVision(net: VisionCnn, data: VisionDataset, options: TrainO
   if (net.spec.outputs !== outputCountFor(n)) throw new Error("network outputs do not match the dataset");
   const indices = options.indices ? Array.from(options.indices) : Array.from({ length: data.size }, (_, i) => i);
   const image = new Float32Array(inputChannelCount(net.spec) * data.width * data.height);
-  const body = new Float32Array(BODY_INPUTS); const dOut = new Float32Array(net.spec.outputs);
+  const body = new Float32Array(data.bodyCount); const dOut = new Float32Array(net.spec.outputs);
   const targets = new Float32Array(n); const mirrored = new Float32Array(n);
   const weights = options.weights ?? domain.trainingWeights;
   const actionWeight = options.actionWeight ?? 0.5; const delta = options.huberDelta ?? 1;
@@ -127,7 +127,8 @@ export function trainVision(net: VisionCnn, data: VisionDataset, options: TrainO
       for (let k = start; k < end; k += 1) {
         const i = indices[k]; const mirror = Boolean(options.mirror) && random() < 0.5;
         data.image(i, net.spec, mirror, image);
-        body[0] = data.body[i * BODY_INPUTS]; body[1] = data.body[i * BODY_INPUTS + 1] * (mirror ? -1 : 1); body[2] = data.body[i * BODY_INPUTS + 2];
+        for (let j = 0; j < data.bodyCount; j += 1) body[j] = data.body[i * data.bodyCount + j];
+        if (mirror) body[1] = -body[1];
         for (let c = 0; c < n; c += 1) targets[c] = data.targets[i * n + c];
         if (mirror) { domain.mirror(targets, mirrored); for (let c = 0; c < n; c += 1) targets[c] = mirrored[c]; }
         const out = net.forward(image, body);
@@ -163,11 +164,11 @@ export function trainVision(net: VisionCnn, data: VisionDataset, options: TrainO
 /** Per-estimate accuracy and calibration on a set of samples. */
 export function evaluateVision(net: VisionCnn, data: VisionDataset, indices: ArrayLike<number>, targetScale: number[], heldOut: string): VisionMetrics {
   const n = data.estimateCount;
-  const image = new Float32Array(inputChannelCount(net.spec) * data.width * data.height); const body = new Float32Array(BODY_INPUTS);
+  const image = new Float32Array(inputChannelCount(net.spec) * data.width * data.height); const body = new Float32Array(data.bodyCount);
   const sumSq = new Array(n).fill(0), sum = new Array(n).fill(0), sumY2 = new Array(n).fill(0), z2 = new Array(n).fill(0), cover = new Array(n).fill(0);
   for (let k = 0; k < indices.length; k += 1) {
     const i = indices[k]; data.image(i, net.spec, false, image);
-    for (let j = 0; j < BODY_INPUTS; j += 1) body[j] = data.body[i * BODY_INPUTS + j];
+    for (let j = 0; j < data.bodyCount; j += 1) body[j] = data.body[i * data.bodyCount + j];
     const out = net.forward(image, body);
     for (let c = 0; c < n; c += 1) {
       const y = data.targets[i * n + c]; const mean = out[c] * targetScale[c]; const error = mean - y;

@@ -10,6 +10,15 @@ export const ACTION_GUESS_COUNT = 3;
 export const outputCountFor = (estimates: number): number => estimates * 2 + ACTION_GUESS_COUNT;
 export const OUTPUT_COUNT = outputCountFor(ESTIMATE_COUNT);
 export const BODY_INPUTS = 3;
+/** Body feedback plus the sonar's closeness and strength: the camera network of a robot with a sonar reads both together. */
+export const BODY_INPUTS_WITH_SONAR = 5;
+
+/** Write the body (and sonar) signals into a camera network's extra inputs; a 3-wide vector simply leaves the sonar out. */
+export function fillBody(body: Proprioception, out: Float32Array): Float32Array {
+  out[0] = body.speed; out[1] = body.lastSteer; out[2] = body.lastDrive;
+  if (out.length > BODY_INPUTS) { out[3] = body.sonarCloseness ?? 0; out[4] = body.sonarStrength ?? 0; }
+  return out;
+}
 /** The network sees the current frame and the one this many vision steps earlier. */
 export const FRAME_LAG = 2;
 /** The camera network runs once every this many simulation ticks (15 Hz at 30 ticks/s). */
@@ -32,8 +41,8 @@ export type VisionModel = {
   history?: unknown;
 };
 
-export function defaultSpec(frames = 2, estimates: number = ESTIMATE_COUNT, input: "rgb" | "retina" = "retina", spatial = true): NetSpec {
-  return { width: 48, height: 24, frames, input, spatial, channels: [6, 12, 16], hidden: 48, extra: BODY_INPUTS, outputs: outputCountFor(estimates) };
+export function defaultSpec(frames = 2, estimates: number = ESTIMATE_COUNT, input: "rgb" | "retina" = "retina", spatial = true, extra: number = BODY_INPUTS): NetSpec {
+  return { width: 48, height: 24, frames, input, spatial, channels: [6, 12, 16], hidden: 48, extra, outputs: outputCountFor(estimates) };
 }
 
 export function serialiseModel(net: VisionCnn, camera: CameraConfig, targetScale: number[], trainedOn: string, metrics?: VisionMetrics, notes?: string, domain: "track" | "world" = "track"): VisionModel {
@@ -69,10 +78,11 @@ export class Perceiver {
   private readonly current: Float32Array; private readonly older: Float32Array;
   private readonly history: Float32Array[] = [];
   readonly perception: Perception;
-  private readonly body = new Float32Array(BODY_INPUTS);
+  private readonly body: Float32Array;
 
   constructor(readonly model: VisionModel, net?: VisionCnn) {
     this.net = net ?? netFromModel(model);
+    this.body = new Float32Array(model.spec.extra);
     this.scale = model.targetScale;
     this.estimateCount = (model.spec.outputs - ACTION_GUESS_COUNT) / 2;
     this.image = new Float32Array(inputChannelCount(model.spec) * model.spec.height * model.spec.width);
@@ -92,8 +102,7 @@ export class Perceiver {
     for (let i = 0; i < plane; i += 1) { this.current[i] = latest[i] - 0.5; this.older[i] = earlier[i] - 0.5; }
     if (spec.input === "retina") retinaPlanes(this.current, frames > 1 ? this.older : null, spec.width, spec.height, this.image);
     else { this.image.set(this.current, 0); if (frames > 1) this.image.set(this.older, plane); }
-    this.body[0] = body.speed; this.body[1] = body.lastSteer; this.body[2] = body.lastDrive;
-    const out = this.net.forward(this.image, this.body);
+    const out = this.net.forward(this.image, fillBody(body, this.body));
     const p = this.perception; const n = this.estimateCount;
     for (let c = 0; c < n; c += 1) {
       p.mean[c] = out[c] * this.scale[c];

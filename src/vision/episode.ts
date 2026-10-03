@@ -9,6 +9,8 @@ import { CameraConfig, DEFAULT_CAMERA, Style, DEFAULT_STYLE, frameLength, random
 import { ESTIMATE_COUNT, Proprioception, estimatesFromSensors } from "./interface";
 import { Random, mulberry32 } from "./rng";
 import { registerTrack } from "./proceduralTracks";
+import { SONAR_USEFUL_RANGE_PX, SensorProfile } from "./robot";
+import { Sonar, SonarReading, SonarTarget, sonarInputs } from "./sonar";
 import { TrackScene } from "./trackScene";
 
 export type TrackEpisodeOptions = {
@@ -25,6 +27,8 @@ export type TrackEpisodeOptions = {
   physicsVariation?: number;
   maxTicks?: number;
   camera?: CameraConfig;
+  /** The sensor head: camera geometry, sonar, gantry height. Overrides `camera`. Default: the original kart (camera only). */
+  profile?: SensorProfile;
   /** Skip building a scene (faster) when only numbers are needed. */
   headless?: boolean;
   rewardConfig?: RewardConfig;
@@ -69,6 +73,8 @@ export class TrackEpisode implements VisionEpisode {
   physics: PhysicsConfig;
   readonly rewardConfig: RewardConfig;
   tick = 0;
+  /** The sonar, if this robot has one. It has its own random stream so the camera's noise is unaffected. */
+  readonly sonarUnit: Sonar | null;
   private lastSensors: number[] | null = null;
   private lastSensorTick = -1;
 
@@ -77,9 +83,9 @@ export class TrackEpisode implements VisionEpisode {
     this.route = resolveTrack(typeof options.track === "string" ? options.track : registerTrack(options.track));
     const seed = options.seed ?? 1;
     this.random = mulberry32(seed * 7919 + 13);
-    this.camera = options.camera ?? DEFAULT_CAMERA;
+    this.camera = options.profile?.camera ?? options.camera ?? DEFAULT_CAMERA;
     this.style = options.style ? options.style : (options.styleStrength ?? 0) > 0 ? randomStyle(this.random, options.styleStrength ?? 0) : { ...DEFAULT_STYLE };
-    this.scene = options.headless ? null : new TrackScene(this.route, this.style);
+    this.scene = options.headless ? null : new TrackScene(this.route, this.style, 8, options.profile?.gantry);
     this.frame = new Float32Array(options.headless ? 0 : frameLength(this.camera));
     this.rewardConfig = options.rewardConfig ?? DEFAULT_REWARD_CONFIG;
     this.physics = physicsForEpisode({ ...DEFAULT_PHYSICS_CONFIG, adaptiveTimeLimit: false, wallsEnabled: options.walls ?? true, domainRandomization: options.physicsVariation ?? 0 }, seed, this.route);
@@ -96,6 +102,35 @@ export class TrackEpisode implements VisionEpisode {
     }
     this.roadObjects.push(...createRoadObstacles(options.roadObjects ?? 0, this.route, seed, options.objectKind ?? "mixed"));
     this.cars = [this.car, ...this.rivals, ...this.roadObjects];
+    this.sonarUnit = options.profile?.sonar ? new Sonar(options.profile.sonar, mulberry32(seed * 104729 + 7)) : null;
+    this.ping();
+  }
+
+  sonar(): SonarReading | null { return this.sonarUnit ? this.sonarUnit.reading : null; }
+
+  /** What a ping could bounce off right now: other karts, cones, barriers. Paint, kerbs and oil are flat on the floor and invisible to it. */
+  sonarTargets(): SonarTarget[] {
+    const targets: SonarTarget[] = [];
+    for (const other of this.cars) {
+      if (other === this.car || other.crashed || other.finished || other.timedOut || other.eliminated) continue;
+      const kind = other.isObstacle ? other.obstacleKind : "kart";
+      if (kind === "oil") continue;
+      const { x, y } = other.position;
+      if (kind === "cone") targets.push({ kind: "circle", x, y, radius: 3, z0: 0, z1: 10 });
+      else if (kind === "barrier") targets.push({ kind: "box", x, y, heading: other.heading + Math.PI / 2, halfLength: 19, halfWidth: 3.5, z0: 0, z1: 9 });
+      else targets.push({ kind: "box", x, y, heading: other.heading, halfLength: 12, halfWidth: 7, z0: 0, z1: 9 });
+    }
+    return targets;
+  }
+
+  /** Take a sonar reading if one is due this tick. */
+  private ping(): void {
+    if (this.sonarUnit) this.sonarUnit.update(this.tick, { x: this.car.position.x, y: this.car.position.y, heading: this.car.heading }, this.sonarTargets());
+  }
+
+  /** Take a reading now, whatever the ping cycle says (after objects have been moved by hand). */
+  refreshSonar(): void {
+    if (this.sonarUnit) this.sonarUnit.update(0, { x: this.car.position.x, y: this.car.position.y, heading: this.car.heading }, this.sonarTargets());
   }
 
   /** Put the kart somewhere other than the start line (for diverse training data). */
@@ -118,6 +153,7 @@ export class TrackEpisode implements VisionEpisode {
       }
     }
     this.lastSensorTick = -1;
+    this.refreshSonar();
   }
 
   get done(): boolean { const car = this.car; return car.crashed || car.finished || car.timedOut || car.eliminated; }
@@ -132,7 +168,9 @@ export class TrackEpisode implements VisionEpisode {
   /** What the kart's own body reports: speed and its last commands. Cheap, and not privileged information. */
   proprioception(): Proprioception {
     const car = this.car;
-    return { speed: clamp(car.speed / 90, -1, 1), lastSteer: clamp(car.action.steer, -1, 1), lastDrive: clamp(car.action.throttle - car.action.brake, -1, 1) };
+    const body: Proprioception = { speed: clamp(car.speed / 90, -1, 1), lastSteer: clamp(car.action.steer, -1, 1), lastDrive: clamp(car.action.throttle - car.action.brake, -1, 1) };
+    if (this.sonarUnit) { const pair = sonarInputs(this.sonarUnit.reading, SONAR_USEFUL_RANGE_PX); body.sonarCloseness = pair[0]; body.sonarStrength = pair[1]; }
+    return body;
   }
 
   /** What the camera should report, in the 13-number estimate space. Traffic is limited to what a forward camera can see. */
@@ -164,6 +202,7 @@ export class TrackEpisode implements VisionEpisode {
     stepCar(this.car, action, this.cars, this.route, this.rewardConfig, this.physics);
     this.rivals.forEach((bot, index) => stepCar(bot, botActions[index], this.cars, this.route, this.rewardConfig, { ...this.physics, ruthlessCulling: false }));
     this.tick += 1;
+    this.ping();
   }
 
   get seconds(): number { return this.tick * STEP; }

@@ -31,6 +31,19 @@
         </nav>
       </header>
 
+      <section class="panel profile-bar" aria-label="Sensor head">
+        <div class="profile-row">
+          <label class="inline">Sensor head
+            <select id="profile">
+              <option value="kart">Simulated kart · camera only</option>
+              <option value="robot">Robot scale · camera + HC-SR04 sonar</option>
+            </select>
+          </label>
+          <label class="check-row" id="sonar-row" hidden><input id="sonar-on" type="checkbox" checked /> <span>Sonar on <small>off: the same brain driving deaf</small></span></label>
+        </div>
+        <p id="profile-note" class="note"></p>
+      </section>
+
       <div class="tabs" role="tablist" aria-label="Sections">
         <button role="tab" id="tab-btn-track" aria-controls="tab-track" aria-selected="true" class="tab active">Race track</button>
         <button role="tab" id="tab-btn-world" aria-controls="tab-world" aria-selected="false" class="tab">Open world</button>
@@ -64,6 +77,11 @@
               <div class="panel-title"><div><span class="kicker">SENSES</span><strong id="estimates-title">What the kart believes, and who it trusts</strong></div><span class="muted legend"><i class="dot truth"></i>truth <i class="dot camera"></i>camera ±2σ <i class="dot fused"></i>used <i class="dot memory"></i>memory · right bar: trust in camera / feeling / memory</span></div>
               <canvas id="track-estimates" width="760" height="330" aria-label="Estimates of the camera network compared with the truth"></canvas>
               <p class="note">Each row is one number the spiking controller reads. The bar on the right shows how much of the belief came from the camera, the exact “feeling” channels and the lap memory.</p>
+            </section>
+            <section class="panel" id="sonar-panel" aria-labelledby="sonar-title" hidden>
+              <div class="panel-title"><div><span class="kicker">SONAR · HC-SR04</span><strong id="sonar-title">What the ping hears</strong></div><span id="sonar-status" class="muted">—</span></div>
+              <canvas id="sonar-canvas" width="760" height="170" aria-label="Recent distance readings of the ultrasonic sensor"></canvas>
+              <p class="note">One ping about every 66 ms, a beam roughly 15° wide that returns the nearest echo. It sees cones, barriers, other karts, trees and rocks, but not paint, kerbs, oil or ponds (flat things the sound skims over), and a thin or slanted target can fade away. The two numbers the controller gets are how close the echo is and how strong it was.</p>
             </section>
             <section class="panel" aria-labelledby="memory-title">
               <div class="panel-title"><div><span class="kicker">MUSHROOM BODY</span><strong id="memory-title">Lap memory: Kenyon cells</strong></div><span id="memory-status" class="muted">off</span></div>
@@ -179,7 +197,7 @@
               <label>Seed <input id="world-seed" type="number" min="1" max="999999" value="7" /></label>
               <label>Clutter <input id="world-density" type="range" min="0.1" max="1" step="0.05" value="0.6" /></label>
               <label>Look of the world <input id="world-style" type="range" min="0" max="1" step="0.1" value="0" /></label>
-              <div class="stat-grid"><div><span class="muted">goals</span><strong id="world-goals">0</strong></div><div><span class="muted">collisions</span><strong id="world-collisions">0</strong></div><div><span class="muted">time</span><strong id="world-time">0 s</strong></div></div>
+              <div class="stat-grid"><div><span class="muted">goals</span><strong id="world-goals">0</strong></div><div><span class="muted">collisions</span><strong id="world-collisions">0</strong></div><div><span class="muted">time</span><strong id="world-time">0 s</strong></div><div id="world-sonar-box" hidden><span class="muted">sonar</span><strong id="world-sonar">—</strong></div></div>
             </section>
             <section class="panel-section">
               <div class="section-title"><h2>Controller</h2></div>

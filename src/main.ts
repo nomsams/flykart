@@ -861,6 +861,7 @@ async function importBrain(file: File): Promise<void> {
     if (parsed.format !== undefined && parsed.format !== "flykart-brain") throw new Error("this file is not a FlyKart brain checkpoint");
     if (!parsed.network) throw new Error("checkpoint is missing its network weights");
     const network = SpikingNetwork.fromJSON(parsed.network);
+    if (network.inputCount !== 17) throw new Error("this brain reads a sonar as well; open it in FlyKart Vision, or export it for FlyKart v1 from there");
     contextProvenance.clear(); restoreProvenance(parsed.provenance);
     const sourceContext = isTrainingContext(parsed.track) ? parsed.track : "all"; const selectedContext = selectedTrainingContext(); const sourceFitness = typeof parsed.fitness === "number" && Number.isFinite(parsed.fitness) ? parsed.fitness : -Infinity; const sourceGeneration = typeof parsed.generation === "number" && Number.isInteger(parsed.generation) && parsed.generation >= 0 ? parsed.generation : 0;
     const sourceRecord = contextProvenance.get(sourceContext); const sourceProgress = sourceRecord?.bestProgress ?? 0; const sourceFinished = sourceRecord?.finished ?? false;

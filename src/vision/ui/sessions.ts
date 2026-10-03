@@ -8,12 +8,15 @@ import { Perceiver, VisionModel } from "../perception";
 import { DriverMode, VisionDriver } from "../pipeline";
 import { WORLD_CAMERA, WorldEpisode, worldExpert } from "../world/worldDomain";
 import { SECTORS } from "../world/world";
-import type { TraceSample } from "./draw";
+import type { SonarSample, TraceSample } from "./draw";
+import { CM_PER_PIXEL, SensorProfile } from "../robot";
 
 export type TrackSettings = {
   trackId: string; rivals: number; objects: number; style: number; walls: boolean;
   controller: BrainSnapshot; vision: VisionModel | null; fade: number; mode: DriverMode; memory: MushroomBody | null;
   seed: number;
+  /** Sensor head. Omitted means the camera-only kart. */
+  profile?: SensorProfile; sonarOn?: boolean;
 };
 
 const FAR = ESTIMATE_NAMES.indexOf("curveFar");
@@ -29,6 +32,7 @@ export class TrackSession {
   readonly controller: SpikingNetwork;
   readonly perceiver: Perceiver | null;
   readonly trace: TraceSample[] = [];
+  readonly sonarTrace: SonarSample[] = [];
   lastTruth: number[] = new Array(13).fill(0);
   private cameraErrorSum = 0; private usedErrorSum = 0; private errorCount = 0;
 
@@ -36,11 +40,11 @@ export class TrackSession {
     this.route = TRACKS.find((track) => track.id === settings.trackId) ?? TRACKS[0];
     this.controller = SpikingNetwork.fromJSON(settings.controller);
     this.perceiver = settings.vision ? new Perceiver(settings.vision) : null;
-    this.episode = new TrackEpisode({ track: this.route, rivals: settings.rivals, roadObjects: settings.objects, objectKind: "mixed", seed: settings.seed, styleStrength: settings.style, walls: settings.walls, maxTicks: 7000, headless: false });
+    this.episode = new TrackEpisode({ track: this.route, rivals: settings.rivals, roadObjects: settings.objects, objectKind: "mixed", seed: settings.seed, styleStrength: settings.style, walls: settings.walls, maxTicks: 7000, headless: false, profile: settings.profile });
     this.episode.car.network = this.controller;
     this.driver = new VisionDriver({
       perceiver: this.perceiver, controller: this.controller, domain: trackDomain, mode: settings.mode, fusion: { fade: settings.fade },
-      memory: this.perceiver ? settings.memory : null, feelingController: this.controller.clone(),
+      memory: this.perceiver ? settings.memory : null, feelingController: this.controller.clone(), sonarOff: settings.sonarOn === false,
     });
     this.driver.reset();
     this.lastTruth = this.episode.truth();
@@ -60,6 +64,8 @@ export class TrackSession {
       this.errorCount += GEOMETRY.length;
     }
     this.episode.step(frame.action);
+    const reading = this.episode.sonar();
+    if (reading) { this.sonarTrace.push({ cm: reading.range * CM_PER_PIXEL, echo: reading.echo, strength: reading.strength }); if (this.sonarTrace.length > 240) this.sonarTrace.shift(); }
   }
 
   lap(lapNumber: number): LapRecord {
@@ -73,7 +79,7 @@ export class TrackSession {
 }
 
 export type WorldDriverKind = "vision" | "both" | "feeling" | "expert" | "blind";
-export type WorldSettings = { seed: number; density: number; style: number; kind: WorldDriverKind; fade: number; controller: BrainSnapshot; vision: VisionModel | null };
+export type WorldSettings = { seed: number; density: number; style: number; kind: WorldDriverKind; fade: number; controller: BrainSnapshot; vision: VisionModel | null; profile?: SensorProfile; sonarOn?: boolean };
 
 export class WorldSession {
   readonly episode: WorldEpisode;
@@ -84,11 +90,11 @@ export class WorldSession {
 
   constructor(readonly settings: WorldSettings) {
     this.controller = SpikingNetwork.fromJSON(settings.controller);
-    this.episode = new WorldEpisode({ seed: settings.seed, density: settings.density, styleStrength: settings.style, camera: WORLD_CAMERA, maxTicks: 4200 });
+    this.episode = new WorldEpisode({ seed: settings.seed, density: settings.density, styleStrength: settings.style, camera: WORLD_CAMERA, maxTicks: 4200, profile: settings.profile });
     const needsEyes = settings.kind === "vision" || settings.kind === "both";
     const perceiver = needsEyes && settings.vision ? new Perceiver(settings.vision) : null;
     this.driver = settings.kind === "expert" ? null : new VisionDriver({
-      perceiver, controller: this.controller, domain: worldDomain, blind: settings.kind === "blind", mode: "belief",
+      perceiver, controller: this.controller, domain: worldDomain, blind: settings.kind === "blind", mode: "belief", sonarOff: settings.sonarOn === false,
       fusion: { fade: settings.kind === "both" ? settings.fade : 0 },
     });
     this.driver?.reset();

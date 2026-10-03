@@ -14,6 +14,8 @@ import { CameraConfig, DEFAULT_STYLE, Style, frameLength, randomStyle, renderFra
 import type { Domain, VisionEpisode } from "../domain";
 import { Proprioception } from "../interface";
 import { Random, mulberry32 } from "../rng";
+import { SONAR_USEFUL_RANGE_PX, SensorProfile, SonarSpec } from "../robot";
+import { Sonar, SonarReading, SonarTarget, sonarInputs } from "../sonar";
 import { SECTORS, SECTOR_ANGLES, SECTOR_SPAN, SURFACE_VALUE, WorldSim, clearanceScan, surfaceAt } from "./world";
 import { WorldScene } from "./worldScene";
 
@@ -69,7 +71,7 @@ export function worldExpert(s: ArrayLike<number>): Action {
   return { steer, throttle, brake, reverse: 0 };
 }
 
-export type WorldEpisodeOptions = { seed: number; density?: number; styleStrength?: number; maxTicks?: number; camera?: CameraConfig; headless?: boolean };
+export type WorldEpisodeOptions = { seed: number; density?: number; styleStrength?: number; maxTicks?: number; camera?: CameraConfig; headless?: boolean; sonar?: SonarSpec | null; profile?: SensorProfile };
 
 export class WorldEpisode implements VisionEpisode {
   readonly sim: WorldSim;
@@ -79,14 +81,40 @@ export class WorldEpisode implements VisionEpisode {
   readonly frame: Float32Array;
   private readonly random: Random;
   private readonly scan = new Array(SECTORS).fill(0);
+  readonly sonarUnit: Sonar | null;
+  private readonly fixedTargets: SonarTarget[] = [];
 
   constructor(readonly options: WorldEpisodeOptions) {
     this.sim = new WorldSim(options.seed, { density: options.density, maxTicks: options.maxTicks });
     this.random = mulberry32(options.seed * 31 + 3);
-    this.camera = options.camera ?? WORLD_CAMERA;
+    this.camera = options.profile?.worldCamera ?? options.camera ?? WORLD_CAMERA;
     this.style = (options.styleStrength ?? 0) > 0 ? randomStyle(this.random, options.styleStrength ?? 0) : { ...DEFAULT_STYLE };
     this.scene = options.headless ? null : new WorldScene(this.sim.world, this.style);
     this.frame = new Float32Array(options.headless ? 0 : frameLength(this.camera));
+    const sonarSpec = options.sonar ?? options.profile?.sonar ?? null;
+    this.sonarUnit = sonarSpec ? new Sonar(sonarSpec, mulberry32(options.seed * 104729 + 11)) : null;
+    const { world } = this.sim;
+    // Trunks and rocks are solid; ponds, sand and mud lie flat and cannot be heard. The fence is a low wall all round.
+    for (const o of world.obstacles) this.fixedTargets.push({ kind: "circle", x: o.x, y: o.y, radius: o.radius, z0: 0, z1: o.height });
+    const h = world.half;
+    this.fixedTargets.push({ kind: "box", x: 0, y: -h, heading: 0, halfLength: h, halfWidth: 1.5, z0: 0, z1: 11 }, { kind: "box", x: 0, y: h, heading: 0, halfLength: h, halfWidth: 1.5, z0: 0, z1: 11 },
+      { kind: "box", x: -h, y: 0, heading: Math.PI / 2, halfLength: h, halfWidth: 1.5, z0: 0, z1: 11 }, { kind: "box", x: h, y: 0, heading: Math.PI / 2, halfLength: h, halfWidth: 1.5, z0: 0, z1: 11 });
+    this.ping();
+  }
+
+  sonar(): SonarReading | null { return this.sonarUnit ? this.sonarUnit.reading : null; }
+
+  /** Take a reading now, after the kart has been moved by hand. */
+  refreshSonar(): void {
+    if (!this.sonarUnit) return;
+    const { kart } = this.sim;
+    this.sonarUnit.update(0, { x: kart.x, y: kart.y, heading: kart.heading }, this.fixedTargets);
+  }
+
+  private ping(): void {
+    if (!this.sonarUnit) return;
+    const { kart } = this.sim;
+    this.sonarUnit.update(this.sim.status.ticks, { x: kart.x, y: kart.y, heading: kart.heading }, this.fixedTargets);
   }
 
   get done(): boolean { return this.sim.done; }
@@ -97,7 +125,9 @@ export class WorldEpisode implements VisionEpisode {
 
   proprioception(): Proprioception {
     const { kart } = this.sim;
-    return { speed: clamp(kart.speed / 90, -1, 1), lastSteer: clamp(kart.action.steer, -1, 1), lastDrive: clamp(kart.action.throttle - kart.action.brake, -1, 1) };
+    const body: Proprioception = { speed: clamp(kart.speed / 90, -1, 1), lastSteer: clamp(kart.action.steer, -1, 1), lastDrive: clamp(kart.action.throttle - kart.action.brake, -1, 1) };
+    if (this.sonarUnit) { const pair = sonarInputs(this.sonarUnit.reading, SONAR_USEFUL_RANGE_PX); body.sonarCloseness = pair[0]; body.sonarStrength = pair[1]; }
+    return body;
   }
 
   truth(out: number[] = new Array(SECTORS + 1).fill(0)): number[] {
@@ -115,5 +145,5 @@ export class WorldEpisode implements VisionEpisode {
     return renderFrame(this.scene, { x: kart.x, y: kart.y, heading: kart.heading }, this.camera, this.frame, this.random);
   }
 
-  step(action: Action): void { this.sim.step(action); }
+  step(action: Action): void { this.sim.step(action); this.ping(); }
 }
