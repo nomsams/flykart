@@ -6,6 +6,80 @@ FlyKart is a small original racing environment for experimenting with fly-inspir
 
 The companion [machine-learning compendium](https://nomsams.github.io/flykart/machine-learning.html) covers biophysics, neural-network topologies, connectomes, linear algebra, LLMs, CUDA, YOLO, distillation, LoRA, neuroevolution, interactive labs, optimization, and real-world AI deployment.
 
+## The compendium's guided route and brain inspector
+
+[`public/machine-learning.html`](public/machine-learning.html) opens with a nine-chapter guided route that follows one question, *which parts of a neuron must the kart keep?*, from a living cell (Hodgkin–Huxley) through LIF, the artificial neuron, spiking networks, learning, and hardware, to the real 17 → 48 → 4 FlyKart controller. Each chapter is split into lettered parts, carries interactive labs, and ends with a "kept / dropped / price" ledger; a sticky bar shows the current chapter and part, and a route map at the top links every part and lab.
+
+**Chapter 9 · Open a trained brain** loads a `flykart-brain` checkpoint (use **Download brain** in the simulator, or drop the bundled sample) and lets you:
+
+- see its four weight blocks as heat maps, and open any neuron's card;
+- feed it any sensor values and watch spikes and controls, or sweep one sensor at a time for response curves;
+- drive it on the simulator's *own* physics, sensors and 18-term reward function, poke it (shove it to an edge, drop a cone, face it backwards) and watch every reward term react;
+- silence groups of neurons and see what breaks.
+
+The lab engine is the real `src/core.ts` bundled for the browser. `npm run dev` and `npm run build` generate `public/flykart-core.js` from `src/lab.ts` (it is git-ignored) with esbuild, which ships inside Vite. `public/sample-brain.json` is a demo brain produced by:
+
+```bash
+npx vite-node scripts/make-sample-brain.ts --gens=40                     # warm start + evolution alone
+npx vite-node scripts/make-sample-brain.ts --gens=40 --traffic --from=public/sample-brain.json --out=public/sample-brain.json
+npx vite-node scripts/check-brain.ts public/sample-brain.json            # progress on every track, alone and with rivals
+```
+
+## FlyKart Vision (version 2)
+
+[`vision.html`](vision.html) is a second app that sits next to the original and shares its simulator. **FlyKart v1 is untouched**: `index.html`, `src/main.ts` and `src/core.ts` behave exactly as before, and a test (`backward compatibility with the original FlyKart`) checks that driving a lap through the new pipeline with the "feeling" channels reproduces the original simulator tick for tick.
+
+What changes is where the controller's 17 inputs come from. In v1 the simulator hands them over. In Vision a small camera network reads a 48×24 colour image and *estimates* them, the kart's own body supplies speed and its last commands, and (optionally) a Kenyon-cell memory adds what it learned on the previous lap. The 17 → 48 → 4 spiking controller is the same class with the same file format, so:
+
+- **import** any `flykart-brain` checkpoint from v1 (old 9-sensor brains too) and drive it through the camera;
+- **export for FlyKart v1** hands the original app a controller trained here;
+- **Export vision brain** saves controller + eyes + fusion settings + lap memory in one `flykart-vision-brain` file whose embedded controller is itself a complete v1 checkpoint.
+
+### The pipeline, and how it was built
+
+| Step | What it does | Where |
+|---|---|---|
+| 1 | Evolve the controller through a noisy, biased, delayed 13-estimate interface; a candidate may not lap fewer clean tracks than the champion | `scripts/robust-evolve.ts`, `src/vision/robust.ts` |
+| 2 | Software camera (perspective ground plane + upright sprites, 48×24 colour, palette/lighting/noise randomisation) with free ground-truth labels, plus randomly generated tracks | `src/vision/camera.ts`, `trackScene.ts`, `proceduralTracks.ts` |
+| 3 | Train the camera network by imitation, then DAgger (the camera pipeline drives, the exact-number brain labels), plus thousands of short traffic scenes | `scripts/vision-train.ts`, `src/vision/dagger.ts`, `cnn.ts`, `train.ts` |
+| 4 | Fuse *beliefs*, not actions: cues weighted by 1/variance (camera, exact "feeling" channels scaled by a fade, lap memory); compare with naive action averaging | `src/vision/fusion.ts`, `pipeline.ts` |
+| 5 | Kenyon cells: sparse random place fields, 1/n running-average output synapses, only cells taught on an *earlier lap* count as remembered | `src/vision/memory.ts` |
+| 6 | The same recipe in a random open world (trees, rocks, ponds, sand, mud; no road) | `src/vision/world/` |
+
+```bash
+npm run dev                         # then open /vision.html
+npm run vision:controller           # step 1  (about 30 min)
+npm run vision:controller-check     #         v1 brain vs robust controller across noise levels
+npm run vision:train                # steps 2-3 (about 1 h on a laptop CPU)
+npm run vision:world-controller     # step 6
+npm run vision:world-train
+npm run vision:experiments          # everything the Evidence tab shows -> public/vision/results.json
+npx vite-node scripts/dump-dataset.ts --out=datasets/track --frames=20000   # a labelled dataset for any other framework
+```
+
+### What was measured
+
+Everything below is reproduced by `npm run vision:experiments` and shown, with the full tables, in the app's **Evidence** tab. All numbers are on tracks and worlds the networks never trained on, from a 4-core laptop CPU; each driver ran each track once, so differences of a lap or two are noise.
+
+| Question | Result |
+|---|---|
+| **1 · Does a controller trained for imperfect eyes lose its skill?** | No. Clean: 6/7 laps on the tracks it trained on (the v1 demo brain: 6/7), 6/8 on unseen tracks (v1: 4/8). With 0.40 noise, drifting error and 333 ms delay: 7/7 and 5/8 (v1: 2/7 and 2/8). Laps are also faster. |
+| **2 · Can the camera drive alone?** | Mostly. 5/8 laps (74% progress) on unseen tracks with walls, 6/8 without walls; exact numbers: 7/8 and 5/8; blind: 0/8. The camera network explains the road geometry well (R² on held-out tracks: heading to look-ahead 0.74, edge clearance 0.80, curvature 0.59, lateral 0.51) but not everything (road angle −0.07, bend 150 px ahead 0.40). |
+| **3 · Can the feeling be faded out?** | Yes. Weight 1 → 0.1 → 0.01 → 0.001 → 0 moves smoothly from the exact-number result (7/8 laps) to the camera-only result (5/8); fading it from 1 to 0 *during* a lap gave 7/8 laps. Averaging the two brains' actions (6/8) did **not** do worse here: the case where it should fail, two good ways round one obstacle, is rare in these runs. |
+| **4 · Does it see traffic?** | Yes, up to roughly 100 px (R² 0.61 closeness, 0.60 ahead/behind, 0.41 side). Without road-side walls, with rivals and road objects, the camera-only kart finished 5/8 laps against 1/8 for the exact-number kart, which crashes more here; I did not establish why. One run per track; treat as suggestive. |
+| **5 · Does a lap teach the kart what to expect?** | Mixed, and smaller than hoped. In good light the memory changes little (estimate error −4% on average, lap 2 faster than lap 1 on 2 of 6 tracks). When the second lap is dim and noisy, the memory lowered the estimate error on 7/8 tracks at night and let 5 tracks finish against 4, but it made dusk slightly less reliable (5 vs 6 laps) and dim laps slower (41 s vs 24 s). On the tracks the kart can drive, a memory taught on a *different* track gives estimates 3-7× worse than the right one, so it is place-specific. |
+| **6 · Does the same logic drive an open world?** | Yes, roughly. Camera-only: 2.65 goals per 60 s run and 6/20 crashes, against 2.20 and 5/20 for the same spiking controller on exact numbers (blind: 0.45 and 15/20). The hand-written expert reaches 3.35 with no crashes, so in this world the spiking controller, not the eyes, is the weaker part. |
+
+### Things that did not work, and what that taught
+
+- **Long drives teach a camera nothing about traffic** (R² ≈ 0 after 30,000 frames): a drive contains few distinct objects. Thousands of three-frame scenes with fresh arrangements raised it to ~0.6.
+- **A hard-wired colour-opponent "retina" front end and a spatial soft-argmax layer** (both in `src/vision/retina.ts` / `cnn.ts`, off by default) matched but did not beat the plain network.
+- **A memory that learns "what the camera should have said" from hindsight** was worse than the camera everywhere: hindsight measures the kart's own wobble, not the road. The memory that stores the kart's *path* (position and heading at each place) and recalls it from the current pose works better.
+- **Online calibration of the memory against hindsight** made it overtrust itself; its uncertainty is now measured offline against the true road.
+- **Push-pull motor outputs** (left/right/forward/back instead of steer/throttle/brake/reverse), taught by imitation from the same random hidden layer, were slightly worse (13/42 vs 15/42 laps on trained tracks, 22/66 vs 28/66 on unseen).
+- **The 3D claim**: the "world" is a software-rendered perspective view of a flat plane with upright objects (48×24 pixels). It exercises the same camera → estimates → controller path as a game engine would, but it has no slopes, shadows, textures or weather.
+- Not done: quality-diversity / novelty search for the evolutionary stage, learned gating or mixture-of-experts fusion, surrogate-gradient training of the spiking controller, training in the browser (training is Node-only; the browser runs, imports and exports).
+
 ## Run locally
 
 ```bash

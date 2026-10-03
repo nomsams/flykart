@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FlyKart Vision — a fly-trained racer with eyes</title>
+    <style>
+      /* Keep the boot state useful even if the application bundle or its CSS fails to load. */
+      #boot-screen { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; padding: 24px; color: #e9edf5; background: #10131a; font: 16px/1.5 system-ui, sans-serif; }
+      #boot-screen[hidden] { display: none; }
+      #boot-screen[data-error="true"] { background: #24171b; }
+      .boot-card { width: min(520px, 100%); padding: 28px; border: 1px solid #354052; border-radius: 16px; background: #151a23; }
+      .boot-card h1 { margin: 0 0 8px; font-size: 2rem; }
+      .boot-card p { margin: 8px 0 0; color: #aab6c7; }
+    </style>
+  </head>
+  <body class="vision">
+    <div id="boot-screen" role="status" aria-live="polite">
+      <div class="boot-card"><h1 id="boot-title">Loading FlyKart Vision</h1><p id="boot-message">Downloading the simulator, the camera and the trained networks…</p></div>
+    </div>
+    <main class="app-shell">
+      <header class="hero">
+        <div>
+          <p class="eyebrow">FLYKART · VERSION 2 · EYES</p>
+          <h1>FlyKart Vision</h1>
+          <p class="lede">The same tiny spiking brain, now steering by what a camera sees.</p>
+        </div>
+        <nav class="hero-links" aria-label="FlyKart pages">
+          <a class="badge guide-link" href="./index.html">← Original FlyKart</a>
+          <a class="badge guide-link" href="./machine-learning.html">Machine learning guide</a>
+        </nav>
+      </header>
+
+      <div class="tabs" role="tablist" aria-label="Sections">
+        <button role="tab" id="tab-btn-track" aria-controls="tab-track" aria-selected="true" class="tab active">Race track</button>
+        <button role="tab" id="tab-btn-world" aria-controls="tab-world" aria-selected="false" class="tab">Open world</button>
+        <button role="tab" id="tab-btn-evidence" aria-controls="tab-evidence" aria-selected="false" class="tab">Evidence</button>
+        <button role="tab" id="tab-btn-how" aria-controls="tab-how" aria-selected="false" class="tab">How it works</button>
+      </div>
+
+      <!-- ============================ RACE TRACK ============================ -->
+      <section id="tab-track" class="tab-panel" role="tabpanel" aria-labelledby="tab-btn-track">
+        <div class="workspace">
+          <div class="game-card">
+            <div class="views">
+              <div class="view-box">
+                <div class="view-title"><span>Top view</span><span id="track-caption" class="muted"></span></div>
+                <div class="canvas-wrap"><canvas id="track-map" width="760" height="500" aria-label="Top-down view of the track"></canvas></div>
+              </div>
+              <div class="view-box">
+                <div class="view-title"><span>What the kart sees</span><span class="muted">48×24 colour pixels, 15 frames a second</span></div>
+                <div class="canvas-wrap"><canvas id="track-eye" width="480" height="240" aria-label="The camera image the kart steers by"></canvas></div>
+                <div class="eye-note" id="eye-note"></div>
+              </div>
+            </div>
+            <div class="toolbar">
+              <button id="track-run" class="primary">Start</button>
+              <button id="track-restart">Restart</button>
+              <button id="track-laps" title="Drive three laps in a row, keeping the lap memory between them">3 laps with memory</button>
+              <label class="inline">Speed <select id="track-speed"><option value="1">1×</option><option value="2">2×</option><option value="4" selected>4×</option><option value="8">8×</option></select></label>
+              <span id="track-status" class="status muted">Ready</span>
+            </div>
+            <section class="panel" aria-labelledby="estimates-title">
+              <div class="panel-title"><div><span class="kicker">SENSES</span><strong id="estimates-title">What the kart believes, and who it trusts</strong></div><span class="muted legend"><i class="dot truth"></i>truth <i class="dot camera"></i>camera ±2σ <i class="dot fused"></i>used <i class="dot memory"></i>memory · right bar: trust in camera / feeling / memory</span></div>
+              <canvas id="track-estimates" width="760" height="330" aria-label="Estimates of the camera network compared with the truth"></canvas>
+              <p class="note">Each row is one number the spiking controller reads. The bar on the right shows how much of the belief came from the camera, the exact “feeling” channels and the lap memory.</p>
+            </section>
+            <section class="panel" aria-labelledby="memory-title">
+              <div class="panel-title"><div><span class="kicker">MUSHROOM BODY</span><strong id="memory-title">Lap memory: Kenyon cells</strong></div><span id="memory-status" class="muted">off</span></div>
+              <div class="memory-grid">
+                <canvas id="memory-cells" width="300" height="200" aria-label="Kenyon cells for the current stretch of road"></canvas>
+                <canvas id="memory-trace" width="440" height="200" aria-label="The bend 150 pixels ahead: truth, camera, memory and the value used"></canvas>
+              </div>
+              <div id="lap-table" class="lap-table"></div>
+              <p class="note">Left: the cells that belong to the stretch the kart is on. Bright = firing now; violet = taught at least once. Right: the bend 150 px ahead. On the first lap only the camera estimates it; on later laps the memory recalls the path it drove and offers a second opinion, which counts for most when the camera is struggling.</p>
+            </section>
+          </div>
+
+          <aside class="control-panel">
+            <section class="panel-section">
+              <div class="section-title"><h2>Brain</h2></div>
+              <label>Controller
+                <select id="track-controller"></select>
+              </label>
+              <label>Eyes
+                <select id="track-eyes"></select>
+              </label>
+              <div class="button-row">
+                <button id="import-btn" class="quiet" title="Load a FlyKart brain (from the original app or from here)">Import brain…</button>
+                <input id="import-file" type="file" accept="application/json,.json" hidden />
+                <button id="export-vision-btn" class="quiet" title="Download controller, eyes, fusion settings and lap memory in one file">Export vision brain</button>
+                <button id="export-v1-btn" class="quiet" title="Download just the controller in the original FlyKart format">Export for FlyKart v1</button>
+              </div>
+              <p id="brain-info" class="note"></p>
+            </section>
+            <section class="panel-section">
+              <div class="section-title"><h2>Feeling ↔ Seeing</h2><span id="fade-label" class="status">seeing only</span></div>
+              <input id="fade" type="range" min="0" max="1" step="0.01" value="0" aria-label="Weight of the exact feeling channels" />
+              <div class="range-ends"><span>seeing only</span><span>feeling only</span></div>
+              <div class="button-row">
+                <button id="preset-seeing" class="quiet">Seeing</button>
+                <button id="preset-both" class="quiet">Both</button>
+                <button id="preset-feeling" class="quiet">Feeling (v1)</button>
+              </div>
+              <label>Combine by
+                <select id="track-mode">
+                  <option value="belief">Fusing what is believed (recommended)</option>
+                  <option value="action-average">Averaging the two brains’ actions</option>
+                  <option value="vision-action">The camera’s own action guess</option>
+                </select>
+              </label>
+              <p id="mode-note" class="note"></p>
+            </section>
+            <section class="panel-section">
+              <div class="section-title"><h2>Lap memory</h2></div>
+              <label class="check-row"><input id="memory-on" type="checkbox" /> <span>Kenyon cells <small>learn the path of a lap and recall it on the next</small></span></label>
+              <div class="button-row"><button id="memory-forget" class="quiet">Forget</button></div>
+            </section>
+            <section class="panel-section">
+              <div class="section-title"><h2>Track</h2></div>
+              <label>Track <select id="track-select"></select></label>
+              <label>Rival karts <select id="track-rivals"><option value="0">none</option><option value="1">1</option><option value="2">2</option></select></label>
+              <label>Road objects <select id="track-objects"><option value="0">none</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option></select></label>
+              <label>Look of the world <input id="track-style" type="range" min="0" max="1" step="0.1" value="0" /></label>
+              <label class="check-row"><input id="track-walls" type="checkbox" checked /> <span>Road-side walls <small>off: leaving the road is for real</small></span></label>
+            </section>
+            <section class="panel-section">
+              <div class="section-title"><h2>Controller</h2></div>
+              <canvas id="brain-canvas" width="280" height="200" aria-label="Spiking activity of the 48 controller neurons and its four outputs"></canvas>
+            </section>
+          </aside>
+        </div>
+      </section>
+
+      <!-- ============================== WORLD =============================== -->
+      <section id="tab-world" class="tab-panel" role="tabpanel" aria-labelledby="tab-btn-world" hidden>
+        <div class="workspace">
+          <div class="game-card">
+            <div class="views">
+              <div class="view-box">
+                <div class="view-title"><span>Top view</span><span id="world-caption" class="muted"></span></div>
+                <div class="canvas-wrap square"><canvas id="world-map" width="620" height="620" aria-label="Top-down view of the open world"></canvas></div>
+              </div>
+              <div class="view-box">
+                <div class="view-title"><span>What the kart sees</span><span class="muted">104° field of view</span></div>
+                <div class="canvas-wrap"><canvas id="world-eye" width="480" height="240" aria-label="The camera image in the open world"></canvas></div>
+                <div class="eye-note">The pink flag is the goal. Trees and rocks block the way; blue ponds end the run; sand and mud slow the kart.</div>
+              </div>
+            </div>
+            <div class="toolbar">
+              <button id="world-run" class="primary">Start</button>
+              <button id="world-new">New world</button>
+              <label class="inline">Speed <select id="world-speed"><option value="1">1×</option><option value="2">2×</option><option value="4" selected>4×</option><option value="8">8×</option></select></label>
+              <span id="world-status" class="status muted">Ready</span>
+            </div>
+            <section class="panel" aria-labelledby="world-estimates-title">
+              <div class="panel-title"><div><span class="kicker">SENSES</span><strong id="world-estimates-title">Nine clearance sectors and the ground ahead</strong></div><span class="muted legend"><i class="dot truth"></i>truth <i class="dot camera"></i>camera ±2σ <i class="dot fused"></i>used</span></div>
+              <canvas id="world-estimates" width="760" height="260" aria-label="Clearance estimates in the open world"></canvas>
+              <p class="note">The camera estimates how blocked each 11° slice of the view is. A compass supplies the direction of the goal, and the body supplies speed and its own last commands.</p>
+            </section>
+          </div>
+          <aside class="control-panel">
+            <section class="panel-section">
+              <div class="section-title"><h2>Driver</h2></div>
+              <label>Who steers
+                <select id="world-driver">
+                  <option value="vision">Camera → spiking controller</option>
+                  <option value="both">Camera + exact whiskers (fused)</option>
+                  <option value="feeling">Exact numbers → spiking controller</option>
+                  <option value="expert">Hand-written expert</option>
+                  <option value="blind">Blind (control)</option>
+                </select>
+              </label>
+              <label>Whisker weight <input id="world-fade" type="range" min="0" max="1" step="0.01" value="0.5" /></label>
+              <p id="world-brain-info" class="note"></p>
+            </section>
+            <section class="panel-section">
+              <div class="section-title"><h2>World</h2></div>
+              <label>Seed <input id="world-seed" type="number" min="1" max="999999" value="7" /></label>
+              <label>Clutter <input id="world-density" type="range" min="0.1" max="1" step="0.05" value="0.6" /></label>
+              <label>Look of the world <input id="world-style" type="range" min="0" max="1" step="0.1" value="0" /></label>
+              <div class="stat-grid"><div><span class="muted">goals</span><strong id="world-goals">0</strong></div><div><span class="muted">collisions</span><strong id="world-collisions">0</strong></div><div><span class="muted">time</span><strong id="world-time">0 s</strong></div></div>
+            </section>
+            <section class="panel-section">
+              <div class="section-title"><h2>Controller</h2></div>
+              <canvas id="world-brain" width="280" height="200" aria-label="Spiking activity of the controller"></canvas>
+            </section>
+          </aside>
+        </div>
+      </section>
+
+      <!-- ============================ EVIDENCE ============================== -->
+      <section id="tab-evidence" class="tab-panel" role="tabpanel" aria-labelledby="tab-btn-evidence" hidden>
+        <div id="evidence" class="prose wide"><p class="muted">Loading the measurements…</p></div>
+      </section>
+
+      <!-- ============================ HOW IT WORKS ========================== -->
+      <section id="tab-how" class="tab-panel" role="tabpanel" aria-labelledby="tab-btn-how" hidden>
+        <article id="how" class="prose"></article>
+      </section>
+
+      <footer>
+        <span>Same deterministic 30 Hz simulator as FlyKart v1 · everything here runs in your browser</span>
+        <a href="./index.html">Original FlyKart →</a>
+      </footer>
+    </main>
+    <noscript><p style="padding: 24px; color: #f3b5b5; background: #24171b; font: 16px/1.5 system-ui, sans-serif;">FlyKart Vision needs JavaScript enabled.</p></noscript>
+    <script type="module" src="./src/vision/app.ts"></script>
+  </body>
+</html>

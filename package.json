@@ -4,15 +4,27 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
+    "build:lab": "esbuild src/lab.ts --bundle --format=iife --global-name=FlyKartCore --target=es2020 --minify --outfile=public/flykart-core.js",
+    "predev": "npm run build:lab",
     "dev": "vite",
-    "build": "tsc --noEmit && vite build --base=./",
+    "build": "npm run build:lab && tsc --noEmit && vite build --base=./",
     "test": "vitest run",
     "test:watch": "vitest",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "vision:controller": "vite-node scripts/robust-evolve.ts --from=public/sample-brain.json --out=public/vision/controller.json --gens=40",
+    "vision:controller-check": "vite-node scripts/eval-controller.ts --brains=public/sample-brain.json,public/vision/controller.json --out=public/vision/results-controller.json",
+    "vision:train": "vite-node scripts/vision-train.ts --domain=track --teacher=public/vision/controller.json --out=public/vision/vision-net.json",
+    "vision:world-controller": "vite-node scripts/world-controller.ts --out=public/vision/world-controller.json --gens=40",
+    "vision:world-train": "vite-node scripts/vision-train.ts --domain=world --teacher=public/vision/world-controller.json --out=public/vision/world-vision-net.json --capacity=36000",
+    "vision:experiments": "vite-node scripts/experiments.ts --out=public/vision/results.json",
+    "vision:camera": "vite-node scripts/preview-camera.ts camera-preview.png",
+    "vision:world-camera": "vite-node scripts/preview-world.ts world-preview.png"
   },
   "devDependencies": {
+    "esbuild": "^0.25.0",
     "typescript": "^5.7.3",
     "vite": "^6.1.0",
+    "vite-node": "^3.0.5",
     "vitest": "^3.0.5"
   }
 }

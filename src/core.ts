@@ -524,6 +524,10 @@ export class SpikingNetwork {
 
   activity(): NeuronSnapshot { return this.snapshot; }
 
+  /** Membrane voltages carried into the next tick (0 right after a spike).
+   * A read-only view for inspection tools; the simulation never uses it. */
+  potentials(): readonly number[] { return this.voltage; }
+
   toJSON(): BrainSnapshot {
     return { version: 2, inputCount: this.inputCount, hiddenCount: this.hiddenCount, outputCount: 4, mutationSigma: this.mutationSigma,
       inputWeights: [...this.inputWeights], recurrentWeights: [...this.recurrentWeights], outputWeights: [...this.outputWeights], bias: [...this.bias] };

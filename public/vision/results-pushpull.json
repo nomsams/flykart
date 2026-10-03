@@ -1,0 +1,31 @@
+{
+ "generatedAt": "2026-10-03T00:07:52.870Z",
+ "seeds": 6,
+ "description": "Imitation of the built-in heuristic driver only (3 passes over 7 tracks), no evolution; the same random hidden layer for both layouts.",
+ "rows": {
+  "standard": {
+   "trained": {
+    "laps": 15,
+    "progress": 28.98214933699042,
+    "episodes": 42
+   },
+   "unseen": {
+    "laps": 28,
+    "progress": 46.060277717442766,
+    "episodes": 66
+   }
+  },
+  "push-pull": {
+   "trained": {
+    "laps": 13,
+    "progress": 26.59820592605972,
+    "episodes": 42
+   },
+   "unseen": {
+    "laps": 22,
+    "progress": 41.07674485943472,
+    "episodes": 66
+   }
+  }
+ }
+}

@@ -1,0 +1,743 @@
+{
+ "generatedAt": "2026-10-02T23:17:32.732Z",
+ "suite": [
+  {
+   "id": "grand-loop",
+   "group": "trained"
+  },
+  {
+   "id": "switchback",
+   "group": "trained"
+  },
+  {
+   "id": "zigzag",
+   "group": "trained"
+  },
+  {
+   "id": "hairpin",
+   "group": "trained"
+  },
+  {
+   "id": "oval-sprint",
+   "group": "unseen"
+  },
+  {
+   "id": "sharp-turn",
+   "group": "unseen"
+  },
+  {
+   "id": "deep-hairpin",
+   "group": "unseen"
+  },
+  {
+   "id": "chicane",
+   "group": "trained"
+  },
+  {
+   "id": "corkscrew",
+   "group": "unseen"
+  },
+  {
+   "id": "mountain-pass",
+   "group": "trained"
+  },
+  {
+   "id": "tight-corners",
+   "group": "trained"
+  },
+  {
+   "id": "grand-prix",
+   "group": "unseen"
+  },
+  {
+   "id": "castle-run",
+   "group": "unseen"
+  },
+  {
+   "id": "needle-eye",
+   "group": "unseen"
+  },
+  {
+   "id": "rainbow-rally",
+   "group": "unseen"
+  },
+  {
+   "id": "gen-17000",
+   "group": "generated"
+  },
+  {
+   "id": "gen-17400",
+   "group": "generated"
+  },
+  {
+   "id": "gen-17800",
+   "group": "generated"
+  },
+  {
+   "id": "gen-18201",
+   "group": "generated"
+  }
+ ],
+ "rows": [
+  {
+   "brain": "public/sample-brain.json",
+   "level": "clean",
+   "traffic": false,
+   "group": "trained",
+   "laps": 6,
+   "episodes": 7,
+   "progress": 0.9242609347740925,
+   "meanLapSeconds": 42.455555555555556,
+   "crashes": 0
+  },
+  {
+   "brain": "public/sample-brain.json",
+   "level": "clean",
+   "traffic": false,
+   "group": "unseen",
+   "laps": 4,
+   "episodes": 8,
+   "progress": 0.8203228431196512,
+   "meanLapSeconds": 36.858333333333334,
+   "crashes": 0
+  },
+  {
+   "brain": "public/sample-brain.json",
+   "level": "clean",
+   "traffic": false,
+   "group": "generated",
+   "laps": 4,
+   "episodes": 4,
+   "progress": 1,
+   "meanLapSeconds": 25.78333333333333,
+   "crashes": 0
+  },
+  {
+   "brain": "public/sample-brain.json",
+   "level": "mild",
+   "traffic": false,
+   "group": "trained",
+   "laps": 5,
+   "episodes": 7,
+   "progress": 0.8435217754393162,
+   "meanLapSeconds": 60.61333333333333,
+   "crashes": 0
+  },
+  {
+   "brain": "public/sample-brain.json",
+   "level": "mild",
+   "traffic": false,
+   "group": "unseen",
+   "laps": 4,
+   "episodes": 8,
+   "progress": 0.7661832784415948,
+   "meanLapSeconds": 47.55833333333333,
+   "crashes": 0
+  },
+  {
+   "brain": "public/sample-brain.json",
+   "level": "mild",
+   "traffic": false,
+   "group": "generated",
+   "laps": 4,
+   "episodes": 4,
+   "progress": 0.9998541579426143,
+   "meanLapSeconds": 50.53333333333333,
+   "crashes": 0
+  },
+  {
+   "brain": "public/sample-brain.json",
+   "level": "rough",
+   "traffic": false,
+   "group": "trained",
+   "laps": 5,
+   "episodes": 7,
+   "progress": 0.9290032126673672,
+   "meanLapSeconds": 47.59333333333334,
+   "crashes": 0
+  },
+  {
+   "brain": "public/sample-brain.json",
+   "level": "rough",
+   "traffic": false,
+   "group": "unseen",
+   "laps": 3,
+   "episodes": 8,
+   "progress": 0.6855010577127624,
+   "meanLapSeconds": 35.53333333333333,
+   "crashes": 0
+  },
+  {
+   "brain": "public/sample-brain.json",
+   "level": "rough",
+   "traffic": false,
+   "group": "generated",
+   "laps": 4,
+   "episodes": 4,
+   "progress": 0.9990272894469915,
+   "meanLapSeconds": 39.25,
+   "crashes": 0
+  },
+  {
+   "brain": "public/sample-brain.json",
+   "level": "harsh",
+   "traffic": false,
+   "group": "trained",
+   "laps": 3,
+   "episodes": 7,
+   "progress": 0.8138391326562229,
+   "meanLapSeconds": 48.87777777777777,
+   "crashes": 0
+  },
+  {
+   "brain": "public/sample-brain.json",
+   "level": "harsh",
+   "traffic": false,
+   "group": "unseen",
+   "laps": 4,
+   "episodes": 8,
+   "progress": 0.753183814742206,
+   "meanLapSeconds": 60.30833333333333,
+   "crashes": 0
+  },
+  {
+   "brain": "public/sample-brain.json",
+   "level": "harsh",
+   "traffic": false,
+   "group": "generated",
+   "laps": 4,
+   "episodes": 4,
+   "progress": 0.9985843936137317,
+   "meanLapSeconds": 48.99166666666667,
+   "crashes": 0
+  },
+  {
+   "brain": "public/sample-brain.json",
+   "level": "brutal",
+   "traffic": false,
+   "group": "trained",
+   "laps": 2,
+   "episodes": 7,
+   "progress": 0.7256799779061159,
+   "meanLapSeconds": 77.23333333333333,
+   "crashes": 0
+  },
+  {
+   "brain": "public/sample-brain.json",
+   "level": "brutal",
+   "traffic": false,
+   "group": "unseen",
+   "laps": 2,
+   "episodes": 8,
+   "progress": 0.6747594516840797,
+   "meanLapSeconds": 116.53333333333333,
+   "crashes": 0
+  },
+  {
+   "brain": "public/sample-brain.json",
+   "level": "brutal",
+   "traffic": false,
+   "group": "generated",
+   "laps": 3,
+   "episodes": 4,
+   "progress": 0.9417202935269028,
+   "meanLapSeconds": 84.77777777777777,
+   "crashes": 0
+  },
+  {
+   "brain": "public/sample-brain.json",
+   "level": "clean",
+   "traffic": true,
+   "group": "trained",
+   "laps": 3,
+   "episodes": 7,
+   "progress": 0.6373081109514146,
+   "meanLapSeconds": 54.56666666666666,
+   "crashes": 0
+  },
+  {
+   "brain": "public/sample-brain.json",
+   "level": "clean",
+   "traffic": true,
+   "group": "unseen",
+   "laps": 1,
+   "episodes": 8,
+   "progress": 0.6617371695973072,
+   "meanLapSeconds": 37.86666666666667,
+   "crashes": 0
+  },
+  {
+   "brain": "public/sample-brain.json",
+   "level": "clean",
+   "traffic": true,
+   "group": "generated",
+   "laps": 4,
+   "episodes": 4,
+   "progress": 0.9999529823746581,
+   "meanLapSeconds": 76.65833333333333,
+   "crashes": 0
+  },
+  {
+   "brain": "public/sample-brain.json",
+   "level": "mild",
+   "traffic": true,
+   "group": "trained",
+   "laps": 2,
+   "episodes": 7,
+   "progress": 0.5169785858855332,
+   "meanLapSeconds": 50.43333333333334,
+   "crashes": 0
+  },
+  {
+   "brain": "public/sample-brain.json",
+   "level": "mild",
+   "traffic": true,
+   "group": "unseen",
+   "laps": 3,
+   "episodes": 8,
+   "progress": 0.6827574856264977,
+   "meanLapSeconds": 44.455555555555556,
+   "crashes": 0
+  },
+  {
+   "brain": "public/sample-brain.json",
+   "level": "mild",
+   "traffic": true,
+   "group": "generated",
+   "laps": 2,
+   "episodes": 4,
+   "progress": 0.851755071345658,
+   "meanLapSeconds": 35.583333333333336,
+   "crashes": 0
+  },
+  {
+   "brain": "public/sample-brain.json",
+   "level": "rough",
+   "traffic": true,
+   "group": "trained",
+   "laps": 2,
+   "episodes": 7,
+   "progress": 0.5433275566494841,
+   "meanLapSeconds": 56.31666666666666,
+   "crashes": 0
+  },
+  {
+   "brain": "public/sample-brain.json",
+   "level": "rough",
+   "traffic": true,
+   "group": "unseen",
+   "laps": 3,
+   "episodes": 8,
+   "progress": 0.737094485794813,
+   "meanLapSeconds": 61.92222222222222,
+   "crashes": 0
+  },
+  {
+   "brain": "public/sample-brain.json",
+   "level": "rough",
+   "traffic": true,
+   "group": "generated",
+   "laps": 3,
+   "episodes": 4,
+   "progress": 0.9403947315573954,
+   "meanLapSeconds": 32.833333333333336,
+   "crashes": 0
+  },
+  {
+   "brain": "public/sample-brain.json",
+   "level": "harsh",
+   "traffic": true,
+   "group": "trained",
+   "laps": 1,
+   "episodes": 7,
+   "progress": 0.40983541621765995,
+   "meanLapSeconds": 44.833333333333336,
+   "crashes": 0
+  },
+  {
+   "brain": "public/sample-brain.json",
+   "level": "harsh",
+   "traffic": true,
+   "group": "unseen",
+   "laps": 1,
+   "episodes": 8,
+   "progress": 0.6261544638455578,
+   "meanLapSeconds": 126.1,
+   "crashes": 0
+  },
+  {
+   "brain": "public/sample-brain.json",
+   "level": "harsh",
+   "traffic": true,
+   "group": "generated",
+   "laps": 4,
+   "episodes": 4,
+   "progress": 0.999010745433714,
+   "meanLapSeconds": 75.575,
+   "crashes": 0
+  },
+  {
+   "brain": "public/sample-brain.json",
+   "level": "brutal",
+   "traffic": true,
+   "group": "trained",
+   "laps": 1,
+   "episodes": 7,
+   "progress": 0.5647774977856653,
+   "meanLapSeconds": 58.96666666666667,
+   "crashes": 0
+  },
+  {
+   "brain": "public/sample-brain.json",
+   "level": "brutal",
+   "traffic": true,
+   "group": "unseen",
+   "laps": 2,
+   "episodes": 8,
+   "progress": 0.6318637238441047,
+   "meanLapSeconds": 111.75,
+   "crashes": 0
+  },
+  {
+   "brain": "public/sample-brain.json",
+   "level": "brutal",
+   "traffic": true,
+   "group": "generated",
+   "laps": 3,
+   "episodes": 4,
+   "progress": 0.9458168320388541,
+   "meanLapSeconds": 84.61111111111113,
+   "crashes": 0
+  },
+  {
+   "brain": ".cache/controller-r2.json",
+   "level": "clean",
+   "traffic": false,
+   "group": "trained",
+   "laps": 6,
+   "episodes": 7,
+   "progress": 0.9944576576540325,
+   "meanLapSeconds": 26.105555555555554,
+   "crashes": 0
+  },
+  {
+   "brain": ".cache/controller-r2.json",
+   "level": "clean",
+   "traffic": false,
+   "group": "unseen",
+   "laps": 6,
+   "episodes": 8,
+   "progress": 0.993515660957194,
+   "meanLapSeconds": 36.288888888888884,
+   "crashes": 0
+  },
+  {
+   "brain": ".cache/controller-r2.json",
+   "level": "clean",
+   "traffic": false,
+   "group": "generated",
+   "laps": 4,
+   "episodes": 4,
+   "progress": 0.9999603620105457,
+   "meanLapSeconds": 18.583333333333336,
+   "crashes": 0
+  },
+  {
+   "brain": ".cache/controller-r2.json",
+   "level": "mild",
+   "traffic": false,
+   "group": "trained",
+   "laps": 6,
+   "episodes": 7,
+   "progress": 0.995771559100633,
+   "meanLapSeconds": 27.144444444444446,
+   "crashes": 0
+  },
+  {
+   "brain": ".cache/controller-r2.json",
+   "level": "mild",
+   "traffic": false,
+   "group": "unseen",
+   "laps": 6,
+   "episodes": 8,
+   "progress": 0.988334397523813,
+   "meanLapSeconds": 37.87222222222223,
+   "crashes": 0
+  },
+  {
+   "brain": ".cache/controller-r2.json",
+   "level": "mild",
+   "traffic": false,
+   "group": "generated",
+   "laps": 4,
+   "episodes": 4,
+   "progress": 0.9993969023842748,
+   "meanLapSeconds": 19.724999999999998,
+   "crashes": 0
+  },
+  {
+   "brain": ".cache/controller-r2.json",
+   "level": "rough",
+   "traffic": false,
+   "group": "trained",
+   "laps": 6,
+   "episodes": 7,
+   "progress": 0.9982708683065055,
+   "meanLapSeconds": 60.73333333333334,
+   "crashes": 0
+  },
+  {
+   "brain": ".cache/controller-r2.json",
+   "level": "rough",
+   "traffic": false,
+   "group": "unseen",
+   "laps": 6,
+   "episodes": 8,
+   "progress": 0.9975618875358264,
+   "meanLapSeconds": 40.199999999999996,
+   "crashes": 0
+  },
+  {
+   "brain": ".cache/controller-r2.json",
+   "level": "rough",
+   "traffic": false,
+   "group": "generated",
+   "laps": 4,
+   "episodes": 4,
+   "progress": 0.9998295109607949,
+   "meanLapSeconds": 22.183333333333334,
+   "crashes": 0
+  },
+  {
+   "brain": ".cache/controller-r2.json",
+   "level": "harsh",
+   "traffic": false,
+   "group": "trained",
+   "laps": 7,
+   "episodes": 7,
+   "progress": 0.9947713399006609,
+   "meanLapSeconds": 52.128571428571426,
+   "crashes": 0
+  },
+  {
+   "brain": ".cache/controller-r2.json",
+   "level": "harsh",
+   "traffic": false,
+   "group": "unseen",
+   "laps": 6,
+   "episodes": 8,
+   "progress": 0.9855498804737947,
+   "meanLapSeconds": 38.72777777777778,
+   "crashes": 0
+  },
+  {
+   "brain": ".cache/controller-r2.json",
+   "level": "harsh",
+   "traffic": false,
+   "group": "generated",
+   "laps": 4,
+   "episodes": 4,
+   "progress": 1,
+   "meanLapSeconds": 36.31666666666667,
+   "crashes": 0
+  },
+  {
+   "brain": ".cache/controller-r2.json",
+   "level": "brutal",
+   "traffic": false,
+   "group": "trained",
+   "laps": 7,
+   "episodes": 7,
+   "progress": 0.9971604098907391,
+   "meanLapSeconds": 71.86190476190477,
+   "crashes": 0
+  },
+  {
+   "brain": ".cache/controller-r2.json",
+   "level": "brutal",
+   "traffic": false,
+   "group": "unseen",
+   "laps": 5,
+   "episodes": 8,
+   "progress": 1,
+   "meanLapSeconds": 69.35333333333332,
+   "crashes": 0
+  },
+  {
+   "brain": ".cache/controller-r2.json",
+   "level": "brutal",
+   "traffic": false,
+   "group": "generated",
+   "laps": 4,
+   "episodes": 4,
+   "progress": 0.9996752614294734,
+   "meanLapSeconds": 35.78333333333334,
+   "crashes": 0
+  },
+  {
+   "brain": ".cache/controller-r2.json",
+   "level": "clean",
+   "traffic": true,
+   "group": "trained",
+   "laps": 6,
+   "episodes": 7,
+   "progress": 0.9948154171228234,
+   "meanLapSeconds": 46.90555555555556,
+   "crashes": 0
+  },
+  {
+   "brain": ".cache/controller-r2.json",
+   "level": "clean",
+   "traffic": true,
+   "group": "unseen",
+   "laps": 5,
+   "episodes": 8,
+   "progress": 0.9586875417472622,
+   "meanLapSeconds": 58.67333333333333,
+   "crashes": 0
+  },
+  {
+   "brain": ".cache/controller-r2.json",
+   "level": "clean",
+   "traffic": true,
+   "group": "generated",
+   "laps": 4,
+   "episodes": 4,
+   "progress": 0.9999378000074464,
+   "meanLapSeconds": 28.800000000000004,
+   "crashes": 0
+  },
+  {
+   "brain": ".cache/controller-r2.json",
+   "level": "mild",
+   "traffic": true,
+   "group": "trained",
+   "laps": 5,
+   "episodes": 7,
+   "progress": 0.9250101360979872,
+   "meanLapSeconds": 30.553333333333335,
+   "crashes": 0
+  },
+  {
+   "brain": ".cache/controller-r2.json",
+   "level": "mild",
+   "traffic": true,
+   "group": "unseen",
+   "laps": 5,
+   "episodes": 8,
+   "progress": 0.9529494520723569,
+   "meanLapSeconds": 41.56,
+   "crashes": 0
+  },
+  {
+   "brain": ".cache/controller-r2.json",
+   "level": "mild",
+   "traffic": true,
+   "group": "generated",
+   "laps": 4,
+   "episodes": 4,
+   "progress": 0.9998205281958747,
+   "meanLapSeconds": 34.35,
+   "crashes": 0
+  },
+  {
+   "brain": ".cache/controller-r2.json",
+   "level": "rough",
+   "traffic": true,
+   "group": "trained",
+   "laps": 5,
+   "episodes": 7,
+   "progress": 0.9620462464058163,
+   "meanLapSeconds": 32.68666666666667,
+   "crashes": 0
+  },
+  {
+   "brain": ".cache/controller-r2.json",
+   "level": "rough",
+   "traffic": true,
+   "group": "unseen",
+   "laps": 6,
+   "episodes": 8,
+   "progress": 0.9971383681758476,
+   "meanLapSeconds": 46.88888888888889,
+   "crashes": 0
+  },
+  {
+   "brain": ".cache/controller-r2.json",
+   "level": "rough",
+   "traffic": true,
+   "group": "generated",
+   "laps": 4,
+   "episodes": 4,
+   "progress": 0.9999487264683538,
+   "meanLapSeconds": 28.225,
+   "crashes": 0
+  },
+  {
+   "brain": ".cache/controller-r2.json",
+   "level": "harsh",
+   "traffic": true,
+   "group": "trained",
+   "laps": 6,
+   "episodes": 7,
+   "progress": 0.9946444881174751,
+   "meanLapSeconds": 66.33333333333333,
+   "crashes": 0
+  },
+  {
+   "brain": ".cache/controller-r2.json",
+   "level": "harsh",
+   "traffic": true,
+   "group": "unseen",
+   "laps": 6,
+   "episodes": 8,
+   "progress": 0.9978162495008471,
+   "meanLapSeconds": 62.955555555555556,
+   "crashes": 0
+  },
+  {
+   "brain": ".cache/controller-r2.json",
+   "level": "harsh",
+   "traffic": true,
+   "group": "generated",
+   "laps": 4,
+   "episodes": 4,
+   "progress": 0.9994080236530114,
+   "meanLapSeconds": 38.225,
+   "crashes": 0
+  },
+  {
+   "brain": ".cache/controller-r2.json",
+   "level": "brutal",
+   "traffic": true,
+   "group": "trained",
+   "laps": 5,
+   "episodes": 7,
+   "progress": 0.996927917881363,
+   "meanLapSeconds": 50.90666666666667,
+   "crashes": 0
+  },
+  {
+   "brain": ".cache/controller-r2.json",
+   "level": "brutal",
+   "traffic": true,
+   "group": "unseen",
+   "laps": 4,
+   "episodes": 8,
+   "progress": 0.9914758441491112,
+   "meanLapSeconds": 86.45833333333333,
+   "crashes": 0
+  },
+  {
+   "brain": ".cache/controller-r2.json",
+   "level": "brutal",
+   "traffic": true,
+   "group": "generated",
+   "laps": 4,
+   "episodes": 4,
+   "progress": 0.9997131665847142,
+   "meanLapSeconds": 39.108333333333334,
+   "crashes": 0
+  }
+ ]
+}
