@@ -1,4 +1,4 @@
-export type EventKind = "system" | "sonar" | "camera" | "brain" | "serial" | "check";
+export type EventKind = "system" | "sonar" | "camera" | "brain" | "serial" | "check" | "training";
 export type TelemetryEvent = { time: number; kind: EventKind; message: string; data?: unknown };
 export class SensorConsole {
   readonly events: TelemetryEvent[] = [];
@@ -11,4 +11,5 @@ export class SensorConsole {
   }
   clear(): void { this.events.length = 0; this.revision++; }
   select(kind: string): TelemetryEvent[] { return kind === "all" ? this.events : this.events.filter(e => e.kind === kind); }
+  text(kind = "all"): string { return this.select(kind).map(e => `${e.time.toFixed(3)}s\t${e.kind.toUpperCase()}\t${e.message}`).join("\n"); }
 }

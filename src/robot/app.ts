@@ -1,6 +1,6 @@
 import "./robot.css";
 import { Action, SpikingNetwork, clamp } from "../core";
-import { controllerCheckpoint, importFile } from "../vision/format";
+import { controllerCheckpoint, exportVisionBrain, importFile } from "../vision/format";
 import { Perceiver, VisionModel } from "../vision/perception";
 import { worldDomain } from "../vision/world/worldDomain";
 import { sensorsFromEstimates } from "../vision/interface";
@@ -13,6 +13,10 @@ import { DEFAULT_NOISE, NOISE_PRESETS, NoiseSource, SensorNoise, validateNoise }
 import { SensorConsole, EventKind } from "./telemetry";
 import { SketchEditor } from "./editor";
 import { WiringDiagram } from "./wiring-diagram";
+import { reconnect, rewritePins } from "./rewiring";
+import { copyText } from "./serial";
+import { HardwarePanel } from "./hardware-panel";
+import { TrainingOptions, TrainingRun } from "./training";
 
 const root = document.querySelector<HTMLDivElement>("#robot-app")!;
 root.innerHTML = `
@@ -48,7 +52,7 @@ root.innerHTML = `
   <div class="advanced-section"><h3>Camera & acoustic sensor</h3><div class="advanced-fields" id="sensor-fields"></div><div class="row"><label class="check"><input id="camera-enabled" type="checkbox" checked> Camera connected</label><label class="check"><input id="sonar-enabled" type="checkbox" checked> Sonar connected</label></div><small>HC-SR04: 2–400 cm nominal range, 10 µs trigger, ≈66 ms between samples. Echo depends on height, target size and incidence; water at floor level returns nothing. Lens FOV is an editable assumption.</small></div>
   <div class="advanced-section" id="connection-settings"><h3>Controller → L298N → motor pairs</h3><label>Controller board <select id="board"><option value="esp32-cam">ESP32-CAM · direct L298N</option><option value="uno">Legacy UNO pin profile · external camera bridge</option></select></label><div class="wiring-grid" id="wiring-fields" style="margin-top:14px"></div><div class="row" style="flex-wrap:wrap"><label class="check"><input id="common-ground" type="checkbox" checked> Shared ground</label><label class="check"><input id="echo-divider" type="checkbox" checked> ECHO level shifted to 3.3 V</label><label class="check"><input id="sd-card" type="checkbox"> SD interface active</label></div><details class="hardware-wiring-preview" open><summary>Wire diagram · pin preview</summary><div id="hardware-diagram"></div></details><div id="wiring-message" class="wiring-message"></div></div>
   <div class="advanced-section"><h3>Fly → motor adapter</h3><p class="routing-note">The imported brain exposes steer, drive, reverse and brake outputs. L1/L2/L3 and R1/R2/R3 below are named software leg adapters: each side duplicates one motor request. These checkpoints do not identify biological leg neurons.</p><div class="advanced-fields"><label>Steering<select id="route-steering"><option value="arc">Arc · steering follows drive</option><option value="pivot">Pivot · allow in-place turns</option></select></label><label>Turn gain<input id="route-gain" type="number" min="0" max="1" step=".05"></label><label>Maximum PWM<input id="route-pwm" type="number" min="0" max="255"></label><label>Left motors ←<select id="route-left">${["L1","L2","L3","R1","R2","R3"].map(k => `<option>${k}</option>`).join("")}</select></label><label>Right motors ←<select id="route-right">${["L1","L2","L3","R1","R2","R3"].map(k => `<option>${k}</option>`).join("")}</select></label><label class="check"><input id="route-invert-left" type="checkbox"> Reverse left polarity</label><label class="check"><input id="route-invert-right" type="checkbox"> Reverse right polarity</label></div><small>Left driver channel → front-left + rear-left. Right channel → front-right + rear-right. Apply to change routing; independent four-wheel control requires more driver channels.</small></div>
-  <div class="advanced-section dialog-actions"><small>Applying pin changes does not rewrite your sketch. Use “Fly bridge” or update its pin constants to match. Invalid connections inhibit simulated motors.</small><button id="apply-hardware" class="primary">Apply components</button></div>
+  <div class="advanced-section dialog-actions"><small>Pin changes update the sketch's numeric IN1–IN4, ENA/ENB, TRIG and ECHO declarations automatically. Reflash the hardware bridge after changing real connections. Invalid connections inhibit simulated motors.</small><button id="apply-hardware" class="primary">Apply components</button></div>
 </dialog>`;
 
 const el = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -62,6 +66,9 @@ const download = (name: string, text: string, type = "application/json") => { co
 const safe = (fn: () => void) => { try { fn(); } catch (error) { message(error instanceof Error ? error.message : String(error), true); } };
 
 let objects = preset("room");
+let hardwarePanel: HardwarePanel;
+let training: TrainingRun | null = null, lastTraining: TrainingRun | null = null;
+let trainingContext: { domain: "world" | "track"; initialGeneration: number; [key: string]: unknown } | null = null, trainingNoise: SensorNoise | null = null;
 let floorColour = "#b7bea7", surfaceEvent = "", contactEvent = "";
 let wiring: Wiring = { ...ESP_WIRING };
 const physics = new RobotPhysics();
@@ -71,6 +78,7 @@ let controller: SpikingNetwork | null = null;
 let perceiver: Perceiver | null = null;
 let brainDomain: "world" | "track" = "world";
 let brainName = "Bundled robot world brain";
+let brainFitness=0, brainGeneration=0;
 const eyes: Partial<Record<"world" | "track", VisionModel>> = {};
 let program: ProgramId = "sequence", adapterConfig: MotorAdapter = { ...DEFAULT_ADAPTER }, noiseConfig: SensorNoise = { ...DEFAULT_NOISE };
 let noise = new NoiseSource(noiseConfig), driveCheck = new DrivetrainCheck();
@@ -106,6 +114,13 @@ document.querySelector(".object-tools")!.after(roomTools);
 const contactNote = document.createElement("p"); contactNote.id = "contact-note"; contactNote.className = "contact-note"; roomTools.after(contactNote);
 const roomCheck = document.createElement("button"); roomCheck.id = "bench-current"; roomCheck.textContent = "Run check in this habitat"; el("bench-check").before(roomCheck);
 const survey = document.createElement("button"); survey.id = "survey-room"; survey.textContent = "Explore with sonar"; survey.className = "quiet"; el("bench-check").after(survey);
+const trainingPanel = document.createElement("section"); trainingPanel.className = "card training-panel";
+trainingPanel.innerHTML = `<div class="training-head"><div><p class="eyebrow">LEARN / MEASURE / EXPORT</p><h2>Fly training bench</h2><p>Train the spiking controller through the actual 3D camera and sonar. Eyes stay fixed. Each candidate gets the same room, start pose and noise seeds; room memory resets between trials.</p></div><button id="export-fly">Export fly + eyes</button></div><div class="training-settings"><label>Episode seconds<input id="train-seconds" type="number" min="5" max="60" value="20"></label><label>Trials / candidate<input id="train-episodes" type="number" min="1" max="5" value="2"></label><label>Candidates<input id="train-population" type="number" min="2" max="8" value="4"></label><label>Generations<input id="train-generations" type="number" min="1" max="10" value="3"></label><label>Seed<input id="train-seed" type="number" min="0" max="2147483647" value="2048"></label><label>Mutation rate<input id="train-rate" type="number" min="0" max="1" step=".05" value=".15"></label><label>Mutation amount<input id="train-amount" type="number" min="0" max="1" step=".05" value=".12"></label></div><div class="row"><button id="train-evaluate">Evaluate current fly</button><button id="train-evolve" class="primary">Evolve fly in this room</button><button id="train-stop" disabled>Stop training</button><button id="train-export" disabled>Export training dataset</button></div><p id="train-status" role="status">Ready · evaluations keep weights unchanged; evolution keeps the best candidate each generation.</p><progress id="train-progress" value="0" max="100"></progress><div id="train-results"></div><small>Score = new 20 cm cells × 0.5 + bounded distance − contacts × 2 − blocked seconds − cable seconds × 0.1. True pose is used only for scoring and labelled evaluation data. Exports retain all trial summaries and the last two episodes, with bounded actual input-crop pixels, neural inputs, actions and motor writes. Sensor noise uses the controls below. Test the winner in other rooms before drawing conclusions.</small>`;
+el("sensor-console").before(trainingPanel);
+const hardwareHost = document.createElement("section"); hardwareHost.className = "card hardware-panel"; el("sensor-console").after(hardwareHost);
+const copyLog = document.createElement("button"); copyLog.id = "copy-log"; copyLog.textContent = "Copy log"; el("export-log").before(copyLog);
+const copyJson = document.createElement("button"); copyJson.id = "copy-log-json"; copyJson.textContent = "Copy JSON"; el("export-log").before(copyJson);
+el<HTMLSelectElement>("console-filter").add(new Option("training", "training"));
 
 function validateObjects(raw: unknown): WorldObject[] {
   const kinds = OBJECT_TYPES.map(o => o.kind);
@@ -157,6 +172,7 @@ function restoreLocal(): void {
 }
 function editWorld(): void { history.push({ objects: structuredClone(objects), floorColour }); if (history.length > 30) history.shift(); }
 function worldChanged(): void {
+  if (training) endTraining("Habitat changed; training stopped.");
   scene.rebuildObjects(objects); updateFloor(); scene.select(selected); populateObjects(); memory = new RoomMemory(); saveLocal();
   captureTime = -Infinity; sonar = new RobotSonar();
 }
@@ -211,6 +227,8 @@ function log(kind: EventKind, text: string, data?: unknown): void { if (check("l
 function setRunning(next: boolean, reason = "operator"): void { if (running !== next) log("system", next ? "Simulation running" : `Simulation paused: ${reason}`); running = next; pauseReason = reason; el("run").textContent = running ? "Ⅱ Pause simulation" : "▶ Run simulation"; }
 function resetRobot(): void { setRunning(false); physics.reset(); sonar = new RobotSonar(); noise = new NoiseSource(noiseConfig); driveCheck = new DrivetrainCheck(); phaseIndex = -1; controller?.reset(); perceiver?.reset(); action = { steer: 0, throttle: 0, brake: 0 }; requests = motorRequests(action, adapterConfig); estimates.fill(0); sensors.fill(0); simTime = 0; cameraFrame = 0; neuralLogTime = -Infinity; captureTime = -Infinity; actualPWM = [0, 0]; firmware = new Firmware(firmware.source); keys.clear(); log("system", "Robot and program clock reset; room memory retained"); }
 function applyCode(source: string): void {
+  if (hardwarePanel?.busy) { codeMessage("Disconnect hardware before changing controller code.", true); return; }
+  if (training) endTraining("Sketch changed; training stopped.");
   try { const next = new Firmware(source); next.tick({ timeMs: simTime * 1000, brainLeft: 0, brainRight: 0, echoUs: 0, wiring }); firmware = next; driveCheck = new DrivetrainCheck(); phaseIndex = -1; appliedProgram = program; physics.left = physics.right = 0; actualPWM = [0, 0]; el<HTMLTextAreaElement>("sketch").value = source; sketchEditor.refresh(); codeMessage("Applied · virtual GPIO now runs this sketch"); log("system", "Controller sketch compiled and applied"); saveLocal(); }
   catch (error) { codeMessage(error instanceof Error ? error.message : String(error), true); }
 }
@@ -222,7 +240,7 @@ function chooseProgram(id: ProgramId): void {
 }
 const NOISE_FIELDS: [keyof SensorNoise, string, number, number, number][] = [["cameraSigma", "Camera noise · σ / 255", 0, 60, 1], ["cameraDropout", "Frame dropout · 0–1", 0, 1, .01], ["brightness", "Exposure multiplier", .1, 2, .05], ["sonarSigmaCm", "Sonar jitter · σ cm", 0, 30, .1], ["sonarDropout", "Echo dropout · 0–1", 0, 1, .01], ["seed", "Repeatable noise seed", 0, 2147483647, 1]];
 function fillNoise(): void { for (const [key] of NOISE_FIELDS) el<HTMLInputElement>(`noise-${key}`).value = String(noiseConfig[key]); el<HTMLInputElement>("noise-preset").value = Object.entries(NOISE_PRESETS).find(([, profile]) => NOISE_FIELDS.every(([key]) => profile[key] === noiseConfig[key]))?.[0] ?? "custom"; setText("noise-summary", `Camera σ ${noiseConfig.cameraSigma} · echo σ ${noiseConfig.sonarSigmaCm} cm · light ×${noiseConfig.brightness}`); }
-function applyNoise(next: SensorNoise): void { noiseConfig = validateNoise(next); noise = new NoiseSource(noiseConfig); captureTime = -Infinity; fillNoise(); log("system", "Sensor noise changed", noiseConfig); saveLocal(); }
+function applyNoise(next: SensorNoise): void { if(training)endTraining("Sensor noise changed; training stopped."); noiseConfig = validateNoise(next); noise = new NoiseSource(noiseConfig); captureTime = -Infinity; fillNoise(); log("system", "Sensor noise changed", noiseConfig); saveLocal(); }
 function initializeInstruments(): void {
   el("noise-fields").innerHTML = NOISE_FIELDS.map(([key, title, min, max, step]) => `<label>${title}<input id="noise-${key}" type="number" min="${min}" max="${max}" step="${step}"></label>`).join("");
   el("noise-fields").addEventListener("change", () => safe(() => { const config = Object.fromEntries(NOISE_FIELDS.map(([key]) => [key, Number(value(`noise-${key}`))])) as SensorNoise; applyNoise(config); el<HTMLInputElement>("noise-preset").value = "custom"; }));
@@ -233,12 +251,16 @@ function initializeInstruments(): void {
   button("survey-room", () => { const start = { ...physics.pose }; chooseProgram("avoid"); resetRobot(); physics.pose = start; physics.odometry = { ...start }; setRunning(true); message("Sonar avoidance running in this habitat. The forward sensor can miss low, weak or angled objects; inspect contacts and the camera."); });
   button("show-code", () => { const hidden = workbench.classList.toggle("code-hidden"); el("show-code").textContent = hidden ? "Show code" : "Hide code"; });
   button("clear-log", () => { consoleLog.clear(); consoleRevision = -1; });
+  button("copy-log", () => { void copyText(consoleLog.text(value("console-filter"))).then(()=>message("Console log copied · all retained events matching the current filter.")).catch(e=>message(String(e),true)); });
+  button("copy-log-json", () => { void copyText(JSON.stringify(consoleLog.select(value("console-filter")),null,2)).then(()=>message("Structured console events copied.")).catch(e=>message(String(e),true)); });
   el("console-filter").addEventListener("change", () => { consoleRevision = -1; });
   button("export-log", () => download("robot-sensor-log.json", JSON.stringify({ format: "flykart-robot-log", noise: noiseConfig, adapter: adapterConfig, sketch: firmware.source, events: consoleLog.events }, null, 2)));
   button("export-frame", () => { el<HTMLCanvasElement>("camera").toBlob(blob => { if (!blob) return; const a = document.createElement("a"), url = URL.createObjectURL(blob); a.href = url; a.download = `camera-frame-${cameraFrame}.png`; a.click(); setTimeout(() => URL.revokeObjectURL(url), 2000); }); });
   fillNoise(); programInfo();
 }
 function installBrain(text: string): void {
+  if (hardwarePanel?.busy) throw new Error("Disconnect hardware before replacing the fly.");
+  if (training) endTraining("Brain replaced; training stopped.");
   const imported = importFile(text);
   if (!imported.controller) throw new Error("Import a controller or combined vision brain, not just an eye network.");
   const usingWorld = !!imported.world;
@@ -248,7 +270,7 @@ function installBrain(text: string): void {
   if (!model) throw new Error("A matching vision network is required for this brain.");
   const nextPerceiver = validateEyes(model, nextDomain);
   const nextController = SpikingNetwork.fromJSON(snapshot);
-  controller = nextController; perceiver = nextPerceiver; brainDomain = nextDomain; brainName = imported.name; estimates = new Float32Array(perceiver.estimateCount); sensors = new Array(controller.inputCount).fill(0);
+  controller = nextController; perceiver = nextPerceiver; brainDomain = nextDomain; brainName = imported.name;const meta=usingWorld?imported.world!.controller.meta:imported.controller.meta;brainFitness=meta.fitness??0;brainGeneration=meta.generation??0;estimates = new Float32Array(perceiver.estimateCount); sensors = new Array(controller.inputCount).fill(0);
   captureTime = -Infinity; memory = new RoomMemory(); setText("brain-name", brainName); setText("adapter", `${brainDomain.toUpperCase()} INPUTS`);
   setText("brain-note", brainDomain === "track" ? "Track input meanings retained. A racing brain may not navigate a room; room recall is off." : "Eyes trained in the old renderer; transfer to 3D is experimental.");
   message(`Imported ${brainName}. ${imported.warnings.join(" ")}`);
@@ -276,6 +298,7 @@ function capture(): void {
   const width = perceiver?.model.spec.width ?? 48, height = perceiver?.model.spec.height ?? 24;
   const frame = scene.capture(width, height, physics.config.cameraEnabled, noise);
   cameraFrame++; cameraRGB = frame.rgb; cameraDropped = frame.dropped;
+  training?.recorder.frame(cameraFrame, width, height, frame.planar, frame.dropped);
   log("camera", `Frame ${cameraFrame} · 160×120 RGB565 · mean RGB ${cameraRGB.map(n => Math.round(n)).join(",")} · ${cameraDropped ? "missing/black frame" : "delivered"}`, { frame: cameraFrame, rgb: cameraRGB, dropped: cameraDropped });
   setText("retina-size", `${width} × ${height}`);
   const body = neuralBody();
@@ -293,6 +316,7 @@ function capture(): void {
   captureTime = simTime;
 }
 function neuralBody() { return { speed: clamp((physics.left + physics.right) / 2 / .99, -1, 1), lastSteer: action.steer, lastDrive: action.throttle - (action.reverse ?? 0), sonarCloseness: sonar.closeness, sonarStrength: +sonar.reading.echo }; }
+function manualDemands(): [number,number] {const forward=+(keys.has("w")||keys.has("ArrowUp"))-+(keys.has("s")||keys.has("ArrowDown")),steer=+(keys.has("d")||keys.has("ArrowRight"))-+(keys.has("a")||keys.has("ArrowLeft"));return [clamp(forward*.65+steer*.5,-1,1)*255,clamp(forward*.65-steer*.5,-1,1)*255];}
 function tick(): void {
   const dt = 1 / 30; simTime += dt;
   if (sonar.update(simTime, physics.pose, objects, physics.config, noise)) {
@@ -329,6 +353,47 @@ function tick(): void {
   } catch (error) { actualPWM = [0, 0]; physics.left = physics.right = 0; setRunning(false, "sketch error"); codeMessage(error instanceof Error ? error.message : String(error), true); message("Controller code stopped. Fix the sketch and apply it again.", true); }
   if (simTime - neuralLogTime >= .2) { neuralLogTime = simTime; log("brain", `steer ${action.steer.toFixed(2)} · drive ${action.throttle.toFixed(2)} · reverse ${(action.reverse ?? 0).toFixed(2)} · brake ${action.brake.toFixed(2)} | request ${demands.map(Math.round).join(" / ")} → PWM ${actualPWM.map(n => Math.round(n * 255)).join(" / ")}`, { mode, action: { ...action }, inputs: [...sensors], estimates: [...estimates], legs: requests.legs, requests: demands, pwm: actualPWM.map(n => n * 255) }); }
   scene.updateRobot(physics.pose, physics.config, check("beam-visible"), physics.left, physics.right, dt);
+  if (training) {
+    training.recorder.step({ time: simTime, inputs: [...sensors], action: { ...action }, pwm: actualPWM.map(n=>n*255), cameraFrame, sonar: { cm: sonar.reading.echo ? sonar.metres*100 : null, echo: sonar.reading.echo }, evaluation: { pose: { ...physics.pose }, blocked: physics.blocked, contact: physics.contact?.part ?? null, surface: physics.surface?.kind ?? null } }, dt);
+    if (training.recorder.seconds >= training.options.seconds - 1e-8) {
+      const job = training, more = job.advance(), result = job.results.at(-1)!;
+      log("training", `G${result.generation} C${result.candidate+1} trial ${result.episode} · score ${result.score.toFixed(2)} · ${result.cells} cells · ${result.contacts} contacts · ${result.blockedSeconds.toFixed(1)}s blocked`, result);
+      if (more) beginEpisode(); else endTraining("Training complete · best evaluated controller installed. Export fly + eyes to keep it.");
+    }
+  }
+}
+
+function beginEpisode(): void {
+  if (!training) return;
+  resetRobot(); controller = training.brain; perceiver?.reset(); memory = new RoomMemory(); noiseConfig = { ...noiseConfig, seed: training.noiseSeed }; noise = new NoiseSource(noiseConfig);
+  setRunning(true); renderTraining();
+}
+function endTraining(reason: string): void {
+  if (!training) return;
+  const job=training; controller=SpikingNetwork.fromJSON(job.best); lastTraining=job; training=null;
+  if(trainingNoise) {noiseConfig=trainingNoise;noise=new NoiseSource(noiseConfig);trainingNoise=null;fillNoise();}
+  if(job.completedGeneration){brainFitness=job.fitness;if(job.options.evolve){brainGeneration+=job.completedGeneration;brainName="3D trained fly";}}
+  setRunning(false,"training ended"); physics.left=physics.right=0;actualPWM=[0,0];setText("brain-name",job.options.evolve?"3D training winner · export to keep":"Evaluated fly · weights unchanged");setText("train-status",reason);log("training",reason);renderTraining();
+}
+function renderTraining(): void {
+  const job=training??lastTraining; el<HTMLButtonElement>("train-stop").disabled=!training;el<HTMLButtonElement>("train-evaluate").disabled=!!training;el<HTMLButtonElement>("train-evolve").disabled=!!training;el<HTMLButtonElement>("train-export").disabled=!job?.results.length;
+  if(training) {setText("train-status",training.progress);const total=training.options.episodes*(training.options.evolve?training.options.population*training.options.generations:1);el<HTMLProgressElement>("train-progress").value=(training.results.length+training.recorder.seconds/training.options.seconds)/total*100;}
+  else if(job?.completed) el<HTMLProgressElement>("train-progress").value=100;
+  el("train-results").replaceChildren(...(job?.results.slice(-12)??[]).map(r=>{const p=document.createElement("p");p.textContent=`G${r.generation} · C${r.candidate+1} · trial ${r.episode}: ${r.score.toFixed(2)} score / ${r.cells} cells / ${r.contacts} contacts`;return p;}));
+}
+function startTraining(evolve: boolean): void {
+  if(hardwarePanel.busy) throw new Error("Disconnect hardware before simulated training.");
+  if(!controller||!perceiver) throw new Error("Load a fly and its matching eyes first.");
+  if(wiringIssues(wiring).errors.length)throw new Error("Fix wiring conflicts before training.");
+  const options:TrainingOptions={evolve,seconds:Number(value("train-seconds")),episodes:Number(value("train-episodes")),population:Number(value("train-population")),generations:Number(value("train-generations")),seed:Number(value("train-seed")),rate:Number(value("train-rate")),amount:Number(value("train-amount"))};
+  const job=new TrainingRun(controller,options);
+  trainingContext={objects:structuredClone(objects),floorColour,config:{...physics.config},wiring:{...wiring},adapter:{...adapterConfig},noise:{...noiseConfig},domain:brainDomain,initialGeneration:brainGeneration,vision:perceiver.model,memoryEnabled:check("memory-enabled"),sketch:programSketch("fly",wiring),initialPose:{...new RobotPhysics().pose},dt:1/30,initialBrain:controllerCheckpoint(controller,{domain:brainDomain,fitness:brainFitness,generation:brainGeneration})};
+  chooseProgram("fly");trainingNoise={...noiseConfig};training=job;lastTraining=null;log("training",evolve?"Seeded controller evolution started; eyes frozen":"Seeded evaluation started; weights unchanged",options);beginEpisode();
+}
+function initializeTraining(): void {
+  button("train-evaluate",()=>safe(()=>startTraining(false)));button("train-evolve",()=>safe(()=>startTraining(true)));button("train-stop",()=>endTraining("Training stopped · last completed generation retained."));
+  button("train-export",()=>{const job=training??lastTraining;if(!job)return;download("robot-training.json",JSON.stringify({format:"flykart-robot-training",version:1,settings:job.options,context:trainingContext,scoreDefinition:"0.5 * (unique20cmCells - 1) + min(distanceMetres, unique20cmCells * 0.4) - 2 * contacts - blockedSeconds - 0.1 * cableSeconds",completed:job.completed,results:job.results,episodes:job.datasets,controller:controllerCheckpoint(job.best,{domain:trainingContext?.domain??brainDomain,fitness:job.fitness,generation:(trainingContext?.initialGeneration??0)+(job.options.evolve?job.completedGeneration:0)}),notes:"Evaluation pose/contact fields are privileged labels, never neural inputs. Pixels are delivered CNN input crops. Last two episodes retained; omittedFrames reports pixel-byte limits."},null,2));});
+  button("export-fly",()=>{if(!controller)return;download("robot-fly-with-eyes.json",exportVisionBrain({name:brainName,controller:controllerCheckpoint(controller,{domain:brainDomain,fitness:brainFitness,generation:brainGeneration}),profile:controller.inputCount>17?"robot":"kart",vision:perceiver?.model??null,fusion:{fade:1,mode:"belief",visionTemperature:1},memory:null,world:brainDomain==="world"?{controller:controllerCheckpoint(controller,{domain:"world",fitness:brainFitness,generation:brainGeneration}),vision:perceiver?.model??null}:null,notes:"3D habitat controller and eyes. Robot room memory is preserved by Export lab."}));});
 }
 
 function renderMap(): void {
@@ -342,6 +407,7 @@ function renderMap(): void {
   ctx.fillStyle = "#8fa6a7"; ctx.font = "9px system-ui"; ctx.fillText("DEAD RECKONING / 1 m GRID", 9, 14);
 }
 function telemetry(): void {
+  if (training) renderTraining();
   if (el<HTMLDialogElement>("pinout").open) pinoutDiagram.live(firmware.pins, sonar.pulseMicroseconds);
   setText("executing-line", `Ln ${firmware.currentLine} · ${value("drive-mode").toUpperCase()}`);
   setText("run-reason", running ? "Running · autonomous modes keep running on focus loss" : `Paused · ${pauseReason}`);
@@ -383,11 +449,11 @@ function telemetry(): void {
 function wireEvents(): void {
   el("step").after(Object.assign(document.createElement("select"), { id: "step-size", innerHTML: '<option value="1">1 tick</option><option value="30">1 second</option><option value="150">5 seconds</option>', ariaLabel: "Step duration" }));
   el("reset").after(Object.assign(document.createElement("select"), { id: "sim-rate", innerHTML: '<option value="1">1× speed</option><option value="2">2× speed</option><option value="4">4× speed</option>', ariaLabel: "Simulation speed" }));
-  button("run", () => setRunning(!running)); button("step", () => { setRunning(false, "stepped simulation"); for (let i = 0; i < Number(value("step-size")); i++) tick(); telemetry(); }); button("reset", resetRobot);
+  button("run", () => setRunning(!running)); button("step", () => { setRunning(false, "stepped simulation"); for (let i = 0; i < Number(value("step-size")); i++) tick(); telemetry(); }); button("reset", () => { if(training)endTraining("Robot reset; training stopped.");resetRobot(); });
   button("focus", () => { following = !following; if (following) scene.focus(physics.pose); el("focus").textContent = following ? "Unfollow robot" : "Follow robot"; });
   button("overview", () => { following = false; el("focus").textContent = "Follow robot"; scene.overview(); });
   el("preset").addEventListener("change", () => { editWorld(); objects = preset(value("preset")); floorColour = ROOM_TYPES.find(r => r.id === value("preset"))?.floor ?? "#b7bea7"; selected = null; worldChanged(); selectObject(null); resetRobot(); message("Habitat replaced. Room memory cleared; Undo edit restores the previous layout and floor colour."); });
-  el("floor-colour").addEventListener("input", () => { floorColour = validateFloor(value("floor-colour")); updateFloor(); captureTime = -Infinity; });
+  el("floor-colour").addEventListener("input", () => { if(training)endTraining("Floor changed; training stopped.");floorColour = validateFloor(value("floor-colour")); updateFloor(); captureTime = -Infinity; });
   el("floor-colour").addEventListener("change", saveLocal);
   el("collision-visible").addEventListener("change", () => scene.showContacts(check("collision-visible")));
   button("add-object", () => { if (objects.length >= 200) { message("The habitat limit is 200 objects.", true); return; } editWorld(); const o = makeObject(value("object-kind") as ObjectKind, clamp(physics.pose.x + Math.cos(physics.pose.heading) * .75, -3, 3), clamp(physics.pose.z + Math.sin(physics.pose.heading) * .75, -3, 3)); objects.push(o); selected = o.id; worldChanged(); selectObject(o.id); });
@@ -399,31 +465,48 @@ function wireEvents(): void {
   button("advanced", () => { fillHardware(); el<HTMLDialogElement>("hardware").showModal(); }); button("close-hardware", () => el<HTMLDialogElement>("hardware").close());
   const pinoutButton = document.createElement("button"); pinoutButton.id = "show-pinout"; pinoutButton.textContent = "Pinout & wires"; el("advanced").before(pinoutButton);
   button("show-pinout", () => { pinoutDiagram.update(wiring, physics.config); pinoutDiagram.live(firmware.pins, sonar.pulseMicroseconds); el<HTMLDialogElement>("pinout").showModal(); });
+  pinoutDiagram.enableEditing((signal,pin)=>safe(()=>{
+    if(hardwarePanel.busy)throw new Error("Disconnect hardware before reconnecting GPIOs.");
+    const next=reconnect(wiring,signal,pin), rewritten=rewritePins(value("sketch"),next), nextFirmware=new Firmware(rewritten.source);
+    nextFirmware.tick({timeMs:0,brainLeft:0,brainRight:0,echoUs:0,wiring:next});
+    if(training)endTraining("Wiring changed; training stopped.");setRunning(false,"GPIO reconnected");wiring=next;firmware=nextFirmware;el<HTMLTextAreaElement>("sketch").value=rewritten.source;sketchEditor.refresh();physics.left=physics.right=0;actualPWM=[0,0];sonar=new RobotSonar();memory=new RoomMemory();captureTime=-Infinity;
+    pinoutDiagram.update(wiring,physics.config);codeMessage(`GPIOs synchronized · ${rewritten.changed.join(" / ")||"unchanged"}`);saveLocal();log("system",`Reconnected ${signal.toUpperCase()} → ${pin<0?"enable jumper":`GPIO ${pin}`} · code updated`,wiring);message("Wiring and sketch updated together. Simulation paused; reflash the bridge before changing real wires.");
+  }));
   button("close-pinout", () => el<HTMLDialogElement>("pinout").close());
   button("export-wiring", () => download("robot-wiring.svg", pinoutDiagram.exportSvg(), "image/svg+xml"));
   button("edit-pinout", () => { el<HTMLDialogElement>("pinout").close(); fillHardware(); el<HTMLDialogElement>("hardware").showModal(); el("connection-settings").scrollIntoView({ block: "start" }); });
   el("board").addEventListener("change", () => { const profile = value("board") === "uno" ? UNO_WIRING : ESP_WIRING; for (const key of ["in1", "in2", "in3", "in4", "ena", "enb", "trig", "echo"] as const) el<HTMLInputElement>(`wire-${key}`).value = String(profile[key]); el<HTMLInputElement>("echo-divider").checked = profile.echoDivider; previewWiring(readWiring()); });
-  button("apply-hardware", () => safe(() => { const config = { ...physics.config }; for (const [key, , , , scale] of ALL_FIELDS) Object.assign(config, { [key]: Number(value(`component-${key}`)) / scale }); config.cameraEnabled = check("camera-enabled"); config.sonarEnabled = check("sonar-enabled"); const nextConfig = validateConfig(config), nextWiring = validateWiring(readWiring()), nextAdapter = validateAdapter({ steering: value("route-steering"), turnGain: Number(value("route-gain")), maxPWM: Number(value("route-pwm")), leftSource: value("route-left"), rightSource: value("route-right"), invertLeft: check("route-invert-left"), invertRight: check("route-invert-right") }); physics.config = nextConfig; wiring = nextWiring; adapterConfig = nextAdapter; setRunning(false); hardwareChanged(); el<HTMLDialogElement>("hardware").close(); message("Components and motor routing applied. Update sketch constants if you changed GPIO pins."); }));
+  button("apply-hardware", () => safe(() => {
+    if(hardwarePanel.busy)throw new Error("Disconnect hardware before changing its configuration.");
+    const config = { ...physics.config }; for (const [key, , , , scale] of ALL_FIELDS) Object.assign(config, { [key]: Number(value(`component-${key}`)) / scale }); config.cameraEnabled = check("camera-enabled"); config.sonarEnabled = check("sonar-enabled");
+    const nextConfig = validateConfig(config), nextWiring = validateWiring(readWiring()), nextAdapter = validateAdapter({ steering: value("route-steering"), turnGain: Number(value("route-gain")), maxPWM: Number(value("route-pwm")), leftSource: value("route-left"), rightSource: value("route-right"), invertLeft: check("route-invert-left"), invertRight: check("route-invert-right") });
+    const changed = ["in1","in2","in3","in4","ena","enb","trig","echo"].some(k=>nextWiring[k as keyof Wiring]!==wiring[k as keyof Wiring]);
+    const nextSource=changed?rewritePins(value("sketch"),nextWiring).source:firmware.source; const nextFirmware=new Firmware(nextSource);
+    if(training)endTraining("Components changed; training stopped.");
+    physics.config=nextConfig;wiring=nextWiring;adapterConfig=nextAdapter;firmware=nextFirmware;el<HTMLTextAreaElement>("sketch").value=nextSource;sketchEditor.refresh();setRunning(false);hardwareChanged();el<HTMLDialogElement>("hardware").close();message("Components applied; changed GPIO constants synchronized with the code. Recompile the bridge before changing real wires.");
+  }));
   button("apply-code", () => applyCode(value("sketch"))); button("default-code", () => chooseProgram("fly")); button("reflex-code", () => chooseProgram("avoid"));
-  el("drive-mode").addEventListener("change", () => { log("system", `Motor request source: ${value("drive-mode")}`); saveLocal(); });
+  el("drive-mode").addEventListener("change", () => { hardwarePanel.stop();if(training)endTraining("Motor request source changed; training stopped.");log("system", `Motor request source: ${value("drive-mode")}`); saveLocal(); });
   el("sketch").addEventListener("input", () => codeMessage("Unapplied changes · click Apply & restart code"));
   el("sketch").addEventListener("keydown", event => { if (event instanceof KeyboardEvent && event.key === "Tab") { event.preventDefault(); const editor = el<HTMLTextAreaElement>("sketch"); editor.setRangeText("  ", editor.selectionStart, editor.selectionEnd, "end"); editor.dispatchEvent(new Event("input")); } });
   button("export-code", () => download("robot-controller.ino", value("sketch"), "text/plain"));
-  button("forget", () => { memory = new RoomMemory(); message("Forgot the room's learned visual cells and sonar map."); });
-  el("memory-enabled").addEventListener("change", () => { if (!check("memory-enabled")) memory.recalled = false; });
-  button("export-brain", () => { if (controller) download("robot-flykart-brain.json", JSON.stringify(controllerCheckpoint(controller, { domain: brainDomain }), null, 2)); });
+  button("forget", () => { if(training)endTraining("Memory cleared; training stopped.");memory = new RoomMemory(); message("Forgot the room's learned visual cells and sonar map."); });
+  el("memory-enabled").addEventListener("change", () => { hardwarePanel.stop();if(training)endTraining("Memory setting changed; training stopped.");if (!check("memory-enabled")) memory.recalled = false; });
+  button("export-brain", () => { if (controller) download("robot-flykart-brain.json", JSON.stringify(controllerCheckpoint(controller, { domain: brainDomain, fitness: brainFitness, generation: brainGeneration }), null, 2)); });
   button("restore-brain", () => { setRunning(false); void loadBundled().catch(error => message(String(error), true)); });
-  button("save-lab", () => safe(() => download("robot-habitat.json", JSON.stringify({ format: "flykart-robot-lab", version: 1, savedAt: new Date().toISOString(), objects, floorColour, config: physics.config, wiring, sketch: value("sketch"), program: appliedProgram, mode: value("drive-mode"), adapter: adapterConfig, noise: noiseConfig, controller: controller ? controllerCheckpoint(controller, { domain: brainDomain }) : null, vision: perceiver?.model ?? null, memory: memory.toJSON() }, null, 2))));
+  button("save-lab", () => safe(() => download("robot-habitat.json", JSON.stringify({ format: "flykart-robot-lab", version: 1, savedAt: new Date().toISOString(), objects, floorColour, config: physics.config, wiring, sketch: value("sketch"), program: appliedProgram, mode: value("drive-mode"), adapter: adapterConfig, noise: noiseConfig, controller: controller ? controllerCheckpoint(controller, { domain: brainDomain, fitness: brainFitness, generation: brainGeneration }) : null, vision: perceiver?.model ?? null, memory: memory.toJSON() }, null, 2))));
   const file = (id: string, callback: (text: string) => void, max = 12000000) => el<HTMLInputElement>(id).addEventListener("change", async e => { const input = e.target as HTMLInputElement, upload = input.files?.[0]; if (!upload) return; if (upload.size > max) { message("File exceeds the size limit.", true); input.value = ""; return; } try { callback(await upload.text()); } catch (error) { message(error instanceof Error ? error.message : String(error), true); } input.value = ""; });
   file("brain-file", text => { setRunning(false); installBrain(text); });
   file("ino-file", text => { program = "custom"; customDraft = text; el<HTMLTextAreaElement>("sketch").value = text; programInfo(); codeMessage("Sketch opened. Click Apply code to run it."); }, 60000);
   file("lab-file", text => {
+    if(hardwarePanel.busy)throw new Error("Disconnect hardware before importing another lab.");
     const data = JSON.parse(text); if (data.format !== "flykart-robot-lab" || data.version !== 1) throw new Error("Expected a FlyKart robot lab file.");
     // Validate every component before mutating the current session.
     const nextObjects = validateObjects(data.objects), nextConfig = validateConfig(data.config), nextWiring = validateWiring(data.wiring), nextFirmware = new Firmware(data.sketch), nextMemory = RoomMemory.fromJSON(data.memory);
     const nextAdapter = validateAdapter(data.adapter ?? DEFAULT_ADAPTER), nextNoise = validateNoise(data.noise ?? DEFAULT_NOISE), nextFloor = validateFloor(data.floorColour);
-    let nextBrain: SpikingNetwork | null = null, nextEyes: Perceiver | null = null, nextDomain: "world" | "track" = "world";
-    if (data.controller) { const parsed = importFile(JSON.stringify(data.controller)); nextDomain = parsed.controller!.domain; nextBrain = SpikingNetwork.fromJSON(parsed.controller!.snapshot); if (data.vision) nextEyes = validateEyes(data.vision, nextDomain); }
+    let nextBrain: SpikingNetwork | null = null, nextEyes: Perceiver | null = null, nextDomain: "world" | "track" = "world", nextFitness=0, nextGeneration=0;
+    if (data.controller) { const parsed = importFile(JSON.stringify(data.controller)); nextDomain = parsed.controller!.domain; nextFitness=parsed.controller!.meta.fitness??0;nextGeneration=parsed.controller!.meta.generation??0;nextBrain = SpikingNetwork.fromJSON(parsed.controller!.snapshot); if (data.vision) nextEyes = validateEyes(data.vision, nextDomain); }
+    if(training)endTraining("Lab imported; training stopped.");brainFitness=nextFitness;brainGeneration=nextGeneration;brainName=nextBrain?"Imported lab controller":"No controller";
     editWorld(); objects = nextObjects; floorColour = nextFloor; physics.config = nextConfig; wiring = nextWiring; controller = nextBrain; perceiver = nextEyes; brainDomain = nextDomain; firmware = nextFirmware; el<HTMLTextAreaElement>("sketch").value = firmware.source;
     adapterConfig = nextAdapter; noiseConfig = nextNoise; program = appliedProgram = PROGRAMS.some(p => p.id === data.program) ? data.program : "custom"; el<HTMLSelectElement>("drive-mode").value = ["fly", "manual", "sketch"].includes(data.mode) ? data.mode : "sketch"; programInfo(); fillNoise();
     estimates = new Float32Array(nextEyes?.estimateCount ?? (nextDomain === "world" ? 10 : 13)); sensors = new Array(controller?.inputCount ?? 19).fill(0); selected = null; scene.rebuildObjects(objects); scene.rebuildRobot(physics.config); scene.select(null); populateObjects(); selectObject(null); resetRobot(); memory = nextMemory;
@@ -431,13 +514,15 @@ function wireEvents(): void {
   });
   const editable = (target: EventTarget | null) => target instanceof HTMLElement && (target.matches("input,textarea,select") || target.isContentEditable);
   window.addEventListener("keydown", e => { if (!editable(e.target) && !el<HTMLDialogElement>("hardware").open && !el<HTMLDialogElement>("pinout").open && ["w", "a", "s", "d", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key)) { if (value("drive-mode") === "manual") e.preventDefault(); keys.add(e.key); } });
-  window.addEventListener("keyup", e => keys.delete(e.key)); window.addEventListener("blur", () => { keys.clear(); if (value("drive-mode") === "manual") { actualPWM = [0, 0]; physics.left = physics.right = 0; setRunning(false, "manual keyboard focus lost"); } });
+  window.addEventListener("keyup", e => keys.delete(e.key)); window.addEventListener("blur", () => { keys.clear(); if (value("drive-mode") === "manual") { hardwarePanel.stop();actualPWM = [0, 0]; physics.left = physics.right = 0; setRunning(false, "manual keyboard focus lost"); } });
 }
 
 async function main(): Promise<void> {
   restoreLocal();
   scene = new HabitatScene(el<HTMLCanvasElement>("habitat"), el<HTMLCanvasElement>("camera"), el<HTMLCanvasElement>("fly-eye")); scene.rebuildObjects(objects); scene.rebuildRobot(physics.config);
   updateFloor();
+  hardwarePanel=new HardwarePanel(hardwareHost,{context:()=>({wiring,config:physics.config,adapter:adapterConfig,source:firmware.source,brain:controller,eyes:perceiver?.model??null,domain:brainDomain,memoryEnabled:check("memory-enabled"),mode:value("drive-mode"),manual:manualDemands()}),pause:()=>{if(training)endTraining("Hardware armed; simulated training stopped.");setRunning(false,"physical hardware armed");},download,message});
+  initializeTraining();
   el("spikes").innerHTML = Array.from({ length: 48 }, () => "<i></i>").join(""); populateObjects(); initializeHardware(); wireEvents(); initializeInstruments(); codeMessage("Applied sketch ready · edit, Apply, then Run");
   let previous = performance.now(), accumulator = 0, uiTime = 0;
   const frame = (now: number) => {

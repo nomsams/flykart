@@ -13,7 +13,7 @@ try {
   await page.locator("#status").filter({ hasText: "Ready." }).waitFor({ timeout: 60000 });
   await page.locator("#show-pinout").click();
   const view = page.locator("#pinout-diagram");
-  assert.equal(await view.locator("g.wire").count(), 14);
+  assert.equal(await view.locator("g.wire").count(), 15);
   assert.match(await view.locator(".wire-detail").textContent(), /GPIO 4 via level shifter/);
   await view.locator('g[data-net="in1"]').focus(); await view.locator('g[data-net="in1"]').press("Enter");
   assert.match(await view.locator(".wire-detail").textContent(), /ESP32 GPIO 12 → L298N IN1/);
