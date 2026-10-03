@@ -26,13 +26,19 @@
     "robot:experiments": "vite-node scripts/robot-experiments.ts --out=public/vision/robot/results.json",
     "vision:camera": "vite-node scripts/preview-camera.ts camera-preview.png",
     "robot:camera": "vite-node scripts/preview-camera.ts robot-camera-preview.png robot",
+    "robot:ui-check": "node scripts/robot-ui-check.mjs",
     "vision:world-camera": "vite-node scripts/preview-world.ts world-preview.png"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
+    "@types/three": "^0.186.0",
     "esbuild": "^0.25.0",
     "typescript": "^5.7.3",
     "vite": "^6.1.0",
     "vite-node": "^3.0.5",
     "vitest": "^3.0.5"
+  },
+  "dependencies": {
+    "three": "^0.186.1"
   }
 }

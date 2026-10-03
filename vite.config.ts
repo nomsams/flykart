@@ -9,6 +9,7 @@ export default defineConfig({
       input: {
         main: fileURLToPath(new URL("./index.html", import.meta.url)),
         vision: fileURLToPath(new URL("./vision.html", import.meta.url)),
+        robot: fileURLToPath(new URL("./robot.html", import.meta.url)),
       },
     },
   },

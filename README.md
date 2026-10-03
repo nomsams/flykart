@@ -119,6 +119,21 @@ npm run robot:camera                 # a sheet of what the 6.5 cm camera sees
 
 ## Run locally
 
+### Three.js robot habitat
+
+Open [`robot.html`](robot.html) with `npm run dev` for a metre-scale 3D robot lab. It uses the supplied 26 × 17 cm four-wheel chassis, 11.5 cm axle spacing, 65 mm tyres and 6.5 cm sensor height. The default profile is ESP32-CAM → L298N, with the UNO/shield omitted.
+
+- Import existing FlyKart or Vision brains; their real spiking weights drive the simulated motor pairs. Track/world input meanings remain distinct.
+- View the 160 × 120 RGB565-style camera capture, the actual reduced image sent to the vision network, sonar cone and pulse duration, neuron spikes and motor PWM.
+- Add and edit walls, rooms, tables, chairs, rocks, low stones, bushes, trees and water. Furniture has separate legs/tops and height-aware collision for driving underneath.
+- Change chassis, motor, camera, sonar and pin connections in **Components & wiring**. Invalid camera/SD/pin/level-shift configurations inhibit motors.
+- Edit and run a bounded Arduino-style sketch. Virtual GPIO writes actually change motion; download/import `.ino` files. This is a small numeric interpreter, not a full C++ compiler or ESP32 emulator.
+- Sparse Kenyon-inspired visual associations recall previous observations. A separate sonar map uses commanded-wheel odometry and deliberately drifts under slip/contact. Export/import the full lab to preserve brains, eyes, geometry, wiring, sketch and memory.
+
+The bundled eyes were trained in the older software renderer; 3D transfer is experimental and has no measured navigation guarantee. Downloaded sketches require physical camera/brain adapters before deployment. See [`public/docs/robot-habitat.html`](public/docs/robot-habitat.html) for the proposed GPIO profile, verified hardware references, assumptions and model limits. The default profile is not an inferred reconstruction of the attached photographs.
+
+`npm run robot:ui-check` verifies camera pixels, code-driven movement, editing/undo, wiring inhibition, brain imports, full lab round-trips and mobile layout against the running dev server. It uses isolated headless Edge on Windows and Playwright Chromium elsewhere; screenshots go to `.cache/`.
+
 ```bash
 npm install
 npm run dev
