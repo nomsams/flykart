@@ -8,7 +8,7 @@ The companion [machine-learning compendium](https://nomsams.github.io/flykart/ma
 
 ## The compendium's guided route and brain inspector
 
-[`public/machine-learning.html`](public/machine-learning.html) opens with a nine-chapter guided route that follows one question, *which parts of a neuron must the kart keep?*, from a living cell (Hodgkin–Huxley) through LIF, the artificial neuron, spiking networks, learning, and hardware, to the real 17 → 48 → 4 FlyKart controller. Each chapter is split into lettered parts, carries interactive labs, and ends with a "kept / dropped / price" ledger; a sticky bar shows the current chapter and part, and a route map at the top links every part and lab.
+[`public/machine-learning.html`](public/machine-learning.html) opens with a ten-chapter guided route that follows one question, *which parts of a neuron must the kart keep?*, from a living cell (Hodgkin–Huxley) through LIF, the artificial neuron, spiking networks, learning, and hardware, to the real 17 → 48 → 4 FlyKart controller. Each chapter is split into lettered parts, carries interactive labs, and ends with a "kept / dropped / price" ledger; a sticky bar shows the current chapter and part, and a route map at the top links every part and lab.
 
 **Chapter 9 · Open a trained brain** loads a `flykart-brain` checkpoint (use **Download brain** in the simulator, or drop the bundled sample) and lets you:
 
@@ -16,6 +16,10 @@ The companion [machine-learning compendium](https://nomsams.github.io/flykart/ma
 - feed it any sensor values and watch spikes and controls, or sweep one sensor at a time for response curves;
 - drive it on the simulator's *own* physics, sensors and 18-term reward function, poke it (shove it to an edge, drop a cone, face it backwards) and watch every reward term react;
 - silence groups of neurons and see what breaks.
+
+**Moving ions.** Lab 1.2 shows Na⁺ and K⁺ drifting in both baths and streaming through a channel only while its gate is open. Lab 2.3 runs the Hodgkin–Huxley equations with the ions drawn: each channel is a pore with gate flaps (three m gates and an h ball for sodium, four n gates for potassium) that flip at the model's rate constants, the number of ions crossing follows the computed current, TTX and TEA plug the pores, raising K⁺ outside shifts E_K, and the Na⁺/K⁺ pump runs in the background (`public/ion-labs.js`). One drawn ion stands for about 5,000 real ones per µm².
+
+**Chapter 10 · Give the brain a body** is the guided-route writeup of the robot-scale sonar work below: five labs (the robot to scale, two cameras at different heights using the simulator's own projection, an HC-SR04 echo with its waveform, inverse-variance sensor fusion with ghost echoes and outlier gating, and the measured results with error bars read from `public/vision/robot/results.json`), in `public/body-labs.js`.
 
 The lab engine is the real `src/core.ts` bundled for the browser. `npm run dev` and `npm run build` generate `public/flykart-core.js` from `src/lab.ts` (it is git-ignored) with esbuild, which ships inside Vite. `public/sample-brain.json` is a demo brain produced by:
 

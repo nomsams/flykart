@@ -95,6 +95,7 @@
                 <a href="#guided-training">Learning</a>
                 <a href="#guided-flykart">Kart brain</a>
                 <a href="#guided-inspect">Inspect</a>
+                <a href="#guided-body">Body</a>
                 <a href="#interactive-labs">All labs</a>
             </nav>
 
@@ -113,6 +114,7 @@
                             <a href="#guided-chapter-5">7 · Match the hardware</a>
                             <a href="#guided-flykart">8 · Assemble the kart brain</a>
                             <a href="#guided-inspect">9 · Open a trained brain</a>
+                            <a href="#guided-body">10 · Give the brain a body</a>
                         </div>
                         <div>
                             <strong>Foundations</strong>
@@ -135,7 +137,6 @@
                             <a href="#micro-neat">Neuroevolution</a>
                             <a href="#optimization">Optimization</a>
                             <a href="#real-world-ai">Real-world AI</a>
-                            <a href="#robot-sonar">Robot sonar</a>
                         </div>
                     </div>
                 </details>
@@ -149,7 +150,7 @@
         <!-- GUIDED ROUTE: build the FlyKart brain, starting from one living neuron -->
         <section id="model-ladder" class="guide space-y-6" aria-labelledby="model-ladder-title">
             <div class="book-intro">
-                <p class="eyebrow">Part I · The guided route · one question, nine chapters</p>
+                <p class="eyebrow">Part I · The guided route · one question, ten chapters</p>
                 <h2 id="model-ladder-title">Build a brain for a racing kart, starting from one living neuron</h2>
                 <div class="mission-grid">
                     <div class="mission-copy">
@@ -171,7 +172,7 @@
                         <p>Two lines from the kart's neuron update. Chapter 3 explains where 0.86, 0.22, and 0.42 come from.</p>
                     </aside>
                 </div>
-                <ol class="compression-ladder" aria-label="Nine-chapter route">
+                <ol class="compression-ladder" aria-label="Ten-chapter route">
                     <li><a href="#guided-chapter-1"><b>01 · Neuron</b>A spike is an event</a></li>
                     <li><a href="#guided-hh"><b>02 · Circuit</b>The membrane is an RC circuit</a></li>
                     <li><a href="#guided-chapter-2"><b>03 · LIF</b>Keep the timing, drop the gates</a></li>
@@ -181,6 +182,7 @@
                     <li><a href="#guided-chapter-5"><b>07 · Silicon</b>Count the real cost</a></li>
                     <li><a href="#guided-flykart"><b>08 · FlyKart</b>Read the whole brain</a></li>
                     <li><a href="#guided-inspect"><b>09 · Inspect</b>Open a trained brain</a></li>
+                    <li><a href="#guided-body"><b>10 · Body</b>Add a camera and a sonar</a></li>
                 </ol>
             </div>
 
@@ -189,7 +191,7 @@
                 <ol class="route-map" id="routeMap" aria-label="Map of the guided route"></ol>
             </details>
 <nav class="thread-bar" aria-label="Guided route progress">
-                <div class="tb-now"><small>Chapter <span data-tb-num>1</span> of 9</small><strong><span data-tb-title>The living neuron</span><span class="tb-part" data-tb-part></span></strong></div>
+                <div class="tb-now"><small>Chapter <span data-tb-num>1</span> of 10</small><strong><span data-tb-title>The living neuron</span><span class="tb-part" data-tb-part></span></strong></div>
                 <div class="tb-track">
                     <a href="#guided-chapter-1" data-n="1"><span>Neuron</span><i></i></a>
                     <a href="#guided-hh" data-n="2"><span>Circuit</span><i></i></a>
@@ -200,6 +202,7 @@
                     <a href="#guided-chapter-5" data-n="7"><span>Silicon</span><i></i></a>
                     <a href="#guided-flykart" data-n="8"><span>FlyKart</span><i></i></a>
                     <a href="#guided-inspect" data-n="9"><span>Inspect</span><i></i></a>
+                    <a href="#guided-body" data-n="10"><span>Body</span><i></i></a>
                 </div>
                 <div class="tb-step"><a data-tb-prev href="#model-ladder" aria-label="Previous chapter">↑</a><a data-tb-next href="#guided-hh" aria-label="Next chapter">↓</a></div>
             </nav>
@@ -503,7 +506,7 @@
                             <div>
                                 <span class="chapter-number">Lab 1.2 · Chapter 1 in one picture</span>
                                 <h4>Scrub a Spike Through Na⁺ Influx, K⁺ Efflux, and Propagation</h4>
-                                <p>Drag the spike phase or press play. The voltage trace and membrane cross-section show which ions cross; the axon strip shows the active front and refractory wake moving from segment to segment. Switch on myelin to regenerate only at nodes.</p>
+                                <p>Drag the spike phase or press play. The voltage trace and the live membrane patch show which ions cross: Na⁺ and K⁺ drift in the baths and stream through a channel only while its gate is open; the axon strip shows the active front and refractory wake moving from segment to segment. Switch on myelin to regenerate only at nodes.</p>
                             </div>
                             <span id="ionStatusTag" class="ap-status">Resting · −70 mV</span>
                         </div>
@@ -513,8 +516,9 @@
                                     <canvas id="ionTransportCanvas" width="900" height="360" aria-label="Interactive sodium and potassium transport during action-potential propagation"></canvas>
                                 </div>
                                 <div class="lab-legend" aria-label="Ion transport legend">
-                                    <span><i style="--legend:#67e8f9"></i>Na⁺ entering</span>
-                                    <span><i style="--legend:#fbbf24"></i>K⁺ leaving</span>
+                                    <span><i style="--legend:#67e8f9"></i>Na⁺ (enters through the cyan channels)</span>
+                                    <span><i style="--legend:#fbbf24"></i>K⁺ (leaves through the amber channels)</span>
+                                    <span><i style="--legend:#86efac"></i>Cl⁻</span>
                                     <span><i style="--legend:#ef6f61"></i>depolarized front</span>
                                     <span><i style="--legend:#8f80d6"></i>refractory wake</span>
                                     <span><i style="--legend:#e9e1c7"></i>myelin</span>
@@ -875,6 +879,75 @@
                             <li><b>Sustained step.</b> A steady current produces a regular spike train, and a stronger current fires faster. Remember this; Chapter 3 turns it into a tuning curve.</li>
                             <li><b>Pharmacology.</b> Switch on TTX: no spike at any strength, only the RC response from Lab 2.1. Switch on TEA instead: the spike rises, then stays stuck high for tens of milliseconds, because nothing pulls it back down.</li>
                         </ol></div>
+                    </div>
+
+                    <div id="ion-channel-lab" class="ap-lab">
+                        <div class="ap-lab-heading">
+                            <div>
+                                <span class="chapter-number">Lab 2.3 · Ions in motion</span>
+                                <h4>Watch Na⁺ and K⁺ Pour Through the Gates</h4>
+                                <p>The same Hodgkin–Huxley equations as Lab 2.2, now with the ions drawn. Each channel is a pore with gate flaps that flip at the real rate constants: sodium channels need three <b>m</b> gates open and the <b>h</b> ball out of the way, potassium channels need four <b>n</b> gates open. Ions only cross where a pore is open, and the number crossing follows the computed current. Fire a spike, plug the channels with the toxins, or raise the potassium outside and see the membrane lose its balance.</p>
+                            </div>
+                            <span id="icStatus" class="ap-status">Resting · −65 mV</span>
+                        </div>
+                        <div class="ap-lab-grid">
+                            <div>
+                                <div class="ap-canvas-shell"><canvas id="ionChannelCanvas" width="900" height="360" aria-label="A membrane patch with sodium and potassium channels, gates and moving ions"></canvas></div>
+                                <div class="ap-canvas-shell" style="margin-top:10px"><canvas id="ionChannelTraces" width="900" height="300" aria-label="Voltage, gating variables and ion currents over time"></canvas></div>
+                                <div class="lab-legend" aria-label="Ion channel legend">
+                                    <span><i style="--legend:#67e8f9"></i>Na⁺</span>
+                                    <span><i style="--legend:#fbbf24"></i>K⁺</span>
+                                    <span><i style="--legend:#86efac"></i>Cl⁻</span>
+                                    <span><i style="--legend:#a9a3c8"></i>large anions</span>
+                                    <span><i style="--legend:#f87171"></i>closed gate / plugged pore</span>
+                                    <span><i style="--legend:#6ee7b7"></i>open gate</span>
+                                    <span><i style="--legend:#a78bfa"></i>h inactivation ball</span>
+                                </div>
+                            </div>
+                            <div class="ap-controls">
+                                <div class="ap-buttons">
+                                    <button id="icFire" type="button">Fire a spike</button>
+                                    <button id="icReset" type="button">Reset</button>
+                                </div>
+                                <label class="ap-toggle" for="icTrain">
+                                    <input id="icTrain" type="checkbox">
+                                    <span><strong>Spike train</strong><small>One stimulus every 14 ms</small></span>
+                                </label>
+                                <label for="icAmp"><span>Stimulus strength</span><output id="icAmpValue">20 µA/cm²</output></label>
+                                <input id="icAmp" type="range" min="4" max="40" value="20" step="1">
+                                <label for="icKo"><span>K⁺ outside</span><output id="icKoValue">6.6 mM</output></label>
+                                <input id="icKo" type="range" min="3" max="30" value="6.6" step="0.1">
+                                <p>Normal tissue sits near 4–7 mM. Above ≈15 mM the potassium equilibrium creeps toward the threshold and the neuron stops firing.</p>
+                                <label for="icSpeed"><span>Time scale</span><output id="icSpeedValue">2.0 ms/s</output></label>
+                                <input id="icSpeed" type="range" min="0.3" max="8" value="2" step="0.1">
+                                <label class="ap-toggle" for="icTtx"><input id="icTtx" type="checkbox"><span><strong>TTX plugs the Na⁺ channels</strong><small>The gates still flip; the pore is blocked</small></span></label>
+                                <label class="ap-toggle" for="icTea"><input id="icTea" type="checkbox"><span><strong>TEA plugs the K⁺ channels</strong><small>Repolarization loses its main force</small></span></label>
+                                <label class="ap-toggle" for="icPump"><input id="icPump" type="checkbox" checked><span><strong>Na⁺/K⁺ pump</strong><small>3 Na⁺ out, 2 K⁺ in per cycle</small></span></label>
+                                <div class="ap-readouts">
+                                    <div><span>Voltage</span><strong id="icV">−65 mV</strong></div>
+                                    <div><span>Na⁺ current</span><strong id="icNa">0</strong></div>
+                                    <div><span>K⁺ current</span><strong id="icK">0</strong></div>
+                                </div>
+                                <div class="ap-readouts">
+                                    <div><span>Na⁺ in, per µm²</span><strong id="icNaCount">0</strong></div>
+                                    <div><span>K⁺ out, per µm²</span><strong id="icKCount">0</strong></div>
+                                    <div><span>Drawn ions</span><strong>1 dot ≈ 5,000</strong></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="lab-definition">
+                            <div><strong>Voltage is stacked charge</strong><span>The red and blue + and − rows hugging the membrane are the charge layers. At rest the inside holds the negatives; at the spike peak the rows flip. Moving a few thousand ions per square micrometre is enough to change them.</span></div>
+                            <div><strong>Channels flicker; currents are smooth</strong><span>One drawn channel is a coin toss; hundreds of thousands in a real axon average out into the smooth curves below. That is why the equations track fractions $m$, $h$, $n$ instead of single gates.</span></div>
+                            <div><strong>Gradients are almost untouched</strong><span>A spike moves tens of thousands of ions per square micrometre, well under 1&nbsp;% of the sodium inside a small cell. The pump only matters over minutes, which is why the toggle changes nothing within one spike.</span></div>
+                        </div>
+                        <div class="try-list"><strong>Try this</strong><ol>
+                            <li><b>Follow one spike.</b> Press <em>Fire a spike</em> and watch the order: the m gates swing open, Na⁺ falls into the cell, the h ball plugs each sodium pore a moment later, the n gates open and K⁺ leaves. In the bottom trace the cyan current dips first and the amber one rises after it.</li>
+                            <li><b>Plug sodium.</b> Tick TTX. The gates still flicker but the red plugs sit in the pores: no Na⁺ enters, and no stimulus can fire the cell.</li>
+                            <li><b>Plug potassium.</b> Tick TEA. The spike still starts but repolarization is slow and the peak lingers, because the main outward current is gone.</li>
+                            <li><b>Flood the outside with K⁺.</b> Drag K⁺ outside to 20–30 mM. The dashed amber line (E<sub>K</sub>) climbs toward the threshold, the resting voltage rises with it, and sodium channels sit inactivated: the neuron cannot fire (depolarization block).</li>
+                            <li><b>Run a train and count.</b> Switch on the spike train and read the per-µm² counters: each spike adds a few tens of thousands of Na⁺ in and K⁺ out.</li>
+                        </ol></div>
+                        <p class="ap-lab-note">Teaching model: classical squid-axon parameters at 6.3 °C, one µm² patch drawn with five Na⁺ and five K⁺ channels (a real node holds hundreds). Gate flips follow the HH rate constants for single gates; currents come from the deterministic equations. The ion baths are treated as infinite, so dots that cross are replaced.</p>
                     </div>
 
                     <div id="part-2d" class="chapter-subhead">
@@ -2493,7 +2566,12 @@
                         <li><a href="#atlas-lab">Read its four blocks of numbers as pictures</a></li>
                         <li><a href="#probe-lab">Feed it any situation and watch it react</a></li>
                         <li><a href="#curves-lab">Measure how each sensor moves each control</a></li>
-                        <li><a href="#drive-lab">Drive it on the real physics and watch every reward term</a></li>
+                        <li><a href="#drive-lab">Drive it on the real physics and watch every reward term</a>
+                <a href="#scale-lab" class="block p-4 rounded-xl border border-rose-300 bg-rose-50 text-sm text-rose-950 hover:border-rose-500 transition"><strong>Lab 10.1 · Scale</strong><span class="block text-xs text-slate-700 mt-1">Lay the Simulated Kart Over the Real Robot</span><span class="block text-xs text-slate-600 mt-1">26 × 17 cm, 1.1 cm per pixel, camera and sonar geometry.</span></a>
+                <a href="#height-lab" class="block p-4 rounded-xl border border-indigo-300 bg-indigo-50 text-sm text-indigo-950 hover:border-indigo-500 transition"><strong>Lab 10.2 · Two cameras</strong><span class="block text-xs text-slate-700 mt-1">See the Same Bend From 16 Cm and 6.5 Cm</span><span class="block text-xs text-slate-600 mt-1">Same pinhole model as the simulator.</span></a>
+                <a href="#sonar-wave-lab" class="block p-4 rounded-xl border border-cyan-300 bg-cyan-50 text-sm text-cyan-950 hover:border-cyan-500 transition"><strong>Lab 10.3 · The ping</strong><span class="block text-xs text-slate-700 mt-1">Will This Ping Come Back?</span><span class="block text-xs text-slate-600 mt-1">Beam, lobe, blind zone, threshold, tilt and temperature.</span></a>
+                <a href="#fusion-lab" class="block p-4 rounded-xl border border-emerald-300 bg-emerald-50 text-sm text-emerald-950 hover:border-emerald-500 transition"><strong>Lab 10.4 · Fusion</strong><span class="block text-xs text-slate-700 mt-1">Fuse a Camera and a Sonar, Then Fool Them</span><span class="block text-xs text-slate-600 mt-1">Inverse-variance fusion, ghost echoes, outlier gating.</span></a>
+                <a href="#results-lab" class="block p-4 rounded-xl border border-violet-300 bg-violet-50 text-sm text-violet-950 hover:border-violet-500 transition"><strong>Lab 10.5 · The evidence</strong><span class="block text-xs text-slate-700 mt-1">Read the Results With Their Error Bars</span><span class="block text-xs text-slate-600 mt-1">Measured laps, lap times and collisions.</span></a></li>
                         <li><a href="#s9-8">Silence neurons to test what each one is for</a></li>
                     </ol></div>
                 </div>
@@ -2869,11 +2947,364 @@
                         </div>
                         <div class="ledger-kart"><p><strong>Kart brain, complete:</strong> events, leaky memory, threshold, weighted inputs, loops, smoothed readouts, evolved weights, compute budget, and now the tools to look inside.</p><div class="brain-build" data-upto="8"></div></div>
                     </div>
+                </div>
+            </article>
+
+            <div class="thread-knot">
+                <span>Open question</span>
+                <p>You can now read a trained brain, and Chapter 8’s kart is happy because the simulator hands it seventeen tidy numbers. A real robot gets none of them. It gets pixels, an echo, and a body that is 26 centimetres long. What changes when the same brain has to live there?</p>
+                <a href="#guided-body">Chapter 10 · Give the brain a body ↓</a>
+            </div>
+
+            <!-- ============================ CHAPTER 10 ============================ -->
+            <article id="guided-body" class="book-chapter" data-title="Give the brain a body">
+                <div class="chapter-heading">
+                    <span class="chapter-numeral" aria-hidden="true">10</span>
+                    <div>
+                        <span class="chapter-number">Chapter 10 · The body</span>
+                        <h3>Give the Brain a Body</h3>
+                    </div>
+                    <p class="chapter-question">Question: what changes when the numbers come from a 26 × 17 cm robot with a camera 6.5 cm off the floor and a cheap ultrasonic ranger, and does the extra sense earn its place?</p>
+                </div>
+                <div class="chapter-bridge">
+                    <div class="bridge-from"><span>From Chapter 9</span><p>You opened a trained brain and saw that every reaction lives in four blocks of numbers. But the inputs to those numbers were still handed over by the simulator. FlyKart Vision replaced them with a camera network; this chapter puts that camera, and a sonar, on a body with real dimensions, trains the whole stack with both senses in the loop, and measures what the sonar really buys.</p></div>
+                    <div class="bridge-plan"><span>In this chapter</span><ol>
+                        <li><a href="#scale-lab">Lay the kart over the real robot and find its blind spots</a></li>
+                        <li><a href="#height-lab">See the same road from 16 cm and from 6.5 cm</a></li>
+                        <li><a href="#sonar-wave-lab">Fire an HC-SR04 at things and watch the echo come back, or not</a></li>
+                        <li><a href="#fusion-lab">Fuse a camera and a sonar, and watch a wrong echo fool it</a></li>
+                        <li><a href="#results-lab">Read the measured results with their error bars</a></li>
+                    </ol></div>
+                </div>
+                <div class="chapter-stack">
+
+                    <div id="part-10a" class="chapter-subhead">
+                        <span>Chapter 10 · Part A</span>
+                        <h4>Fit the brain into the robot</h4>
+                        <p>Question: how big is the kart, really, and what can its camera see?</p>
+                    </div>
+
+                    <div id="s10-1" class="chapter-panel formula">
+                        <h4><span class="step-no">10.1</span>One pixel is 1.1 centimetres</h4>
+                        <p>The simulated kart is 24 × 14 pixels. The robot to be built is 26 cm long and 17 cm wide, with its wheel centres 11.5 cm apart and its sensors mounted 6.5 cm above the floor. Choosing a scale of <strong>1.1 cm per pixel</strong> makes the kart 26.4 × 15.4 cm, within 10 % of the robot, and puts the simulator’s top speed of 90 px/s at about 1 metre per second.</p>
+                        <div class="chapter-equation">
+                            $\text{length}_{cm}=24\,px\times1.1\,\tfrac{cm}{px}=26.4,\qquad v_{max}=90\,\tfrac{px}{s}\times1.1\,\tfrac{cm}{px}\approx0.99\,\tfrac{m}{s}$
+                        </div>
+                        <p class="cost-note">Only the <em>geometry</em> is matched. The kart keeps the original FlyKart handling, so how quickly it turns or stops is a simulator fact. Whether a real 1 m/s robot with a 15 Hz sonar has enough margin is a question for the hardware, not for this chapter.</p>
+                    </div>
+
+                    <div id="scale-lab" class="ap-lab">
+                        <div class="ap-lab-heading">
+                            <div>
+                                <span class="chapter-number">Lab 10.1 · Scale</span>
+                                <h4>Lay the Simulated Kart Over the Real Robot</h4>
+                                <p>The green body is the robot (26 × 17 cm, wheel centres 11.5 cm apart). The dashed amber outline is the simulated kart at your chosen scale. The side view shows the camera’s vertical field of view and the sonar’s beam from the mount height, and where each of them first reaches the floor.</p>
+                            </div>
+                            <span class="ap-status">Robot 26 × 17 cm</span>
+                        </div>
+                        <div class="ap-lab-grid">
+                            <div class="ap-canvas-shell"><canvas id="scaleCanvas" width="900" height="400" aria-label="Top and side view of the robot with the simulated kart outlined over it"></canvas></div>
+                            <div class="ap-controls">
+                                <label for="scalePx"><span>Centimetres per pixel</span><output id="scalePxValue">1.10 cm/px</output></label>
+                                <input id="scalePx" type="range" min="0.8" max="1.5" step="0.05" value="1.1">
+                                <label for="scaleMount"><span>Sensor mount height</span><output id="scaleMountValue">6.5 cm</output></label>
+                                <input id="scaleMount" type="range" min="3" max="20" step="0.5" value="6.5">
+                                <label for="scaleTilt"><span>Camera tilt</span><output id="scaleTiltValue">7° down</output></label>
+                                <input id="scaleTilt" type="range" min="0" max="25" step="1" value="7">
+                                <div class="ap-readouts">
+                                    <div><span>Kart in cm</span><strong id="scaleKart">26.4 × 15.4 cm</strong></div>
+                                    <div><span>vs robot</span><strong id="scaleMatch">+2% / −9%</strong></div>
+                                    <div><span>Top speed</span><strong id="scaleSpeed">0.99 m/s</strong></div>
+                                </div>
+                                <div class="ap-readouts">
+                                    <div><span>Floor hidden ahead</span><strong id="scaleNear">8 cm</strong></div>
+                                    <div><span>Sonar meets floor</span><strong id="scaleFloor">49 cm</strong></div>
+                                    <div><span>Wheelbase</span><strong>11.5 cm</strong></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="lab-definition">
+                            <div><strong>The camera has a blind patch</strong><span>The lowest image row looks at a floor point a few centimetres past the bumper. Anything closer is never in the picture, which is one reason a second sense is attractive.</span></div>
+                            <div><strong>The sonar beam reaches the floor</strong><span>A beam 15° wide spreads until its lower edge touches the ground (49 cm at 6.5 cm height). A real floor can return a grazing echo; the simulator ignores floor returns, so verify on hardware.</span></div>
+                            <div><strong>Scale is a choice, not a fact</strong><span>Slide to 0.8 or 1.5 cm per pixel: the kart stops matching the robot, and top speed changes by almost a factor of two. Every distance in the chapter inherits this one number.</span></div>
+                        </div>
+                    </div>
+
+                    <div id="s10-2" class="chapter-panel">
+                        <h4><span class="step-no">10.2</span>A camera close to the floor sees a different world</h4>
+                        <p>The original Vision kart’s camera sat about 16.5 cm up. On the robot it sits at 6.5 cm. A pinhole camera looking at flat ground maps a ground point at forward distance $F$ to the image row $y\propto h/F$: the lower the camera, the more the whole road is squashed into a few rows near the horizon, and the closer an object is, the larger it stands out of the road.</p>
+                        <div class="chapter-equation">
+                            $y_{screen}=c_y+f\,\frac{h\cos\theta-F\sin\theta}{F\cos\theta+h\sin\theta},\qquad f=\frac{W/2}{\tan(\mathrm{hfov}/2)}$
+                        </div>
+                        <div class="option-cards">
+                            <div class="pick"><b>Easier</b><strong>Things in the road</strong><p>A cone at 40 cm occupies a bigger share of the picture from a low camera. Held-out accuracy for “traffic closeness” rose to about R² 0.8.</p></div>
+                            <div><b>Harder</b><strong>The shape of the road</strong><p>Far bends crowd into a few rows. Held-out accuracy for curvature fell from R² 0.59 at 16 cm to between 0 and 0.4 at 6.5 cm.</p></div>
+                            <div><b>So</b><strong>Retrain, do not reuse</strong><p>A network trained at 16 cm sees the wrong picture. The robot camera network is trained again at 6.5 cm with the same teacher.</p></div>
+                        </div>
+                    </div>
+
+                    <div id="height-lab" class="ap-lab">
+                        <div class="ap-lab-heading">
+                            <div>
+                                <span class="chapter-number">Lab 10.2 · Two cameras</span>
+                                <h4>See the Same Bend From 16 Cm and From the Robot’s Height</h4>
+                                <p>Both panels are rendered by the same pinhole model the simulator uses (48 × 24 pixels, flat ground, upright sprites). Lower the right camera and watch the far road collapse toward the horizon, then place a cone and see how much more of the picture it fills.</p>
+                            </div>
+                            <span class="ap-status">48 × 24 pixels</span>
+                        </div>
+                        <div class="ap-lab-grid">
+                            <div class="ap-canvas-shell"><canvas id="heightCanvas" width="900" height="330" aria-label="The same road seen by the original and the robot camera"></canvas></div>
+                            <div class="ap-controls">
+                                <label for="heightCm"><span>Robot camera height</span><output id="heightCmValue">6.5 cm</output></label>
+                                <input id="heightCm" type="range" min="3" max="20" step="0.5" value="6.5">
+                                <label for="heightCurve"><span>Road curvature (right of centre)</span><output id="heightCurveValue">16</output></label>
+                                <input id="heightCurve" type="range" min="-40" max="40" step="1" value="16">
+                                <label class="ap-toggle" for="heightConeOn"><input id="heightConeOn" type="checkbox" checked><span><strong>Cone on the road</strong><small>Place a traffic cone straight ahead</small></span></label>
+                                <label for="heightCone"><span>Cone distance</span><output id="heightConeValue">55 cm</output></label>
+                                <input id="heightCone" type="range" min="20" max="250" step="5" value="50">
+                                <div class="ap-readouts">
+                                    <div><span>Floor hidden ahead</span><strong id="heightNear">—</strong></div>
+                                    <div><span>Rows 1–3 m</span><strong id="heightRows">—</strong></div>
+                                    <div><span>Farthest row</span><strong id="heightFar">—</strong></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="try-list"><strong>Try this</strong><ol>
+                            <li><b>Squash the road.</b> Drag the robot camera from 20 cm down to 3 cm. The number of image rows that look between 1 and 3 metres ahead shrinks, so a gentle bend 2 metres ahead is described by only a few pixels.</li>
+                            <li><b>Grow the cone.</b> Keep the cone at 50 cm and compare the two panels: the same object covers a taller, wider patch from the low camera.</li>
+                            <li><b>Bend the road.</b> Set curvature to 0 and then to ±40. At 16.5 cm the bend is clearly visible; near the floor it is a subtle shift of a few pixels, which is why curvature accuracy falls.</li>
+                        </ol></div>
+                    </div>
+
+                    <div id="part-10b" class="chapter-subhead">
+                        <span>Chapter 10 · Part B</span>
+                        <h4>Add an ear</h4>
+                        <p>Question: what does a cheap ultrasonic ranger actually report?</p>
+                    </div>
+
+                    <div id="s10-3" class="chapter-panel formula">
+                        <h4><span class="step-no">10.3</span>An HC-SR04 times one echo</h4>
+                        <p>The module sends a short burst of 40 kHz sound and times the first echo. Distance follows from the round trip, and the speed of sound depends on air temperature, so a fixed assumption of 343 m/s is about 0.18 % off per degree.</p>
+                        <div class="chapter-equation">
+                            $d=\frac{c\,t}{2},\qquad c\approx331.3+0.606\,T_{^\circ C}\ \tfrac{m}{s},\qquad t_{400\,cm}\approx23\ \text{ms}\;(\approx15\ \text{pings per second})$
+                        </div>
+                        <div class="option-cards">
+                            <div class="pick"><b>One number</b><strong>The nearest echo in ≈15°</strong><p>Two objects at different ranges report as the nearer one. There is no bearing: it cannot say left or right.</p></div>
+                            <div><b>Not everything answers</b><strong>Thin, small, slanted, far</strong><p>Strength falls with range squared and with the cosine of the surface tilt to a high power. A post, a distant wall at a slant or soft fabric can return nothing.</p></div>
+                            <div><b>Deaf to flat things</b><strong>Paint, kerbs, oil, ponds</strong><p>Nothing taller than about 1.6 cm crosses a beam that skims the floor at 6.5 cm, so those hazards are silent to it.</p></div>
+                        </div>
+                        <p class="cost-note">The simulator’s version adds noise that grows with distance (a few millimetres up close), quantisation, a per-run speed-of-sound error, occasional ghost echoes, and holds each reading for two ticks between pings. The lab below keeps the physics and drops the extras.</p>
+                    </div>
+
+                    <div id="sonar-wave-lab" class="ap-lab">
+                        <div class="ap-lab-heading">
+                            <div>
+                                <span class="chapter-number">Lab 10.3 · The ping</span>
+                                <h4>Will This Ping Come Back?</h4>
+                                <p>Place a target and see the beam, the lobe gain at its bearing, and the receiver trace: the burst at time zero, the 2 cm blind zone where the receiver is deaf to its own ring-down, the detection threshold, and the echo arriving after $2d/c$. The verdict applies the simulator’s rules.</p>
+                            </div>
+                            <span id="sonTag" class="ap-status firing">Echo · 60 cm</span>
+                        </div>
+                        <div class="ap-lab-grid">
+                            <div class="ap-canvas-shell"><canvas id="sonarWaveCanvas" width="900" height="380" aria-label="Sonar beam, target and receiver waveform"></canvas></div>
+                            <div class="ap-controls">
+                                <div class="ap-seg" role="group" aria-label="Presets">
+                                    <button type="button" id="sonPresetCone" class="active">Cone</button>
+                                    <button type="button" id="sonPresetPost">Thin post</button>
+                                    <button type="button" id="sonPresetWall">Slanted wall</button>
+                                    <button type="button" id="sonPresetOil">Oil slick</button>
+                                    <button type="button" id="sonPresetHot">Hot day</button>
+                                </div>
+                                <label for="sonD"><span>Distance</span><output id="sonDValue">60 cm</output></label>
+                                <input id="sonD" type="range" min="1" max="450" value="60" step="1">
+                                <label for="sonA"><span>Off-axis angle</span><output id="sonAValue">0°</output></label>
+                                <input id="sonA" type="range" min="-40" max="40" value="0" step="1">
+                                <label for="sonW"><span>Target width</span><output id="sonWValue">12 cm</output></label>
+                                <input id="sonW" type="range" min="1" max="40" value="12" step="1">
+                                <label for="sonS"><span>Tilt away from the sensor</span><output id="sonSValue">0°</output></label>
+                                <input id="sonS" type="range" min="0" max="80" value="0" step="1">
+                                <label for="sonH"><span>Target height</span><output id="sonHValue">9 cm</output></label>
+                                <input id="sonH" type="range" min="0" max="20" value="9" step="0.5">
+                                <label for="sonT"><span>Air temperature</span><output id="sonTValue">20 °C</output></label>
+                                <input id="sonT" type="range" min="-10" max="40" value="20" step="1">
+                                <div class="ap-readouts">
+                                    <div><span>Round trip</span><strong id="sonTof">—</strong></div>
+                                    <div><span>Echo strength</span><strong id="sonStrength">—</strong></div>
+                                    <div><span>Sound speed</span><strong id="sonC">—</strong></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="try-list"><strong>Try this</strong><ol>
+                            <li><b>The blind zone.</b> Pull the distance below 2 cm: the echo returns while the receiver is still ringing from its own burst, so the module reports nothing.</li>
+                            <li><b>Steer the target out of the beam.</b> At 35° off axis the lobe gain falls to about 0.01 and a 12 cm cone vanishes. The beam is narrower than the camera’s 100° view.</li>
+                            <li><b>Tilt a wall.</b> At 60° tilt a 12 cm target at 1 m returns almost nothing: the sound bounces away from the sensor.</li>
+                            <li><b>Heat the air.</b> At 40 °C sound travels about 3.5 % faster than the module assumes, so every reading comes back about 3.5 % short.</li>
+                        </ol></div>
+                    </div>
+
+                    <div id="part-10c" class="chapter-subhead">
+                        <span>Chapter 10 · Part C</span>
+                        <h4>Combine what it sees and hears</h4>
+                        <p>Question: where does a second sense plug into the brain?</p>
+                    </div>
+
+                    <div id="s10-4" class="chapter-panel">
+                        <h4><span class="step-no">10.4</span>Three places to plug in a sensor</h4>
+                        <figure class="diagram-block">
+                            <svg viewBox="0 0 900 330" role="img" aria-label="Camera network and sonar both feed the controller; the echo also feeds the camera network">
+                                <defs><marker id="bodyArrow" viewBox="0 0 10 10" refX="8" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><path d="M0 0L10 5L0 10z" fill="#3b4a3f"/></marker></defs>
+                                <rect width="900" height="330" fill="#f4f1e9"/>
+                                <g font-family="system-ui, sans-serif" font-size="12" text-anchor="middle">
+                                    <rect x="24" y="30" width="150" height="62" rx="10" fill="#e1f3f7" stroke="#1b8ea3" stroke-width="2"/><text x="99" y="56" font-weight="800" fill="#0f6d80">Camera</text><text x="99" y="74" fill="#3b4a3f">48×24 colour · 6.5 cm</text>
+                                    <rect x="24" y="238" width="150" height="62" rx="10" fill="#fdf0d2" stroke="#d99a1a" stroke-width="2"/><text x="99" y="264" font-weight="800" fill="#8a6412">HC-SR04</text><text x="99" y="282" fill="#3b4a3f">echo closeness, strength</text>
+                                    <rect x="260" y="30" width="190" height="62" rx="10" fill="#fff" stroke="#6457b5" stroke-width="2"/><text x="355" y="56" font-weight="800" fill="#51478f">Camera network</text><text x="355" y="74" fill="#3b4a3f">13 estimates, each ± σ</text>
+                                    <rect x="262" y="150" width="190" height="54" rx="10" fill="#fff" stroke="#d99a1a" stroke-width="2" stroke-dasharray="6 4"/><text x="357" y="174" font-weight="800" fill="#8a6412">③ As a fused cue</text><text x="357" y="192" fill="#3b4a3f">not built (future work)</text>
+                                    <rect x="540" y="120" width="180" height="90" rx="10" fill="#e9f5ec" stroke="#2f8a54" stroke-width="2"/><text x="630" y="148" font-weight="800" fill="#1d6a3d">Spiking controller</text><text x="630" y="168" fill="#3b4a3f">19 inputs → 48 → 4</text><text x="630" y="186" fill="#3b4a3f">17 + echo closeness, strength</text>
+                                    <rect x="780" y="140" width="96" height="50" rx="10" fill="#fff" stroke="#8fa4be" stroke-width="2"/><text x="828" y="162" font-weight="800" fill="#3b4a3f">Wheels</text><text x="828" y="178" fill="#3b4a3f">steer · gas · brake</text>
+                                </g>
+                                <g stroke="#3b4a3f" stroke-width="2" fill="none" marker-end="url(#bodyArrow)">
+                                    <path d="M174 61 H 258"/><path d="M450 61 H 500 Q 540 61 540 130"/>
+                                    <path d="M174 269 H 520 Q 580 269 600 212" stroke="#d99a1a"/><path d="M720 165 H 778"/>
+                                </g>
+                                <path d="M99 238 V 150 Q 99 112 240 112 Q 300 112 330 94" stroke="#d99a1a" stroke-width="2" fill="none" marker-end="url(#bodyArrow)" stroke-dasharray="3 4"/>
+                                <g font-family="system-ui, sans-serif" font-size="11" fill="#5a6a6f" text-anchor="middle">
+                                    <text x="330" y="132">①  echo also enters the camera network</text>
+                                    <text x="400" y="258" fill="#8a6412">②  echo enters the controller directly (zero weights at the start)</text>
+                                </g>
+                            </svg>
+                            <figcaption>Figure 10.1 · The sonar enters twice: straight into the controller as two extra inputs, and into the camera network next to the speed and the last commands. A third route, fusing it as a variance-weighted cue like the camera, is the subject of the next lab.</figcaption>
+                        </figure>
+                        <div class="scorecard">
+                            <div><span>Controller input</span><strong>Evolution decides what the echo is for; a 17-input brain widens with zero weights and behaves as before</strong></div>
+                            <div><span>Camera input</span><strong>Needs retraining; here it gave no measurable accuracy gain</strong></div>
+                            <div><span>Fused cue</span><strong>Principled and needs no retraining, but needs a calibrated map from range to the “obstacle” estimates</strong></div>
+                        </div>
+                    </div>
+
+                    <div id="fusion-lab" class="ap-lab">
+                        <div class="ap-lab-heading">
+                            <div>
+                                <span class="chapter-number">Lab 10.4 · Fusion</span>
+                                <h4>Fuse a Camera and a Sonar, Then Fool Them</h4>
+                                <p>Each sensor reports where the obstacle is as a bell curve: a mean and an uncertainty. FlyKart Vision combines beliefs by weighting each with $1/\sigma^2$, the rule FlyKart Vision uses to combine the camera, the exact channels and the lap memory (“fuse beliefs, not actions”). A confident sensor dominates, which is a strength until the confident sensor is wrong.</p>
+                            </div>
+                            <span id="fuTag" class="ap-status">Agree</span>
+                        </div>
+                        <div class="ap-lab-grid">
+                            <div class="ap-canvas-shell"><canvas id="fuseCanvas" width="900" height="340" aria-label="Camera and sonar distance beliefs and their fusion"></canvas></div>
+                            <div class="ap-controls">
+                                <div class="ap-seg" role="group" aria-label="Situations">
+                                    <button type="button" id="fuDay" class="active">Daylight</button>
+                                    <button type="button" id="fuNight">Night</button>
+                                    <button type="button" id="fuGhost">Ghost echo</button>
+                                    <button type="button" id="fuMiss">No echo</button>
+                                </div>
+                                <label for="fuCamM"><span>Camera says</span><output id="fuCamMValue">90 cm</output></label>
+                                <input id="fuCamM" type="range" min="10" max="250" value="90" step="1">
+                                <label for="fuCamS"><span>Camera uncertainty</span><output id="fuCamSValue">±20 cm</output></label>
+                                <input id="fuCamS" type="range" min="4" max="100" value="20" step="1">
+                                <label for="fuSonM"><span>Sonar says</span><output id="fuSonMValue">84 cm</output></label>
+                                <input id="fuSonM" type="range" min="10" max="250" value="84" step="1">
+                                <label for="fuSonS"><span>Sonar uncertainty</span><output id="fuSonSValue">±1.5 cm</output></label>
+                                <input id="fuSonS" type="range" min="0.5" max="20" value="1.5" step="0.5">
+                                <label class="ap-toggle" for="fuHeard"><input id="fuHeard" type="checkbox" checked><span><strong>Sonar heard an echo</strong><small>Untick: the module returned nothing</small></span></label>
+                                <label class="ap-toggle" for="fuGate"><input id="fuGate" type="checkbox"><span><strong>Reject outliers (gate)</strong><small>Ignore a source that disagrees by more than 3σ</small></span></label>
+                                <div class="ap-readouts">
+                                    <div><span>Fused</span><strong id="fuMean">—</strong></div>
+                                    <div><span>Uncertainty</span><strong id="fuSigma">—</strong></div>
+                                    <div><span>Disagreement</span><strong id="fuDis">—</strong></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="lab-definition">
+                            <div><strong>Agreement sharpens</strong><span>Two independent sources with uncertainties $\sigma_c$ and $\sigma_s$ give $1/\sigma^2=1/\sigma_c^2+1/\sigma_s^2$: the fused curve is narrower than either.</span></div>
+                            <div><strong>Night hands the vote to the sonar</strong><span>When the camera’s uncertainty grows, its weight falls with $1/\sigma^2$ and the fused estimate slides to the sonar, which does not care about light.</span></div>
+                            <div><strong>A confident liar wins</strong><span>Press <em>Ghost echo</em>: the sonar claims 30 cm with ±1.5 cm certainty and the fused estimate follows it. Tick <em>Reject outliers</em> and the gate throws it out because it is 3σ from the camera.</span></div>
+                        </div>
+                    </div>
+
+                    <div id="part-10d" class="chapter-subhead">
+                        <span>Chapter 10 · Part D</span>
+                        <h4>Train it, then check the claim</h4>
+                        <p>Question: with both senses in the training loop, did the sonar earn its place?</p>
+                    </div>
+
+                    <div id="s10-5" class="chapter-panel">
+                        <h4><span class="step-no">10.5</span>Put both senses in every stage of learning</h4>
+                        <p>A sensor that appears only at test time cannot be used well. So the sonar and the camera are present in all three learning stages, and the controller starts with <strong>zero</strong> weights on the sonar so that evolution alone decides what the echo is for.</p>
+                        <figure class="diagram-block">
+                            <svg viewBox="0 0 900 190" role="img" aria-label="Three training stages in order">
+                                <rect width="900" height="190" fill="#f4f1e9"/>
+                                <g font-family="system-ui, sans-serif" font-size="12" text-anchor="middle">
+                                    <rect x="20" y="30" width="250" height="120" rx="12" fill="#fff" stroke="#6457b5" stroke-width="2"/><text x="145" y="56" font-weight="800" fill="#51478f">① Evolve through faults</text>
+                                    <text x="145" y="78" fill="#3b4a3f">noise · delay · bias</text><text x="145" y="96" fill="#3b4a3f">camera misses every vehicle</text><text x="145" y="114" fill="#3b4a3f">(dark, hidden objects)</text><text x="145" y="136" fill="#8a6412" font-weight="700">sonar is sometimes the only warning</text>
+                                    <rect x="325" y="30" width="250" height="120" rx="12" fill="#fff" stroke="#1b8ea3" stroke-width="2"/><text x="450" y="56" font-weight="800" fill="#0f6d80">② Train the camera network</text>
+                                    <text x="450" y="78" fill="#3b4a3f">DAgger at 6.5 cm</text><text x="450" y="96" fill="#3b4a3f">teacher drives with the sonar</text><text x="450" y="114" fill="#3b4a3f">student gets the echo as input</text><text x="450" y="136" fill="#8a6412" font-weight="700">frames labelled by the simulator</text>
+                                    <rect x="630" y="30" width="250" height="120" rx="12" fill="#fff" stroke="#2f8a54" stroke-width="2"/><text x="755" y="56" font-weight="800" fill="#1d6a3d">③ Evolve through the real eyes</text>
+                                    <text x="755" y="78" fill="#3b4a3f">whole episodes through ②</text><text x="755" y="96" fill="#3b4a3f">day · night · varied light</text><text x="755" y="114" fill="#3b4a3f">cones, barriers, stalled cars</text><text x="755" y="136" fill="#8a6412" font-weight="700">judged on the camera’s real mistakes</text>
+                                </g>
+                                <g stroke="#3b4a3f" stroke-width="2" fill="none" marker-end="url(#bodyArrow)"><path d="M270 90 H 322"/><path d="M575 90 H 627"/></g>
+                            </svg>
+                            <figcaption>Figure 10.2 · The three learning stages. The open-world controller and camera follow the same recipe with trees, rocks and a fence the sonar can hear, and ponds and mud it cannot.</figcaption>
+                        </figure>
+                    </div>
+
+                    <div id="results-lab" class="ap-lab">
+                        <div class="ap-lab-heading">
+                            <div>
+                                <span class="chapter-number">Lab 10.5 · The evidence</span>
+                                <h4>Read the Results With Their Error Bars</h4>
+                                <p>Every number is from tracks and worlds the networks never trained on, 16 episodes per row. Pick a scenario and a metric. Amber rows are the robot with its sonar on; the row above each is the same brain with the sonar input held at zero. The white whiskers are one standard error: if they overlap, the two rows are not distinguishable.</p>
+                            </div>
+                            <span class="ap-status">Held-out, 16 episodes</span>
+                        </div>
+                        <div class="ap-lab-grid">
+                            <div class="ap-canvas-shell"><canvas id="resultsCanvas" width="900" height="400" aria-label="Bar chart of the measured results"></canvas></div>
+                            <div class="ap-controls">
+                                <label for="resScenario"><span>Scenario</span></label>
+                                <select id="resScenario"></select>
+                                <label for="resMetric"><span>Metric</span></label>
+                                <select id="resMetric">
+                                    <option value="laps">Laps finished</option>
+                                    <option value="lap">Mean lap time</option>
+                                    <option value="coll">Collisions</option>
+                                    <option value="prog">Mean progress</option>
+                                </select>
+                                <p>Violet and slate rows use exact simulator numbers (no camera); cyan rows drive through the camera; amber is camera + sonar. The “kart controller” rows are the earlier 17-input brain.</p>
+                            </div>
+                        </div>
+                        <div class="try-list"><strong>Try this</strong><ol>
+                            <li><b>Daylight traffic, lap time.</b> The sonar rows are shorter: the robot drives through traffic faster with the echo.</li>
+                            <li><b>Daylight traffic, collisions.</b> The same sonar rows are <em>not</em> lower. Faster, not more careful, and the whiskers show the gap is within noise.</li>
+                            <li><b>Oil slicks.</b> Sonar on and off are identical: a control showing the sonar is not secretly helping where it cannot hear.</li>
+                            <li><b>Open world.</b> Camera plus sonar reaches slightly more goals with a crash or two fewer, but with 16 worlds the difference is small.</li>
+                        </ol></div>
+                    </div>
+
+                    <div id="s10-6" class="chapter-panel">
+                        <h4><span class="step-no">10.6</span>What did not work, and what that taught</h4>
+                        <div class="option-cards">
+                            <div class="pick"><b>Hand-wired reflex</b><strong>Worse than nothing</strong><p>The first controller braked whenever the echo was close. With exact numbers it had 67 collisions against 40 with the sonar off: a robot that stops in front of a cone keeps touching it, and each touch counts. Zero-weight start and evolution did better.</p></div>
+                            <div><b>A confounded comparison</b><strong>The echo does not sharpen the camera</strong><p>Traffic-closeness R² first looked like it rose from 0.75 to 0.81 when the echo was added. A rerun with the same teacher and data gave 0.81 with the echo and 0.80 without. The gap was the data, not the sensor.</p></div>
+                            <div><b>No bearing</b><strong>A single sonar cannot steer</strong><p>An echo says <em>how far</em>, never <em>which way</em>. On a track the camera already gives a side estimate, so the sonar can mostly change speed. A swept or paired sonar would add direction.</p></div>
+                        </div>
+                        <p class="cost-note">The discipline is the same as Chapter 9: put a control in every comparison (sonar off with the same brain; a hazard the sonar cannot hear; the same data without the echo) before believing a number.</p>
+                    </div>
+
+                    <div class="ledger" data-build="10">
+                        <div class="ledger-head"><span>Chapter 10 ledger</span><strong>A body adds two senses and costs three kinds of honesty</strong></div>
+                        <div class="ledger-grid">
+                            <div class="kept"><b>What you can now do</b><p>Size a simulated kart to a real chassis, predict what a low camera and an HC-SR04 will and will not see, fuse them by variance, and train a brain with both in the loop.</p></div>
+                            <div class="dropped"><b>What stays unmeasured</b><p>The real robot’s handling and stopping distance, the real floor’s echo, real camera noise and lighting. All were simulated or assumed.</p></div>
+                            <div class="price"><b>What it costs</b><p>Tens of minutes to an hour of laptop time per stage, a camera network that sees the road less well from 6.5 cm, and a sensor that sometimes only makes the robot faster.</p></div>
+                        </div>
+                        <div class="ledger-kart"><p><strong>Kart brain on a body:</strong> 19 inputs, 48 leaky spiking neurons, four readouts; a camera network at 6.5 cm and an echo that reaches both. Next step in the real world: log an actual HC-SR04 and camera on the chassis and replace the simulator’s noise with what you measure.</p></div>
+                    </div>
 
                     <div class="finale-cta">
                         <div>
                             <strong>Now train one of your own</strong>
-                            <p>Open the simulator, press <em>Train visually</em>, download the best brain after a few generations, and drop it into Lab 9.1. Its Neural activity panel shows 16 of the 48 neurons live while it drives.</p>
+                            <p>Open the simulator, press <em>Train visually</em>, download the best brain after a few generations, and drop it into Lab 9.1. Its Neural activity panel shows 16 of the 48 neurons, and the Chapter 9 labs let you read the rest.</p>
                         </div>
                         <div>
                             <a href="./">Open the simulator →</a>
@@ -2883,23 +3314,12 @@
 
                     <div class="finale-cta">
                         <div>
-                            <strong>Then give it eyes</strong>
-                            <p>Every number this brain reads is handed to it by the simulator. <em>FlyKart Vision</em> takes that away: a small camera network estimates the same 17 inputs from colour pixels, a Kenyon-cell memory learns the bends of a lap, and the same kind of brain drives a road it has never seen or a field with no road at all. Your downloaded brains import there, and its brains export back here.</p>
+                            <strong>Then give it eyes and a body</strong>
+                            <p>Every number this brain reads is handed to it by the simulator. <em>FlyKart Vision</em> takes that away: a small camera network estimates the same inputs from colour pixels, a Kenyon-cell memory learns the bends of a lap, and the <em>Sensor head</em> menu switches to the robot-scale camera and sonar of this chapter. Your downloaded brains import there, and its brains export back here.</p>
                         </div>
                         <div>
                             <a href="./vision.html">Open FlyKart Vision →</a>
-                            <a href="./vision.html#how">How it works</a>
-                        </div>
-                    </div>
-
-                    <div class="finale-cta">
-                        <div>
-                            <strong>Then give it a body</strong>
-                            <p>Scale the kart to a real 26 × 17 cm robot, lower the camera to 6.5 cm and add an HC-SR04 sonar. Chapter 16 explains what a cheap ultrasonic ranger can and cannot hear, and what the measurements showed, including what did not work.</p>
-                        </div>
-                        <div>
-                            <a href="#robot-sonar">Chapter 16 · Robot sonar</a>
-                            <a href="./vision.html">Try the robot profile →</a>
+                            <a href="./vision.html#evidence">Evidence tab</a>
                         </div>
                     </div>
                 </div>
@@ -4266,12 +4686,13 @@
                 </p>
             </div>
             <div class="analogy-card"><strong>Mental model: a wind tunnel for ideas</strong><p>Each lab isolates one force—spiking, breeding, capacity, perception, or reward—so you can change a knob and watch the response. Like a wind tunnel, it builds intuition before the pieces meet in a full vehicle.</p><span class="analogy-limit">Where it breaks: isolated demonstrations remove interactions and failure modes that appear only in the complete system.</span></div>
-            <p class="text-xs text-slate-600">All 23 labs from the guided route, in reading order. Each card jumps to the lab; its chapter explains what to look for.</p>
+            <p class="text-xs text-slate-600">All 29 labs from the guided route, in reading order. Each card jumps to the lab; its chapter explains what to look for.</p>
             <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
                 <a href="#membrane-voltage-lab" class="block p-4 rounded-xl border border-indigo-300 bg-indigo-50 text-sm text-indigo-950 hover:border-indigo-500 transition"><strong>Lab 1.1 · Electrochemistry</strong><span class="block text-xs text-slate-700 mt-1">Move Ions Around and Watch the Vote Change</span><span class="block text-xs text-slate-600 mt-1">Change one ion's inside and outside concentration, then open the sodium doors.</span></a>
                 <a href="#ion-transport-lab" class="block p-4 rounded-xl border border-cyan-300 bg-cyan-50 text-sm text-cyan-950 hover:border-cyan-500 transition"><strong>Lab 1.2 · Chapter 1 in one picture</strong><span class="block text-xs text-slate-700 mt-1">Scrub a Spike Through Na⁺ Influx, K⁺ Efflux, and Propagation</span><span class="block text-xs text-slate-600 mt-1">Drag the spike phase or press play.</span></a>
                 <a href="#rc-circuit-lab" class="block p-4 rounded-xl border border-emerald-300 bg-emerald-50 text-sm text-emerald-950 hover:border-emerald-500 transition"><strong>Lab 2.1 · The passive membrane</strong><span class="block text-xs text-slate-700 mt-1">Change Resistance and Capacitance, Then Apply a Current Step</span><span class="block text-xs text-slate-600 mt-1">The circuit and voltage trace update together.</span></a>
                 <a href="#action-potential-lab" class="block p-4 rounded-xl border border-violet-300 bg-violet-50 text-sm text-violet-950 hover:border-violet-500 transition"><strong>Lab 2.2 · The real equations</strong><span class="block text-xs text-slate-700 mt-1">Run Hodgkin–Huxley and Watch the Gates Decide</span><span class="block text-xs text-slate-600 mt-1">This lab integrates the 1952 equations every 0.01 ms.</span></a>
+                <a href="#ion-channel-lab" class="block p-4 rounded-xl border border-cyan-300 bg-cyan-50 text-sm text-cyan-950 hover:border-cyan-500 transition"><strong>Lab 2.3 · Ions in motion</strong><span class="block text-xs text-slate-700 mt-1">Watch Na⁺ and K⁺ Pour Through the Gates</span><span class="block text-xs text-slate-600 mt-1">Hodgkin–Huxley gates flicker, ions cross, toxins plug the pores.</span></a>
                 <a href="#summation-lab" class="block p-4 rounded-xl border border-amber-300 bg-amber-50 text-sm text-amber-950 hover:border-amber-500 transition"><strong>Lab 3.1 · Before the equations</strong><span class="block text-xs text-slate-700 mt-1">Place Synaptic Pushes and Watch Them Add Up, Fade, and Fire</span><span class="block text-xs text-slate-600 mt-1">Click in a lane to drop a synaptic input at that moment, click it again to remove it.</span></a>
                 <a href="#lif-lab" class="block p-4 rounded-xl border border-rose-300 bg-rose-50 text-sm text-rose-950 hover:border-rose-500 transition"><strong>Lab 3.2 · The neuron the kart uses</strong><span class="block text-xs text-slate-700 mt-1">Drive One LIF Neuron and Draw Its Tuning Curve</span><span class="block text-xs text-slate-600 mt-1">Run the neuron for 200 ms.</span></a>
                 <a href="#izhikevich-lab" class="block p-4 rounded-xl border border-indigo-300 bg-indigo-50 text-sm text-indigo-950 hover:border-indigo-500 transition"><strong>Lab 3.3 · Rhythm for 13 FLOPs</strong><span class="block text-xs text-slate-700 mt-1">Switch One Neuron Between Five Personalities</span><span class="block text-xs text-slate-600 mt-1">Same two equations, different .</span></a>
@@ -4778,203 +5199,6 @@
             </div>
         </section>
 
-        <section id="robot-sonar" class="space-y-6">
-            <div class="border-l-4 border-amber-600 pl-4">
-                <h2 class="text-2xl sm:text-3xl font-extrabold text-slate-900">16. Giving the Kart a Body: A Low Camera plus an HC-SR04 Sonar</h2>
-                <p class="text-slate-600 text-sm sm:text-base mt-1">
-                    FlyKart Vision is scaled to a real 26 × 17 cm robot, a cheap ultrasonic ranger is added next to its camera, and the whole stack (controller, camera network, open-world pair) is trained with that sensor in the loop. This chapter records what was built, how a basic HC-SR04 really behaves, and what the measurements did and did not show.
-                </p>
-            </div>
-            <div class="analogy-card"><strong>Mental model: a blind person with a camera for eyes and a cane that only taps straight ahead</strong><p>The camera says what the road looks like and roughly where things are. The sonar says one thing, how far the nearest solid thing is in a narrow cone, and says nothing about which way to go around it. Whether that is useful depends on who has to decide the direction, and that is a training question, not a hardware one.</p></div>
-
-            <!-- 16.1 Scale -->
-            <div class="bg-white rounded-xl p-6 border border-slate-200 shadow-sm space-y-4">
-                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-2">
-                    <h3 class="font-bold text-slate-900 text-base text-amber-900">16.1 Put the Simulator on the Robot's Scale</h3>
-                    <span class="text-xs font-mono bg-amber-100 text-amber-900 px-2 py-0.5 rounded font-bold">1 px = 1.1 cm</span>
-                </div>
-                <p class="text-xs text-slate-700">
-                    The simulated kart is 24 × 14 px. The robot is 26 × 17 cm, with its wheels 11.5 cm apart and a body 6.5 cm off the floor, which is where the camera and the sonar are mounted. Choosing 1.1 cm per pixel puts the kart at 26 × 15 cm (within 10 % of the robot) and its top speed of 90 px/s at about 1 m/s. Only the geometry is matched: the kart keeps FlyKart's original handling, and nothing here claims the real robot drives the same way. That is a gap to measure on hardware (section 15.1), not to assume away.
-                </p>
-                <div class="overflow-x-auto rounded-lg border border-slate-200">
-                    <table class="w-full text-left text-xs min-w-[640px]">
-                        <thead class="bg-slate-900 text-slate-100"><tr><th class="p-3">Quantity</th><th class="p-3">Real robot</th><th class="p-3">Simulator</th><th class="p-3">Consequence</th></tr></thead>
-                        <tbody class="divide-y divide-slate-200">
-                            <tr><td class="p-3 font-bold">Body</td><td class="p-3">26 × 17 cm, wheels 11.5 cm apart</td><td class="p-3">24 × 14 px ≈ 26 × 15 cm</td><td class="p-3">Close enough for collisions and gaps</td></tr>
-                            <tr><td class="p-3 font-bold">Camera height</td><td class="p-3">6.5 cm</td><td class="p-3">5.9 px (was 15 px)</td><td class="p-3">The road is seen almost edge-on; the ground in front of the bumper is hidden; far bends squash into a few rows</td></tr>
-                            <tr><td class="p-3 font-bold">Sonar height</td><td class="p-3">6.5 cm</td><td class="p-3">5.9 px</td><td class="p-3">It hears only what crosses the beam at that height; gate gantries are raised so the beam passes under</td></tr>
-                            <tr><td class="p-3 font-bold">Speed</td><td class="p-3">not measured</td><td class="p-3">≤ 90 px/s ≈ 1 m/s</td><td class="p-3">Stopping distance is a simulator fact, not a robot fact</td></tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-
-            <!-- 16.2 HC-SR04 -->
-            <div class="bg-white rounded-xl p-6 border border-slate-200 shadow-sm space-y-4">
-                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-2">
-                    <h3 class="font-bold text-slate-900 text-base text-sky-900">16.2 What a Basic HC-SR04 Actually Reports</h3>
-                    <span class="text-xs font-mono bg-sky-100 text-sky-900 px-2 py-0.5 rounded font-bold">Time of flight</span>
-                </div>
-                <p class="text-xs text-slate-700">
-                    The module sends a burst of 40 kHz sound and times the first echo. Distance follows from the round trip, and the speed of sound depends on air temperature, so a fixed assumption of 343 m/s is wrong by roughly 0.18 % per degree.
-                </p>
-                <div class="p-3 bg-slate-900 text-sky-300 rounded-lg text-center font-mono text-sm">
-                    $d=\frac{c\,t}{2},\qquad c\approx 331.3+0.606\,T_{^\circ C}\ \text{m/s},\qquad t=\frac{2d}{c}$
-                    $20\ \text{cm}\to 1.17\ \text{ms},\qquad 400\ \text{cm}\to 23.3\ \text{ms}\ (\text{about 15 pings a second})$
-                </div>
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
-                    <div class="bg-slate-50 rounded-lg p-3 border border-slate-200"><strong class="block text-sky-800">One number per ping</strong><span class="text-slate-600">The nearest echo inside a cone about 15° wide. Two objects at different distances report as the nearer one. There is no bearing: it cannot say left or right.</span></div>
-                    <div class="bg-slate-50 rounded-lg p-3 border border-slate-200"><strong class="block text-sky-800">Targets matter</strong><span class="text-slate-600">A thin post, a small object, a far wall, or a surface tilted away bounces the sound elsewhere and can return nothing. Soft fabric absorbs it. Strength falls roughly with range squared.</span></div>
-                    <div class="bg-slate-50 rounded-lg p-3 border border-slate-200"><strong class="block text-sky-800">Deaf to flat things</strong><span class="text-slate-600">Paint, kerbs, an oil slick or a pond sit below the beam at 6.5 cm and return nothing. The simulator ignores anything lower than about 1.6 cm for the same reason.</span></div>
-                </div>
-                <p class="text-xs text-slate-700">
-                    The simulator's version adds noise that grows with distance (a few millimetres up close), quantisation, a per-run speed-of-sound error, rare ghost echoes, and a measurement held for two ticks between pings. The lab below is a simplified version of that model so you can see why an echo does or does not come back.
-                </p>
-
-                <div class="rounded-xl border border-amber-200 bg-amber-50/60 p-4 space-y-3" id="sonar-lab">
-                    <div class="flex items-center justify-between"><strong class="text-amber-950 text-sm">Lab 16.1 · Will this ping come back?</strong><span class="text-[11px] font-mono text-slate-500">simplified model</span></div>
-                    <div class="grid grid-cols-1 md:grid-cols-[1fr_280px] gap-4">
-                        <canvas id="sonarlab-canvas" width="520" height="230" class="w-full rounded-lg bg-slate-900" aria-label="Top view of a sonar beam and a target"></canvas>
-                        <div class="space-y-2 text-xs">
-                            <label class="block">Distance <span id="sonarlab-d-v" class="font-mono">60 cm</span><input id="sonarlab-d" type="range" min="2" max="450" value="60" class="w-full"></label>
-                            <label class="block">Target off-axis angle <span id="sonarlab-a-v" class="font-mono">0°</span><input id="sonarlab-a" type="range" min="-40" max="40" value="0" class="w-full"></label>
-                            <label class="block">Target width <span id="sonarlab-w-v" class="font-mono">12 cm</span><input id="sonarlab-w" type="range" min="1" max="40" value="12" class="w-full"></label>
-                            <label class="block">Target tilt away from the sensor <span id="sonarlab-s-v" class="font-mono">0°</span><input id="sonarlab-s" type="range" min="0" max="80" value="0" class="w-full"></label>
-                            <label class="block">Target height <span id="sonarlab-h-v" class="font-mono">9 cm</span><input id="sonarlab-h" type="range" min="0" max="20" value="9" class="w-full"></label>
-                            <label class="block">Air temperature <span id="sonarlab-t-v" class="font-mono">20 °C</span><input id="sonarlab-t" type="range" min="-10" max="40" value="20" class="w-full"></label>
-                        </div>
-                    </div>
-                    <div id="sonarlab-out" class="font-mono text-xs bg-white rounded-lg border border-amber-200 p-3 leading-relaxed"></div>
-                    <p class="text-[11px] text-slate-500">Try: a 12 cm cone at 60 cm (clear echo); the same cone 35° off-axis (outside the useful beam); a 2 cm post at 150 cm (too weak); a 12 cm target at 100 cm tilted 60° (the sound goes elsewhere); a 1 cm high strip (below the floor-skimming limit, so it is invisible); and 40 °C air, where the module's fixed 343 m/s assumption reads about 3.5 % short.</p>
-                </div>
-            </div>
-
-            <!-- 16.3 ways to use it -->
-            <div class="bg-white rounded-xl p-6 border border-slate-200 shadow-sm space-y-4">
-                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-2">
-                    <h3 class="font-bold text-slate-900 text-base text-emerald-900">16.3 Three Places to Plug In a Sensor</h3>
-                    <span class="text-xs font-mono bg-emerald-100 text-emerald-900 px-2 py-0.5 rounded font-bold">Fusion design</span>
-                </div>
-                <div class="overflow-x-auto rounded-lg border border-slate-200">
-                    <table class="w-full text-left text-xs min-w-[760px]">
-                        <thead class="bg-slate-900 text-slate-100"><tr><th class="p-3">Where</th><th class="p-3">How</th><th class="p-3">Strength</th><th class="p-3">Weakness</th><th class="p-3">Used here</th></tr></thead>
-                        <tbody class="divide-y divide-slate-200">
-                            <tr><td class="p-3 font-bold">Controller input</td><td class="p-3">Two extra numbers: echo closeness and strength (17 → 19 inputs)</td><td class="p-3">Evolution decides what the echo is for; a 17-input brain widens with zero weights and behaves as before</td><td class="p-3">Nothing forces it to be used well</td><td class="p-3">Yes</td></tr>
-                            <tr><td class="p-3 font-bold">Camera-network input</td><td class="p-3">The same two numbers beside speed and last commands</td><td class="p-3">The network can learn "image says something ahead and the echo says near"</td><td class="p-3">Needs retraining; here it gave no measurable accuracy gain</td><td class="p-3">Yes</td></tr>
-                            <tr><td class="p-3 font-bold">A fused cue</td><td class="p-3">Turn the echo into an estimate with a variance and fuse by 1/variance with the camera</td><td class="p-3">Principled, needs no retraining of the controller</td><td class="p-3">Needs a calibrated map from range to the "obstacle" and "traffic ahead" estimates</td><td class="p-3">No (future work)</td></tr>
-                        </tbody>
-                    </table>
-                </div>
-                <div class="bg-emerald-50 p-4 rounded-lg border border-emerald-200 text-xs space-y-2">
-                    <strong class="text-emerald-950 block">The training that "uses the sonar" has to put it in the loop, in all three learning stages</strong>
-                    <ol class="list-decimal ml-5 space-y-1 text-slate-700">
-                        <li><strong>Evolve the controller through synthetic faults</strong>, including episodes where the camera reports no vehicles at all (darkness, hidden objects), so that the sonar is sometimes the only warning.</li>
-                        <li><strong>Train the camera network</strong> by DAgger at 6.5 cm with the echo as an input, and a teacher that itself drives with the sonar.</li>
-                        <li><strong>Evolve the controller again, driving whole episodes through that camera network</strong> by day, by night and in varied light, so it is judged on the camera's real mistakes instead of invented noise.</li>
-                    </ol>
-                    <p class="text-slate-700">The open-world controller and camera are trained the same way, with trees, rocks and a fence the sonar can hear, and ponds and mud it cannot.</p>
-                </div>
-            </div>
-
-            <!-- 16.4 results -->
-            <div class="bg-white rounded-xl p-6 border border-slate-200 shadow-sm space-y-4">
-                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-2">
-                    <h3 class="font-bold text-slate-900 text-base text-rose-900">16.4 What Was Measured, Including the Parts That Did Not Work</h3>
-                    <span class="text-xs font-mono bg-rose-100 text-rose-900 px-2 py-0.5 rounded font-bold">16 episodes per row</span>
-                </div>
-                <p class="text-xs text-slate-700">All rows are on tracks and worlds the networks never trained on. "Sonar off" is the very same brain with the sonar inputs held at zero, so each pair differs only in whether the robot can hear. With 16 episodes per row, a lap or two or a handful of collisions is noise.</p>
-                <div class="overflow-x-auto rounded-lg border border-slate-200">
-                    <table class="w-full text-left text-xs min-w-[720px]">
-                        <thead class="bg-slate-900 text-slate-100"><tr><th class="p-3">Scenario (camera driving)</th><th class="p-3">Sonar off</th><th class="p-3">Sonar on</th><th class="p-3">Reading</th></tr></thead>
-                        <tbody class="divide-y divide-slate-200">
-                            <tr><td class="p-3 font-bold">Empty road</td><td class="p-3">12/16 laps</td><td class="p-3">12/16 laps</td><td class="p-3">No harm, no gain</td></tr>
-                            <tr><td class="p-3 font-bold">Oil slicks (invisible to sound)</td><td class="p-3">12/16 laps</td><td class="p-3">12/16 laps</td><td class="p-3">As it should: a control that shows the sonar is not secretly helping</td></tr>
-                            <tr><td class="p-3 font-bold">Daylight traffic</td><td class="p-3">12/16 laps, 40.8 s, 61 collisions</td><td class="p-3">11/16 laps, 31.1 s, 90 collisions</td><td class="p-3">Faster through traffic, not more careful</td></tr>
-                            <tr><td class="p-3 font-bold">Night traffic</td><td class="p-3">9/16 laps, 36.8 s, 66 collisions</td><td class="p-3">8/16 laps, 30.6 s, 61 collisions</td><td class="p-3">Quicker, similar laps</td></tr>
-                            <tr><td class="p-3 font-bold">Open world (goals per run, crashes)</td><td class="p-3">2.88, 7/16</td><td class="p-3">3.44, 6/16</td><td class="p-3">Slightly better</td></tr>
-                        </tbody>
-                    </table>
-                </div>
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
-                    <div class="bg-rose-50 rounded-lg p-3 border border-rose-200"><strong class="block text-rose-900">A hand-wired reflex made it worse</strong><span class="text-slate-700">The first controller braked whenever the echo was close. With exact numbers it had 67 collisions against 40 with the sonar off: a robot that stops in front of a cone keeps touching it, and each touch counts. Starting the sonar weights at zero and letting evolution decide did better.</span></div>
-                    <div class="bg-rose-50 rounded-lg p-3 border border-rose-200"><strong class="block text-rose-900">A better-looking number was a bad comparison</strong><span class="text-slate-700">Camera accuracy for traffic closeness first seemed to rise from R² 0.75 to 0.81 when the echo was added. A controlled rerun with the same teacher and data gave 0.81 with the echo and 0.80 without: the earlier gap came from the data, not the sensor.</span></div>
-                    <div class="bg-rose-50 rounded-lg p-3 border border-rose-200"><strong class="block text-rose-900">The low camera is worse at roads</strong><span class="text-slate-700">At 6.5 cm, curvature R² fell to between 0 and 0.4 (0.59 at 16 cm) while traffic closeness rose to about 0.8, because near objects fill more of the picture.</span></div>
-                </div>
-                <div class="bg-amber-50 p-4 rounded-lg border border-amber-200 text-xs">
-                    <strong class="text-amber-950 block mb-1">Why the sonar helped so little on the track, probably</strong>
-                    <p class="text-slate-700">An echo says "something is 40 cm ahead" but not whether to pass on the left or right, and on a track the camera already gives a side estimate. So the only thing the sonar can usefully change is speed, and the numbers show exactly that: shorter laps, not fewer collisions. In the open world, where there is more to bump into from unseen directions, it helped a little more. A sonar that is swept (a servo) or paired with a second one would add bearing; that is outside what a single fixed HC-SR04 can do.</p>
-                </div>
-            </div>
-
-            <!-- 16.5 lessons -->
-            <div class="bg-white rounded-xl p-6 border border-slate-200 shadow-sm space-y-3">
-                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-2">
-                    <h3 class="font-bold text-slate-900 text-base text-slate-900">16.5 Engineering Lessons for a Real Robot</h3>
-                    <span class="text-xs font-mono bg-slate-100 text-slate-800 px-2 py-0.5 rounded font-bold">Before the hardware arrives</span>
-                </div>
-                <ul class="list-disc ml-5 text-xs text-slate-700 space-y-1">
-                    <li><strong>Put a control in every comparison.</strong> Sonar-off with the same brain, an invisible-hazard scenario, and a same-data rerun each caught a wrong conclusion that would have looked like a win.</li>
-                    <li><strong>Judge by the metric the task cares about, and know what it counts.</strong> Collisions are separate hits with a cooldown, so crawling into an object repeatedly scores worse than driving past it.</li>
-                    <li><strong>Measure the real module before trusting the model.</strong> Log an HC-SR04 on the actual chassis at known distances, angles and surfaces, and replace the simulator's noise, beam width and dropout with what you see.</li>
-                    <li><strong>Measure the actual stopping distance and turning circle.</strong> The simulator's handling belongs to the original kart, so whether 1 m/s and a 15 Hz sonar leave enough margin is a hardware question.</li>
-                    <li><strong>Keep the old interface alive.</strong> A 19-input brain exports to the original 17-input format with the sonar inputs dropped, so older tools never break, but the exported brain will drive deaf.</li>
-                    <li><strong>The fly has no sonar.</strong> Its nearest relatives are antennal mechanosensors and looming-sensitive escape neurons; the three ocelli (simple eyes that report overall brightness and the horizon) are not modelled here.</li>
-                </ul>
-                <div class="finale-cta">
-                    <div>
-                        <strong>Try it</strong>
-                        <p>Open FlyKart Vision, choose <em>Robot scale · camera + HC-SR04 sonar</em> as the sensor head, add road objects, and watch the echo chart. Untick <em>Sonar on</em> to drive the same brain deaf, and read the full tables in the Evidence tab.</p>
-                    </div>
-                    <div>
-                        <a href="./vision.html">Open FlyKart Vision →</a>
-                        <a href="./vision.html#evidence">Evidence tab</a>
-                    </div>
-                </div>
-            </div>
-        </section>
-
-        <script>
-        (function () {
-            const $ = (id) => document.getElementById(id);
-            const canvas = $("sonarlab-canvas"); if (!canvas) return;
-            const ctx = canvas.getContext("2d");
-            const ids = ["d", "a", "w", "s", "h", "t"];
-            function model() {
-                const v = Object.fromEntries(ids.map((k) => [k, Number($("sonarlab-" + k).value)]));
-                ids.forEach((k) => { $("sonarlab-" + k + "-v").textContent = v[k] + ({ d: " cm", a: "°", w: " cm", s: "°", h: " cm", t: " °C" })[k]; });
-                const c = 331.3 + 0.606 * v.t, assumed = 343;
-                const lobe = Math.exp(-0.5 * Math.pow(v.a / 12, 2));
-                const tilt = Math.pow(Math.cos(v.s * Math.PI / 180), 4);
-                const strength = (v.w / 10) * lobe * tilt / Math.pow(v.d / 50, 2);
-                const timeMs = 2 * (v.d / 100) / c * 1000;
-                const reported = assumed * (timeMs / 1000) / 2 * 100;
-                let verdict, why = "";
-                if (v.d < 2) { verdict = "no echo"; why = "inside the 2 cm blind zone"; }
-                else if (v.d > 400) { verdict = "no echo"; why = "beyond 4 m"; }
-                else if (v.h < 1.6) { verdict = "no echo"; why = "too low: the sound skims over it"; }
-                else if (strength < 0.05) { verdict = "no echo"; why = lobe < 0.2 ? "off to the side of the beam" : tilt < 0.3 ? "sound reflected away by the tilt" : "target too small or too far"; }
-                else verdict = "ECHO";
-                $("sonarlab-out").innerHTML = "round trip <b>" + timeMs.toFixed(2) + " ms</b> · echo strength <b>" + strength.toFixed(2) + "</b> (needs 0.05) · speed of sound <b>" + c.toFixed(1) + " m/s</b><br>result: <b style='color:" + (verdict === "ECHO" ? "#047857" : "#be123c") + "'>" + verdict + "</b>" + (why ? " (" + why + ")" : "") + (verdict === "ECHO" ? "<br>the module reports <b>" + reported.toFixed(1) + " cm</b> using 343 m/s (true distance " + v.d + " cm, error " + ((reported / v.d - 1) * 100).toFixed(1) + " %)" : "");
-                draw(v, verdict === "ECHO");
-            }
-            function draw(v, echo) {
-                const W = canvas.width, H = canvas.height, ox = 24, oy = H / 2, scale = (W - ox - 16) / 450;
-                ctx.clearRect(0, 0, W, H); ctx.fillStyle = "#0f172a"; ctx.fillRect(0, 0, W, H);
-                ctx.strokeStyle = "#1e293b"; ctx.fillStyle = "#64748b"; ctx.font = "10px sans-serif";
-                for (let cm = 100; cm <= 400; cm += 100) { ctx.beginPath(); ctx.moveTo(ox + cm * scale, 0); ctx.lineTo(ox + cm * scale, H); ctx.stroke(); ctx.fillText(cm + " cm", ox + cm * scale - 14, H - 4); }
-                const half = 7.5 * Math.PI / 180, reach = 400 * scale;
-                const g = ctx.createRadialGradient(ox, oy, 2, ox, oy, reach); g.addColorStop(0, "rgba(251,191,36,.45)"); g.addColorStop(1, "rgba(251,191,36,0)");
-                ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(ox, oy); ctx.arc(ox, oy, reach, -half, half); ctx.closePath(); ctx.fill();
-                ctx.strokeStyle = "rgba(251,191,36,.35)"; ctx.setLineDash([4, 4]); ctx.beginPath(); ctx.moveTo(ox, oy); ctx.arc(ox, oy, reach, -half * 2, half * 2); ctx.closePath(); ctx.stroke(); ctx.setLineDash([]);
-                const ang = v.a * Math.PI / 180, tx = ox + Math.cos(ang) * v.d * scale, ty = oy + Math.sin(ang) * v.d * scale;
-                ctx.save(); ctx.translate(tx, ty); ctx.rotate(Math.PI + (v.s * Math.PI / 180) * (v.a >= 0 ? 1 : -1) + ang); ctx.fillStyle = echo ? "#34d399" : "#f87171";
-                ctx.fillRect(-2, -Math.max(2, v.w * scale) / 2, 4, Math.max(2, v.w * scale)); ctx.restore();
-                ctx.fillStyle = "#fbbf24"; ctx.fillRect(ox - 10, oy - 7, 10, 14);
-                if (echo) { ctx.strokeStyle = "#34d399"; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(ox, oy, v.d * scale, ang - 0.12, ang + 0.12); ctx.stroke(); ctx.lineWidth = 1; }
-            }
-            ids.forEach((k) => $("sonarlab-" + k).addEventListener("input", model)); model();
-        })();
-        </script>
     </main>
 
     <script>
@@ -5552,26 +5776,11 @@
             ionCtx.arc(markerX, markerY, 6, 0, Math.PI * 2);
             ionCtx.fill();
 
-            // Membrane cross-section
-            const mx = 505, my = 72, mw = 330;
-            ionCtx.fillStyle = '#20362d';
-            ionCtx.fillRect(mx, my, mw, 88);
-            ionCtx.strokeStyle = '#8ca397';
-            ionCtx.lineWidth = 7;
-            ionCtx.beginPath(); ionCtx.moveTo(mx, my + 33); ionCtx.lineTo(mx + mw, my + 33); ionCtx.stroke();
-            ionCtx.beginPath(); ionCtx.moveTo(mx, my + 54); ionCtx.lineTo(mx + mw, my + 54); ionCtx.stroke();
-            ionCtx.fillStyle = '#b8c8be';
-            ionCtx.font = '11px system-ui';
-            ionCtx.fillText('outside', mx, my - 10);
-            ionCtx.fillText('cytosol', mx, my + 82);
-            if (phase >= 0.12 && phase < 0.42) {
-                for (let i = 0; i < 5; i++) drawIonArrow(mx + 55 + i * 55, my - 6, my + 78, '#67e8f9', 'Na⁺');
-            } else if (phase >= 0.35 && phase < 0.86) {
-                for (let i = 0; i < 5; i++) drawIonArrow(mx + 55 + i * 55, my + 78, my - 6, '#fbbf24', 'K⁺');
-            } else {
-                ionCtx.fillStyle = '#789084';
-                ionCtx.font = '700 13px system-ui';
-                ionCtx.fillText('voltage-gated channels mostly closed', mx + 32, my + 47);
+            // Membrane patch with moving ions (drawn by ion-labs.js; channels open and close with the spike phase)
+            if (window.IonFlow) window.IonFlow.draw(ionCtx, phase, Number(ionNaInput.value), Number(ionKInput.value), voltage);
+            else {
+                ionCtx.fillStyle = '#789084'; ionCtx.font = '700 13px system-ui';
+                ionCtx.fillText(phase >= 0.12 && phase < 0.42 ? 'Na⁺ entering' : phase >= 0.35 && phase < 0.86 ? 'K⁺ leaving' : 'voltage-gated channels mostly closed', 520, 110);
             }
 
             // Propagating axon: continuous regeneration, or node-to-node jumps under myelin
@@ -5697,6 +5906,7 @@
             drawIonTransport();
         }));
         drawIonTransport();
+        window.drawIonTransportFrame = drawIonTransport;
 
         // --- INTERACTIVE RC CIRCUIT ---
         const rcCanvas = document.getElementById('rcCircuitCanvas');
@@ -6479,6 +6689,8 @@
         updateRewardLab();
     </script>
     <script src="./neural-labs.js"></script>
+    <script src="./ion-labs.js"></script>
+    <script src="./body-labs.js"></script>
     <script src="./flykart-core.js"></script>
     <script src="./brain-inspector.js"></script>
 </body>

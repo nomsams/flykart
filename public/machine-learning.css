@@ -674,7 +674,7 @@ body.compendium { color: var(--ink); background: var(--paper); }
    Nine chapters, parts in the progress bar, and Chapter 9 (brain inspector)
    ===================================================================== */
 .guide .compression-ladder { grid-template-columns: repeat(9,minmax(0,1fr)); }
-.tb-track { grid-template-columns: repeat(9,minmax(0,1fr)); }
+.tb-track { grid-template-columns: repeat(10,minmax(0,1fr)); }
 .tb-now { flex-basis: 330px; }
 .tb-now strong { display: flex; align-items: baseline; gap: 0; min-width: 0; }
 .tb-now strong > span:first-child { flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; }
