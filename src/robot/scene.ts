@@ -119,6 +119,7 @@ export class HabitatScene {
     box([.006, .02, .045], 0x568988, [c.length * .48, c.mountHeight + .01, 0]);
     for (const z of [-.012, .012]) { const sensor = this.mesh(new THREE.CylinderGeometry(.008, .008, .009, 16), 0xc2ced0, this.robot, c.length * .48 + .008, c.mountHeight, z); sensor.rotation.z = Math.PI / 2; }
     const lens = this.mesh(new THREE.CylinderGeometry(.007, .007, .009, 12), 0x101d24, this.robot, .104, c.mountHeight + .019, 0); lens.rotation.z = Math.PI / 2;
+    if(c.vibration?.enabled){this.mesh(new THREE.BoxGeometry(.032,.004,.015),0x315fa2,this.robot,-.01,c.mountHeight+.004,.045);this.mesh(new THREE.CylinderGeometry(.003,.003,.012,12),0x2799cc,this.robot,-.014,c.mountHeight+.012,.045);}
     const fly = new THREE.Group(); fly.position.set(-.04, c.mountHeight + .05, 0); this.robot.add(fly);
     const body = this.mesh(new THREE.SphereGeometry(.008, 10, 6), 0x3a3232, fly, 0, 0, 0); body.scale.x = 1.7;
     for (const z of [-1, 1]) { const wing = this.mesh(new THREE.SphereGeometry(.012, 10, 5), 0xbfd5d3, fly, 0, .004, z * .009); wing.scale.set(1, .07, .55); }
@@ -142,7 +143,7 @@ export class HabitatScene {
     const pitch = c.cameraPitch * Math.PI / 180;
     this.eye.lookAt(this.eye.position.x + Math.cos(pose.heading) * Math.cos(pitch), this.eye.position.y - Math.sin(pitch), this.eye.position.z + Math.sin(pose.heading) * Math.cos(pitch));
   }
-  capture(width: number, height: number, enabled: boolean, noise?: NoiseSource): { planar: Float32Array; features: Float32Array; rgb: number[]; dropped: boolean } {
+  capture(width: number, height: number, enabled: boolean, noise?: NoiseSource,deliver?:(pixels:Uint8ClampedArray,dropped:boolean)=>{pixels:Uint8ClampedArray;dropped:boolean}): { planar: Float32Array; features: Float32Array; rgb: number[]; dropped: boolean } {
     const image = this.eyeContext.createImageData(160, 120);
     if (enabled) {
       const beamVisible = this.beam.visible, selectedVisible = this.selection.visible, robotVisible = this.robot.visible, contactsVisible = this.contactView.visible, envelopeVisible = this.envelope.visible, scentVisible=this.scentOverlay.visible,calibrationVisible=this.calibrationView.visible;
@@ -157,7 +158,8 @@ export class HabitatScene {
         image.data[i + 3] = 255;
       }
     } else for (let i = 3; i < image.data.length; i += 4) image.data[i] = 255;
-    const dropped = enabled ? noise?.camera(image.data) ?? false : true;
+    let dropped = enabled ? noise?.camera(image.data) ?? false : true;
+    if(deliver){const delayed=deliver(image.data,dropped);image.data.set(delayed.pixels);dropped=delayed.dropped;}
     const rgb = [0, 0, 0];
     for (let i = 0; i < image.data.length; i += 4) for (let k = 0; k < 3; k++) rgb[k] += image.data[i + k] / (160 * 120);
     this.eyeContext.putImageData(image, 0, 0);

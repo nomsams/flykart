@@ -77,7 +77,7 @@ class Parser {
   }
 }
 type Scope = { values: Map<string, number>; constants: Set<string>; parent?: Scope };
-export type FirmwareHost = { timeMs: number; brainLeft: number; brainRight: number; echoUs: number; wiring: Wiring; camera?: { frame: number; rgb: number[] }; log?: (line: string) => void; phase?: (index: number) => void; sonarRead?: (pulse: number) => void };
+export type FirmwareHost = { timeMs: number; brainLeft: number; brainRight: number; echoUs: number; wiring: Wiring; vibration?: {level:0|1;active:boolean;valid:boolean}; camera?: { frame: number; rgb: number[] }; log?: (line: string) => void; phase?: (index: number) => void; sonarRead?: (pulse: number) => void };
 export class Firmware {
   readonly pins = new Map<number, number>();
   readonly modes = new Map<number, number>();
@@ -122,7 +122,9 @@ export class Firmware {
         if (a === this.host.wiring.trig) { if (b > 0) { this.trigHigh = true; this.triggerWidth = 0; } else if (this.trigHigh) { this.triggered = this.triggerWidth >= 10; this.trigHigh = false; } }
         return 0;
       }
-      case "digitalRead": return +((this.pins.get(a) ?? 0) > 0);
+      case "digitalRead": return a>=0&&a===this.host.wiring.vibration&&this.host.vibration?.valid ? this.host.vibration.level : +((this.pins.get(a) ?? 0) > 0);
+      case "vibrationActive": return +(this.host.vibration?.valid && this.host.vibration.active || false);
+      case "vibrationValid": return +(this.host.vibration?.valid || false);
       case "brainLeft": return this.host.brainLeft;
       case "brainRight": return this.host.brainRight;
       case "Serial.begin": return 0;
@@ -198,12 +200,14 @@ const int ENA = ${w.ena};
 const int ENB = ${w.enb};
 const int TRIG = ${w.trig};
 const int ECHO = ${w.echo};
+const int VIBRATION = ${w.vibration??-1}; // SW-420 digital output; -1 = disconnected
 const float STOP_CM = ${reflex ? 22 : 0}; // 0: the fly controls the robot freely
 
 void setup() {
   pinMode(IN1, OUTPUT); pinMode(IN2, OUTPUT);
   pinMode(IN3, OUTPUT); pinMode(IN4, OUTPUT);
   pinMode(TRIG, OUTPUT); pinMode(ECHO, INPUT);
+  if (VIBRATION >= 0) { pinMode(VIBRATION, INPUT); }
   if (ENA >= 0) { pinMode(ENA, OUTPUT); analogWrite(ENA, 255); }
   if (ENB >= 0) { pinMode(ENB, OUTPUT); analogWrite(ENB, 255); }
 }

@@ -10,6 +10,7 @@
 // "robot" sensor profile, carry that in the file; exporting for the original FlyKart drops the sonar inputs.
 import { BrainSnapshot, SpikingNetwork } from "../core";
 import { BrainMeta, parseBrainFile } from "../lab";
+import { RacingSettings, validateRacingSettings } from "./racing-settings";
 import { narrowBrain } from "./inputs";
 import type { DriverMode } from "./pipeline";
 import type { MemorySnapshot } from "./memory";
@@ -34,6 +35,7 @@ export type VisionBrainFile = {
   memory: MemorySnapshot | null;
   world: { controller: ControllerCheckpoint; vision: VisionModel | null } | null;
   notes?: string;
+  experiment?: RacingSettings;
 };
 
 export type Imported = {
@@ -45,6 +47,7 @@ export type Imported = {
   fusion?: FusionSettings;
   memory?: MemorySnapshot | null;
   world?: { controller: { snapshot: BrainSnapshot; meta: BrainMeta }; vision: VisionModel | null } | null;
+  experiment?: RacingSettings;
   warnings: string[];
 };
 
@@ -68,6 +71,7 @@ export function importFile(text: string): Imported {
       kind: "vision-brain", name: file.name ?? "vision brain", profile: file.profile === "robot" ? "robot" : "kart",
       controller: { snapshot: controller.snapshot, meta: controller.meta, domain: file.controller.domain ?? "track" },
       vision: file.vision ?? null, fusion: file.fusion, memory: file.memory ?? null,
+      experiment: file.experiment === undefined ? undefined : validateRacingSettings(file.experiment),
       world: file.world ? { controller: parseBrainFile(JSON.stringify(file.world.controller), { allowSonar: true }), vision: file.world.vision } : null,
       warnings,
     };

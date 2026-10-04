@@ -1,0 +1,57 @@
+import { DEFAULT_RACING, RacingSettings, boardFov, fitRange, validateRacingSettings } from './racing-settings';
+import { SensorProfile, CM_PER_PIXEL } from './robot';
+
+export function mountExperimentPanel(base:()=>SensorProfile,changed:()=>void):{read:()=>RacingSettings;applied:()=>RacingSettings;write:(s:RacingSettings)=>void;ids:string[]}{
+  let applied=structuredClone(DEFAULT_RACING);
+  const panel=document.createElement('section');panel.className='panel-section';panel.id='camera-experiment';
+  const numeric=(id:string,label:string,min:number,max:number,step:number,value:number)=>`<label>${label}<input id="${id}" type="number" min="${min}" max="${max}" step="${step}" value="${value}"></label>`;
+  panel.innerHTML=`<div class="section-title"><h2>Training & sensor experiments</h2></div>
+    <label class="check-row"><input id="multi-lap" type="checkbox"><span>Multi-lap survival<small>One continuous drive, no respawn; applies to camera training too.</small></span></label>
+    <label>Laps per episode<select id="lap-target"><option>2</option><option selected>3</option><option>5</option></select></label>
+    <label class="check-row"><input id="impact-pain" type="checkbox" checked><span>Speed-sensitive collision pain<small>Closing speed at contact sets the training cost. Gentle co-moving bumps still cost a little.</small></span></label>
+    <p class="note">Pain is a teaching signal, never a hidden distance input. Near sonar echoes alone do not prove contact; no echo never means zero distance. A future spring bumper needs measured switch telemetry; it is not simulated as a real installed sensor.</p>
+    <details><summary>Colour camera & virtual eyes</summary>
+    <label>Colour resolution<select id="camera-resolution"><option value="native">Native network resolution (usually 48×24)</option><option value="32x16">32×16 RGB colour</option><option value="16x8">16×8 RGB colour</option></select></label>
+    ${numeric('camera-noise','Track camera RGB noise (standard deviation, 0–1 scale)',0,.2,.005,0)}${numeric('camera-brightness','Track camera brightness multiplier',.1,2,.1,1)}
+    <label>Virtual eye views<select id="eye-layout"><option value="single">One view · baseline</option><option value="circle3">Three shifted views</option><option value="circle5">Five shifted views</option><option value="scales3">Three zoom scales</option></select></label>
+    ${numeric('eye-radius','View shift (fraction of image)',0,.2,.01,.08)}
+    <label class="check-row"><input id="eye-normalize" type="checkbox"><span>Contrast normalization<small>Can help dim scenes; can distort trained colour cues.</small></span></label>
+    <label class="check-row"><input id="eye-smooth" type="checkbox"><span>3×3 spatial smoothing<small>Reduces grain but removes small objects.</small></span></label>
+    <label>Temporal average<select id="eye-temporal"><option value="1">1 frame · no added filtering delay</option><option value="4">4 frames · about 0.1 s lag at 15 Hz</option><option value="16">16 frames · about 0.5 s lag at 15 Hz</option></select></label>
+    <p class="note">Each virtual view runs separate eye-network history over the same RGB image. This is an experimental perception ensemble, not extra physical cameras or a proven accuracy gain. Shifted track views change geometry; validate on unseen layouts. Disagreement increases reported uncertainty.</p>
+    <p class="note">The main camera panel shows raw RGB before these filters. The strip below shows the actual filtered inputs to each virtual eye.</p><canvas id="virtual-eyes" width="480" height="96" aria-label="Each virtual eye input"></canvas><p id="eye-disagreement" class="note"></p></details>
+    <details><summary>Camera mounting & calibration</summary>
+    <label class="check-row"><input id="camera-calibrated" type="checkbox"><span>Use manual camera calibration<small>Off restores the selected sensor head's geometry.</small></span></label>
+    ${numeric('camera-fov','Horizontal field of view (°)',40,140,1,100)}${numeric('camera-height','Lens height (cm)',2,100,.1,6.5)}${numeric('camera-forward','Lens forward from body centre (cm)',-26,26,.1,12.1)}${numeric('camera-pitch','Downward lens tilt (°)',-30,60,.1,6.9)}
+    <p class="note">Place a flat board across the centre of the view. Enter its real width, lens-to-board distance and visible image width in native pixels. This pinhole estimate ignores lens distortion.</p>
+    ${numeric('board-width','Board width (cm)',1,200,1,20)}${numeric('board-distance','Board distance (cm)',2,400,1,50)}${numeric('board-pixels','Board image width (pixels)',1,160,1,8)}<button id="fit-camera">Estimate FOV from board</button></details>
+    <details><summary>HC-SR04 mounting & calibration</summary>
+    <label class="check-row"><input id="sonar-calibrated" type="checkbox"><span>Use manual sonar calibration<small>Only affects a sensor head with sonar.</small></span></label>
+    ${numeric('sonar-height','Transducer height (cm)',2,100,.1,6.5)}${numeric('sonar-forward','Transducer forward (cm)',-26,26,.1,12.1)}${numeric('sonar-yaw','Sonar yaw (°; positive clockwise in top view)',-90,90,.1,0)}${numeric('sonar-pitch','Sonar downward tilt (°)',-30,30,.1,0)}${numeric('sonar-sigma','Beam Gaussian sigma (°; default 12)',4,24,.1,12)}${numeric('sonar-scale','Range correction scale',.5,1.5,.001,1)}${numeric('sonar-offset','Range correction offset (cm)',-30,30,.1,0)}
+    <p class="note">Beam width is a sensitivity lobe, not a solid cone. Measure a flat target at several side angles and heights, then adjust yaw, tilt and width. Physical limits remain 2–400 cm, roughly 15 pings per simulated second, with missed/slanted echoes and noise.</p>
+    <label>Measured,true distance pairs in cm (one per line)<textarea id="sonar-pairs" rows="3" placeholder="49,50&#10;99,100&#10;149,150"></textarea></label><button id="fit-sonar">Fit range correction</button></details>
+    <p id="calibration-result" class="note" role="status"></p>
+    <details open><summary>Train camera controller offspring</summary>
+    ${numeric('camera-generations','Generations',1,50,1,2)}${numeric('camera-population','Candidates per generation',2,16,1,4)}${numeric('camera-train-ticks','Time budget per lap (simulation ticks at 30 Hz)',300,3000,300,900)}
+    <p class="note">Evolves the selected spiking controller using frozen eyes and these sensor settings. Training forces seeing-only, removes pose-indexed lap memory and hidden mission coordinates, and scores all requested laps. Reward and crash labels select offspring; they are not neural inputs. CPU work can take several minutes. No camera CNN weights are retrained here.</p>
+    <div class="toolbar"><button id="camera-train">Train offspring</button><button id="camera-train-stop" disabled>Cancel</button><button id="camera-train-adopt" disabled>Use trained offspring</button><button id="camera-report" disabled>Export training report</button></div><p id="camera-train-status" class="note" role="status">No training run yet.</p></details>
+    <details><summary>Sensor & training console</summary><textarea id="sensor-log" readonly rows="8" aria-label="Sensor and training log"></textarea><div class="toolbar"><button id="copy-sensor-log">Copy logs</button><button id="clear-sensor-log">Clear logs</button></div><small>One line per fresh ping, including no echo. Recorded simulation time; paused simulation holds the last sample.</small></details>`;
+  document.querySelector('#tab-track aside')!.append(panel);
+  const input=(id:string)=>document.getElementById(id) as HTMLInputElement;
+  const n=(id:string)=>Number(input(id).value),check=(id:string)=>input(id).checked;
+  const read=():RacingSettings=>validateRacingSettings({version:1,multiLap:check('multi-lap'),laps:n('lap-target'),impactPain:check('impact-pain'),resolution:input('camera-resolution').value,cameraNoise:n('camera-noise'),cameraBrightness:n('camera-brightness'),
+    visual:{...DEFAULT_RACING.visual,layout:input('eye-layout').value,radius:n('eye-radius'),normalize:check('eye-normalize'),smooth:check('eye-smooth'),temporal:n('eye-temporal')},
+    camera:check('camera-calibrated')?{hfov:n('camera-fov'),heightCm:n('camera-height'),forwardCm:n('camera-forward'),pitchDeg:n('camera-pitch')}:null,
+    sonar:check('sonar-calibrated')?{heightCm:n('sonar-height'),forwardCm:n('sonar-forward'),yawDeg:n('sonar-yaw'),pitchDeg:n('sonar-pitch'),sigmaDeg:n('sonar-sigma'),scale:n('sonar-scale'),offsetCm:n('sonar-offset')}:null});
+  const write=(s:RacingSettings)=>{s=validateRacingSettings(s);applied=structuredClone(s);input('multi-lap').checked=s.multiLap;input('lap-target').value=String(s.laps);input('impact-pain').checked=s.impactPain;input('camera-resolution').value=s.resolution;input('eye-layout').value=s.visual.layout;input('eye-radius').value=String(s.visual.radius);input('eye-normalize').checked=s.visual.normalize;input('eye-smooth').checked=s.visual.smooth;input('eye-temporal').value=String(s.visual.temporal);input('camera-calibrated').checked=!!s.camera;input('sonar-calibrated').checked=!!s.sonar;
+    input('camera-noise').value=String(s.cameraNoise??0);input('camera-brightness').value=String(s.cameraBrightness??1);
+    const p=base(),c=s.camera??{hfov:p.camera.hfov*180/Math.PI,heightCm:p.camera.mountHeight*CM_PER_PIXEL,forwardCm:p.camera.mountForward*CM_PER_PIXEL,pitchDeg:p.camera.pitch*180/Math.PI},sonar=s.sonar??{heightCm:6.5,forwardCm:12.1,yawDeg:0,pitchDeg:0,sigmaDeg:12,scale:1,offsetCm:0};
+    for(const [id,value]of Object.entries({'camera-fov':c.hfov,'camera-height':c.heightCm,'camera-forward':c.forwardCm,'camera-pitch':c.pitchDeg,'sonar-height':sonar.heightCm,'sonar-forward':sonar.forwardCm,'sonar-yaw':sonar.yawDeg,'sonar-pitch':sonar.pitchDeg,'sonar-sigma':sonar.sigmaDeg,'sonar-scale':sonar.scale,'sonar-offset':sonar.offsetCm}))input(id).value=String(value);
+  };
+  const ids=Array.from(panel.querySelectorAll<HTMLInputElement|HTMLSelectElement>('input,select')).map(i=>i.id).filter(id=>!id.startsWith('board-')&&!id.startsWith('camera-train-')&&!['camera-generations','camera-population'].includes(id));
+  for(const id of ids)input(id).addEventListener('change',()=>{try{applied=read();changed();input('calibration-result').textContent='Settings applied. Re-test on held-out scenes after changing sensor geometry.';}catch(e){input('calibration-result').textContent=(e as Error).message;}});
+  const fit=(action:()=>void)=>{try{action();applied=read();changed();panel.dispatchEvent(new Event('change',{bubbles:true}));}catch(e){input('calibration-result').textContent=(e as Error).message;}};
+  document.getElementById('fit-camera')!.onclick=()=>fit(()=>{const fov=boardFov(n('board-width'),n('board-distance'),n('board-pixels'),base().camera.width);input('camera-fov').value=fov.toFixed(2);input('camera-calibrated').checked=true;input('calibration-result').textContent=`Estimated horizontal FOV ${fov.toFixed(2)}°; check a second board distance.`;});
+  document.getElementById('fit-sonar')!.onclick=()=>fit(()=>{const rows=input('sonar-pairs').value.trim().split(/\n/).filter(Boolean).map(line=>line.split(',').map(Number) as [number,number]);const f=fitRange(rows);input('sonar-scale').value=f.scale.toFixed(4);input('sonar-offset').value=f.offsetCm.toFixed(3);input('sonar-calibrated').checked=true;input('calibration-result').textContent=`Range correction fitted; residual ${f.rmse.toFixed(2)} cm. Validate at separate distances.`;});
+  write(structuredClone(DEFAULT_RACING));return {read,applied:()=>structuredClone(applied),write,ids};
+}

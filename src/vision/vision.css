@@ -22,6 +22,15 @@ label.inline { display: inline-flex; gap: 6px; margin: 0; }
 .kicker { display: block; margin-bottom: 4px; color: #78a9d8; font-size: .62rem; font-weight: 800; letter-spacing: .13em; }
 .panel canvas { margin-top: 10px; border-radius: 7px; background: #0b121a; border: 1px solid rgba(113, 145, 181, .16); }
 .note { margin: 8px 0 0; color: #7f8ca0; font-size: .7rem; line-height: 1.45; }
+.control-help { display:block; color:#a2afc2; font-size:.7rem; line-height:1.4; font-weight:400; }
+.check-row:has(.control-help) { flex-wrap:wrap; }
+.check-row > .control-help { flex-basis:100%; }
+#camera-experiment details { margin:12px 0; padding:10px; border:1px solid #334258; border-radius:9px; background:#111b28; }
+#camera-experiment summary { cursor:pointer; color:#b9d9ff; font-weight:650; margin-bottom:10px; }
+#camera-experiment textarea { width:100%; box-sizing:border-box; resize:vertical; background:#09131e; color:#d5e4f7; border:1px solid #3c4d65; border-radius:6px; font:12px/1.5 monospace; }
+#virtual-eyes { width:100%; image-rendering:pixelated; }
+.settings-history { flex-wrap:wrap; margin:10px 0; }
+.settings-history small { color:#9aa9bd; }
 .legend { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; font-size: .66rem; }
 .dot { display: inline-block; width: 8px; height: 8px; margin-right: 4px; border-radius: 50%; }
 .dot.truth { background: var(--truth); } .dot.camera { background: var(--camera); } .dot.fused { background: var(--fused); } .dot.memory { background: var(--memory); }
@@ -76,3 +85,12 @@ label.inline { display: inline-flex; gap: 6px; margin: 0; }
 .profile-bar { margin: 12px 0 0; }
 .profile-bar .profile-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 22px; }
 .profile-bar .profile-row select { min-width: 17rem; }
+.profile-row label.inline { display:flex; flex-wrap:wrap; width:100%; min-width:0; }
+.profile-row label.inline .control-help { flex-basis:100%; }
+.profile-bar .profile-row select { min-width:0; width:min(100%,32rem); max-width:100%; }
+label:has(> .control-help) { flex-wrap:wrap; }
+label > .control-help { flex-basis:100%; }
+.check-row { display:grid; grid-template-columns:16px minmax(0,1fr); align-items:start; }
+.check-row > .control-help { grid-column:1/-1; }
+#camera-experiment label:has(textarea) { flex-wrap:wrap; gap:6px; }
+#camera-experiment label textarea { flex-basis:100%; }

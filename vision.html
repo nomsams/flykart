@@ -62,7 +62,7 @@
                 <div class="canvas-wrap"><canvas id="track-map" width="760" height="500" aria-label="Top-down view of the track"></canvas></div>
               </div>
               <div class="view-box">
-                <div class="view-title"><span>What the kart sees</span><span class="muted">48×24 colour pixels, 15 frames a second</span></div>
+                <div class="view-title"><span>Raw camera RGB</span><span id="track-camera-size" class="muted">48×24 colour pixels, 15 frames a second</span></div>
                 <div class="canvas-wrap"><canvas id="track-eye" width="480" height="240" aria-label="The camera image the kart steers by"></canvas></div>
                 <div class="eye-note" id="eye-note"></div>
               </div>
@@ -70,7 +70,7 @@
             <div class="toolbar">
               <button id="track-run" class="primary">Start</button>
               <button id="track-restart">Restart</button>
-              <button id="track-laps" title="Drive three laps in a row, keeping the lap memory between them">3 laps with memory</button>
+              <button id="track-laps" title="Keep driving through three laps without a respawn. Retain neural state and lap memory.">3 continuous laps with memory</button>
               <label class="inline">Speed <select id="track-speed"><option value="1">1×</option><option value="2">2×</option><option value="4" selected>4×</option><option value="8">8×</option></select></label>
               <span id="track-status" class="status muted">Ready</span>
             </div>

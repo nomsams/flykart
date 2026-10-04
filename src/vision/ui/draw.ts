@@ -32,11 +32,11 @@ export function drawEye(canvas: HTMLCanvasElement, frame: Float32Array, config: 
 /* ------------------------------ top views ------------------------------ */
 
 /** What the top views need to show of the sonar: where it points, how far it heard, and whether it is switched on. */
-export type SonarView = { x: number; y: number; heading: number; rangePx: number; echo: boolean; on: boolean };
+export type SonarView = { x: number; y: number; heading: number; rangePx: number; echo: boolean; on: boolean; beamDeg?:number };
 
 /** The HC-SR04's beam: a narrow amber wedge (about 15 degrees wide) with an arc where the echo came back. */
 function drawSonarBeam(context: CanvasRenderingContext2D, sonar: SonarView, reach = 230): void {
-  const half = (15 * Math.PI) / 360;
+  const half = ((sonar.beamDeg ?? 15) * Math.PI) / 360;
   const grad = context.createRadialGradient(sonar.x, sonar.y, 2, sonar.x, sonar.y, reach);
   grad.addColorStop(0, sonar.on ? "rgba(255,176,64,.42)" : "rgba(160,160,160,.16)"); grad.addColorStop(1, "rgba(255,176,64,0)");
   context.fillStyle = grad; context.beginPath(); context.moveTo(sonar.x, sonar.y); context.arc(sonar.x, sonar.y, reach, sonar.heading - half, sonar.heading + half); context.closePath(); context.fill();
@@ -223,20 +223,20 @@ export type SonarSample = { cm: number; echo: boolean; strength: number };
 
 /**
  * The last few seconds of what the HC-SR04 reported. Each column is one ping: its height is the distance it measured
- * (nearer is lower), its brightness the strength of the echo. Pings that heard nothing leave the column empty.
+ * (nearer is lower), its brightness the strength of the echo. Pings that heard nothing show a grey mark; an empty plot is not a missing ping.
  */
-export function drawSonarTrace(canvas: HTMLCanvasElement, samples: SonarSample[], on: boolean, maxCm = 200): void {
+export function drawSonarTrace(canvas: HTMLCanvasElement, samples: SonarSample[], on: boolean, maxCm = 400): void {
   const context = fit(canvas); const W = Number(canvas.dataset.w), H = Number(canvas.dataset.h);
   context.clearRect(0, 0, W, H); context.fillStyle = "#0b1117"; context.fillRect(0, 0, W, H);
   const left = 44, right = 8, top = 8, bottom = 22; const plotW = W - left - right, plotH = H - top - bottom;
   context.font = "11px system-ui, sans-serif"; context.fillStyle = COLORS.dim; context.strokeStyle = COLORS.grid; context.lineWidth = 1;
-  for (const cm of [0, 50, 100, 150, 200]) {
+  for (const cm of [0, maxCm/4, maxCm/2, maxCm*3/4, maxCm]) {
     const y = top + plotH * (1 - cm / maxCm); context.beginPath(); context.moveTo(left, y); context.lineTo(W - right, y); context.stroke(); context.fillText(`${cm} cm`, 4, y + 4);
   }
   if (!on) { context.fillStyle = COLORS.dim; context.font = "600 13px system-ui, sans-serif"; context.fillText("sonar switched off", left + 12, top + plotH / 2); return; }
   const columns = 240; const barWidth = plotW / columns; const start = Math.max(0, samples.length - columns);
   for (let i = start; i < samples.length; i += 1) {
-    const sample = samples[i]; if (!sample.echo) continue;
+    const sample = samples[i]; if (!sample.echo) { context.fillStyle=COLORS.dim;context.fillRect(left+(i-start)*barWidth,top,Math.max(1,barWidth),3);continue; }
     const x = left + (i - start) * barWidth; const height = plotH * Math.min(1, sample.cm / maxCm); const level = Math.min(1, Math.log(Math.max(1, sample.strength)) / Math.log(40));
     context.fillStyle = `rgba(255,${Math.round(150 + 70 * level)},${Math.round(40 + 60 * level)},${0.35 + 0.65 * level})`; context.fillRect(x, top + plotH - height, Math.max(1, barWidth), Math.max(2, height));
   }

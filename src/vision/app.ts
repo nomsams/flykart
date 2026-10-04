@@ -1,5 +1,12 @@
 // FlyKart Vision: the page that wires the simulator, camera, fusion and lap memory to the DOM.
 import "../style.css";
+import { explainControls } from "../control-help";
+import { installSettingsHistory } from "../settings-history";
+import { mountExperimentPanel } from "./experiment-panel";
+import { calibratedProfile } from "./racing-settings";
+import { CameraTrainingResult, trainCameraController } from "./browser-training";
+import type { RacingSettings } from "./racing-settings";
+import { lowResolution } from "./ensemble";
 import "./vision.css";
 import { BrainSnapshot, TRACKS } from "../core";
 import { MushroomBody } from "./memory";
@@ -10,7 +17,7 @@ import { Assets, loadAssets } from "./ui/assets";
 import { SonarView, drawBrain, drawEstimates, drawEye, drawKenyon, drawSonarTrace, drawTrace, drawTrackMap, drawWorldMap, estimateRows } from "./ui/draw";
 import { renderEvidence } from "./ui/evidence";
 import { HOW_IT_WORKS } from "./ui/how";
-import { LapRecord, TrackSession, WorldDriverKind, WorldSession } from "./ui/sessions";
+import { LapRecord, TrackSession, TrackSettings, WorldDriverKind, WorldSession } from "./ui/sessions";
 import { trackDomain, worldDomain } from "./domains";
 import { proceduralTrack } from "./proceduralTracks";
 import { CM_PER_PIXEL, KART_PROFILE, MOUNT, ROBOT, ROBOT_PROFILE, SensorProfile } from "./robot";
@@ -74,8 +81,15 @@ function updateModeNote(): void {
 
 /* ------------------------------- brains ------------------------------- */
 
+let experiment:ReturnType<typeof mountExperimentPanel>;
+let cameraTraining=false, cancelTraining=false, trainedCamera:CameraTrainingResult|null=null;
+let trainedExperiment:RacingSettings|null=null;
+let trainedContext:TrackSettings|null=null;
+const sensorLog:string[]=[];let loggedPing=-1;
+function logSensor(line:string):void{sensorLog.push(line);while(sensorLog.length>500)sensorLog.shift();const box=$("sensor-log") as HTMLTextAreaElement;box.value=sensorLog.join("\n");box.scrollTop=box.scrollHeight;}
 const robotAssets = () => state.assets?.robot ?? null;
-const sensorProfile = (): SensorProfile => (state.profile === "robot" ? ROBOT_PROFILE : KART_PROFILE);
+const baseProfile = ():SensorProfile => state.profile === "robot" ? ROBOT_PROFILE : KART_PROFILE;
+const sensorProfile = (): SensorProfile => experiment ? calibratedProfile(baseProfile(),experiment.applied()) : baseProfile();
 
 function controllerChoices(): { id: string; label: string; snapshot: BrainSnapshot | null }[] {
   const assets = state.assets!;
@@ -134,8 +148,11 @@ function buildTrack(options: { keepMemory?: boolean } = {}): void {
   const select = $("track-select") as HTMLSelectElement;
   const memoryOn = $<HTMLInputElement>("memory-on").checked;
   if (!options.keepMemory) { state.memory.forget(); state.lapNumber = 0; state.laps = []; renderLapTable(); }
+  const settings=experiment.applied();loggedPing=-1;state.accumulator.track=0;
+  const profile=sensorProfile(),eyes=currentVision();if(eyes)profile.camera={...profile.camera,width:eyes.spec.width,height:eyes.spec.height};
   state.track = new TrackSession({
-    trackId: select.value, rivals: Number($<HTMLSelectElement>("track-rivals").value), objects: Number($<HTMLSelectElement>("track-objects").value), style: Number($<HTMLInputElement>("track-style").value), profile: sensorProfile(), sonarOn: state.sonarOn,
+    lapTarget:settings.multiLap?settings.laps:1, impactPain:settings.impactPain, visual:settings.visual, resolution:settings.resolution,cameraNoise:settings.cameraNoise,cameraBrightness:settings.cameraBrightness,
+    trackId: select.value, rivals: Number($<HTMLSelectElement>("track-rivals").value), objects: Number($<HTMLSelectElement>("track-objects").value), style: Number($<HTMLInputElement>("track-style").value), profile, sonarOn: state.sonarOn,
     walls: $<HTMLInputElement>("track-walls").checked, controller: currentController(), vision: currentVision(), fade: state.fade, mode: state.mode, memory: memoryOn ? state.memory : null, seed: 7,
   });
   $("track-caption").textContent = state.track.route.name;
@@ -157,8 +174,7 @@ function renderLapTable(): void {
 function finishLap(): void {
   const session = state.track!;
   state.lapNumber += 1; state.laps.push(session.lap(state.lapNumber)); renderLapTable();
-  if (state.lapsLeft > 1) { state.lapsLeft -= 1; buildTrack({ keepMemory: true }); setStatus("track", `lap ${state.lapNumber + 1} of memory run`); }
-  else { state.lapsLeft = 0; state.running.track = false; $("track-run").textContent = "Start"; setStatus("track", session.episode.car.finished ? `lap done · ${(session.episode.car.ticks / 30).toFixed(1)} s` : `stopped: ${session.episode.car.crashReason ?? "time"}`); }
+  state.lapsLeft = 0; state.running.track = false; $("track-run").textContent = "Start"; setStatus("track", session.episode.car.finished ? `${session.episode.car.laps} lap(s) done · ${(session.episode.car.ticks / 30).toFixed(1)} s` : `stopped: ${session.episode.car.crashReason ?? "time"}`);
 }
 
 function setStatus(which: "track" | "world", text: string): void { $(`${which}-status`).textContent = text; }
@@ -166,11 +182,14 @@ function setStatus(which: "track" | "world", text: string): void { $(`${which}-s
 function paintTrack(): void {
   const session = state.track; if (!session) return;
   const episode = session.episode; const car = episode.car; const driver = session.driver;
+  const resolution=session.settings.resolution??'native';$('track-camera-size').textContent=`${resolution==='native'?episode.camera.width+'×'+episode.camera.height:resolution.replace('x','×')} colour pixels · 15 Hz simulation clock`;
   const reading = episode.sonar();
-  const sonarView: SonarView | null = reading ? { x: car.position.x + Math.cos(car.heading) * MOUNT.forward, y: car.position.y + Math.sin(car.heading) * MOUNT.forward, heading: car.heading, rangePx: reading.range, echo: reading.echo, on: state.sonarOn } : null;
+  const spec=episode.sonarUnit?.spec;
+  const sonarView: SonarView | null = reading ? { x: car.position.x + Math.cos(car.heading) * (spec?.mountForward??MOUNT.forward), y: car.position.y + Math.sin(car.heading) * (spec?.mountForward??MOUNT.forward), heading: car.heading+(spec?.yawDeg??0)*Math.PI/180, beamDeg:(spec?.lobeSigmaDeg??12)*1.25, rangePx: reading.range, echo: reading.echo, on: state.sonarOn } : null;
   drawTrackMap($("track-map") as HTMLCanvasElement, session.route, car, episode.cars, episode.camera.hfov, { sonar: sonarView, nextGate: episode.nextGate(), label: `progress ${(car.totalProgress * 100).toFixed(0)}%   speed ${car.speed.toFixed(0)}   time ${(car.ticks / 30).toFixed(1)} s   gates ${car.checkpointsPassed}` });
   if (!session.perceiver) episode.render();
-  drawEye($("track-eye") as HTMLCanvasElement, episode.frame, episode.camera);
+  drawEye($("track-eye") as HTMLCanvasElement, lowResolution(episode.frame,episode.camera.width,episode.camera.height,session.settings.resolution??"native"), episode.camera);
+  const ensemble=driver.ensemble;if(ensemble){const canvas=$("virtual-eyes") as HTMLCanvasElement,ctx=canvas.getContext('2d')!;ctx.clearRect(0,0,canvas.width,canvas.height);ensemble.frames.forEach((f,i)=>{const thumb=document.createElement('canvas');thumb.width=episode.camera.width;thumb.height=episode.camera.height;const c=thumb.getContext('2d')!,image=c.createImageData(thumb.width,thumb.height),n=thumb.width*thumb.height;for(let p=0;p<n;p++){for(let k=0;k<3;k++)image.data[p*4+k]=Math.round(f[k*n+p]*255);image.data[p*4+3]=255;}c.putImageData(image,0,0);ctx.imageSmoothingEnabled=false;ctx.drawImage(thumb,i*canvas.width/ensemble.frames.length,0,canvas.width/ensemble.frames.length,canvas.height);});$("eye-disagreement").textContent=`${ensemble.frames.length} view(s) · estimate disagreement ${ensemble.disagreement.toFixed(3)} · filtered RGB is the controller's image`;}
   const truth = episode.truth(session.lastTruth); const perception = driver.perception;
   const rows = estimateRows(trackDomain, truth, perception ? perception.mean : null, perception ? perception.variance : null, driver.fused.mean, perception ? driver.fused.weights : null, driver.memoryCue ? driver.memoryCue.mean : null, Boolean(driver.memoryCue));
   drawEstimates($("track-estimates") as HTMLCanvasElement, rows);
@@ -180,9 +199,9 @@ function paintTrack(): void {
   const gate = car.checkpointsPassed % memory.config.gates;
   const cells: number[] = []; for (let j = gate; j < memory.kenyonCount; j += memory.config.gates) cells.push(j);
   drawKenyon($("memory-cells") as HTMLCanvasElement, cells, new Set(Array.from(memory.active).filter((j) => j >= 0)), (j) => memory.isTaught(j), (j) => memory.cellDistance(j), on);
-  if (reading) { drawSonarTrace($("sonar-canvas") as HTMLCanvasElement, session.sonarTrace, state.sonarOn); $("sonar-status").textContent = !state.sonarOn ? "switched off" : reading.echo ? `${(reading.range * CM_PER_PIXEL).toFixed(0)} cm · echo strength ${reading.strength.toFixed(1)}` : "no echo within 4 m"; }
+  if (reading) { drawSonarTrace($("sonar-canvas") as HTMLCanvasElement, session.sonarTrace, state.sonarOn); const age=(episode.tick-(episode.sonarUnit?.lastTick??0))/30;$("sonar-status").textContent = `${!state.sonarOn ? 'ignored by controller' : reading.echo ? `${(reading.range*CM_PER_PIXEL).toFixed(1)} cm · strength ${reading.strength.toFixed(1)}` : 'no echo (not zero distance)'} · ping ${episode.sonarUnit!.count} · age ${(age*1000).toFixed(0)} ms · ${state.running.track?'15 Hz simulation clock':'paused; held sample'}`;logFreshPing(session); }
   drawTrace($("memory-trace") as HTMLCanvasElement, session.trace, "bend 150 px ahead   white: truth · blue: camera · violet: memory · green: used");
-  $("memory-status").textContent = on ? `lap ${memory.lap + 1} · ${memory.taughtCells} of ${memory.kenyonCount} cells taught · ${memory.remembering ? "recalling an earlier lap" : "nothing remembered here yet"}` : "off";
+  $("memory-status").textContent = on ? `lap ${Math.max(1,memory.lap)} · ${memory.taughtCells} of ${memory.kenyonCount} cells taught · ${memory.remembering ? "recalling an earlier lap" : "nothing remembered here yet"}` : "off";
 }
 
 /* ------------------------------- sensor head ------------------------------- */
@@ -197,6 +216,7 @@ function updateProfileUi(): void {
 
 function setProfile(next: "kart" | "robot"): void {
   state.profile = next; $<HTMLSelectElement>("profile").value = next;
+  if(experiment)experiment.write(experiment.applied());
   state.memory.forget(); state.laps = []; state.lapNumber = 0; renderLapTable();
   const hasEyes = next === "robot" ? Boolean(robotAssets()?.vision) : Boolean(state.assets!.vision);
   refreshBrainSelects({ controller: next === "robot" && robotAssets()?.controller ? "robot" : "robust", eyes: hasEyes ? "bundled" : "none" });
@@ -211,7 +231,9 @@ function buildWorld(): void {
   const robotWorld = state.profile === "robot" ? robotAssets() : null;
   const controller = state.importedWorld?.controller ?? robotWorld?.worldController ?? assets.worldController ?? assets.robust!;
   const vision = state.importedWorld?.vision ?? (state.profile === "robot" ? robotWorld?.worldVision ?? null : assets.worldVision);
-  state.world = new WorldSession({ profile: sensorProfile(), sonarOn: state.sonarOn, seed: Number($<HTMLInputElement>("world-seed").value), density: Number($<HTMLInputElement>("world-density").value), style: Number($<HTMLInputElement>("world-style").value), kind, fade: Number($<HTMLInputElement>("world-fade").value), controller, vision });
+  const settings=experiment.applied();state.accumulator.world=0;
+  const profile=sensorProfile();if(vision)profile.worldCamera={...profile.worldCamera,width:vision.spec.width,height:vision.spec.height};
+  state.world = new WorldSession({ visual:settings.visual,resolution:settings.resolution, profile, sonarOn: state.sonarOn, seed: Number($<HTMLInputElement>("world-seed").value), density: Number($<HTMLInputElement>("world-density").value), style: Number($<HTMLInputElement>("world-style").value), kind, fade: Number($<HTMLInputElement>("world-fade").value), controller, vision });
   $("world-brain-info").textContent = !assets.worldController ? "The trained world controller was not found; the track controller is being used instead, which does not understand this world." : !vision && (kind === "vision" || kind === "both") ? "The world camera network was not found, so the kart is driving without eyes." : "";
   $("world-caption").textContent = `world ${$<HTMLInputElement>("world-seed").value}`;
   paintWorld();
@@ -222,12 +244,13 @@ function paintWorld(): void {
   const episode = session.episode; const sim = episode.sim; const driver = session.driver;
   const truth = episode.truth(session.lastTruth); const perception = driver?.perception ?? null;
   const reading = episode.sonar();
-  const sonarView: SonarView | null = reading ? { x: sim.kart.x + Math.cos(sim.kart.heading) * MOUNT.forward, y: sim.kart.y + Math.sin(sim.kart.heading) * MOUNT.forward, heading: sim.kart.heading, rangePx: reading.range, echo: reading.echo, on: state.sonarOn } : null;
+  const spec=episode.sonarUnit?.spec;
+  const sonarView: SonarView | null = reading ? { x: sim.kart.x + Math.cos(sim.kart.heading) * (spec?.mountForward??MOUNT.forward), y: sim.kart.y + Math.sin(sim.kart.heading) * (spec?.mountForward??MOUNT.forward), heading: sim.kart.heading+(spec?.yawDeg??0)*Math.PI/180,beamDeg:(spec?.lobeSigmaDeg??12)*1.25, rangePx: reading.range, echo: reading.echo, on: state.sonarOn } : null;
   drawWorldMap($("world-map") as HTMLCanvasElement, sim.world, sim.kart, { x: sim.status.goalX, y: sim.status.goalY }, { truth, seen: perception ? perception.mean : null, sigma: perception ? perception.variance : null },
     `goals ${sim.status.goals}   speed ${sim.kart.speed.toFixed(0)}   ${sim.surface}${sim.status.crashed ? "   " + sim.status.crashReason : ""}`, sonarView);
-  $("world-sonar").textContent = !reading ? "—" : !state.sonarOn ? "off" : reading.echo ? `${(reading.range * CM_PER_PIXEL).toFixed(0)} cm` : "clear";
+  $("world-sonar").textContent = !reading ? "—" : !state.sonarOn ? "off" : reading.echo ? `${(reading.range * CM_PER_PIXEL).toFixed(0)} cm` : "no echo";
   if (!perception) episode.render();
-  drawEye($("world-eye") as HTMLCanvasElement, episode.frame, episode.camera);
+  drawEye($("world-eye") as HTMLCanvasElement, lowResolution(episode.frame,episode.camera.width,episode.camera.height,session.settings.resolution??"native"), episode.camera);
   const rows = driver ? estimateRows(worldDomain, truth, perception ? perception.mean : null, perception ? perception.variance : null, driver.fused.mean, perception ? driver.fused.weights : null) : estimateRows(worldDomain, truth, null, null, truth, null);
   drawEstimates($("world-estimates") as HTMLCanvasElement, rows, [-1, 1]);
   const activity = session.controller.activity(); drawBrain($("world-brain") as HTMLCanvasElement, activity.spikes, activity.outputs);
@@ -240,17 +263,17 @@ function frame(now: number): void {
   const dt = Math.min(0.1, (now - (state.last || now)) / 1000); state.last = now;
   if (state.tab === "track" && state.running.track && state.track) {
     const speed = Number($<HTMLSelectElement>("track-speed").value);
-    state.accumulator.track += dt * 30 * speed;
-    let steps = Math.min(40, Math.floor(state.accumulator.track)); state.accumulator.track -= steps; const started = performance.now();
-    while (steps-- > 0 && !state.track.done) { state.track.step(); if (performance.now() - started > 22) break; }
+    state.accumulator.track = Math.min(120,state.accumulator.track + dt * 30 * speed);
+    let steps = Math.min(40, Math.floor(state.accumulator.track));  const started = performance.now();
+    while (steps-- > 0 && !state.track.done) { state.track.step(); logFreshPing(state.track); state.accumulator.track -= 1; if (performance.now() - started > 22) break; }
     if (state.track.done) finishLap();
     paintTrack();
     if (state.running.track) setStatus("track", `${state.track.episode.car.finished ? "lap done" : "driving"} · ${(state.track.episode.car.ticks / 30).toFixed(1)} s`);
   } else if (state.tab === "world" && state.running.world && state.world) {
     const speed = Number($<HTMLSelectElement>("world-speed").value);
-    state.accumulator.world += dt * 30 * speed;
-    let steps = Math.min(40, Math.floor(state.accumulator.world)); state.accumulator.world -= steps; const started = performance.now();
-    while (steps-- > 0 && !state.world.done) { state.world.step(); if (performance.now() - started > 22) break; }
+    state.accumulator.world = Math.min(120,state.accumulator.world + dt * 30 * speed);
+    let steps = Math.min(40, Math.floor(state.accumulator.world));  const started = performance.now();
+    while (steps-- > 0 && !state.world.done) { state.world.step(); state.accumulator.world -= 1; if (performance.now() - started > 22) break; }
     if (state.world.done) { state.running.world = false; $("world-run").textContent = "Start"; setStatus("world", state.world.episode.sim.status.crashed ? `stopped: ${state.world.episode.sim.status.crashReason}` : `time up · ${state.world.episode.sim.status.goals} goals`); }
     paintWorld();
   }
@@ -282,6 +305,7 @@ async function importBrain(file: File): Promise<void> {
     if (imported.vision && imported.vision.domain !== "world") { state.importedVision = imported.vision; prefer.eyes = "imported"; }
     if (imported.world) state.importedWorld = { controller: imported.world.controller.snapshot, vision: imported.world.vision };
     if (imported.memory) { state.memory = MushroomBody.fromJSON(imported.memory); $<HTMLInputElement>("memory-on").checked = true; notes.push("The lap memory in the file was restored: the first lap will already recall the bends."); }
+    if(imported.experiment)experiment.write(imported.experiment);
     if (imported.fusion) { state.mode = imported.fusion.mode; $<HTMLSelectElement>("track-mode").value = imported.fusion.mode; const t = imported.fusion.fade <= 0 ? 0 : imported.fusion.fade >= 1e5 ? 1 : Math.min(0.98, 1 + Math.log10(Math.max(0.001, imported.fusion.fade)) / 3); setFade(t); }
     refreshBrainSelects(prefer);
     $("brain-info").textContent = `${imported.name}: ${notes.join(" ")}`;
@@ -301,7 +325,8 @@ function exportVision(): void {
   const snapshot = currentController(); const vision = currentVision();
   const memoryOn = $<HTMLInputElement>("memory-on").checked;
   download("flykart-vision-brain.json", exportVisionBrain({
-    name: "FlyKart vision brain", profile: state.profile, controller: controllerCheckpoint(snapshot, { track: "all", provenance: [{ context: "vision", trained: true, source: "exported from FlyKart Vision" }] }), vision,
+    experiment:experiment.applied(),
+    name: "FlyKart vision brain", profile: state.profile, controller: controllerCheckpoint(snapshot, { track: "all", provenance: [{ context: "vision", trained: Boolean(trainedCamera&&state.imported?.snapshot===trainedCamera.brain&&$<HTMLSelectElement>("track-controller").value==="imported"), source: "exported from FlyKart Vision", experiment:experiment.applied(), validation:trainedCamera&&state.imported?.snapshot===trainedCamera.brain&&$<HTMLSelectElement>("track-controller").value==="imported"?trainedCamera.validation:null }] }), vision,
     fusion: { fade: state.fade, mode: state.mode, visionTemperature: 1 }, memory: memoryOn ? state.memory.toJSON() : null,
     world: worldExportSource() ? { controller: controllerCheckpoint(worldExportSource()!.controller, { domain: "world", track: "open world" }), vision: worldExportSource()!.vision } : null,
   }));
@@ -328,8 +353,8 @@ async function boot(): Promise<void> {
   for (const id of ["track-select", "track-rivals", "track-objects", "track-controller", "track-eyes", "track-walls"]) $(id).addEventListener("change", () => { describeBrain(); if (id === "track-select" || id === "track-controller" || id === "track-eyes") state.memory.forget(); buildTrack({ keepMemory: !(id === "track-select" || id === "track-controller" || id === "track-eyes") }); });
   $("track-style").addEventListener("change", () => buildTrack({ keepMemory: true }));
   $("track-restart").addEventListener("click", () => { state.lapsLeft = 0; buildTrack({ keepMemory: true }); setStatus("track", "restarted"); });
-  $("track-run").addEventListener("click", () => { state.running.track = !state.running.track; $("track-run").textContent = state.running.track ? "Pause" : "Resume"; if (state.track?.done) buildTrack({ keepMemory: true }); setStatus("track", state.running.track ? "driving" : "paused"); });
-  $("track-laps").addEventListener("click", () => { if (!currentVision()) { setStatus("track", "choose eyes first: the memory works through the camera"); return; } $<HTMLInputElement>("memory-on").checked = true; state.lapsLeft = 3; buildTrack(); state.running.track = true; $("track-run").textContent = "Pause"; });
+  $("track-run").addEventListener("click", () => { if(cameraTraining)return; state.running.track = !state.running.track; $("track-run").textContent = state.running.track ? "Pause" : "Resume"; if (state.track?.done) buildTrack({ keepMemory: true }); setStatus("track", state.running.track ? "driving" : "paused");paintTrack(); });
+  $("track-laps").addEventListener("click", () => { if (!currentVision()) { setStatus("track", "choose eyes first: the memory works through the camera"); return; } $<HTMLInputElement>("memory-on").checked = true; state.lapsLeft = 0;$<HTMLInputElement>("multi-lap").checked=true;$<HTMLSelectElement>("lap-target").value="3";buildTrack(); state.running.track = true; $("track-run").textContent = "Pause"; });
   $("memory-forget").addEventListener("click", () => { state.memory.forget(); state.laps = []; state.lapNumber = 0; renderLapTable(); paintTrack(); });
   $("memory-on").addEventListener("change", () => buildTrack({ keepMemory: true }));
   $("import-btn").addEventListener("click", () => $<HTMLInputElement>("import-file").click());
@@ -337,13 +362,21 @@ async function boot(): Promise<void> {
   $("export-vision-btn").addEventListener("click", exportVision);
   $("export-v1-btn").addEventListener("click", () => download("flykart-brain-for-v1.json", exportAsFlyKartV1(controllerCheckpoint(currentController(), { track: "all" }))));
 
-  $("world-run").addEventListener("click", () => { if (!state.world) buildWorld(); state.running.world = !state.running.world; $("world-run").textContent = state.running.world ? "Pause" : "Resume"; if (state.world?.done) buildWorld(); setStatus("world", state.running.world ? "driving" : "paused"); });
+  $("world-run").addEventListener("click", () => { if(cameraTraining)return; if (!state.world) buildWorld(); state.running.world = !state.running.world; $("world-run").textContent = state.running.world ? "Pause" : "Resume"; if (state.world?.done) buildWorld(); setStatus("world", state.running.world ? "driving" : "paused"); });
   $("world-new").addEventListener("click", () => { $<HTMLInputElement>("world-seed").value = String(1 + Math.floor(Math.random() * 99999)); buildWorld(); setStatus("world", "new world"); });
   for (const id of ["world-driver", "world-seed", "world-density", "world-style"]) $(id).addEventListener("change", () => { buildWorld(); setStatus("world", "ready"); });
   $("world-fade").addEventListener("input", () => { if (state.world?.driver) state.world.driver.fusion.fade = Number($<HTMLInputElement>("world-fade").value); });
 
   $("how").innerHTML = HOW_IT_WORKS;
   $("evidence").innerHTML = renderEvidence(assets.results, assets.controllerResults, assets.robotResults);
+  experiment=mountExperimentPanel(baseProfile,()=>{state.running.track=false;state.running.world=false;$("track-run").textContent="Start";buildTrack();if(state.world)buildWorld();});
+  $("copy-sensor-log").onclick=()=>{void navigator.clipboard.writeText(sensorLog.join("\n")).then(()=>$("copy-sensor-log").textContent="Copied").catch(()=>{($('sensor-log') as HTMLTextAreaElement).select();$("copy-sensor-log").textContent="Select logs · Ctrl+C";});};
+  $("clear-sensor-log").onclick=()=>{sensorLog.length=0;($('sensor-log') as HTMLTextAreaElement).value='';};
+  $("camera-train").onclick=()=>{void runCameraTraining();};$("camera-train-stop").onclick=()=>{cancelTraining=true;$("camera-train-status").textContent='Cancelling after the current tick…';};
+  $("camera-train-adopt").onclick=()=>{if(!trainedCamera||!trainedContext||!trainedExperiment)return;state.profile=trainedContext.profile?.id??'kart';$<HTMLSelectElement>('profile').value=state.profile;state.sonarOn=trainedContext.sonarOn!==false;$<HTMLInputElement>('sonar-on').checked=state.sonarOn;experiment.write(trainedExperiment);state.importedVision=trainedContext.vision;state.imported={name:'Camera-trained offspring',snapshot:trainedCamera.brain,info:'Selected with camera-only inputs. See the training report for held-out scores.'};refreshBrainSelects({controller:'imported',eyes:'imported'});setFade(0);state.mode='belief';$<HTMLSelectElement>('track-mode').value='belief';$<HTMLInputElement>('memory-on').checked=false;buildTrack();};
+  $("camera-report").onclick=()=>{if(trainedCamera)download('flykart-camera-training.json',JSON.stringify({...trainedCamera,experiment:trainedExperiment,context:trainedContext,notes:'Camera weights frozen; sensor-only neural inputs. Small paired validation is not deployment proof.'},null,2));};
+  explainControls(document.querySelector("main")!);
+  installSettingsHistory(document.querySelector('main')!,()=>{state.profile=$<HTMLSelectElement>('profile').value as 'kart'|'robot';state.sonarOn=$<HTMLInputElement>('sonar-on').checked;state.mode=$<HTMLSelectElement>('track-mode').value as DriverMode;setFade(Number($<HTMLInputElement>('fade').value));state.running.track=false;state.running.world=false;buildTrack();if(state.world)buildWorld();},()=>cameraTraining);
   buildTrack(); paintTrack();
   const wanted = location.hash.replace("#", ""); if (["world", "evidence", "how"].includes(wanted)) showTab(wanted);
   if (problems.length) console.warn("FlyKart Vision: bundled files not found:", problems.join(", "));
@@ -357,3 +390,28 @@ boot().catch((error) => {
   $("boot-title").textContent = "FlyKart Vision did not start"; $("boot-message").textContent = error instanceof Error ? error.message : String(error);
 });
 
+
+async function runCameraTraining():Promise<void>{
+  if(cameraTraining)return;
+  try{
+    if(!currentVision())throw new Error('Choose a camera network first.');
+    trainedExperiment=structuredClone(experiment.read());state.running.track=false;state.running.world=false;cameraTraining=true;cancelTraining=false;trainedCamera=null;
+    const settings={...state.track!.settings,controller:currentController(),vision:currentVision(),maxTicks:Number($<HTMLInputElement>('camera-train-ticks').value)};
+    trainedContext={...settings,memory:null,fade:0,mode:'belief',sensorOnly:true};
+    if(!Number.isInteger(settings.maxTicks)||settings.maxTicks<300||settings.maxTicks>3000)throw new Error('Training budget must be 300–3000 ticks per lap.');
+    const generations=Number($<HTMLInputElement>('camera-generations').value),population=Number($<HTMLInputElement>('camera-population').value);
+    if(!Number.isInteger(generations)||generations<1||generations>50||!Number.isInteger(population)||population<2||population>16)throw new Error('Use 1–50 generations and 2–16 candidates.');
+    const controls=Array.from(document.querySelectorAll<HTMLInputElement|HTMLSelectElement|HTMLButtonElement>('#tab-track input,#tab-track select,#tab-track button,.profile-bar input,.profile-bar select')).filter(e=>!['camera-train-stop','copy-sensor-log','clear-sensor-log'].includes(e.id)),disabled=controls.map(e=>e.disabled);
+    controls.forEach(e=>e.disabled=true);$<HTMLButtonElement>('camera-train-stop').disabled=false;
+    try{trainedCamera=await trainCameraController(settings,generations,population,()=>cancelTraining,line=>{$('camera-train-status').textContent=line;logSensor(line);});}
+    finally{controls.forEach((e,i)=>e.disabled=disabled[i]);$<HTMLButtonElement>('camera-train-stop').disabled=true;}
+    $<HTMLButtonElement>('camera-train-adopt').disabled=!trainedCamera;$<HTMLButtonElement>('camera-report').disabled=!trainedCamera;
+    $('camera-train-status').textContent=trainedCamera?`Training complete. Held-out parent ${trainedCamera.validation.parent.toFixed(2)}, offspring ${trainedCamera.validation.offspring.toFixed(2)}. Review before adopting.`:'Training cancelled; original controller kept.';
+  }catch(e){$('camera-train-status').textContent=(e as Error).message;}
+  finally{cameraTraining=false;}
+}
+
+function logFreshPing(session:TrackSession):void{
+  const episode=session.episode,car=episode.car,reading=episode.sonar();if(!reading||!episode.sonarUnit)return;
+  if(loggedPing!==episode.sonarUnit.count){loggedPing=episode.sonarUnit.count;logSensor(`t=${(episode.tick/30).toFixed(3)}s ping=${loggedPing} ${reading.echo?`range=${(reading.range*CM_PER_PIXEL).toFixed(2)}cm strength=${reading.strength.toFixed(3)}`:'NO_ECHO'} speed=${car.speed.toFixed(2)} collisions=${car.collisions} painCost=${car.rewardTotals.collision.toFixed(3)}`);}
+}

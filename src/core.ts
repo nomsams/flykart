@@ -1,3 +1,5 @@
+import { impactSeverity } from "./impact";
+
 export type Vec = { x: number; y: number };
 export type Action = { steer: number; throttle: number; brake: number; reverse?: number };
 export type Sensors = number[];
@@ -5,6 +7,10 @@ export type TrackId = "grand-loop" | "switchback" | "zigzag" | "hairpin" | "oval
 export type TrackRef = TrackDefinition | TrackId;
 export type PhysicsConfig = {
   wallsEnabled: boolean;
+  /** Continuous ordered laps before completion (1..5). */
+  lapTarget?: number;
+  /** Scale collision teaching cost by pre-impact relative speed. */
+  impactPain?: boolean;
   adaptiveTimeLimit?: boolean;
   maxAdaptiveExtensions?: number;
   checkpointCount?: number;
@@ -50,6 +56,10 @@ export const ADAPTIVE_REWARD_WINDOW_TICKS = 300;
 export const MAX_ADAPTIVE_EXTENSIONS = 6;
 export const CLOSE_PROXIMITY_DISTANCE = CAR_COLLISION_DIAMETER * 2.75;
 export const DEFAULT_PHYSICS_CONFIG: PhysicsConfig = { wallsEnabled: true, adaptiveTimeLimit: false, maxAdaptiveExtensions: MAX_ADAPTIVE_EXTENSIONS };
+
+export function requestedLaps(config: PhysicsConfig): number {
+  return Number.isFinite(config.lapTarget) ? clamp(Math.floor(config.lapTarget!), 1, 5) : 1;
+}
 
 export function progressPerSecond(progress: number, ticks: number): number {
   return progress / Math.max(STEP, Math.max(1, ticks) * STEP);
@@ -943,29 +953,32 @@ export function stepCar(car: Car, action: Action, others: Car[], trackRef?: Trac
   // intermediate gates were crossed in order and nearly one full lap elapsed.
   const signedProgressDelta = alignment > -0.35 ? localDelta : Math.min(0, localDelta);
   const projectedNetProgress = car.netProgress + signedProgressDelta;
-  const projectedNovelProgress = Math.max(car.totalProgress, clamp(projectedNetProgress, 0, 1));
-  const lapCrossed = expectedCheckpoint === 0 && directedStartCross && projectedNovelProgress >= 0.95 && alignment > 0.15 && car.speed > 2;
+  const lapTarget = requestedLaps(physicsConfig);
+  const projectedNovelProgress = Math.max(car.totalProgress, clamp(projectedNetProgress, 0, lapTarget));
+  const lapCrossed = expectedCheckpoint === 0 && directedStartCross && projectedNovelProgress >= car.laps + 0.95 && alignment > 0.15 && car.speed > 2;
   const checkpointCrossed = intermediateCheckpointCrossed || lapCrossed;
   if (intermediateCheckpointCrossed) {
     car.checkpointsPassed += 1;
     car.nextCheckpoint = expectedCheckpoint === checkpointCount - 1 ? 0 : expectedCheckpoint + 1;
   } else if (lapCrossed) {
     car.checkpointsPassed += 1;
-    car.nextCheckpoint = checkpointCount;
+    car.nextCheckpoint = car.laps + 1 >= lapTarget ? checkpointCount : 1;
   }
-  const firstFinish = lapCrossed && !car.finished;
-  car.netProgress = clamp(projectedNetProgress, -1, 2);
+  const firstFinish = lapCrossed && car.laps + 1 >= lapTarget && !car.finished;
+  car.netProgress = clamp(projectedNetProgress, -1, lapTarget + 1);
   car.forwardDistance += Math.max(0, localDelta);
   const validForwardDelta = Math.max(0, projectedNovelProgress - car.totalProgress);
-  if (lapCrossed) { car.laps += 1; car.finished = true; }
+  if (lapCrossed) { car.laps += 1; car.finished = firstFinish; }
   car.totalProgress = projectedNovelProgress; car.progress = updated.progress; car.distanceAlong = updated.distanceAlong; car.bestProgress = Math.max(car.bestProgress, car.totalProgress);
   car.nearestDistance = updated.distance; const offTrackDistance = outsideDistance; const offTrack = offTrackDistance > route.width / 2; if (offTrack) car.offTrackTicks += 1;
   car.consecutiveOffTrackTicks = offTrack ? car.consecutiveOffTrackTicks + 1 : 0;
   const offTrackSeverity = offTrack ? 1 + clamp((offTrackDistance - route.width / 2) / Math.max(1, route.width / 2), 0, 3) : 0;
   car.lateralOffset = lateralOffset(car.position, updated, route);
+  if (car.ticks === 0 && car.timeLimit === MAX_TICKS) car.timeLimit *= lapTarget;
   car.ticks += 1; if (car.ticks % 8 === 0) car.trail.push({ ...car.position }); if (car.trail.length > 38) car.trail.shift();
   const collisionsBefore = car.collisions;
   let contact = false;
+  let contactPain = 0;
   let severeCollision = false;
   const carIndex = others.indexOf(car);
   const clampToRoad = (target: Car): void => {
@@ -984,6 +997,9 @@ export function stepCar(car: Car, action: Action, others: Car[], trackRef?: Trac
     const collisionDistance = (car.collisionRadius ?? CAR_COLLISION_DIAMETER / 2) + (other.collisionRadius ?? CAR_COLLISION_DIAMETER / 2);
     if (distance >= collisionDistance) return;
     contact = true;
+    const normal = distance > 0.0001 ? scale(offset, 1 / distance) : scale(updated.tangent, -1);
+    const beforeVelocity = { x: Math.cos(car.heading) * car.speed - Math.cos(other.heading) * other.speed, y: Math.sin(car.heading) * car.speed - Math.sin(other.heading) * other.speed };
+    if (car.collisionCooldown <= 0) contactPain += impactSeverity(-dot(beforeVelocity, normal));
     if (!physicsConfig.softCollisions) {
       const tangent = updated.tangent; const fallback = { x: -tangent.y, y: tangent.x };
       const direction = distance > 0.0001 ? scale(offset, 1 / distance) : scale(fallback, carIndex < otherIndex ? 1 : -1);
@@ -1058,7 +1074,7 @@ export function stepCar(car: Car, action: Action, others: Car[], trackRef?: Trac
   reward.controlConflict = Math.min(forwardThrottle, brake) * (rewardConfig.controlConflictPerSecond ?? 0) * STEP;
   const spikeRate = car.network ? car.network.activity().spikes.reduce((sum, spike) => sum + spike, 0) / car.network.hiddenCount : 0;
   reward.spikeEnergy = spikeRate * (rewardConfig.spikeEnergyPerSecond ?? 0) * STEP;
-  reward.collision = collisionDelta * rewardConfig.collision;
+  reward.collision = (physicsConfig.impactPain ? contactPain : collisionDelta) * rewardConfig.collision;
   reward.crash = car.crashed ? rewardConfig.crash : 0;
   reward.checkpoint = checkpointCrossed ? rewardConfig.checkpoint : 0;
   reward.finish = firstFinish ? rewardConfig.finish : 0;
@@ -1093,7 +1109,7 @@ export function stepCar(car: Car, action: Action, others: Car[], trackRef?: Trac
     const progressIsViable = physicsConfig.ruthlessCulling !== true || progressRate >= minimumProgressRate;
     const canExtend = physicsConfig.adaptiveTimeLimit === true && car.timeExtensions < maxExtensions && windowRate >= 0 && rateIsImproving && progressIsViable;
     if (canExtend) {
-      car.timeExtensions += 1; car.timeLimit = adaptiveTimeLimitForExtensions(car.timeExtensions); car.previousRewardRate = windowRate; car.rewardWindowScore = 0; car.rewardWindowTicks = 0; car.rewardWindowProgressStart = car.totalProgress;
+      car.timeExtensions += 1; car.timeLimit = adaptiveTimeLimitForExtensions(car.timeExtensions) * lapTarget; car.previousRewardRate = windowRate; car.rewardWindowScore = 0; car.rewardWindowTicks = 0; car.rewardWindowProgressStart = car.totalProgress;
     } else {
       car.timedOut = true; car.previousRewardRate = windowRate; car.rewardWindowScore = 0; car.rewardWindowTicks = 0; car.rewardWindowProgressStart = car.totalProgress;
     }
@@ -1112,7 +1128,9 @@ export function evaluate(network: SpikingNetwork, trackRef: TrackRef = DEFAULT_T
   const cars = ghost ? [car, ...roadObjects] : [car, ...obstacles, ...roadObjects];
   const episodePhysics = physicsForEpisode(physicsConfig, obstacleSeed, route);
   const maxExtensions = clamp(Math.floor(physicsConfig.maxAdaptiveExtensions ?? MAX_ADAPTIVE_EXTENSIONS), 0, MAX_ADAPTIVE_EXTENSIONS);
-  const simulationLimit = adaptiveTimeLimitForExtensions(physicsConfig.adaptiveTimeLimit === true ? maxExtensions : 0);
+  const lapTarget = requestedLaps(episodePhysics);
+  car.timeLimit = MAX_TICKS * lapTarget;
+  const simulationLimit = adaptiveTimeLimitForExtensions(physicsConfig.adaptiveTimeLimit === true ? maxExtensions : 0) * lapTarget;
   for (let tick = 0; tick < simulationLimit && !car.crashed && !car.finished && !car.timedOut && !car.eliminated; tick += 1) {
     // Freeze decisions before moving any car. Otherwise the first vehicle in
     // the array gets a different world state from the final vehicle.
@@ -1121,8 +1139,8 @@ export function evaluate(network: SpikingNetwork, trackRef: TrackRef = DEFAULT_T
     stepCar(car, carAction, cars, route, rewardConfig, episodePhysics);
     if (!ghost) obstacles.forEach((bot, index) => stepCar(bot, botActions[index], cars, route, rewardConfig, { ...episodePhysics, ruthlessCulling: false }));
   }
-  return { fitness: car.score, progress: car.totalProgress, ticks: car.ticks, laps: car.laps, finished: car.finished, crashed: car.crashed, eliminated: car.eliminated,
-    checkpointsPassed: car.checkpointsPassed, checkpointRate: clamp(car.checkpointsPassed / Math.max(1, episodePhysics.checkpointCount ?? CHECKPOINT_COUNT), 0, 1), collisions: car.collisions, offTrackTicks: car.offTrackTicks,
+  return { fitness: car.score, progress: car.totalProgress / lapTarget, ticks: car.ticks, laps: car.laps, finished: car.finished, crashed: car.crashed, eliminated: car.eliminated,
+    checkpointsPassed: car.checkpointsPassed, checkpointRate: clamp(car.checkpointsPassed / Math.max(1, (episodePhysics.checkpointCount ?? CHECKPOINT_COUNT) * lapTarget), 0, 1), collisions: car.collisions, offTrackTicks: car.offTrackTicks,
     trackId: route.id, rewardTotals: { ...car.rewardTotals } };
 }
 
@@ -1144,7 +1162,7 @@ export function evaluateGeneralist(network: SpikingNetwork, trackRefs: TrackRef[
   return { fitness: meanFitness * 0.7 + worstFitness * 0.3, progress: meanProgress * 0.7 + worstProgress * 0.3, meanProgress, worstProgress,
     completionRate: average((episode) => episode.finished ? 1 : 0), checkpointRate: average((episode) => episode.checkpointRate), crashRate: average((episode) => episode.crashed ? 1 : 0),
     collisionRate: average((episode) => episode.collisions), offTrackRate: average((episode) => episode.offTrackTicks / Math.max(1, episode.ticks)),
-    progressRate: average((episode) => progressPerLapTime(episode.progress, episode.ticks, episode.finished)),
+    progressRate: average((episode) => progressPerLapTime(episode.progress, episode.ticks, episode.finished, MAX_TICKS * requestedLaps(physicsConfig))),
     ticks: episodes.reduce((sum, episode) => sum + episode.ticks, 0), laps: episodes.reduce((sum, episode) => sum + episode.laps, 0), finished: episodes.every((episode) => episode.finished), eliminated: episodes.some((episode) => episode.eliminated), rewardTotals, episodes };
 }
 

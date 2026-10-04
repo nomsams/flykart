@@ -2,21 +2,20 @@ name: Test and deploy FlyKart
 
 on:
   push:
-    branches: [master, main]
+  pull_request:
   workflow_dispatch:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
-  group: pages
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   test-build:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -28,17 +27,26 @@ jobs:
       - name: Install dependencies
         run: npm ci
       - name: Run tests
-        run: npm test
+        run: npx vitest run --maxWorkers=1 --minWorkers=1 --testTimeout=60000
       - name: Build site
         run: npm run build
+      - name: Install browser
+        run: npx playwright install --with-deps chromium
+      - name: Check robot browser flows
+        run: node scripts/robot-browser-checks.mjs
       - name: Upload Pages artifact
+        if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
         uses: actions/upload-pages-artifact@v3
         with:
           path: dist
 
   deploy:
     needs: test-build
+    if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
     runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

@@ -1,4 +1,6 @@
 import "./style.css";
+import { installSettingsHistory } from "./settings-history";
+import { explainControls } from "./control-help";
 import {
   BrainSnapshot, CAR_WIDTH, CHECKPOINT_COUNT, LANE_SPACING, MAX_ADAPTIVE_EXTENSIONS, Car, DEFAULT_PHYSICS_CONFIG, DEFAULT_REWARD_CONFIG, DEFAULT_TRACK, MAX_TICKS, PhysicsConfig, RewardConfig, RoadObjectKind, STEP, TAU, TRACKS, TrackDefinition, Vec,
   SpikingNetwork, blendedEvolutionSelectionScore, clamp, compareEvolutionCandidates, createHeuristicImitationNetwork, createMutationPopulation, createRoadObstacles, evaluateGeneralist, heuristicAction, nearestTrack, physicsForEpisode, pointAtDistance, progressPerLapTime, resolveTrack, sensorValues, startLine, startPosition, stepCar, trackCheckpoint, trackDiagnostics,
@@ -293,6 +295,8 @@ function readRewardConfig(): RewardConfig {
 function readPhysicsConfig(): PhysicsConfig {
   physicsConfig = {
     wallsEnabled: ui.wallsToggle.checked,
+    lapTarget: required<HTMLInputElement>("#multi-lap").checked ? Number(required<HTMLSelectElement>("#lap-target").value) : 1,
+    impactPain: required<HTMLInputElement>("#impact-pain").checked,
     domainRandomization: readNumber(ui.domainRandomization, 10, 0, 35) / 100,
     adaptiveTimeLimit: ui.adaptiveTimeToggle.checked,
     maxAdaptiveExtensions: readInteger(ui.adaptiveExtensions, DEFAULT_PHYSICS_CONFIG.maxAdaptiveExtensions ?? 4, 0, MAX_ADAPTIVE_EXTENSIONS),
@@ -756,7 +760,7 @@ function updateRewardTelemetry(car: Car | undefined): void {
 
 function setBusy(value: boolean): void {
   [ui.raceButton, ui.driveButton, ui.visualButton, ui.evolveFiveButton, ui.headlessButton, ui.resetButton, ui.loadButton, ui.importButton].forEach((button) => { button.disabled = value; });
-  [ui.trainingPreset, ui.population, ui.generations, ui.trainingSeeds, ui.heuristicWarmStartToggle, ui.trackSelect, ui.wallsToggle, ui.domainRandomization, ui.adaptiveTimeToggle, ui.adaptiveExtensions, ui.ruthlessCullingToggle, ui.cullWindowSeconds, ui.cullMinProgress, ui.cullPatience, ui.checkpointCount, ui.ghostEvolutionToggle, ui.softContactToggle, ui.obstacleToggle, ui.obstacleCount, ui.obstacleKind, ui.plateauExplorationToggle, ui.plateauPatience, ui.breedingProgressWeight, ui.breedingProgressMetric, ui.winnerMatingShare, ui.curriculumToggle, ui.rewardProgress, ui.rewardDirection, ui.rewardMoving, ui.rewardStanding, ui.rewardWrong, ui.rewardReverse, ui.rewardOffTrack, ui.rewardEdge, ui.rewardProximity, ui.rewardHazard, ui.rewardCenterline, ui.rewardControlChange, ui.rewardControlConflict, ui.rewardSpikeEnergy, ui.rewardCollision, ui.rewardCrash, ui.rewardCheckpoint, ui.rewardFinish].forEach((input) => { input.disabled = value; });
+  [ui.trainingPreset, ui.population, ui.generations, ui.trainingSeeds, ui.heuristicWarmStartToggle, ui.trackSelect, ui.wallsToggle, ui.domainRandomization, ui.adaptiveTimeToggle, ui.adaptiveExtensions, ui.ruthlessCullingToggle, ui.cullWindowSeconds, ui.cullMinProgress, ui.cullPatience, ui.checkpointCount, ui.ghostEvolutionToggle, ui.softContactToggle, ui.obstacleToggle, ui.obstacleCount, ui.obstacleKind, ui.plateauExplorationToggle, ui.plateauPatience, ui.breedingProgressWeight, ui.breedingProgressMetric, ui.winnerMatingShare, ...(["multi-lap","lap-target","impact-pain"].map(id=>required<HTMLInputElement>("#"+id))), ui.curriculumToggle, ui.rewardProgress, ui.rewardDirection, ui.rewardMoving, ui.rewardStanding, ui.rewardWrong, ui.rewardReverse, ui.rewardOffTrack, ui.rewardEdge, ui.rewardProximity, ui.rewardHazard, ui.rewardCenterline, ui.rewardControlChange, ui.rewardControlConflict, ui.rewardSpikeEnergy, ui.rewardCollision, ui.rewardCrash, ui.rewardCheckpoint, ui.rewardFinish].forEach((input) => { input.disabled = value; });
   ui.stopButton.disabled = !(value || running);
 }
 
@@ -1114,11 +1118,11 @@ function generationEvaluationSeeds(): number[] {
 }
 
 function carLapPace(car: Car): number {
-  return progressPerLapTime(car.totalProgress, car.ticks, car.finished);
+  return progressPerLapTime(car.totalProgress / (physicsConfig.lapTarget ?? 1), car.ticks, car.finished, MAX_TICKS * (physicsConfig.lapTarget ?? 1));
 }
 
 function carSafetyPenalty(car: Car): number {
-  return (car.crashed ? 1 : 0) + car.collisions * 0.05 + car.offTrackTicks / Math.max(1, car.ticks);
+  return (car.crashed ? 1 : 0) + (physicsConfig.impactPain?car.rewardTotals.collision/Math.max(1,rewardConfig.collision):car.collisions) * 0.05 + car.offTrackTicks / Math.max(1, car.ticks);
 }
 
 function trainFiveBrainStep(): void {
@@ -1159,7 +1163,7 @@ function trainFiveBrainStep(): void {
   const completedEpisodes = (trainingGeneration - 1) * generationEpisodes + trainingTrackIndex * trainingPopulationSize;
   const leader = [...trainingPopulation].sort((a, b) => breedingProgressMetric === "rate" ? carLapPace(b) - carLapPace(a) : b.totalProgress - a.totalProgress || b.score - a.score)[0];
   const displayedTimeLimit = Math.max(MAX_TICKS, ...trainingPopulation.map((car) => car.timeLimit));
-  const liveFraction = Math.min(1, tick / MAX_TICKS);
+  const liveFraction = Math.min(1, tick / (MAX_TICKS * (physicsConfig.lapTarget ?? 1)));
   setProgress((completedEpisodes + liveFraction * trainingPopulationSize) / Math.max(1, requestedGenerations * generationEpisodes), `generation ${trainingGeneration}/${requestedGenerations} · ${trainingPopulationSize} brains racing · ${route.name}`, `visual race · ${tick}/${displayedTimeLimit} ticks · leader checkpoints ${leader?.checkpointsPassed ?? 0}/${physicsConfig.checkpointCount ?? CHECKPOINT_COUNT} · selection uses ${breedingProgressMetric === "rate" ? "progress/lap time" : "novel coverage"} + reward`);
   const finished = trainingPopulation.every((car) => car.crashed || car.finished || car.timedOut || car.eliminated);
   if (leader) {
@@ -1168,7 +1172,7 @@ function trainFiveBrainStep(): void {
     ui.progress.textContent = `${Math.round(leader.totalProgress * 100)}%`;
   }
   if (!finished) return;
-  trainingPopulation.forEach((car, index) => { trainingScores[index] += car.score; trainingProgresses[index] += car.totalProgress; trainingTicks[index] += car.ticks; trainingProgressRates[index] += carLapPace(car); trainingFinishCounts[index] += car.finished ? 1 : 0; trainingEliminationCounts[index] += car.eliminated ? 1 : 0; trainingWorstProgresses[index] = Math.min(trainingWorstProgresses[index], car.totalProgress); trainingCheckpointRates[index] += clamp(car.checkpointsPassed / Math.max(1, physicsConfig.checkpointCount ?? CHECKPOINT_COUNT), 0, 1); trainingSafetyPenalties[index] += carSafetyPenalty(car); });
+  trainingPopulation.forEach((car, index) => { trainingScores[index] += car.score; trainingProgresses[index] += car.totalProgress / (physicsConfig.lapTarget ?? 1); trainingTicks[index] += car.ticks; trainingProgressRates[index] += carLapPace(car); trainingFinishCounts[index] += car.finished ? 1 : 0; trainingEliminationCounts[index] += car.eliminated ? 1 : 0; trainingWorstProgresses[index] = Math.min(trainingWorstProgresses[index], car.totalProgress / (physicsConfig.lapTarget ?? 1)); trainingCheckpointRates[index] += clamp(car.checkpointsPassed / Math.max(1, (physicsConfig.checkpointCount ?? CHECKPOINT_COUNT) * (physicsConfig.lapTarget ?? 1)), 0, 1); trainingSafetyPenalties[index] += carSafetyPenalty(car); });
   trainingPopulation.forEach(recordTrainingTrace);
   const currentLeader = [...trainingPopulation].sort((a, b) => breedingProgressMetric === "rate" ? carLapPace(b) - carLapPace(a) : b.totalProgress - a.totalProgress || b.score - a.score)[0];
   appendEvent(`${trainingPopulationSize}-brain race finished ${route.name} · leader ${currentLeader?.name ?? "unknown"} · fitness ${currentLeader?.score.toFixed(1) ?? "—"}`);
@@ -1198,19 +1202,19 @@ function trainPopulationStep(): void {
   updateRewardTelemetry(car);
   const episodeCount = Math.max(1, trainingTracks.length); const totalEpisodes = Math.max(1, trainingPopulationSize * episodeCount * requestedGenerations);
   const completedEpisodes = (trainingGeneration - 1) * trainingPopulationSize * episodeCount + trainingIndex * episodeCount + trainingTrackIndex;
-  const candidateFraction = Math.min(1, car.ticks / MAX_TICKS);
+  const candidateFraction = Math.min(1, car.ticks / (MAX_TICKS * (physicsConfig.lapTarget ?? 1)));
   const route = trainingTracks[trainingTrackIndex];
   setProgress((completedEpisodes + candidateFraction) / totalEpisodes, `generation ${trainingGeneration}/${requestedGenerations} · ${car.name} (${trainingIndex + 1}/${trainingPopulationSize}) · ${route.name}`, `visual · tick ${car.ticks}/${car.timeLimit} · checkpoints ${car.checkpointsPassed}/${physicsConfig.checkpointCount ?? CHECKPOINT_COUNT} · direction ${Math.round(clamp((car.forwardAlignment + 1) * 50, 0, 100))}%`);
   if (car.crashed || car.finished || car.timedOut || car.eliminated) {
     recordTrainingTrace(car);
     trainingScores[trainingIndex] += car.score;
-    trainingProgresses[trainingIndex] += car.totalProgress;
+    trainingProgresses[trainingIndex] += car.totalProgress / (physicsConfig.lapTarget ?? 1);
     trainingTicks[trainingIndex] += car.ticks;
     trainingProgressRates[trainingIndex] += carLapPace(car);
     trainingFinishCounts[trainingIndex] += car.finished ? 1 : 0;
     trainingEliminationCounts[trainingIndex] += car.eliminated ? 1 : 0;
-    trainingWorstProgresses[trainingIndex] = Math.min(trainingWorstProgresses[trainingIndex], car.totalProgress);
-    trainingCheckpointRates[trainingIndex] += clamp(car.checkpointsPassed / Math.max(1, physicsConfig.checkpointCount ?? CHECKPOINT_COUNT), 0, 1);
+    trainingWorstProgresses[trainingIndex] = Math.min(trainingWorstProgresses[trainingIndex], car.totalProgress / (physicsConfig.lapTarget ?? 1));
+    trainingCheckpointRates[trainingIndex] += clamp(car.checkpointsPassed / Math.max(1, (physicsConfig.checkpointCount ?? CHECKPOINT_COUNT) * (physicsConfig.lapTarget ?? 1)), 0, 1);
     trainingSafetyPenalties[trainingIndex] += carSafetyPenalty(car);
     const terminalReason = car.finished ? " · finish line" : car.eliminated ? ` · eliminated (${car.eliminationReason ?? "insufficient progress"})` : car.crashed ? " · crashed" : car.timedOut ? " · time limit" : "";
     appendEvent(`${car.name} (${trainingIndex + 1}/${trainingPopulationSize}) finished ${route.name} · fitness ${car.score.toFixed(1)}${terminalReason}`);
@@ -1248,7 +1252,7 @@ function fixedValidationTracks(): TrackDefinition[] {
 function validateChampionCandidate(network: SpikingNetwork, validationGeneration: number): ChampionValidation {
   const result = evaluateGeneralist(network.clone(), fixedValidationTracks(), rewardConfig, physicsConfig, ghostEvolution, randomObjectsEnabled ? randomObjectCount : 0, VALIDATION_SEEDS, randomObjectKind);
   return { fitness: result.fitness, meanProgress: result.meanProgress, worstProgress: result.worstProgress, completionRate: result.completionRate, checkpointRate: result.checkpointRate,
-    safetyPenalty: result.crashRate + result.collisionRate * 0.05 + result.offTrackRate, generation: validationGeneration };
+    safetyPenalty: result.crashRate + (physicsConfig.impactPain?result.rewardTotals.collision/Math.max(1,rewardConfig.collision):result.collisionRate) * 0.05 + result.offTrackRate, generation: validationGeneration };
 }
 
 function validationCandidateIsBetter(candidate: ChampionValidation, champion: ChampionValidation): boolean {
@@ -1279,7 +1283,7 @@ function breed(): void {
   updateLineageEvaluations();
   const evaluated = [...trainingNetworks].map((network, index) => {
     const car = trainingPopulation[index]; const score = car?.score ?? -Infinity; const progress = car?.totalProgress ?? car?.progress ?? 0; const finished = car?.finished ?? false; const ticks = Math.max(1, car?.ticks ?? MAX_TICKS);
-    const measuredRate = trainingProgressRates[index] > 0 ? trainingProgressRates[index] / Math.max(1, trainingTracks.length) : progressPerLapTime(progress, ticks, finished);
+    const measuredRate = trainingProgressRates[index] > 0 ? trainingProgressRates[index] / Math.max(1, trainingTracks.length) : progressPerLapTime(progress, ticks, finished, MAX_TICKS * (physicsConfig.lapTarget ?? 1));
     const progressMetric = breedingProgressMetric === "rate" ? measuredRate : progress;
     const completionRate = trainingCompletionRates[index] ?? (finished ? 1 : 0);
     const checkpointRate = (trainingCheckpointRates[index] ?? 0) / Math.max(1, trainingTracks.length);
@@ -1372,7 +1376,7 @@ async function runHeadless(): Promise<void> {
         const startedCandidates = (trainingGeneration - 1) * trainingPopulationSize + index;
         setProgress(startedCandidates / totalCandidates, `generation ${trainingGeneration}/${requestedGenerations} · ${lineageNameForIndex(index)} (${index + 1}/${trainingPopulationSize})`, `headless · ${trainingTracks.length} track${trainingTracks.length === 1 ? "" : "s"} · evaluating…`);
         await new Promise<void>((resolve) => setTimeout(resolve, 0));
-        const result = evaluateGeneralist(car.network as SpikingNetwork, trainingTracks, rewardConfig, physicsConfig, ghostEvolution, trainingObstacleCount(), generationEvaluationSeeds(), randomObjectKind); car.score = result.fitness; car.progress = result.progress; car.totalProgress = result.progress; car.finished = result.finished; car.eliminated = result.eliminated; car.ticks = Math.max(1, Math.round(result.ticks / Math.max(1, result.episodes.length))); car.laps = result.laps; car.rewardTotals = result.rewardTotals; car.rewardBreakdown = result.rewardTotals; car.lastReward = 0; car.forwardAlignment = 0; trainingProgressRates[index] = result.progressRate * Math.max(1, trainingTracks.length); trainingWorstProgresses[index] = result.worstProgress; trainingCheckpointRates[index] = result.checkpointRate * Math.max(1, trainingTracks.length); trainingSafetyPenalties[index] = (result.crashRate + result.collisionRate * 0.05 + result.offTrackRate) * Math.max(1, trainingTracks.length); trainingFinishCounts[index] = Math.round(result.completionRate * result.episodes.length); trainingCompletionRates[index] = result.completionRate;
+        const result = evaluateGeneralist(car.network as SpikingNetwork, trainingTracks, rewardConfig, physicsConfig, ghostEvolution, trainingObstacleCount(), generationEvaluationSeeds(), randomObjectKind); car.score = result.fitness; car.progress = result.progress; car.totalProgress = result.progress; car.finished = result.finished; car.eliminated = result.eliminated; car.ticks = Math.max(1, Math.round(result.ticks / Math.max(1, result.episodes.length))); car.laps = result.laps; car.rewardTotals = result.rewardTotals; car.rewardBreakdown = result.rewardTotals; car.lastReward = 0; car.forwardAlignment = 0; trainingProgressRates[index] = result.progressRate * Math.max(1, trainingTracks.length); trainingWorstProgresses[index] = result.worstProgress; trainingCheckpointRates[index] = result.checkpointRate * Math.max(1, trainingTracks.length); trainingSafetyPenalties[index] = (result.crashRate + (physicsConfig.impactPain?result.rewardTotals.collision/Math.max(1,rewardConfig.collision):result.collisionRate) * 0.05 + result.offTrackRate) * Math.max(1, trainingTracks.length); trainingFinishCounts[index] = Math.round(result.completionRate * result.episodes.length); trainingCompletionRates[index] = result.completionRate;
         trainingIndex = index + 1;
         const completedCandidates = (trainingGeneration - 1) * trainingPopulationSize + trainingIndex;
         ui.fitness.textContent = result.fitness.toFixed(1);
@@ -1461,6 +1465,7 @@ ui.trainingPreset.addEventListener("change", () => {
   safely(() => { applyTrainingPreset(preset as TrainingPresetName); if (!training) launchRace(); });
 });
 ui.trackSelect.addEventListener("change", () => { updateTrackInfo(); if (!training) safely(() => { activateStoredContextForRace(); launchRace(); }); });
+for (const id of ["multi-lap", "lap-target", "impact-pain"]) required<HTMLInputElement>("#" + id).addEventListener("change", () => { physicsConfig = readPhysicsConfig(); appendEvent(`Next run: ${physicsConfig.lapTarget} continuous lap(s), speed-sensitive pain ${physicsConfig.impactPain ? "on" : "off"}.`); });
 ui.wallsToggle.addEventListener("change", () => { physicsConfig = readPhysicsConfig(); appendEvent(physicsConfig.wallsEnabled ? "track walls enabled · off-track recovery is active" : "track walls disabled · cars may leave the road and only receive off-track penalties"); });
 ui.domainRandomization.addEventListener("change", () => { physicsConfig = readPhysicsConfig(); appendEvent(`physics randomization set to ${Math.round((physicsConfig.domainRandomization ?? 0) * 100)}% · grip, engine, and steering vary by episode`); });
 ui.adaptiveTimeToggle.addEventListener("change", () => { physicsConfig = readPhysicsConfig(); appendEvent(physicsConfig.adaptiveTimeLimit ? `adaptive time enabled · up to ${physicsConfig.maxAdaptiveExtensions} evidence-based extensions` : "adaptive time disabled · candidates stop at the base tick limit"); });
@@ -1510,6 +1515,8 @@ try {
   launchRace();
   setRunState("Ready to race", "The demo brain is driving now. Choose a training mode to evolve a better fly pilot.", "ready", "RACE MODE");
   appendEvent("application ready · choose a command to begin");
+  explainControls(document.querySelector('main')!);
+  installSettingsHistory(document.querySelector('main')!,()=>{rewardConfig=readRewardConfig();physicsConfig=readPhysicsConfig();readRoadObjectConfig();readEvolutionConfig();updateTrackInfo();updateEvolutionTelemetry();},()=>training);
   window.dispatchEvent(new Event("flykart:ready"));
   requestAnimationFrame(frame);
 } catch (error) {

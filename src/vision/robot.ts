@@ -30,6 +30,7 @@ export const ROBOT_WORLD_CAMERA: CameraConfig = { ...ROBOT_CAMERA, hfov: (104 * 
 export type SonarSpec = {
   /** Datasheet range: 2 cm to 400 cm. */
   minRangeCm: number; maxRangeCm: number;
+  yawDeg?: number; pitchDeg?: number; rangeScale?: number; rangeOffsetCm?: number;
   /** Width of the main lobe (Gaussian sigma, degrees): about 15 degrees of useful beam. */
   lobeSigmaDeg: number;
   /** Ticks between pings (the module needs about 60 ms between them to avoid hearing its own echoes). */

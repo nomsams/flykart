@@ -1,9 +1,12 @@
+import { COMPACT_CAMERA, COMPACT_RECIPE } from './sensor-contract';
 import { bridgeSketch } from './esp32-bridge';
 import { CompactStudent, validateStudent } from './compact';
 import type { RobotConfig, Wiring } from './model';
 export function compactSketch(raw:CompactStudent,w:Wiring,c:RobotConfig,littleEndian=false):string {
-  const s=validateStudent(raw);if(!c.cameraEnabled)throw new Error('The compact student needs the camera.');
+  if(c.vibration?.enabled)throw new Error('The compact 30-input student does not include SW-420. Use the USB host bridge for a vibration-aware controller.');
+  const s=validateStudent(raw),recipe=COMPACT_CAMERA;if(!c.cameraEnabled)throw new Error('The compact student needs the camera.');
   const declarations=`
+// Sensor recipe ${COMPACT_RECIPE}: generated from the shared sensor contract.
 // Compact student ${s.hash}: 30 inputs, 12 tanh hidden units, 2 signed PWM outputs.
 // Distilled executed outputs; do not apply wheel-gain compensation again.
 const int8_t STUDENT_W[398]={${s.weights.join(',')}};
@@ -20,14 +23,14 @@ void runStudent(camera_fb_t *fb);
 void runStudent(camera_fb_t *fb) {
   if(!armed || int32_t(millis()-autoUntil)>=0 || !fb ${c.sonarEnabled?'|| sonarCm<0 || sonarCm<12':''}) { autonomous=false; armed=false; stopMotors(); Serial.println("LOG AUTO stopped: deadline, watchdog or sensor guard"); return; }
   float input[30]={},hidden[12]={},output[2]={}; float mass=0,moment=0;
-  for(int y=20;y<100;y++) for(int x=0;x<160;x++) {
+  for(int y=${recipe.top};y<${recipe.bottom};y++) for(int x=0;x<${recipe.width};x++) {
     int i=(y*160+x)*2; uint16_t pixel=${littleEndian?'uint16_t(fb->buf[i]) | uint16_t(fb->buf[i+1])<<8':'uint16_t(fb->buf[i])<<8 | fb->buf[i+1]'};
     float rgb[3]={float((pixel>>11)&31)*8/255,float((pixel>>5)&63)*4/255,float(pixel&31)*8/255};
     int cell=((y-20)/40)*4+x/40; for(int k=0;k<3;k++) input[cell*3+k]+=rgb[k]/1600;
-    if(rgb[0]>.55f && rgb[2]>.45f && rgb[1]<min(rgb[0],rgb[2])*.78f) { mass++; moment+=float(x)/159*2-1; }
+    if(rgb[0]>${recipe.cueRed}f && rgb[2]>${recipe.cueBlue}f && rgb[1]<min(rgb[0],rgb[2])*${recipe.cueGreenRatio}f) { mass++; moment+=float(x)/159*2-1; }
   }
   input[24]=sonarCm<0?0:constrain(1-sonarCm/220,0.0f,1.0f); input[25]=sonarCm>=0?1:0;
-  input[26]=float(demandL)/255; input[27]=float(demandR)/255; input[28]=mass?moment/mass*.18f:0; input[29]=min(1.0f,mass/12800*12);
+  input[26]=float(demandL)/255; input[27]=float(demandR)/255; input[28]=mass?moment/mass*${recipe.cueBearing}f:0; input[29]=min(1.0f,mass/12800*${recipe.cueArea});
   for(int j=0;j<12;j++) { float v=STUDENT_W[360+j]*SCALE1; for(int i=0;i<30;i++) v+=input[i]*STUDENT_W[j*30+i]*SCALE1; hidden[j]=tanhf(v); }
   for(int j=0;j<2;j++) { float v=STUDENT_W[396+j]*SCALE2; for(int i=0;i<12;i++) v+=hidden[i]*STUDENT_W[372+j*12+i]*SCALE2; output[j]=tanhf(v); }
   // Recheck after camera/inference; STOP and the independent watchdog take priority.

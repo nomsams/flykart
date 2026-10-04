@@ -10,6 +10,8 @@ import { trackDomain } from "./domains";
 import { Cue, FusionConfig, Fused, createFused, defaultFusion, fuseCues, privilegedCue, visionCue } from "./fusion";
 import { MushroomBody } from "./memory";
 import { Perceiver, Perception, VISION_STRIDE } from "./perception";
+import { VisionEnsemble } from "./ensemble";
+import type { RacingSettings } from "./racing-settings";
 import { assembleInputs } from "./inputs";
 
 /**
@@ -22,6 +24,7 @@ export type DriverMode = "belief" | "action-average" | "vision-action";
 export type DriverOptions = {
   /** Deployment rehearsal: require pixels and exclude privileged cues, goal coordinates and pose-indexed lap memory. */
   sensorOnly?: boolean;
+  visual?: RacingSettings["visual"]; resolution?: RacingSettings["resolution"];
   perceiver: Perceiver | null;
   controller: SpikingNetwork;
   domain?: Domain;
@@ -51,6 +54,7 @@ export type DriverFrame = {
 
 export class VisionDriver {
   readonly options: DriverOptions;
+  readonly ensemble: VisionEnsemble | null;
   readonly domain: Domain;
   fusion: FusionConfig;
   mode: DriverMode;
@@ -70,6 +74,7 @@ export class VisionDriver {
   constructor(options: DriverOptions) {
     if(options.sensorOnly&&(!options.perceiver||options.mode==='action-average'))throw new Error('Sensor-only driving requires a camera and forbids privileged action averaging.');
     this.options = options;
+    this.ensemble = options.perceiver && options.visual ? new VisionEnsemble(options.perceiver, options.visual, options.resolution ?? "native") : null;
     this.domain = options.domain ?? trackDomain;
     const n = this.domain.estimateCount;
     const scratch = () => ({ mean: new Float32Array(n), variance: new Float32Array(n) });
@@ -83,6 +88,7 @@ export class VisionDriver {
   /** Begin a new drive. The lap memory, if any, is kept: that is the point of it. */
   reset(): void {
     this.options.controller.reset(); this.options.feelingController?.reset(); this.options.perceiver?.reset();
+    this.ensemble?.reset();
     this.perception = null; this.memoryCue = null; this.lastGates = 0; this.sinceGate = 0; this.started = false;
     this.options.memory?.beginLap();
   }
@@ -100,7 +106,7 @@ export class VisionDriver {
     if (this.options.blind) { this.fused.mean.fill(0); this.fused.variance.fill(1); }
     else if (perceiver && (!this.started || episode.tick % VISION_STRIDE === 0)) {
       this.started = true; seen = true;
-      this.perception = perceiver.see(episode.render(), this.options.sonarOff && body.sonarCloseness !== undefined ? { ...body, sonarCloseness: 0, sonarStrength: 0 } : body);
+      this.perception = (this.ensemble ?? perceiver).see(episode.render(), this.options.sonarOff && body.sonarCloseness !== undefined ? { ...body, sonarCloseness: 0, sonarStrength: 0 } : body);
       const cues: (Cue | null)[] = [visionCue(this.perception.mean, this.perception.variance, this.fusion, this.visionScratch), this.mode === "belief"&&!this.options.sensorOnly&&this.fusion.fade>0 ? privilegedCue(episode.truth(), this.fusion, this.feelingScratch) : null];
       if (memory && lap) {
         fuseCues(cues, this.provisional);

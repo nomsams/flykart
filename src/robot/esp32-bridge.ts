@@ -1,10 +1,14 @@
+import { validateVibration } from "./vibration";
 import { RobotConfig, Wiring, wiringIssues } from "./model";
-export const bridgeConfigId=(w:Wiring,c:RobotConfig)=>`ESP32CAM:v1:${[w.in1,w.in2,w.in3,w.in4,w.ena,w.enb,w.trig,w.echo].join(",")}:${+c.cameraEnabled}:${+c.sonarEnabled}`;
+export const bridgeConfigId=(w:Wiring,c:RobotConfig)=>`ESP32CAM:v1:${[w.in1,w.in2,w.in3,w.in4,w.ena,w.enb,w.trig,w.echo].join(",")}:${+c.cameraEnabled}:${+c.sonarEnabled}${c.vibration?.enabled?`:SW420:${w.vibration??-1}:${+c.vibration.activeLow}:${c.vibration.debounceMs}:${c.vibration.holdMs}`:""}`;
 
 export function bridgeSketch(w: Wiring, c: RobotConfig): string {
   if (w.board !== "esp32-cam") throw new Error("The USB bridge targets the AI-Thinker ESP32-CAM.");
+  const v=validateVibration(c.vibration), pin=w.vibration??-1;
   const errors = wiringIssues(w).errors;
-  if ([w.in1,w.in2,w.in3,w.in4,w.ena,w.enb,w.trig,w.echo].some(p=>p===1||p===3)) errors.push("GPIO1/3 must remain free for the USB serial UART.");
+  if(v.enabled&&pin<0)errors.push("Connect SW-420 DO to an available input before hardware export.");
+  if(v.enabled&&pin===33&&!v.gpio33Access)errors.push("GPIO33 requires explicit confirmation of the modified LED solder pad and isolated LED.");
+  if ([w.in1,w.in2,w.in3,w.in4,w.ena,w.enb,w.trig,w.echo,w.vibration??-1].some(p=>p===1||p===3)) errors.push("GPIO1/3 must remain free for the USB serial UART.");
   if (errors.length) throw new Error(errors.join(" "));
   return `// FlyKart AI-Thinker ESP32-CAM / L298N USB bridge
 // Arduino-ESP32 3.x. Compile for AI Thinker ESP32-CAM with PSRAM enabled.
@@ -18,6 +22,17 @@ export function bridgeSketch(w: Wiring, c: RobotConfig): string {
 
 const int IN1=${w.in1}, IN2=${w.in2}, IN3=${w.in3}, IN4=${w.in4};
 const int ENA=${w.ena}, ENB=${w.enb}, TRIG=${w.trig}, ECHO=${w.echo};
+const int VIBRATION=${v.enabled?pin:-1};
+const bool VIB_ACTIVE_LOW=${v.activeLow?"true":"false"};
+volatile uint32_t vibrationAt=0, vibrationCount=0;
+void IRAM_ATTR vibrationEdge() {
+  int level=digitalRead(VIBRATION);uint32_t now=micros();
+  if((VIB_ACTIVE_LOW?level==LOW:level==HIGH) && (vibrationCount==0 || uint32_t(now-vibrationAt)>=${Math.round(v.debounceMs*1000)}U)) {vibrationAt=now;vibrationCount++;}
+}
+bool vibrationActive() {return VIBRATION>=0 && vibrationCount>0 && uint32_t(micros()-vibrationAt)<${Math.round(v.holdMs*1000)}U;}
+bool vibrationValid() {return VIBRATION>=0;}
+uint32_t vibrationSent=0;
+void emitVibration() {if(VIBRATION>=0){uint32_t count=vibrationCount;Serial.printf("VIB %lu %d %lu %d\\n",millis(),digitalRead(VIBRATION),count,(vibrationActive()||count!=vibrationSent)?1:0);vibrationSent=count;}}
 const char BRIDGE_CONFIG[]="${bridgeConfigId(w,c)}";
 volatile bool armed=false; bool cameraOK=false, emitting=false;
 volatile int demandL=0, demandR=0; volatile uint32_t commandAt=0;
@@ -55,6 +70,7 @@ void sampleSonar() {
 void emitFrame() {
   camera_fb_t *fb=cameraOK ? esp_camera_fb_get() : nullptr;
   if(fb && (fb->format!=PIXFORMAT_RGB565 || fb->width!=160 || fb->height!=120 || fb->len!=38400)) { esp_camera_fb_return(fb); fb=nullptr; Serial.println("LOG unexpected camera format"); }
+  emitVibration();
   Serial.printf("CONFIG %s\\n",BRIDGE_CONFIG); emitting=true;
   Serial.printf("FRAME %lu %.2f %d %d %d %d %d %d ",++frameId,sonarCm,armed?1:0,demandL,demandR,fb?160:0,fb?120:0,fb?int(fb->len):0);
   if(fb) {
@@ -75,6 +91,7 @@ void setup() {
   Serial.begin(460800); Serial.setTimeout(30); command.reserve(64);
   for(int p : {IN1,IN2,IN3,IN4,ENA,ENB}) if(p>=0) pinMode(p,OUTPUT);
   pinMode(TRIG,OUTPUT); pinMode(ECHO,INPUT);
+  if(VIBRATION>=0){pinMode(VIBRATION,INPUT);attachInterrupt(digitalPinToInterrupt(VIBRATION),vibrationEdge,CHANGE);}
   for(int p : {IN1,IN2,IN3,IN4,ENA,ENB}) if(p>=0) digitalWrite(p,LOW);
   // Camera XCLK owns LEDC timer 0 / channel 0. Motor PWM is allocated elsewhere.
   if(ENA<0) { ledcAttachChannel(IN1,1000,8,2); ledcAttachChannel(IN2,1000,8,3); }

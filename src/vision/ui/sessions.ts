@@ -9,6 +9,7 @@ import { DriverMode, VisionDriver } from "../pipeline";
 import { WORLD_CAMERA, WorldEpisode, worldExpert } from "../world/worldDomain";
 import { SECTORS } from "../world/world";
 import type { SonarSample, TraceSample } from "./draw";
+import type { RacingSettings } from "../racing-settings";
 import { CM_PER_PIXEL, SensorProfile } from "../robot";
 
 export type TrackSettings = {
@@ -17,6 +18,8 @@ export type TrackSettings = {
   seed: number;
   /** Sensor head. Omitted means the camera-only kart. */
   profile?: SensorProfile; sonarOn?: boolean;
+  lapTarget?: number; impactPain?: boolean; maxTicks?: number; sensorOnly?: boolean; visual?: RacingSettings["visual"]; resolution?: RacingSettings["resolution"];
+  cameraNoise?:number; cameraBrightness?:number;
 };
 
 const FAR = ESTIMATE_NAMES.indexOf("curveFar");
@@ -34,15 +37,17 @@ export class TrackSession {
   readonly trace: TraceSample[] = [];
   readonly sonarTrace: SonarSample[] = [];
   lastTruth: number[] = new Array(13).fill(0);
+  private sonarCount = 0;
   private cameraErrorSum = 0; private usedErrorSum = 0; private errorCount = 0;
 
   constructor(readonly settings: TrackSettings) {
     this.route = TRACKS.find((track) => track.id === settings.trackId) ?? TRACKS[0];
     this.controller = SpikingNetwork.fromJSON(settings.controller);
     this.perceiver = settings.vision ? new Perceiver(settings.vision) : null;
-    this.episode = new TrackEpisode({ track: this.route, rivals: settings.rivals, roadObjects: settings.objects, objectKind: "mixed", seed: settings.seed, styleStrength: settings.style, walls: settings.walls, maxTicks: 7000, headless: false, profile: settings.profile });
+    this.episode = new TrackEpisode({ track: this.route, rivals: settings.rivals, roadObjects: settings.objects, objectKind: "mixed", seed: settings.seed, styleStrength: settings.style, cameraNoise:settings.cameraNoise,cameraBrightness:settings.cameraBrightness,walls: settings.walls, maxTicks: settings.maxTicks ?? 7000, lapTarget:settings.lapTarget, impactPain:settings.impactPain, headless: false, profile: settings.profile });
     this.episode.car.network = this.controller;
     this.driver = new VisionDriver({
+      sensorOnly:settings.sensorOnly, visual:settings.visual, resolution:settings.resolution,
       perceiver: this.perceiver, controller: this.controller, domain: trackDomain, mode: settings.mode, fusion: { fade: settings.fade },
       memory: this.perceiver ? settings.memory : null, feelingController: this.controller.clone(), sonarOff: settings.sonarOn === false,
     });
@@ -54,6 +59,7 @@ export class TrackSession {
   get done(): boolean { return this.episode.done; }
 
   step(): void {
+    const previousLaps=this.episode.car.laps;
     const frame = this.driver.act(this.episode);
     if (frame.seen && frame.perception) {
       const truth = this.episode.truth(this.lastTruth);
@@ -64,8 +70,9 @@ export class TrackSession {
       this.errorCount += GEOMETRY.length;
     }
     this.episode.step(frame.action);
+    if(this.episode.car.laps>previousLaps&&!this.episode.done)this.settings.memory?.beginLap();
     const reading = this.episode.sonar();
-    if (reading) { this.sonarTrace.push({ cm: reading.range * CM_PER_PIXEL, echo: reading.echo, strength: reading.strength }); if (this.sonarTrace.length > 240) this.sonarTrace.shift(); }
+    if (reading && this.episode.sonarUnit!.count !== this.sonarCount) { this.sonarCount=this.episode.sonarUnit!.count; this.sonarTrace.push({ cm: reading.range * CM_PER_PIXEL, echo: reading.echo, strength: reading.strength }); if (this.sonarTrace.length > 240) this.sonarTrace.shift(); }
   }
 
   lap(lapNumber: number): LapRecord {
@@ -79,7 +86,7 @@ export class TrackSession {
 }
 
 export type WorldDriverKind = "vision" | "both" | "feeling" | "expert" | "blind";
-export type WorldSettings = { seed: number; density: number; style: number; kind: WorldDriverKind; fade: number; controller: BrainSnapshot; vision: VisionModel | null; profile?: SensorProfile; sonarOn?: boolean };
+export type WorldSettings = { seed: number; density: number; style: number; kind: WorldDriverKind; fade: number; controller: BrainSnapshot; vision: VisionModel | null; profile?: SensorProfile; sonarOn?: boolean; visual?:RacingSettings["visual"]; resolution?:RacingSettings["resolution"] };
 
 export class WorldSession {
   readonly episode: WorldEpisode;
@@ -94,7 +101,7 @@ export class WorldSession {
     const needsEyes = settings.kind === "vision" || settings.kind === "both";
     const perceiver = needsEyes && settings.vision ? new Perceiver(settings.vision) : null;
     this.driver = settings.kind === "expert" ? null : new VisionDriver({
-      perceiver, controller: this.controller, domain: worldDomain, blind: settings.kind === "blind", mode: "belief", sonarOff: settings.sonarOn === false,
+      perceiver, visual:settings.visual, resolution:settings.resolution, controller: this.controller, domain: worldDomain, blind: settings.kind === "blind", mode: "belief", sonarOff: settings.sonarOn === false,
       fusion: { fade: settings.kind === "both" ? settings.fade : 0 },
     });
     this.driver?.reset();

@@ -1,4 +1,4 @@
-export type EventKind = "system" | "sonar" | "camera" | "brain" | "serial" | "check" | "training" | "reward";
+export type EventKind = "system" | "vibration" | "sonar" | "camera" | "brain" | "serial" | "check" | "training" | "reward";
 export type TelemetryEvent = { time: number; kind: EventKind; message: string; data?: unknown };
 export class SensorConsole {
   readonly events: TelemetryEvent[] = [];

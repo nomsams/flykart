@@ -86,9 +86,10 @@ export function ping(spec: SonarSpec, pose: SonarPose, targets: readonly SonarTa
   const near = targets.filter((t) => Math.hypot(t.x - ox, t.y - oy) < maxPx + (t.kind === "circle" ? t.radius : Math.hypot(t.halfLength, t.halfWidth)));
   const bins = new Float32Array(Math.ceil(maxPx / BIN) + 2); const weighted = new Float32Array(bins.length);
   const norm = sigma * Math.sqrt(Math.PI / 2);
-  for (let degrees = -SPAN; degrees <= SPAN; degrees += 2) {
+  const span=Math.min(60,Math.max(SPAN,spec.lobeSigmaDeg*2.5));
+  for (let degrees = -span; degrees <= span; degrees += 2) {
     const azimuth = degrees * (Math.PI / 180);
-    const dx = Math.cos(pose.heading + azimuth), dy = Math.sin(pose.heading + azimuth);
+    const dx = Math.cos(pose.heading + (spec.yawDeg ?? 0) * Math.PI / 180 + azimuth), dy = Math.sin(pose.heading + (spec.yawDeg ?? 0) * Math.PI / 180 + azimuth);
     let best: Hit | null = null;
     for (const target of near) {
       const hit = target.kind === "circle" ? rayCircle(ox, oy, dx, dy, target) : rayBox(ox, oy, dx, dy, target);
@@ -98,7 +99,8 @@ export function ping(spec: SonarSpec, pose: SonarPose, targets: readonly SonarTa
     const r = best.distance;
     // How much of the beam's vertical lobe the target fills at this range.
     const a = Math.sqrt(2) / sigma;
-    const low = Math.atan2(best.z0 - spec.mountHeight, r), high = Math.atan2(best.z1 - spec.mountHeight, r);
+    const pitch = (spec.pitchDeg ?? 0) * Math.PI / 180;
+    const low = Math.atan2(best.z0 - spec.mountHeight, r) + pitch, high = Math.atan2(best.z1 - spec.mountHeight, r) + pitch;
     const vertical = 0.5 * (erf(a * high) - erf(a * low));
     if (vertical <= 0) continue;
     const horizontal = (Math.exp(-2 * (azimuth / sigma) ** 2) * SLICE) / norm;
@@ -121,7 +123,7 @@ export function ping(spec: SonarSpec, pose: SonarPose, targets: readonly SonarTa
     }
   }
   if (reading.echo) {
-    const cm = reading.range * CM_PER_PIXEL * soundScale;
+    const cm = reading.range * CM_PER_PIXEL * soundScale * (spec.rangeScale ?? 1) + (spec.rangeOffsetCm ?? 0);
     const noisy = cm + gaussian(random) * (spec.noiseBaseCm + spec.noiseProportional * cm);
     const quantised = Math.round(noisy / spec.resolutionCm) * spec.resolutionCm;
     reading.range = clamp(quantised / CM_PER_PIXEL, minPx, maxPx);
@@ -135,6 +137,7 @@ export class Sonar {
   reading: SonarReading;
   private readonly soundScale: number;
   private pings = 0;
+  lastTick = -1;
   constructor(readonly spec: SonarSpec, private readonly random: Random) {
     this.soundScale = 1 + gaussian(random) * spec.soundScaleSigma;
     this.reading = { range: spec.maxRangeCm / CM_PER_PIXEL, echo: false, strength: 0 };
@@ -142,7 +145,8 @@ export class Sonar {
   get count(): number { return this.pings; }
   /** Call once per tick; returns true when a fresh reading was taken. */
   update(tick: number, pose: SonarPose, targets: readonly SonarTarget[]): boolean {
-    if (tick % this.spec.cycleTicks !== 0) return false;
+    if (tick === this.lastTick || tick % this.spec.cycleTicks !== 0) return false;
+    this.lastTick = tick;
     this.reading = ping(this.spec, pose, targets, this.random, this.soundScale); this.pings += 1;
     return true;
   }

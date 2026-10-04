@@ -161,7 +161,10 @@
             <p id="track-info" class="track-info">Grand loop · loading route diagnostics</p>
             <p class="reward-field-note"><span class="reward-positive">Green</span> shows centerline/direction reward; <span class="reward-negative">red</span> shows edge pressure at the road boundary. The field is clipped to the asphalt and is visual guidance only—the simulator applies penalties once from each car’s nearest road segment.</p>
             <p id="track-provenance" class="track-provenance">Route provenance · loading</p>
-            <label class="check-row"><input id="walls-toggle" type="checkbox" checked /> <span>Track walls <small>recovery clamp (turn off for open track)</small></span></label>
+            <label class="check-row"><input id="multi-lap" type="checkbox" /> <span>Multi-lap survival <small>Keep driving without respawning. Applies to tests and evolution.</small></span></label>
+            <label>Laps per episode <select id="lap-target"><option>2</option><option selected>3</option><option>5</option></select></label>
+            <label class="check-row"><input id="impact-pain" type="checkbox" /> <span>Speed-sensitive collision pain <small>Relative closing speed determines collision cost. Rewards teach; the brain does not read them.</small></span></label>
+            <label class="check-row"><input id="walls-toggle" type="checkbox" checked /> <span>Road-side walls <small>on: guide cars back onto the road; off: leaving the road is for real</small></span></label>
             <label>Physics randomization (%) <input id="domain-randomization" type="number" min="0" max="35" step="1" value="0" /></label>
             <label class="check-row"><input id="adaptive-time-toggle" type="checkbox" checked /> <span>Adaptive time limit <small>adds one base time window per viable extension</small></span></label>
             <label>Max adaptive extensions <input id="adaptive-extensions" type="number" min="0" max="6" value="2" /></label>

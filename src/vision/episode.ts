@@ -34,6 +34,8 @@ export type TrackEpisodeOptions = {
   rewardConfig?: RewardConfig;
   /** Road-side walls (the simulator default). Without them, a kart that leaves the road really is lost, which is a much stricter test of perception. */
   walls?: boolean;
+  lapTarget?: number; impactPain?: boolean;
+  cameraNoise?:number; cameraBrightness?:number;
 };
 
 export type Placement = { distance: number; lateral?: number; headingOffset?: number; speed?: number };
@@ -85,12 +87,14 @@ export class TrackEpisode implements VisionEpisode {
     this.random = mulberry32(seed * 7919 + 13);
     this.camera = options.profile?.camera ?? options.camera ?? DEFAULT_CAMERA;
     this.style = options.style ? options.style : (options.styleStrength ?? 0) > 0 ? randomStyle(this.random, options.styleStrength ?? 0) : { ...DEFAULT_STYLE };
+    if(options.cameraNoise!==undefined)this.style.noise=clamp(this.style.noise+options.cameraNoise,0,.2);
+    if(options.cameraBrightness!==undefined)this.style.brightness*=clamp(options.cameraBrightness,.1,2);
     this.scene = options.headless ? null : new TrackScene(this.route, this.style, 8, options.profile?.gantry);
     this.frame = new Float32Array(options.headless ? 0 : frameLength(this.camera));
     this.rewardConfig = options.rewardConfig ?? DEFAULT_REWARD_CONFIG;
-    this.physics = physicsForEpisode({ ...DEFAULT_PHYSICS_CONFIG, adaptiveTimeLimit: false, wallsEnabled: options.walls ?? true, domainRandomization: options.physicsVariation ?? 0 }, seed, this.route);
+    this.physics = physicsForEpisode({ ...DEFAULT_PHYSICS_CONFIG, adaptiveTimeLimit: false, wallsEnabled: options.walls ?? true, lapTarget: options.lapTarget, impactPain: options.impactPain, domainRandomization: options.physicsVariation ?? 0 }, seed, this.route);
     this.car = startPosition(0, this.route);
-    this.car.timeLimit = options.maxTicks ?? 4500;
+    this.car.timeLimit = (options.maxTicks ?? 4500) * Math.max(1, Math.min(5, Math.floor(options.lapTarget ?? 1)));
     this.car.name = "vision kart"; this.car.color = "#ffd166";
     const line = startLine(this.route);
     const count = Math.max(0, Math.min(2, Math.floor(options.rivals ?? 0)));
@@ -130,6 +134,7 @@ export class TrackEpisode implements VisionEpisode {
 
   /** Take a reading now, whatever the ping cycle says (after objects have been moved by hand). */
   refreshSonar(): void {
+    if(this.sonarUnit)this.sonarUnit.lastTick=-1;
     if (this.sonarUnit) this.sonarUnit.update(0, { x: this.car.position.x, y: this.car.position.y, heading: this.car.heading }, this.sonarTargets());
   }
 

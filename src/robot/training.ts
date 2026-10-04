@@ -1,9 +1,11 @@
 import { Action, BrainSnapshot, SpikingNetwork } from "../core";
 import type { Pose } from "./model";
 import { TaskBrain, TaskSnapshot } from './task-brain';
+import type { TaskRecipe } from './sensor-contract';
+import type { TargetTrack } from './target-tracker';
 
 export type TrainingOptions = { evolve: boolean; seconds: number; episodes: number; population: number; generations: number; seed: number; rate: number; amount: number; task?:boolean; visualTask?:TaskSnapshot };
-export type EpisodeStep = { time: number; inputs: number[]; action: Action; pwm: number[]; cameraFrame: number; sonar: { cm: number | null; echo: boolean }; evaluation: { pose: Pose; blocked: boolean; contact: string | null; surface: string | null; taskReward?:number; success?:boolean }; diagnostics?: { estimated:Pose; odometry:Pose; covariance:number[]; cells:number[]; activeCount:number; estimates:number[]; votes:Action[]; requests:number[]; compactInput:number[]; rewards:string[]; taskInput?:number[]; taskSource?:'neural'|'coach'; taskSuccess?:boolean } };
+export type EpisodeStep = { time: number; inputs: number[]; action: Action; pwm: number[]; cameraFrame: number; sonar: { cm: number | null; echo: boolean }; evaluation: { pose: Pose; blocked: boolean; contact: string | null; surface: string | null; taskReward?:number; success?:boolean }; diagnostics?: { vibration?:{level:0|1;active:boolean;valid:boolean;count:number};estimated:Pose; odometry:Pose; covariance:number[]; cells:number[]; activeCount:number; estimates:number[]; votes:Action[]; requests:number[]; compactInput:number[]; rewards:string[]; taskInput?:number[]; taskSource?:'neural'|'coach'; taskSuccess?:boolean;taskRecipe?:TaskRecipe;targetTrack?:TargetTrack;cameraAge?:number } };
 export type EpisodeSummary = { generation: number; candidate: number; episode: number; score: number; seconds: number; distance: number; cells: number; contacts: number; blockedSeconds: number; cableSeconds: number; taskReward:number };
 export type EpisodeDataset = { group?:string; summary: EpisodeSummary; steps: EpisodeStep[]; frames: { id: number; width: number; height: number; encoding: "planar-rgb8-base64"; pixels: string; rawPixels?:string; dropped: boolean }[]; omittedFrames: number };
 
