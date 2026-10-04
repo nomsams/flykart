@@ -7,7 +7,7 @@ import { CHECK_PERIOD, DEFAULT_ADAPTER, DrivetrainCheck, motorRequests, PROGRAMS
 import { DEFAULT_NOISE, NoiseSource, validateNoise } from "./noise";
 import { highlightedCode } from "./editor";
 import { SensorConsole } from "./telemetry";
-import { CAMERA_PINS, wiringConnections } from "./wiring-diagram";
+import { CAMERA_PINS, connectionSupport, wiringConnections } from "./wiring-diagram";
 
 const host = (timeMs: number, left = 128, right = 128, echoUs = 5800) => ({ timeMs, brainLeft: left, brainRight: right, echoUs, wiring: ESP_WIRING });
 const runSketch = (f: Firmware, left = 128, right = 128, echo = 5800, end = 1000) => { for (let time = 0; time <= end; time += 1000 / 30) f.tick(host(time, left, right, echo)); };
@@ -100,6 +100,19 @@ describe("controller workbench", () => {
 });
 
 describe("component wiring diagram", () => {
+  it("separates executable connections from assumed supplies and unspecified hardware", () => {
+    const nets = wiringConnections(ESP_WIRING, { ...DEFAULT_ROBOT, vibration: { ...DEFAULT_ROBOT.vibration!, enabled: true } });
+    const support = (id: string) => connectionSupport(nets.find(n => n.id === id)!, ESP_WIRING);
+    expect(support('in1')).toContain('SIMULATION + FIRMWARE');
+    expect(support('ena')).toContain('DRIVER JUMPER');
+    expect(support('logic')).toContain('WIRING REFERENCE');
+    expect(support('supply')).toContain('PHYSICS SETTING');
+    expect(support('uart')).toContain('HARDWARE INTERFACE');
+    expect(support('vibration')).toContain('VIRTUAL ONLY');
+    const uno = { ...ESP_WIRING, board: 'uno' as const, echoDivider: false };
+    const camera = wiringConnections(uno, DEFAULT_ROBOT).find(n => n.id === 'camera')!;
+    expect(connectionSupport(camera, uno)).toContain('UNSPECIFIED HARDWARE');
+  });
   it("uses configured GPIOs and distinguishes enable jumpers from wires", () => {
     const nets = wiringConnections(ESP_WIRING, DEFAULT_ROBOT);
     expect(nets.find(n => n.id === "in1")!.from).toContain("GPIO 12");
