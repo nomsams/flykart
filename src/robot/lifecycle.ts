@@ -1,15 +1,29 @@
 import { BrainSnapshot, SpikingNetwork, clamp } from '../core';
 import { mulberry32 } from '../vision/rng';
-import { Pose, makeObject, preset, WorldObject } from './model';
+import { Pose, makeObject, preset, WorldObject, DEFAULT_ROBOT, RobotConfig, ROOM_TYPES, solidsFor } from './model';
+import { contactParts, polygonsOverlap } from './contacts';
+import { placementError } from './placement';
 import { BLUE_TARGET, ColourTarget, DEFAULT_MODULES, SensorModules, TaskBrain, TaskSnapshot, validateModules, validateTarget } from './task-brain';
 export type TaskSettings={mode:'off'|'approach'|'follow';modules:SensorModules;target:ColourTarget;inheritance:number;sugar:number;pain:number;shaping:number;fade:number;hold:number;speed:number};
 export const DEFAULT_TASK:TaskSettings={mode:'off',modules:{...DEFAULT_MODULES},target:{...BLUE_TARGET},inheritance:.15,sugar:10,pain:1,shaping:1,fade:.8,hold:5,speed:.06};
-export type TaskEvidence={seed:number;heldOut:boolean;success:boolean;seconds:number;contacts:number;score:number;source:'neural'|'coach';shaping:number};
+export type TaskEvidence={seed:number;heldOut:boolean;success:boolean;seconds:number;contacts:number;score:number;source:'neural'|'coach';shaping:number;room?:string;settings?:TaskSettings};
 export type LifecycleSnapshot={format:'robot-lifecycle';version:1;settings:TaskSettings;brain:TaskSnapshot;lineage:{event:string;time:string;generation:number}[];evidence:TaskEvidence[];parent?:{domain:'track'|'world';brain:BrainSnapshot}};
 export function validateTaskSettings(raw:unknown):TaskSettings {const s=raw as TaskSettings;if(!s||!['off','approach','follow'].includes(s.mode)||![s.inheritance,s.sugar,s.pain,s.shaping,s.fade,s.hold,s.speed].every(Number.isFinite)||s.inheritance<0||s.inheritance>1||s.sugar<0||s.sugar>100||s.pain<0||s.pain>10||s.shaping<0||s.shaping>5||s.fade<0||s.fade>1||s.hold<1||s.hold>20||s.speed<0||s.speed>.2)throw new Error('Invalid task training settings.');return {...s,modules:validateModules(s.modules),target:validateTarget(s.target)};}
-export function validateLifecycle(raw:unknown):LifecycleSnapshot {const s=raw as LifecycleSnapshot;if(!s||s.format!=='robot-lifecycle'||s.version!==1||!Array.isArray(s.lineage)||s.lineage.length>100||s.lineage.some(l=>typeof l.event!=='string'||l.event.length>300||typeof l.time!=='string'||l.time.length>100||!Number.isInteger(l.generation)||l.generation<0)||!Array.isArray(s.evidence)||s.evidence.length>100||s.evidence.some(e=>!Number.isInteger(e.seed)||e.seed<0||typeof e.heldOut!=='boolean'||typeof e.success!=='boolean'||!['neural','coach'].includes(e.source)||![e.seconds,e.contacts,e.score,e.shaping].every(Number.isFinite)||e.seconds<0||e.contacts<0||e.shaping<0))throw new Error('Invalid training lifecycle.');if(s.parent&&!['track','world'].includes(s.parent.domain))throw new Error('Invalid parent domain.');const parent=s.parent?{domain:s.parent.domain,brain:SpikingNetwork.fromJSON(s.parent.brain).toJSON()}:undefined;return {format:'robot-lifecycle',version:1,settings:validateTaskSettings(s.settings),brain:TaskBrain.fromJSON(s.brain).toJSON(),lineage:structuredClone(s.lineage),evidence:structuredClone(s.evidence),...(parent?{parent}:{})};}
+export function validateLifecycle(raw:unknown):LifecycleSnapshot {const s=raw as LifecycleSnapshot;if(!s||s.format!=='robot-lifecycle'||s.version!==1||!Array.isArray(s.lineage)||s.lineage.length>100||s.lineage.some(l=>typeof l.event!=='string'||l.event.length>300||typeof l.time!=='string'||l.time.length>100||!Number.isInteger(l.generation)||l.generation<0)||!Array.isArray(s.evidence)||s.evidence.length>100||s.evidence.some(e=>!Number.isInteger(e.seed)||e.seed<0||typeof e.heldOut!=='boolean'||typeof e.success!=='boolean'||!['neural','coach'].includes(e.source)||![e.seconds,e.contacts,e.score,e.shaping].every(Number.isFinite)||e.seconds<0||e.contacts<0||e.shaping<0))throw new Error('Invalid training lifecycle.');for(const e of s.evidence){if(e.room!==undefined&&!ROOM_TYPES.some(r=>r.id===e.room))throw new Error('Invalid evidence room.');if(e.settings!==undefined){const settings=validateTaskSettings(e.settings);if(settings.shaping!==e.shaping||settings.mode==='off')throw new Error('Invalid evidence task settings.');}}if(s.parent&&!['track','world'].includes(s.parent.domain))throw new Error('Invalid parent domain.');const parent=s.parent?{domain:s.parent.domain,brain:SpikingNetwork.fromJSON(s.parent.brain).toJSON()}:undefined;return {format:'robot-lifecycle',version:1,settings:validateTaskSettings(s.settings),brain:TaskBrain.fromJSON(s.brain).toJSON(),lineage:structuredClone(s.lineage),evidence:structuredClone(s.evidence),...(parent?{parent}:{})};}
 export type TaskCase={objects:WorldObject[];pose:Pose;ball:WorldObject;seed:number;heldOut:boolean};
-export function taskCase(seed:number,heldOut:boolean,settings:TaskSettings,room='empty'):TaskCase {const r=mulberry32(seed),pose={x:-1.3,z:0,heading:(r()-.5)*.2},ball={...makeObject('ball',-.4+r()*.45,(r()-.5)*(heldOut?1.2:.7)),id:'task-blue-ball',width:settings.target.diameter,depth:settings.target.diameter,height:settings.target.diameter},objects=preset(room);return {objects:[...objects,ball],pose,ball,seed,heldOut};}
+export function taskCase(seed:number,heldOut:boolean,settings:TaskSettings,room='empty',config:RobotConfig=DEFAULT_ROBOT):TaskCase {
+  if(!Number.isInteger(seed)||seed<0||seed>2000000||!ROOM_TYPES.some(r=>r.id===room))throw new Error('Invalid task seed or room.');
+  const target=validateTaskSettings(settings).target,r=mulberry32(seed),pose={x:-1.3,z:0,heading:(r()-.5)*.2},ball={...makeObject('ball'),id:'task-blue-ball',width:target.diameter,depth:target.diameter,height:target.diameter},objects=preset(room);
+  const spawnError=placementError(pose,config,objects);if(spawnError)throw new Error(spawnError);
+  const solids=objects.flatMap(o=>contactParts(o,solidsFor(o),ball.height));
+  // Reject intersecting geometry, while allowing targets beneath clear tabletops.
+  for(let attempt=0;attempt<100;attempt++){
+    ball.x=-.4+r()*.45;ball.z=(r()-.5)*(heldOut?1.2:.7);
+    const footprint=contactParts(ball,solidsFor(ball),ball.height)[0].polygon;
+    if(!solids.some(p=>polygonsOverlap(footprint,p.polygon))&&!placementError(pose,config,[ball]))return {objects:[...objects,ball],pose,ball,seed,heldOut};
+  }
+  throw new Error('Could not place the target in free space for this room.');
+}
 export function movingTarget(origin:WorldObject,seconds:number,speed:number):{x:number;z:number} {return {x:origin.x+Math.sin(seconds*speed*1.5)*.25,z:origin.z+Math.sin(seconds*speed*3)*.35};}
 /** External training/evaluation judge. It has no reference to a controller or its observations. */
 export class TaskJudge {

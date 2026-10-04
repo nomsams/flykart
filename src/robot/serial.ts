@@ -24,7 +24,7 @@ export async function copyText(text: string): Promise<void> {
 
 export class RobotSerial {
   private device: SerialDevice | null = null; private reader: ReadableStreamDefaultReader<Uint8Array> | null = null; private readerTask: Promise<void> | null = null;
-  private queue: Promise<void> = Promise.resolve(); private buffer="";
+  private queue: Promise<void> = Promise.resolve(); private buffer=""; private controlEpoch=0;
   constructor(private log: (text:string)=>void, private frame: (frame:BridgeFrame)=>void, private closed: ()=>void) {}
   get connected(): boolean { return this.device!==null; }
   async connect(baudRate: number): Promise<void> {
@@ -35,8 +35,11 @@ export class RobotSerial {
   }
   send(line: string): Promise<void> {
     if(line.length>64 || /[\r\n]/.test(line)) return Promise.reject(new Error("Serial command must be a single short line."));
+    // STOP invalidates actuator commands waiting behind a slow UART write.
+    if(line==='STOP')this.controlEpoch++;
+    const epoch=this.controlEpoch,actuator=/^(?:ARM|AUTO(?: |$)|M(?: |$))/.test(line);
     const port=this.device;
-    const operation=this.queue.then(async()=>{ if(!port?.writable || port!==this.device) throw new Error("Serial port disconnected."); const writer=port.writable.getWriter(); try { await writer.write(new TextEncoder().encode(line+"\n")); } finally { writer.releaseLock(); } });
+    const operation=this.queue.then(async()=>{ if(actuator&&epoch!==this.controlEpoch)return;if(!port?.writable || port!==this.device) throw new Error("Serial port disconnected."); const writer=port.writable.getWriter(); try { await writer.write(new TextEncoder().encode(line+"\n")); } finally { writer.releaseLock(); } });
     this.queue=operation.catch(()=>{}); return operation;
   }
   private async read(): Promise<void> {

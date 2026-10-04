@@ -29,15 +29,24 @@ export class TaskBrain {
   weights:number[];updates=0;origin='Untrained visual task network';
   constructor(seed=2048){const r=mulberry32(seed);this.weights=Array.from({length:COUNT},()=> (r()-.5)*.12);}
   private forward(input:number[]):{hidden:number[];output:number[]} {if(input.length!==N||input.some(v=>!Number.isFinite(v)))throw new Error('Invalid modular observation.');const hidden=Array.from({length:H},(_,j)=>Math.tanh(this.weights[j*(N+1)+N]+input.reduce((s,v,k)=>s+v*this.weights[j*(N+1)+k],0))),offset=H*(N+1),output=[0,1].map(o=>Math.tanh(this.weights[offset+o*(H+1)+H]+hidden.reduce((s,v,j)=>s+v*this.weights[offset+o*(H+1)+j],0)));return {hidden,output};}
-  action(input:number[],base:Action,inheritance:number):Action {const {output:[steer,drive]}=this.forward(input),a=clamp(inheritance,0,1),motor=drive*(1-a)+(base.throttle-(base.reverse??0)) *a;return {steer:clamp(steer*(1-a)+base.steer*a,-1,1),throttle:Math.max(0,motor),reverse:Math.max(0,-motor),brake:0};}
-  learn(input:number[],target:Action,rate=.015):number {const {hidden,output}=this.forward(input),desired=[target.steer,target.throttle-(target.reverse??0)],delta=output.map((v,k)=>(v-desired[k])*(1-v*v)),offset=H*(N+1),back=hidden.map((v,j)=>(1-v*v)*delta.reduce((s,d,k)=>s+d*this.weights[offset+k*(H+1)+j],0));for(let o=0;o<2;o++){for(let j=0;j<H;j++)this.weights[offset+o*(H+1)+j]-=rate*delta[o]*hidden[j];this.weights[offset+o*(H+1)+H]-=rate*delta[o];}for(let j=0;j<H;j++){for(let k=0;k<N;k++)this.weights[j*(N+1)+k]-=rate*back[j]*input[k];this.weights[j*(N+1)+N]-=rate*back[j];}this.weights=this.weights.map(v=>clamp(v,-4,4));this.updates++;return output.reduce((s,v,k)=>s+(v-desired[k])**2,0)/2;}
+  action(input:number[],base:Action,inheritance:number):Action {const {output:[steer,drive]}=this.forward(input),a=clamp(inheritance,0,1),motor=drive*(1-a)+(base.throttle-(base.reverse??0)) *a;return {steer:clamp(steer*(1-a)+base.steer*a,-1,1),throttle:Math.max(0,motor),reverse:Math.max(0,-motor),brake:clamp(base.brake,0,1)*a};}
+  learn(input:number[],target:Action,rate=.015):number {const {hidden,output}=this.forward(input),desired=[target.steer,(target.throttle-(target.reverse??0))*(1-clamp(target.brake,0,1))],delta=output.map((v,k)=>(v-desired[k])*(1-v*v)),offset=H*(N+1),back=hidden.map((v,j)=>(1-v*v)*delta.reduce((s,d,k)=>s+d*this.weights[offset+k*(H+1)+j],0));for(let o=0;o<2;o++){for(let j=0;j<H;j++)this.weights[offset+o*(H+1)+j]-=rate*delta[o]*hidden[j];this.weights[offset+o*(H+1)+H]-=rate*delta[o];}for(let j=0;j<H;j++){for(let k=0;k<N;k++)this.weights[j*(N+1)+k]-=rate*back[j]*input[k];this.weights[j*(N+1)+N]-=rate*back[j];}this.weights=this.weights.map(v=>clamp(v,-4,4));this.updates++;return output.reduce((s,v,k)=>s+(v-desired[k])**2,0)/2;}
   clone():TaskBrain{return TaskBrain.fromJSON(this.toJSON());}
   mutate(rate:number,amount:number,seed:number):TaskBrain{const c=this.clone(),r=mulberry32(seed);c.weights=c.weights.map(v=>r()<rate?clamp(v+(r()+r()+r()-1.5)*amount,-4,4):v);c.origin='Visual task offspring';return c;}
   toJSON():TaskSnapshot{return {format:'robot-visual-task',version:1,inputs:[...TASK_INPUT_NAMES],hidden:16,weights:[...this.weights],updates:this.updates,origin:this.origin};}
   static fromJSON(raw:unknown):TaskBrain {const s=raw as TaskSnapshot;if(!s||s.format!=='robot-visual-task'||s.version!==1||s.hidden!==H||JSON.stringify(s.inputs)!==JSON.stringify(TASK_INPUT_NAMES)||!Array.isArray(s.weights)||s.weights.length!==COUNT||s.weights.some(v=>!Number.isFinite(v)||Math.abs(v)>4)||!Number.isInteger(s.updates)||s.updates<0||typeof s.origin!=='string'||s.origin.length>200)throw new Error('Invalid visual task network/schema.');const c=new TaskBrain();c.weights=[...s.weights];c.updates=s.updates;c.origin=s.origin;return c;}
 }
 /** Visible teacher for demonstrations; explicitly excluded from neural-only validation. */
-export function visualCoach(input:number[],follow=false):Action {const close=input[24],valid=input[25],bearing=input[28],area=input[29];if(valid&&close>.91)return {steer:.65,throttle:0,reverse:.25,brake:0};if(!input[34])return {steer:0,throttle:0,brake:0};if(!area)return {steer:.6,throttle:.08,brake:0};return {steer:clamp(bearing*2,-.8,.8),throttle:follow?clamp((.18-area)*3,0,.4):clamp((.32-area)*2,.08,.4),reverse:follow?clamp((area-.23)*2,0,.2):0,brake:0};}
+export function visualCoach(input:number[],follow=false):Action {
+  const close=input[24],valid=input[25],bearing=input[28],area=input[29];
+  // A centred visible target needs a closer approach than an unknown obstacle.
+  // 20 cm from the front sonar would prevent reaching the default task radius.
+  const near=area>0&&Math.abs(bearing)<.35&&input[34] ? .98 : .91;
+  if(valid&&close>near)return {steer:.65,throttle:0,reverse:.25,brake:0};
+  if(!input[34])return {steer:0,throttle:0,brake:0};
+  if(!area)return {steer:.8,throttle:.28,brake:0};
+  return {steer:clamp(bearing*2,-.8,.8),throttle:follow?clamp((.18-area)*3,0,.4):clamp((.32-area)*2,.22,.4),reverse:follow?clamp((area-.23)*2,0,.25):0,brake:0};
+}
 /** Preserve the recurrent motor circuit; transfer only inputs with matching meanings. */
 export function racerToRoom(raw:BrainSnapshot):BrainSnapshot {
   const source=SpikingNetwork.fromJSON(raw).toJSON(),wide=widenBrain(source),weights=Array(48*19).fill(0);
