@@ -5,7 +5,7 @@ import { NoiseSource } from "./noise";
 import { naturalGeometry, naturalShapes } from "./natural-shapes";
 import type { MissionSnapshot } from "./objectives";
 
-const COLORS = { wall: 0xcac5b8, table: 0xb58b60, chair: 0x859989, rock: 0x969c96, stone: 0xb3ada1, bush: 0x527e5b, tree: 0x557a56, water: 0x679faa, bed: 0x97775d, block: 0xcb805e, cable: 0x303b43, shoe: 0x63839e, doormat: 0xc49a62 };
+const COLORS = { ball: 0x1459ee, wall: 0xcac5b8, table: 0xb58b60, chair: 0x859989, rock: 0x969c96, stone: 0xb3ada1, bush: 0x527e5b, tree: 0x557a56, water: 0x679faa, bed: 0x97775d, block: 0xcb805e, cable: 0x303b43, shoe: 0x63839e, doormat: 0xc49a62 };
 export class HabitatScene {
   readonly scene = new THREE.Scene();
   readonly renderer: THREE.WebGLRenderer;
@@ -78,6 +78,7 @@ export class HabitatScene {
     this.rebuildContacts();
   }
   setFloorColour(colour: string): void { this.floorMaterial.color.set(colour); }
+  moveBall(ball:WorldObject):void {const group=this.objects.children.find(o=>o.userData.id===ball.id);if(group){group.position.set(ball.x,0,ball.z);if(this.contactView.visible)this.rebuildContacts();}}
   rebuildMission(mission: MissionSnapshot, collected: Set<string> = new Set()): void {
     this.clear(this.mission);this.clear(this.scentOverlay);
     for(const goal of mission.goals){if(collected.has(goal.id))continue;const group=new THREE.Group();group.userData.id=goal.id;this.mission.add(group);const cube=this.mesh(new THREE.BoxGeometry(.08,.08,.08),0xf768ce,group,goal.x,.04,goal.z);cube.rotation.y=-goal.yaw;
@@ -144,13 +145,10 @@ export class HabitatScene {
   capture(width: number, height: number, enabled: boolean, noise?: NoiseSource): { planar: Float32Array; features: Float32Array; rgb: number[]; dropped: boolean } {
     const image = this.eyeContext.createImageData(160, 120);
     if (enabled) {
-      const beamVisible = this.beam.visible, selectedVisible = this.selection.visible, robotVisible = this.robot.visible, contactsVisible = this.contactView.visible, envelopeVisible = this.envelope.visible, scentVisible=this.scentOverlay.visible;
+      const beamVisible = this.beam.visible, selectedVisible = this.selection.visible, robotVisible = this.robot.visible, contactsVisible = this.contactView.visible, envelopeVisible = this.envelope.visible, scentVisible=this.scentOverlay.visible,calibrationVisible=this.calibrationView.visible;
       this.beam.visible = this.selection.visible = this.robot.visible = this.contactView.visible = this.envelope.visible = this.scentOverlay.visible = this.calibrationView.visible = false;
-      this.renderer.setRenderTarget(this.target); this.renderer.render(this.scene, this.eye); this.renderer.readRenderTargetPixels(this.target, 0, 0, 160, 120, this.bytes); this.renderer.setRenderTarget(null);
-      this.beam.visible = beamVisible; this.selection.visible = selectedVisible; this.robot.visible = robotVisible;
-      this.contactView.visible = contactsVisible; this.envelope.visible = envelopeVisible;
-      this.scentOverlay.visible=scentVisible;
-      this.calibrationView.visible=true;
+      try {this.renderer.setRenderTarget(this.target); this.renderer.render(this.scene, this.eye); this.renderer.readRenderTargetPixels(this.target, 0, 0, 160, 120, this.bytes);}
+      finally {this.renderer.setRenderTarget(null);this.beam.visible = beamVisible; this.selection.visible = selectedVisible; this.robot.visible = robotVisible;this.contactView.visible = contactsVisible; this.envelope.visible = envelopeVisible;this.scentOverlay.visible=scentVisible;this.calibrationView.visible=calibrationVisible;}
       for (let y = 0; y < 120; y++) for (let x = 0; x < 160; x++) {
         const i = (y * 160 + x) * 4, source = ((119 - y) * 160 + x) * 4;
         image.data[i] = Math.round(this.bytes[source] / 255 * 31) / 31 * 255;

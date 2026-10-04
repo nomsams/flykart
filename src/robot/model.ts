@@ -5,8 +5,9 @@ import { mulberry32 } from "../vision/rng";
 import { NoiseSource } from "./noise";
 import { contactParts, polygonsOverlap, rectangle } from "./contacts";
 
-export type ObjectKind = "wall" | "table" | "chair" | "rock" | "stone" | "bush" | "tree" | "water" | "block" | "cable" | "shoe" | "doormat" | "bed";
+export type ObjectKind = "wall" | "table" | "chair" | "rock" | "stone" | "bush" | "tree" | "water" | "block" | "cable" | "shoe" | "doormat" | "bed" | "ball";
 export const OBJECT_TYPES: { kind: ObjectKind; label: string }[] = [
+  { kind: "ball", label: "Blue ball · visual target" },
   { kind: "wall", label: "Wall" }, { kind: "table", label: "Table" }, { kind: "chair", label: "Chair" },
   { kind: "bed", label: "Bed" }, { kind: "block", label: "Simple block" }, { kind: "shoe", label: "Shoe" },
   { kind: "cable", label: "Loose cable · drive-over caution" }, { kind: "doormat", label: "Doormat" },
@@ -55,7 +56,7 @@ export function wiringIssues(w: Wiring): { errors: string[]; notes: string[] } {
 
 let sequence = 0;
 export function makeObject(kind: ObjectKind, x = 0, z = 0): WorldObject {
-  const dims: Record<ObjectKind, number[]> = { wall: [1.6, .09, .7], table: [1.05, .7, .72], chair: [.42, .42, .8], rock: [.4, .34, .28], stone: [.15, .12, .045], bush: [.5, .5, .4], tree: [.65, .65, 1.6], water: [.9, .7, .008], block: [.25, .25, .25], cable: [.7, .02, .01], shoe: [.28, .11, .1], doormat: [.75, .45, .008], bed: [1.9, .95, .5] };
+  const dims: Record<ObjectKind, number[]> = { ball: [.06,.06,.06], wall: [1.6, .09, .7], table: [1.05, .7, .72], chair: [.42, .42, .8], rock: [.4, .34, .28], stone: [.15, .12, .045], bush: [.5, .5, .4], tree: [.65, .65, 1.6], water: [.9, .7, .008], block: [.25, .25, .25], cable: [.7, .02, .01], shoe: [.28, .11, .1], doormat: [.75, .45, .008], bed: [1.9, .95, .5] };
   const [width, depth, height] = dims[kind];
   return { id: `object-${Date.now()}-${sequence++}`, kind, x, z, yaw: 0, width, depth, height };
 }

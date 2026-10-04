@@ -9,6 +9,7 @@ export type NaturalShape = {
 
 /** One definition shared by the visible mesh and its contact geometry. */
 export function naturalShapes(o: WorldObject): NaturalShape[] {
+  if (o.kind === "ball") return [{part:'blue ball surface',kind:'icosahedron',detail:2,scale:[o.width/2,o.height/2,o.depth/2],centreY:o.height/2,colour:'body',collidable:true}];
   if (o.kind === "tree") return [
     { part: "tree trunk", kind: "cylinder", detail: 7, radiusTop: .06, radiusBottom: .09, scale: [o.width, o.height * .72, o.width], centreY: o.height * .36, colour: "trunk", collidable: true },
     { part: "tree canopy", kind: "icosahedron", detail: 1, scale: [o.width * .55, o.height * .28, o.depth * .55], centreY: o.height * .74, colour: "body", collidable: true },

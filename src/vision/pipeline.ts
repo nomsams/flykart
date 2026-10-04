@@ -20,6 +20,8 @@ import { assembleInputs } from "./inputs";
 export type DriverMode = "belief" | "action-average" | "vision-action";
 
 export type DriverOptions = {
+  /** Deployment rehearsal: require pixels and exclude privileged cues, goal coordinates and pose-indexed lap memory. */
+  sensorOnly?: boolean;
   perceiver: Perceiver | null;
   controller: SpikingNetwork;
   domain?: Domain;
@@ -66,6 +68,7 @@ export class VisionDriver {
   private started = false;
 
   constructor(options: DriverOptions) {
+    if(options.sensorOnly&&(!options.perceiver||options.mode==='action-average'))throw new Error('Sensor-only driving requires a camera and forbids privileged action averaging.');
     this.options = options;
     this.domain = options.domain ?? trackDomain;
     const n = this.domain.estimateCount;
@@ -86,7 +89,8 @@ export class VisionDriver {
 
   act(episode: VisionEpisode): DriverFrame {
     const { perceiver, controller, memory } = this.options;
-    const body = episode.proprioception(); const lap = episode.lapContext();
+    if(this.options.sensorOnly&&(!perceiver||this.mode==='action-average'))throw new Error('Sensor-only driving cannot enable privileged action averaging or remove its camera.');
+    const body = episode.proprioception(); const lap = this.options.sensorOnly?null:episode.lapContext();
     if (lap) {
       if (lap.gate !== this.lastGates) { this.lastGates = lap.gate; this.sinceGate = 0; } else this.sinceGate += Math.abs(lap.speed) * STEP;
       memory?.advance(lap.speed);
@@ -97,7 +101,7 @@ export class VisionDriver {
     else if (perceiver && (!this.started || episode.tick % VISION_STRIDE === 0)) {
       this.started = true; seen = true;
       this.perception = perceiver.see(episode.render(), this.options.sonarOff && body.sonarCloseness !== undefined ? { ...body, sonarCloseness: 0, sonarStrength: 0 } : body);
-      const cues: (Cue | null)[] = [visionCue(this.perception.mean, this.perception.variance, this.fusion, this.visionScratch), this.mode === "belief" ? privilegedCue(episode.truth(), this.fusion, this.feelingScratch) : null];
+      const cues: (Cue | null)[] = [visionCue(this.perception.mean, this.perception.variance, this.fusion, this.visionScratch), this.mode === "belief"&&!this.options.sensorOnly&&this.fusion.fade>0 ? privilegedCue(episode.truth(), this.fusion, this.feelingScratch) : null];
       if (memory && lap) {
         fuseCues(cues, this.provisional);
         memory.observe({ gate: lap.gate, sinceGate: this.sinceGate, heading: lap.heading, x: lap.x, y: lap.y, speed: lap.speed }, this.options.learnMemory !== false);
@@ -111,7 +115,7 @@ export class VisionDriver {
       for (let c = 0; c < n; c += 1) { this.fused.mean[c] = truth[c]; this.fused.variance[c] = 1e-3; }
     }
     const sonar = this.options.sonarOff ? null : episode.sonar();
-    assembleInputs(this.domain, this.fused.mean, episode.mission(), body, sonar, controller.inputCount, this.sensors);
+    assembleInputs(this.domain, this.fused.mean, this.options.sensorOnly?[0,0]:episode.mission(), body, sonar, controller.inputCount, this.sensors);
     let action: Action;
     if (this.mode === "vision-action" && this.perception) {
       const [steer, drive, reverse] = this.perception.action;

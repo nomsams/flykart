@@ -16,12 +16,13 @@ export type CameraEpisodeSpec = {
   track: TrackRef; seed: number; maxTicks: number;
   rivals: number; roadObjects: number; objectKind: RoadObjectKind | "mixed";
   look: Look; profile?: "kart" | "robot"; physicsVariation?: number;
+  sonarOff?:boolean;
 };
 
 export const NIGHT: Style = { ...DEFAULT_STYLE, brightness: 0.42, contrast: 0.85, noise: 0.1 };
 
 export function runCameraEpisode(network: SpikingNetwork, perceiver: Perceiver, spec: CameraEpisodeSpec): EpisodeSummary {
-  const driver = new VisionDriver({ perceiver, controller: network, domain: trackDomain, mode: "belief", fusion: { fade: 0 } });
+  const driver = new VisionDriver({ perceiver, controller: network, domain: trackDomain, mode: "belief", fusion: { fade: 0 },sensorOnly:true,sonarOff:spec.sonarOff });
   const result = driveEpisode(driver, {
     track: spec.track, seed: spec.seed, rivals: spec.rivals, roadObjects: spec.roadObjects, objectKind: spec.objectKind, maxTicks: spec.maxTicks,
     walls: true, physicsVariation: spec.physicsVariation, profile: profileById(spec.profile),

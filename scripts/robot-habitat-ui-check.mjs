@@ -24,7 +24,8 @@ try {
   await page.goto(`${base}/robot.html`, { waitUntil: "domcontentloaded", timeout: 60000 });
   await page.locator("#status").filter({ hasText: "Ready." }).waitFor({ timeout: 60000 });
   assert.equal(await page.locator("#preset option").count(), 8);
-  assert.equal(await page.locator("#object-kind option").count(), 13);
+  assert.equal(await page.locator("#object-kind option").count(), 14);
+  assert.equal(await page.locator('#object-kind option[value="ball"]').count(),1);
   for (const room of ["bedroom", "living", "office", "maze", "clutter"]) {
     await page.locator("#preset").selectOption(room);
     const lab = await exportLab(); assert.ok(lab.objects.length > 5);
@@ -66,5 +67,5 @@ try {
   await page.setViewportSize({ width: 390, height: 844 }); await page.locator("#preset").selectOption("bedroom");
   await page.screenshot({ path: ".cache/robot-habitat-mobile.png", fullPage: true });
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 2), false, "Mobile layout must fit");
-  assert.deepEqual(errors, []); console.log("8 habitats, 13 items, preserved-room checks, floor camera colour, overlay isolation, persistence/import, cable traction/contact and mobile layout verified.");
+  assert.deepEqual(errors, []); console.log("8 habitats, 14 items including the blue ball, preserved-room checks, floor camera colour, overlay isolation, persistence/import, cable traction/contact and mobile layout verified.");
 } finally { await browser.close(); }

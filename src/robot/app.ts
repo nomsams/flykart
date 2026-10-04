@@ -28,7 +28,10 @@ import { ResearchPanel } from './research-panel';
 import { compactInput } from './compact';
 import { compactSketch } from './compact-firmware';
 import { EpisodeRecorder, EpisodeStep } from './training';
-import type { TrialCase, Variant } from './experiments';
+import type { TrialCase, Variant } from "./experiments";
+import { TaskBrain, taskObservation, visualCoach, racerToRoom } from './task-brain';
+import { DEFAULT_TASK, TaskSettings, TaskJudge, LifecycleSnapshot, TaskEvidence, validateLifecycle, validateTaskSettings, taskCase, movingTarget } from './lifecycle';
+import { LifecyclePanel } from './lifecycle-panel';
 
 const root = document.querySelector<HTMLDivElement>("#robot-app")!;
 root.innerHTML = `
@@ -91,6 +94,14 @@ let researchPanel:ResearchPanel,calibrationPanel:CalibrationPanel;
 let liveRecorder=new EpisodeRecorder(),liveEpisode=0,lastStep:EpisodeStep;
 let researchBaseline:{brain:SpikingNetwork|null;visionSettings:VisionSettings;config:RobotConfig;source:string;mode:string;policy:SugarPolicy}|null=null;
 let compactFeatures=new Array(30).fill(0),researchMode=false,returnToPlace=false;
+let taskSettings:TaskSettings=structuredClone(DEFAULT_TASK),taskBrain=new TaskBrain(),taskJudge=new TaskJudge(taskSettings),taskOrigin:WorldObject|null=null;
+let loadingBundled=false;
+let taskInputs:number[]=[],taskRaw:Float32Array=new Float32Array(0),taskWidth=48,taskHeight=24,taskPanel:LifecyclePanel,taskFrameRecorder:EpisodeRecorder|null=null;
+let taskLineage:LifecycleSnapshot['lineage']=[],taskEvidence:TaskEvidence[]=[],taskParent:LifecycleSnapshot['parent'];
+function journeySnapshot():LifecycleSnapshot{return {format:'robot-lifecycle',version:1,settings:structuredClone(taskSettings),brain:taskBrain.toJSON(),lineage:structuredClone(taskLineage),evidence:structuredClone(taskEvidence),...(taskParent?{parent:structuredClone(taskParent)}:{})};}
+function lineage(event:string):void {taskLineage.push({event,time:new Date().toISOString(),generation:brainGeneration});if(taskLineage.length>100)taskLineage.shift();taskEvidence=[];}
+function loadJourney(s:LifecycleSnapshot):void {taskSettings=s.settings;taskBrain=TaskBrain.fromJSON(s.brain);taskLineage=s.lineage;taskEvidence=s.evidence;taskParent=s.parent;taskJudge=new TaskJudge(taskSettings);taskOrigin=objects.find(o=>o.id==='task-blue-ball')?structuredClone(objects.find(o=>o.id==='task-blue-ball')!):null;taskPanel?.sync();}
+function taskActive():boolean{return taskSettings.mode!=='off'&&['task','coach'].includes(value('drive-mode'));}
 let memorySettings:MemorySettings={...DEFAULT_MEMORY},visionSettings:VisionSettings={...DEFAULT_VISION};
 let mission:MissionSnapshot={settings:{...DEFAULT_OBJECTIVE},goals:[],trail:[]};
 let objectiveRun=new ObjectiveRun(mission),sugarPolicy=new SugarPolicy(memorySettings.count),cue:SensoryCue={...EMPTY_CUE};
@@ -126,7 +137,7 @@ let estimates = new Float32Array(10), sensors: number[] = new Array(19).fill(0);
 let action: Action = { steer: 0, throttle: 0, brake: 0 };
 let actualPWM: [number, number] = [0, 0];
 const keys = new Set<string>();
-const history: { objects: WorldObject[]; floorColour: string; startPose:Pose; robotPose:Pose; mission:MissionSnapshot }[] = [];
+const history: { objects: WorldObject[]; floorColour: string; startPose:Pose; robotPose:Pose; mission:MissionSnapshot;journey:LifecycleSnapshot }[] = [];
 let scene: HabitatScene;
 const pinoutDiagram = new WiringDiagram(el("pinout-diagram")), hardwareDiagram = new WiringDiagram(el("hardware-diagram"));
 el("preset").innerHTML = ROOM_TYPES.map(r => `<option value="${r.id}">${r.label}</option>`).join("");
@@ -154,7 +165,7 @@ el("room-map").closest(".map-card")!.querySelector(".sensor-title span")!.id="ke
 function clearMemory():void { memory=memory.settings.count===memorySettings.count&&memory.settings.sparsity===memorySettings.sparsity&&memory.settings.rareWeighting===memorySettings.rareWeighting?memory.fresh():new RoomMemory(memorySettings);swarm?.reset();sugarPolicy.reset();places=new VisualPlaces(); }
 function rebuildSwarm():void { swarm=perceiver?new VisualSwarm(perceiver.model,visionSettings):null;captureTime=-Infinity; }
 function pauseForEdit(reason:string):void {
-  if(researchPanel?.active||calibrationPanel?.active)throw new Error("Finish the current research or marked run before editing.");
+  if(researchPanel?.active||calibrationPanel?.active||taskPanel?.active)throw new Error("Finish the current research or marked run before editing.");
   if(hardwarePanel?.busy)throw new Error("Disconnect hardware before editing this experiment.");
   if(training)endTraining(reason+"; training stopped.");setRunning(false,reason);physics.left=physics.right=0;actualPWM=[0,0];
 }
@@ -162,10 +173,11 @@ function fillLearning():void {
   el<HTMLInputElement>("objective-mode").value=mission.settings.mode;el<HTMLInputElement>("objective-cue").value=mission.settings.cue;
   for(const k of ["sugar","trailReward","pain","width","decay"] as const)el<HTMLInputElement>("objective-"+k).value=String(mission.settings[k]);
   el<HTMLInputElement>("vision-layout").value=visionSettings.layout;el<HTMLInputElement>("vision-radius").value=String(visionSettings.radius);el<HTMLInputElement>("vision-temporal").value=String(visionSettings.temporal);
+  if(document.getElementById("vision-vote")){el<HTMLInputElement>("vision-vote").value=visionSettings.vote??"confidence";el<HTMLInputElement>("vision-weights").value=(visionSettings.memberWeights??[1,1,1,1,1]).join(",");}
   el<HTMLInputElement>("vision-normalize").checked=visionSettings.normalize;el<HTMLInputElement>("vision-smooth").checked=visionSettings.smooth;
   el<HTMLInputElement>("kenyon-count").value=String(memorySettings.count);el<HTMLInputElement>("kenyon-sparsity").value=String(memorySettings.sparsity);el<HTMLInputElement>("kenyon-rare").checked=memorySettings.rareWeighting;
 }
-function resetObjectives():void {objectiveRun=new ObjectiveRun(mission);sugarPolicy.reset();scene.rebuildMission(mission);cue={...EMPTY_CUE,antennae:[0,0,0]};}
+function resetObjectives():void {taskJudge=new TaskJudge(taskSettings,training?taskSettings.shaping*Math.pow(taskSettings.fade,training.generation-1):taskSettings.shaping);taskOrigin=objects.find(o=>o.id==="task-blue-ball")?structuredClone(objects.find(o=>o.id==="task-blue-ball")!):null;objectiveRun=new ObjectiveRun(mission);sugarPolicy.reset();scene.rebuildMission(mission);cue={...EMPTY_CUE,antennae:[0,0,0]};}
 function refreshLearning():void {
   setText("objective-status","Reward "+objectiveRun.total.toFixed(2)+" · sugar "+objectiveRun.collected.size+"/"+mission.goals.length+" · trail "+objectiveRun.checkpoint+"/"+mission.trail.length);
   setText("sugar-status","Reward updates "+sugarPolicy.updates+" · MBON values "+sugarPolicy.values.map(v=>v.toFixed(2)).join(" / ")+" · cue "+cue.strength.toFixed(2)+" · antennae "+cue.antennae.map(v=>v.toFixed(2)).join(" / "));
@@ -187,6 +199,7 @@ function showSwarmViews():void {
   }
 }
 function initializeLearning():void {
+  const swarmOptions=document.createElement("div");swarmOptions.className="learning-fields";swarmOptions.innerHTML='<label>Swarm decision<select id="vision-vote"><option value="confidence">Predicted confidence</option><option value="mean">Weighted mean</option><option value="median">Weighted median · robust votes</option></select></label><label>Member weights · centre then other gazes<input id="vision-weights" value="1,1,1,1,1" aria-label="Five swarm member weights"></label>';el("apply-vision").before(swarmOptions);
   fillLearning();
   button("apply-objective",()=>safe(()=>{
     const settings={...mission.settings,mode:value("objective-mode") as MissionSnapshot["settings"]["mode"],cue:value("objective-cue") as MissionSnapshot["settings"]["cue"]};
@@ -201,7 +214,7 @@ function initializeLearning():void {
   button("forage",()=>safe(()=>{if(brainDomain!=="world")throw new Error("Sugar memory steering requires a world-domain fly. Load bundled habitat fly first.");pauseForEdit("Sugar steering selected");chooseProgram("fly");el<HTMLInputElement>("drive-mode").value="reward";if(mission.settings.mode==="explore")mission.settings.mode="sugar";fillLearning();saveLocal();message("Sugar memory steering selected. Press Run. Steering uses camera cues or explicit virtual antennae, not goal coordinates.");}));
   el("sugar-learn").addEventListener("change",()=>{if(training)endTraining("Learning option changed; training stopped.");hardwarePanel.stop();saveLocal();});
   button("apply-vision",()=>safe(()=>{
-    const nextVision=validateVisionSettings({layout:value("vision-layout"),radius:Number(value("vision-radius")),temporal:Number(value("vision-temporal")),normalize:check("vision-normalize"),smooth:check("vision-smooth")});
+    const nextVision=validateVisionSettings({layout:value("vision-layout"),radius:Number(value("vision-radius")),temporal:Number(value("vision-temporal")),normalize:check("vision-normalize"),smooth:check("vision-smooth"),vote:value("vision-vote"),memberWeights:value("vision-weights").split(",").map(Number)});
     const nextMemory=validateMemorySettings({count:Number(value("kenyon-count")),sparsity:Number(value("kenyon-sparsity")),rareWeighting:check("kenyon-rare")});
     pauseForEdit("Visual processing changed");visionSettings=nextVision;memorySettings=nextMemory;memory=new RoomMemory(nextMemory);sugarPolicy=new SugarPolicy(memorySettings.count);clearMemory();rebuildSwarm();saveLocal();message("Vision settings applied. Visual and reward memories reset because their sensory representation changed; compare results on held-out rooms.");
   }));
@@ -272,7 +285,7 @@ function validateWiring(raw: unknown): Wiring {
 function validateFloor(raw: unknown): string { if (raw === undefined) return "#b7bea7"; if (typeof raw !== "string" || !/^#[0-9a-f]{6}$/i.test(raw)) throw new Error("Invalid floor colour."); return raw; }
 function updateFloor(): void { scene.setFloorColour(floorColour); el<HTMLInputElement>("floor-colour").value = floorColour; }
 function learningData(includeMemory=false) {
-  return {format:"robot-learning",version:1,memorySettings:{...memorySettings},visionSettings:{...visionSettings},sugarPolicy:sugarPolicy.toJSON(),learn:check("sugar-learn"),calibration,compensationEnabled,places:places.toJSON(),...(includeMemory?{memory:memory.toJSON()}:{})};
+  return {format:"robot-learning",version:1,memorySettings:{...memorySettings},visionSettings:{...visionSettings},sugarPolicy:sugarPolicy.toJSON(),learn:check("sugar-learn"),calibration,compensationEnabled,places:places.toJSON(),lifecycle:journeySnapshot(),...(includeMemory?{memory:memory.toJSON()}:{})};
 }
 function parseLearning(raw:unknown,fallbackMemory?:RoomMemory) {
   const r=raw as ReturnType<typeof learningData>|undefined;
@@ -280,11 +293,11 @@ function parseLearning(raw:unknown,fallbackMemory?:RoomMemory) {
   const ms=r?validateMemorySettings(r.memorySettings):fallbackMemory?.settings??{...DEFAULT_MEMORY},vs=r?validateVisionSettings(r.visionSettings):{...DEFAULT_VISION};
   const mem=r?.memory?RoomMemory.fromJSON(r.memory):fallbackMemory??new RoomMemory(ms);
   if(mem.settings.count!==ms.count||mem.settings.sparsity!==ms.sparsity||mem.settings.rareWeighting!==ms.rareWeighting)throw new Error("Memory settings differ from the saved visual memory.");
-  return {memorySettings:ms,visionSettings:vs,memory:mem,policy:r?SugarPolicy.fromJSON(r.sugarPolicy,ms.count):new SugarPolicy(ms.count),learn:r?.learn??true,calibration:r?.calibration?validateCalibration(r.calibration):{...DEFAULT_CALIBRATION},compensationEnabled:r?.compensationEnabled===true,places:r?.places?VisualPlaces.fromJSON(r.places):new VisualPlaces()};
+  return {lifecycle:r?.lifecycle?validateLifecycle(r.lifecycle):null,memorySettings:ms,visionSettings:vs,memory:mem,policy:r?SugarPolicy.fromJSON(r.sugarPolicy,ms.count):new SugarPolicy(ms.count),learn:r?.learn??true,calibration:r?.calibration?validateCalibration(r.calibration):{...DEFAULT_CALIBRATION},compensationEnabled:r?.compensationEnabled===true,places:r?.places?VisualPlaces.fromJSON(r.places):new VisualPlaces()};
 }
 function saveLocal(): void {
   if(researchMode)return;
-  try { localStorage.setItem("flykart-robot-habitat-v1", JSON.stringify({ objects, floorColour,startPose,mission,learning:learningData(), config: physics.config, wiring, sketch: firmware.source, program: appliedProgram, mode: value("drive-mode"), adapter: adapterConfig, noise: noiseConfig })); }
+  try { localStorage.setItem("flykart-robot-habitat-v1", JSON.stringify({ objects, floorColour,startPose,mission,learning:learningData(), config: physics.config, wiring, sketch: firmware.source, program: appliedProgram, mode: value("drive-mode"), adapter: adapterConfig, noise: noiseConfig,controller:controller?controllerCheckpoint(controller,{domain:brainDomain,fitness:brainFitness,generation:brainGeneration}):null,vision:perceiver?.model??null,brainName })); }
   catch { message("Browser storage is unavailable. Export lab to keep your work.", true); }
 }
 function restoreLocal(): void {
@@ -293,12 +306,13 @@ function restoreLocal(): void {
     const data = JSON.parse(text), nextObjects = validateObjects(data.objects), config = validateConfig(data.config), nextWiring = validateWiring(data.wiring), nextFirmware = new Firmware(data.sketch);
     floorColour = validateFloor(data.floorColour); objects = nextObjects; physics.config = config; wiring = nextWiring; firmware = nextFirmware; el<HTMLTextAreaElement>("sketch").value = firmware.source;
     adapterConfig = validateAdapter(data.adapter ?? DEFAULT_ADAPTER); noiseConfig = validateNoise(data.noise ?? DEFAULT_NOISE); noise = new NoiseSource(noiseConfig);
-    const learned=parseLearning(data.learning);startPose=validatePose(data.startPose??new RobotPhysics().pose);physics.pose={...startPose};physics.odometry={...startPose};mission=data.mission?validateMission(data.mission):{settings:{...DEFAULT_OBJECTIVE},goals:[],trail:[]};memorySettings=learned.memorySettings;visionSettings=learned.visionSettings;memory=learned.memory;sugarPolicy=learned.policy;calibration=learned.calibration;compensationEnabled=learned.compensationEnabled;places=learned.places;estimator=new StateEstimator(physics.pose,calibration);el<HTMLInputElement>("sugar-learn").checked=learned.learn;
+    const learned=parseLearning(data.learning);startPose=validatePose(data.startPose??new RobotPhysics().pose);physics.pose={...startPose};physics.odometry={...startPose};mission=data.mission?validateMission(data.mission):{settings:{...DEFAULT_OBJECTIVE},goals:[],trail:[]};memorySettings=learned.memorySettings;visionSettings=learned.visionSettings;memory=learned.memory;sugarPolicy=learned.policy;calibration=learned.calibration;compensationEnabled=learned.compensationEnabled;places=learned.places;estimator=new StateEstimator(physics.pose,calibration);el<HTMLInputElement>("sugar-learn").checked=learned.learn;if(learned.lifecycle)loadJourney(learned.lifecycle);
+    if(data.controller&&data.vision){const imported=importFile(JSON.stringify(data.controller));if(!imported.controller)throw new Error("Missing saved controller.");const domain=imported.controller.domain,nextEyes=validateEyes(data.vision,domain);controller=SpikingNetwork.fromJSON(imported.controller.snapshot);perceiver=nextEyes;brainDomain=domain;brainName=typeof data.brainName==="string"?data.brainName.slice(0,200):"Restored fly";brainFitness=imported.controller.meta.fitness??0;brainGeneration=imported.controller.meta.generation??0;estimates=new Float32Array(perceiver.estimateCount);sensors=new Array(controller.inputCount).fill(0);}
     program = appliedProgram = PROGRAMS.some(p => p.id === data.program) ? data.program : "custom";
-    el<HTMLSelectElement>("drive-mode").value = ["fly", "manual", "sketch", "reward"].includes(data.mode) ? data.mode : "sketch";
+    el<HTMLSelectElement>("drive-mode").value = ["fly", "manual", "sketch", "reward", "task", "coach"].includes(data.mode) ? data.mode : "sketch";
   } catch { message("Saved habitat could not be restored; using the workshop preset.", true); }
 }
-function editWorld(): void { history.push({ objects: structuredClone(objects), floorColour, startPose:{...startPose},robotPose:{...physics.pose},mission:structuredClone(mission) }); if (history.length > 30) history.shift(); }
+function editWorld(): void { pauseForEdit('Scene edit');history.push({ objects: structuredClone(objects), floorColour, startPose:{...startPose},robotPose:{...physics.pose},mission:structuredClone(mission),journey:journeySnapshot() }); if (history.length > 30) history.shift(); }
 function worldChanged(): void {
   if (training) endTraining("Habitat changed; training stopped.");
   scene.rebuildObjects(objects); updateFloor(); resetObjectives();scene.select(selected); populateObjects(); clearMemory(); saveLocal();
@@ -323,7 +337,7 @@ function selectObject(id: string | null): void {
     const property = input.dataset.property as keyof WorldObject; const n = Number(input.value) * (property === "yaw" ? Math.PI / 180 : 1);
     const updated = { ...o, [property]: n }; validateObjects([updated]);pauseForEdit("Object edited"); editWorld(); Object.assign(o, updated); worldChanged(); selectObject(o.id);
   })));
-  button("remove-object", () => { editWorld(); objects = objects.filter(item => item.id !== id); selected = null; worldChanged(); selectObject(null); });
+  button("remove-object", () => safe(() => { pauseForEdit("Object removed");editWorld(); objects = objects.filter(item => item.id !== id); selected = null; worldChanged(); selectObject(null); }));
 }
 
 function initializeHardware(): void {
@@ -401,10 +415,11 @@ function installBrain(text: string): void {
   const nextPerceiver = validateEyes(model, nextDomain);
   const nextController = SpikingNetwork.fromJSON(snapshot);
   const extension=JSON.parse(text).robotLearning,learned=extension?parseLearning(extension):null;
+  if(!learned?.lifecycle){taskSettings=structuredClone(DEFAULT_TASK);taskBrain=new TaskBrain();taskLineage=[];taskEvidence=[];taskParent=undefined;taskPanel?.sync();}
   controller = nextController; perceiver = nextPerceiver; brainDomain = nextDomain; brainName = imported.name;const meta=usingWorld?imported.world!.controller.meta:imported.controller.meta;brainFitness=meta.fitness??0;brainGeneration=meta.generation??0;estimates = new Float32Array(perceiver.estimateCount); sensors = new Array(controller.inputCount).fill(0);
-  captureTime = -Infinity; clearMemory();if(learned){memorySettings=learned.memorySettings;visionSettings=learned.visionSettings;memory=learned.memory;sugarPolicy=learned.policy;calibration=learned.calibration;compensationEnabled=learned.compensationEnabled;places=learned.places;estimator=new StateEstimator(physics.pose,calibration);el<HTMLInputElement>("sugar-learn").checked=learned.learn;fillLearning();}rebuildSwarm(); setText("brain-name", brainName); setText("adapter", `${brainDomain.toUpperCase()} INPUTS`);
+  captureTime = -Infinity; clearMemory();if(learned){memorySettings=learned.memorySettings;visionSettings=learned.visionSettings;memory=learned.memory;sugarPolicy=learned.policy;calibration=learned.calibration;compensationEnabled=learned.compensationEnabled;places=learned.places;estimator=new StateEstimator(physics.pose,calibration);el<HTMLInputElement>("sugar-learn").checked=learned.learn;if(learned.lifecycle)loadJourney(learned.lifecycle);fillLearning();}rebuildSwarm(); setText("brain-name", brainName); setText("adapter", `${brainDomain.toUpperCase()} INPUTS`);
   setText("brain-note", brainDomain === "track" ? "Track input meanings retained. A racing brain may not navigate a room; room recall is off." : "Eyes trained in the old renderer; transfer to 3D is experimental.");
-  message(`Imported ${brainName}. ${imported.warnings.join(" ")}`);
+  message(`Imported ${brainName}. ${imported.warnings.join(" ")}`);if(!loadingBundled)saveLocal();
 }
 function validateEyes(model: VisionModel, domain: string): Perceiver {
   const spec = model?.spec;
@@ -416,18 +431,21 @@ function validateEyes(model: VisionModel, domain: string): Perceiver {
   return next;
 }
 async function loadBundled(): Promise<void> {
+  loadingBundled=true;try{
   const base = import.meta.env.BASE_URL;
   const paths = ["vision/robot/world-controller.json", "vision/robot/world-vision-net.json", "vision/robot/vision-net.json"];
   const [brain, worldEyes, trackEyes] = await Promise.all(paths.map(async p => { const r = await fetch(`${base}${p}`); if (!r.ok) throw new Error(`Cannot load ${p}`); return r.text(); }));
   const worldModel = JSON.parse(worldEyes) as VisionModel, trackModel = JSON.parse(trackEyes) as VisionModel;
   validateEyes(worldModel, "world"); validateEyes(trackModel, "track"); eyes.world = worldModel; eyes.track = trackModel;
   installBrain(brain); brainName = "Bundled robot world brain"; setText("brain-name", brainName);
+  }finally{loadingBundled=false;}
 }
 
 function capture(): void {
   scene.updateRobot(physics.pose, physics.config, check("beam-visible"), physics.left, physics.right, 0);
   const width = perceiver?.model.spec.width ?? 48, height = perceiver?.model.spec.height ?? 24;
   const frame = scene.capture(width, height, physics.config.cameraEnabled, noise);
+  taskRaw=frame.planar;taskWidth=width;taskHeight=height;
   cameraFrame++; cameraRGB = frame.rgb; cameraDropped = frame.dropped;
   log("camera", `Frame ${cameraFrame} · 160×120 RGB565 · mean RGB ${cameraRGB.map(n => Math.round(n)).join(",")} · ${cameraDropped ? "missing/black frame" : "delivered"}`, { frame: cameraFrame, rgb: cameraRGB, dropped: cameraDropped });
   setText("retina-size", `${width} × ${height}`);
@@ -435,7 +453,7 @@ function capture(): void {
   let processed=frame.planar;
   if (perceiver && physics.config.cameraEnabled) {swarm??=new VisualSwarm(perceiver.model,visionSettings);estimates.set(swarm.see(frame.planar,body,brainDomain));processed=swarm.processed;scene.showFlyInput(processed,width,height);} else estimates.fill(0);
   cue=mission.settings.mode==="trail"&&mission.settings.cue==="scent"?scentCue(physics.pose,mission,simTime):cameraCue(processed,width,height,mission.settings.mode);
-  training?.recorder.frame(cameraFrame,width,height,processed,frame.dropped,frame.planar);liveRecorder.frame(cameraFrame,width,height,processed,frame.dropped,frame.planar);researchPanel?.frame(cameraFrame,width,height,processed,frame.planar,frame.dropped);compactFeatures=compactInput(el<HTMLCanvasElement>("camera").getContext("2d")!.getImageData(0,0,160,120).data,sonar.reading.echo?sonar.metres*100:null,actualPWM);showSwarmViews();
+  training?.recorder.frame(cameraFrame,width,height,processed,frame.dropped,frame.planar);liveRecorder.frame(cameraFrame,width,height,processed,frame.dropped,frame.planar);researchPanel?.frame(cameraFrame,width,height,processed,frame.planar,frame.dropped);taskFrameRecorder?.frame(cameraFrame,width,height,processed,frame.dropped,frame.planar);compactFeatures=compactInput(el<HTMLCanvasElement>("camera").getContext("2d")!.getImageData(0,0,160,120).data,sonar.reading.echo?sonar.metres*100:null,actualPWM);showSwarmViews();
   if(physics.config.cameraEnabled&&!frame.dropped&&(!researchPanel||check("place-enabled")))places.observe(Array.from(visualFeatures(processed,width,height)),estimator,simTime);
   if(returnToPlace&&!cue.strength){const navigation=places.cue(estimator.pose);if(navigation)cue={...cue,...navigation};}
   if (brainDomain === "world" && physics.config.sonarEnabled) estimates[4] = Math.max(estimates[4], sonar.closeness);
@@ -454,6 +472,7 @@ function neuralBody() { return { speed: clamp((physics.left + physics.right) / 2
 function manualDemands(): [number,number] {const forward=+(keys.has("w")||keys.has("ArrowUp"))-+(keys.has("s")||keys.has("ArrowDown")),steer=+(keys.has("d")||keys.has("ArrowRight"))-+(keys.has("a")||keys.has("ArrowLeft"));return [clamp(forward*.65+steer*.5,-1,1)*255,clamp(forward*.65-steer*.5,-1,1)*255];}
 function tick(): void {
   const previousPWM=[...actualPWM];const dt = 1 / 30; simTime += dt;
+  if(taskActive()&&taskSettings.mode==='follow'&&taskOrigin){const ball=objects.find(o=>o.id===taskOrigin!.id);if(ball){Object.assign(ball,movingTarget(taskOrigin,simTime,taskSettings.speed));scene.moveBall(ball);}}
   if(mission.settings.mode==="trail"&&mission.settings.cue==="scent")cue=scentCue(physics.pose,mission,simTime);
   if (sonar.update(simTime, physics.pose, objects, physics.config, noise)) {
     log("sonar", sonar.reading.echo ? `${(sonar.metres * 100).toFixed(1)} cm · ECHO ${Math.round(sonar.pulseMicroseconds)} µs` : "No echo · distance unknown", { cm: sonar.reading.echo ? sonar.metres * 100 : null, echoUs: sonar.pulseMicroseconds });
@@ -466,6 +485,7 @@ function tick(): void {
     action = swarm?swarm.step(controller,sensors,neuralBody(),[cue.bearing,cue.strength],brainDomain):controller.step(sensors);
   }
   const mode = value("drive-mode");
+  if(taskActive()){taskInputs=taskObservation(taskRaw,taskWidth,taskHeight,taskSettings.modules,taskSettings.target,sonar.reading.echo?sonar.metres*100:null,actualPWM,taskSettings.modules.bumper?physics.blocked:null,!cameraDropped&&physics.config.cameraEnabled);action=mode==='coach'?visualCoach(taskInputs,taskSettings.mode==='follow'):taskBrain.action(taskInputs,action,taskSettings.inheritance);}else taskInputs=[];
   if(mode==="reward")action=sugarPolicy.action(memory.active,action,cue,sonar.reading.echo?sonar.closeness:0,!training&&!researchMode,false);
   requests = motorRequests(action, adapterConfig);
   let demands: [number, number] = [requests.left, requests.right];
@@ -491,13 +511,15 @@ function tick(): void {
     const surface = physics.surface?.objectId ?? "";
     if (surface && surface !== surfaceEvent) log("system", physics.surface!.kind === "cable" ? "Crossing loose cable · snag caution · traction approximation −25%" : "Crossing doormat · traction approximation −15%", physics.surface); surfaceEvent = surface;
   } catch (error) { actualPWM = [0, 0]; physics.left = physics.right = 0; setRunning(false, "sketch error"); codeMessage(error instanceof Error ? error.message : String(error), true); message("Controller code stopped. Fix the sketch and apply it again.", true); }
-  if (simTime - neuralLogTime >= .2) { neuralLogTime = simTime; log("brain", `steer ${action.steer.toFixed(2)} · drive ${action.throttle.toFixed(2)} · reverse ${(action.reverse ?? 0).toFixed(2)} · brake ${action.brake.toFixed(2)} | request ${demands.map(Math.round).join(" / ")} → PWM ${actualPWM.map(n => Math.round(n * 255)).join(" / ")}`, { mode, action: { ...action }, inputs: [...sensors], estimates: [...estimates], legs: requests.legs, requests: demands, pwm: actualPWM.map(n => n * 255) }); }
+  if (simTime - neuralLogTime >= .2) { neuralLogTime = simTime; log("brain", `steer ${action.steer.toFixed(2)} · drive ${action.throttle.toFixed(2)} · reverse ${(action.reverse ?? 0).toFixed(2)} · brake ${action.brake.toFixed(2)} | request ${demands.map(Math.round).join(" / ")} → PWM ${actualPWM.map(n => Math.round(n * 255)).join(" / ")}`, { mode, action: { ...action }, inputs: [...sensors], ...(taskActive()?{taskInput:[...taskInputs],taskSource:mode==="coach"?"coach":"neural"}:{}), estimates: [...estimates], legs: requests.legs, requests: demands, pwm: actualPWM.map(n => n * 255) }); }
   scene.updateRobot(physics.pose, physics.config, check("beam-visible"), physics.left, physics.right, dt);
-  const rewards=objectiveRun.update(physics.pose,physics.blocked),taskReward=rewards.reduce((a,r)=>a+r.amount,0);
+  const rewards=objectiveRun.update(physics.pose,physics.blocked),skill=taskActive()?taskJudge.update(physics.pose,objects.find(o=>o.id==='task-blue-ball')??null,physics.blocked,dt,physics.config.length):{amount:0,messages:[]},taskReward=rewards.reduce((a,r)=>a+r.amount,0)+skill.amount;
+  for(const msg of skill.messages)log('reward',msg,{amount:skill.amount,trainingOnly:true});
   for(const reward of rewards){log("reward",reward.message+" · "+(reward.amount>0?"+":"")+reward.amount.toFixed(2),reward);if(!training&&!researchMode&&check("sugar-learn"))sugarPolicy.reward(reward.amount);}
   if(rewards.some(r=>r.kind==="sugar")){places.sugar();scene.rebuildMission(mission,objectiveRun.collected);captureTime=-Infinity;}if(rewards.length&&!training)saveLocal();
-  lastStep={time:simTime,inputs:[...sensors],action:{...action},pwm:actualPWM.map(v=>v*255),cameraFrame,sonar:{cm:sonar.reading.echo?sonar.metres*100:null,echo:sonar.reading.echo},evaluation:{pose:{...physics.pose},blocked:physics.blocked,contact:physics.contact?.part??null,surface:physics.surface?.kind??null,taskReward,success:mission.settings.mode==="sugar"?mission.goals.length>0&&objectiveRun.collected.size===mission.goals.length:mission.settings.mode==="trail"&&mission.trail.length>0&&objectiveRun.checkpoint===mission.trail.length&&objectiveRun.collected.size===mission.goals.length},diagnostics:{estimated:{...estimator.pose},odometry:{...physics.odometry},covariance:[...estimator.covariance],cells:memory.active.slice(0,200),activeCount:memory.active.length,estimates:[...estimates],votes:swarm?.votes.map(v=>({...v}))??[],requests:[...demands],compactInput:[...compactFeatures.slice(0,26),...previousPWM,...compactFeatures.slice(28)],rewards:rewards.map(r=>r.message)}};
+  lastStep={time:simTime,inputs:[...sensors],action:{...action},pwm:actualPWM.map(v=>v*255),cameraFrame,sonar:{cm:sonar.reading.echo?sonar.metres*100:null,echo:sonar.reading.echo},evaluation:{pose:{...physics.pose},blocked:physics.blocked,contact:physics.contact?.part??null,surface:physics.surface?.kind??null,taskReward,success:taskActive()?taskJudge.success:mission.settings.mode==="sugar"?mission.goals.length>0&&objectiveRun.collected.size===mission.goals.length:mission.settings.mode==="trail"&&mission.trail.length>0&&objectiveRun.checkpoint===mission.trail.length&&objectiveRun.collected.size===mission.goals.length},diagnostics:{estimated:{...estimator.pose},odometry:{...physics.odometry},covariance:[...estimator.covariance],cells:memory.active.slice(0,200),activeCount:memory.active.length,estimates:[...estimates],votes:swarm?.votes.map(v=>({...v}))??[],requests:[...demands],compactInput:[...compactFeatures.slice(0,26),...previousPWM,...compactFeatures.slice(28)],rewards:[...rewards.map(r=>r.message),...skill.messages],...(taskActive()?{taskInput:[...taskInputs],taskSource:mode==='coach'?'coach' as const:'neural' as const,taskSuccess:taskJudge.success}:{})}};
   liveRecorder.step(lastStep,dt);
+  if(taskActive())taskPanel?.observe(taskInputs,action,mode);
   if (training) {
     training.recorder.step(lastStep,dt);
     if (training.recorder.seconds >= training.options.seconds - 1e-8) {
@@ -510,15 +532,15 @@ function tick(): void {
 
 function beginEpisode(): void {
   if (!training) return;
-  resetRobot(); controller = training.brain; perceiver?.reset(); clearMemory();swarm?.reset();sugarPolicy.reset(training.noiseSeed); noiseConfig = { ...noiseConfig, seed: training.noiseSeed }; noise = new NoiseSource(noiseConfig);
+  if(training.options.visualTask)taskBrain=training.visualTask!;resetRobot(); controller = training.brain; perceiver?.reset(); clearMemory();swarm?.reset();sugarPolicy.reset(training.noiseSeed); noiseConfig = { ...noiseConfig, seed: training.noiseSeed }; noise = new NoiseSource(noiseConfig);
   setRunning(true); renderTraining();
 }
 function endTraining(reason: string): void {
   if (!training) return;
-  const job=training; controller=SpikingNetwork.fromJSON(job.best); lastTraining=job; training=null;
+  const job=training; controller=SpikingNetwork.fromJSON(job.best);if(job.bestVisualTask){taskBrain=job.bestVisualTask;if(job.options.evolve&&job.completedGeneration)lineage('Visual task + inherited fly evolution: '+job.completedGeneration+' completed generations');taskPanel?.sync();} lastTraining=job; training=null;
   if(trainingNoise) {noiseConfig=trainingNoise;noise=new NoiseSource(noiseConfig);trainingNoise=null;fillNoise();}
   if(job.completedGeneration){brainFitness=job.fitness;if(job.options.evolve){brainGeneration+=job.completedGeneration;brainName="3D trained fly";}}
-  setRunning(false,"training ended"); physics.left=physics.right=0;actualPWM=[0,0];setText("brain-name",job.options.evolve?"3D training winner · export to keep":"Evaluated fly · weights unchanged");setText("train-status",reason);log("training",reason);renderTraining();
+  setRunning(false,"training ended"); physics.left=physics.right=0;actualPWM=[0,0];setText("brain-name",job.options.evolve?"3D training winner · export to keep":"Evaluated fly · weights unchanged");setText("train-status",reason);log("training",reason);renderTraining();saveLocal();
 }
 function renderTraining(): void {
   const job=training??lastTraining; el<HTMLButtonElement>("train-stop").disabled=!training;el<HTMLButtonElement>("train-evaluate").disabled=!!training;el<HTMLButtonElement>("train-evolve").disabled=!!training;el<HTMLButtonElement>("train-export").disabled=!job?.results.length;
@@ -527,18 +549,18 @@ function renderTraining(): void {
   el("train-results").replaceChildren(...(job?.results.slice(-12)??[]).map(r=>{const p=document.createElement("p");p.textContent=`G${r.generation} · C${r.candidate+1} · trial ${r.episode}: ${r.score.toFixed(2)} score / ${r.cells} cells / ${r.contacts} contacts / ${r.taskReward.toFixed(2)} reward`;return p;}));
 }
 function startTraining(evolve: boolean): void {
-  if(hardwarePanel.busy) throw new Error("Disconnect hardware before simulated training.");
+  if(hardwarePanel.busy||researchPanel?.active||calibrationPanel?.active||taskPanel?.active) throw new Error("Finish the current job and disconnect hardware before simulated training.");
   if(!controller||!perceiver) throw new Error("Load a fly and its matching eyes first.");
   if(wiringIssues(wiring).errors.length)throw new Error("Fix wiring conflicts before training.");
-  const options:TrainingOptions={evolve,task:mission.settings.mode!=="explore",seconds:Number(value("train-seconds")),episodes:Number(value("train-episodes")),population:Number(value("train-population")),generations:Number(value("train-generations")),seed:Number(value("train-seed")),rate:Number(value("train-rate")),amount:Number(value("train-amount"))};
+  const options:TrainingOptions={evolve,task:taskActive()||mission.settings.mode!=="explore",...(taskActive()?{visualTask:taskBrain.toJSON()}:{}),seconds:Number(value("train-seconds")),episodes:Number(value("train-episodes")),population:Number(value("train-population")),generations:Number(value("train-generations")),seed:Number(value("train-seed")),rate:Number(value("train-rate")),amount:Number(value("train-amount"))};
   const job=new TrainingRun(controller,options);
-  trainingContext={objects:structuredClone(objects),floorColour,config:{...physics.config},wiring:{...wiring},adapter:{...adapterConfig},noise:{...noiseConfig},domain:brainDomain,initialGeneration:brainGeneration,vision:perceiver.model,memoryEnabled:check("memory-enabled"),sketch:programSketch("fly",wiring),initialPose:{...startPose},visionSettings:{...visionSettings},memorySettings:{...memorySettings},mission:structuredClone(mission),sugarPolicy:sugarPolicy.toJSON(),dt:1/30,initialBrain:controllerCheckpoint(controller,{domain:brainDomain,fitness:brainFitness,generation:brainGeneration})};
-  const trainingMode=value("drive-mode")==="reward"?"reward":"fly";trainingContext.mode=trainingMode;chooseProgram("fly");el<HTMLInputElement>("drive-mode").value=trainingMode;trainingNoise={...noiseConfig};training=job;lastTraining=null;log("training",evolve?"Seeded controller evolution started; eyes and reward policy frozen":"Seeded evaluation started; weights unchanged",options);beginEpisode();
+  trainingContext={objects:structuredClone(objects),floorColour,config:{...physics.config},wiring:{...wiring},adapter:{...adapterConfig},noise:{...noiseConfig},domain:brainDomain,initialGeneration:brainGeneration,vision:perceiver.model,memoryEnabled:check("memory-enabled"),sketch:programSketch("fly",wiring),initialPose:{...startPose},visionSettings:{...visionSettings},memorySettings:{...memorySettings},mission:structuredClone(mission),sugarPolicy:sugarPolicy.toJSON(),lifecycle:journeySnapshot(),dt:1/30,initialBrain:controllerCheckpoint(controller,{domain:brainDomain,fitness:brainFitness,generation:brainGeneration})};
+  const trainingMode=taskActive()?"task":value("drive-mode")==="reward"?"reward":"fly";trainingContext.mode=trainingMode;chooseProgram("fly");el<HTMLInputElement>("drive-mode").value=trainingMode;trainingNoise={...noiseConfig};training=job;lastTraining=null;log("training",evolve?"Seeded controller evolution started; eyes and reward policy frozen":"Seeded evaluation started; weights unchanged",options);beginEpisode();
 }
 function initializeTraining(): void {
   button("train-evaluate",()=>safe(()=>startTraining(false)));button("train-evolve",()=>safe(()=>startTraining(true)));button("train-stop",()=>endTraining("Training stopped · last completed generation retained."));
-  button("train-export",()=>{const job=training??lastTraining;if(!job)return;download("robot-training.json",JSON.stringify({format:"flykart-robot-training",version:1,settings:job.options,context:trainingContext,scoreDefinition:job.options.task?"objectiveReward +20 success -0.05 * seconds -2 * contacts - blockedSeconds":"0.5 * (unique20cmCells - 1) + min(distanceMetres, unique20cmCells * 0.4) - 2 * contacts - blockedSeconds - 0.1 * cableSeconds + objectiveReward",completed:job.completed,results:job.results,episodes:job.datasets,controller:controllerCheckpoint(job.best,{domain:trainingContext?.domain??brainDomain,fitness:job.fitness,generation:(trainingContext?.initialGeneration??0)+(job.options.evolve?job.completedGeneration:0)}),notes:"Evaluation pose/contact fields are privileged labels, never neural inputs. Pixels are delivered CNN input crops. Last two episodes retained; omittedFrames reports pixel-byte limits."},null,2));});
-  button("export-fly",()=>{if(!controller)return;const combined=JSON.parse(exportVisionBrain({name:brainName,controller:controllerCheckpoint(controller,{domain:brainDomain,fitness:brainFitness,generation:brainGeneration}),profile:controller.inputCount>17?"robot":"kart",vision:perceiver?.model??null,fusion:{fade:1,mode:"belief",visionTemperature:1},memory:null,world:brainDomain==="world"?{controller:controllerCheckpoint(controller,{domain:"world",fitness:brainFitness,generation:brainGeneration}),vision:perceiver?.model??null}:null,notes:"3D habitat controller and eyes. robotLearning contains this workbench\u0027s visual/reward extension; other labs may ignore it."}));combined.robotLearning=learningData(true);download("robot-fly-with-eyes.json",JSON.stringify(combined,null,2));});
+  button("train-export",()=>{const job=training??lastTraining;if(!job)return;download("robot-training.json",JSON.stringify({format:"flykart-robot-training",version:1,settings:job.options,context:trainingContext,scoreDefinition:job.options.task?"objectiveReward +20 success -0.05 * seconds -2 * contacts - blockedSeconds":"0.5 * (unique20cmCells - 1) + min(distanceMetres, unique20cmCells * 0.4) - 2 * contacts - blockedSeconds - 0.1 * cableSeconds + objectiveReward",completed:job.completed,results:job.results,episodes:job.datasets,controller:controllerCheckpoint(job.best,{domain:trainingContext?.domain??brainDomain,fitness:job.fitness,generation:(trainingContext?.initialGeneration??0)+(job.options.evolve?job.completedGeneration:0)}),lifecycle:journeySnapshot(),notes:"Evaluation pose/contact fields are privileged labels, never neural inputs. Pixels are delivered CNN input crops. Last two episodes retained; omittedFrames reports pixel-byte limits."},null,2));});
+  button("export-fly",()=>{if(!controller)return;const combined=JSON.parse(exportVisionBrain({name:brainName,controller:controllerCheckpoint(controller,{domain:brainDomain,fitness:brainFitness,generation:brainGeneration}),profile:controller.inputCount>17?"robot":"kart",vision:perceiver?.model??null,fusion:{fade:0,mode:"belief",visionTemperature:1},memory:null,world:brainDomain==="world"?{controller:controllerCheckpoint(controller,{domain:"world",fitness:brainFitness,generation:brainGeneration}),vision:perceiver?.model??null}:null,notes:"3D habitat controller and eyes. robotLearning contains this workbench\u0027s visual/reward extension; other labs may ignore it."}));combined.robotLearning=learningData(true);download("robot-fly-with-eyes.json",JSON.stringify(combined,null,2));});
 }
 
 function renderMap(): void {
@@ -604,7 +626,7 @@ function wireEvents(): void {
   el("collision-visible").addEventListener("change", () => scene.showContacts(check("collision-visible")));
   button("add-object", () => { if (objects.length >= 200) { message("The habitat limit is 200 objects.", true); return; } editWorld(); const o = makeObject(value("object-kind") as ObjectKind, clamp(physics.pose.x + Math.cos(physics.pose.heading) * .75, -3, 3), clamp(physics.pose.z + Math.sin(physics.pose.heading) * .75, -3, 3)); objects.push(o); selected = o.id; worldChanged(); selectObject(o.id); });
   button("add-room", () => { if (objects.length > 196) { message("Four free object slots are needed for a room.", true); return; } editWorld(); const x = .5, z = .5; objects.push(...[{ x, z: z - .8, width: 1.6 }, { x: x - .8, z, width: 1.6, yaw: Math.PI / 2 }, { x: x + .8, z, width: 1.6, yaw: Math.PI / 2 }, { x: x + .45, z: z + .8, width: .7 }].map(p => ({ ...makeObject("wall"), ...p, height: .8 }))); worldChanged(); message("Added a 1.6 m room with a doorway. Select its walls to adjust dimensions."); });
-  button("undo", () => { const previous = history.pop(); if (previous) { pauseForEdit("Undo scene edit");objects = previous.objects; floorColour = previous.floorColour;startPose={...previous.startPose};physics.pose={...previous.robotPose};physics.odometry={...physics.pose};mission=structuredClone(previous.mission);fillLearning(); selected = null; worldChanged(); selectObject(null); } });
+  button("undo", () => safe(() => {pauseForEdit("Undo scene edit"); const previous = history.pop(); if (previous) {objects = previous.objects; floorColour = previous.floorColour;startPose={...previous.startPose};physics.pose={...previous.robotPose};physics.odometry={...physics.pose};mission=structuredClone(previous.mission);loadJourney(previous.journey);fillLearning(); selected = null; worldChanged(); selectObject(null); } }));
   el("object-list").addEventListener("change", () => selectObject(value("object-list") || null));
   bindSceneEditing();
 
@@ -656,8 +678,8 @@ function wireEvents(): void {
     if (data.controller) { const parsed = importFile(JSON.stringify(data.controller)); nextDomain = parsed.controller!.domain; nextFitness=parsed.controller!.meta.fitness??0;nextGeneration=parsed.controller!.meta.generation??0;nextBrain = SpikingNetwork.fromJSON(parsed.controller!.snapshot); if (data.vision) nextEyes = validateEyes(data.vision, nextDomain); }
     if(training)endTraining("Lab imported; training stopped.");brainFitness=nextFitness;brainGeneration=nextGeneration;brainName=nextBrain?"Imported lab controller":"No controller";
     editWorld();startPose=nextPose;mission=nextMission;memorySettings=learned.memorySettings;visionSettings=learned.visionSettings;sugarPolicy=learned.policy;calibration=learned.calibration;compensationEnabled=learned.compensationEnabled;places=learned.places;estimator=new StateEstimator(physics.pose,calibration);el<HTMLInputElement>("sugar-learn").checked=learned.learn;fillLearning();
-    objects = nextObjects; floorColour = nextFloor; physics.config = nextConfig; wiring = nextWiring; controller = nextBrain; perceiver = nextEyes; brainDomain = nextDomain; firmware = nextFirmware; el<HTMLTextAreaElement>("sketch").value = firmware.source;
-    adapterConfig = nextAdapter; noiseConfig = nextNoise; program = appliedProgram = PROGRAMS.some(p => p.id === data.program) ? data.program : "custom"; el<HTMLSelectElement>("drive-mode").value = ["fly", "manual", "sketch", "reward"].includes(data.mode) ? data.mode : "sketch"; programInfo(); fillNoise();
+    objects = nextObjects;if(learned.lifecycle)loadJourney(learned.lifecycle);else loadJourney({format:"robot-lifecycle",version:1,settings:structuredClone(DEFAULT_TASK),brain:new TaskBrain().toJSON(),lineage:[],evidence:[]}); floorColour = nextFloor; physics.config = nextConfig; wiring = nextWiring; controller = nextBrain; perceiver = nextEyes; brainDomain = nextDomain; firmware = nextFirmware; el<HTMLTextAreaElement>("sketch").value = firmware.source;
+    adapterConfig = nextAdapter; noiseConfig = nextNoise; program = appliedProgram = PROGRAMS.some(p => p.id === data.program) ? data.program : "custom"; el<HTMLSelectElement>("drive-mode").value = ["fly", "manual", "sketch", "reward", "task", "coach"].includes(data.mode) ? data.mode : "sketch"; programInfo(); fillNoise();
     estimates = new Float32Array(nextEyes?.estimateCount ?? (nextDomain === "world" ? 10 : 13)); sensors = new Array(controller?.inputCount ?? 19).fill(0); selected = null; scene.rebuildObjects(objects); scene.rebuildRobot(physics.config); scene.select(null); populateObjects(); selectObject(null); resetRobot(); memory = nextMemory;
     updateFloor();rebuildSwarm(); setText("brain-name", controller ? "Imported lab controller" : "No controller · use manual or sketch"); setText("adapter", `${brainDomain.toUpperCase()} INPUTS`); saveLocal(); message("Imported habitat, components, sketch, brain and learned memory. Robot reset to its starting pose.");
   });
@@ -668,15 +690,15 @@ function wireEvents(): void {
 
 function researchCheckpoint():()=>void {
   if(training||researchPanel?.active)throw new Error("Finish the current training or research job before starting another run.");
-  const state={objects,floorColour,startPose:{...startPose},mission,config:physics.config,wiring,adapterConfig,controller,perceiver,memory,sugarPolicy,visionSettings,swarm,noiseConfig,noise,firmware,program,appliedProgram,objectiveRun,estimator,places,simTime,liveRecorder,liveEpisode,action,actualPWM,estimates:estimates.slice(),sensors:[...sensors],sonar,selected,returnToPlace,mode:value('drive-mode'),enabled:check('memory-enabled'),physics:{pose:{...physics.pose},odometry:{...physics.odometry},left:physics.left,right:physics.right,speed:physics.speed,blocked:physics.blocked,collisions:physics.collisions,contact:physics.contact,surface:physics.surface}};
+  const state={objects,floorColour,startPose:{...startPose},mission,config:physics.config,wiring,adapterConfig,controller,perceiver,memory,sugarPolicy,visionSettings,swarm,noiseConfig,noise,firmware,program,appliedProgram,objectiveRun,estimator,places,simTime,liveRecorder,liveEpisode,action,actualPWM,estimates:estimates.slice(),sensors:[...sensors],sonar,selected,returnToPlace,journey:journeySnapshot(),taskOrigin:taskOrigin?structuredClone(taskOrigin):null,taskJudge,taskRaw:taskRaw.slice(),taskInputs:[...taskInputs],taskWidth,taskHeight,mode:value('drive-mode'),enabled:check('memory-enabled'),physics:{pose:{...physics.pose},odometry:{...physics.odometry},left:physics.left,right:physics.right,speed:physics.speed,blocked:physics.blocked,collisions:physics.collisions,contact:physics.contact,surface:physics.surface}};
   researchBaseline={brain:controller,visionSettings:{...visionSettings},config:{...physics.config},source:firmware.source,mode:value("drive-mode"),policy:sugarPolicy};
   swarm=perceiver?new VisualSwarm(perceiver.model,visionSettings):null;controller=controller?.clone()??null;
   memory=memory.fresh();sugarPolicy=SugarPolicy.fromJSON(sugarPolicy.toJSON(),memorySettings.count);places=VisualPlaces.fromJSON(places.toJSON());estimator=new StateEstimator(physics.pose,calibration);
-  return ()=>{objects=state.objects;floorColour=state.floorColour;startPose=state.startPose;mission=state.mission;physics.config=state.config;Object.assign(physics,state.physics);wiring=state.wiring;adapterConfig=state.adapterConfig;controller=state.controller;perceiver=state.perceiver;memory=state.memory;sugarPolicy=state.sugarPolicy;visionSettings=state.visionSettings;swarm=state.swarm;noiseConfig=state.noiseConfig;noise=state.noise;firmware=state.firmware;program=state.program;appliedProgram=state.appliedProgram;objectiveRun=state.objectiveRun;estimator=state.estimator;places=state.places;simTime=state.simTime;liveRecorder=state.liveRecorder;liveEpisode=state.liveEpisode;action=state.action;actualPWM=state.actualPWM;estimates=state.estimates;sensors=state.sensors;sonar=state.sonar;selected=state.selected;returnToPlace=state.returnToPlace;el<HTMLSelectElement>('drive-mode').value=state.mode;el<HTMLInputElement>('memory-enabled').checked=state.enabled;researchMode=false;scene.rebuildObjects(objects);scene.rebuildRobot(physics.config);scene.rebuildMission(mission,objectiveRun.collected);updateFloor();populateObjects();fillLearning();fillHardware();fillNoise();programInfo();el<HTMLTextAreaElement>('sketch').value=firmware.source;sketchEditor.refresh();captureTime=-Infinity;};
+  return ()=>{objects=state.objects;loadJourney(state.journey);taskJudge=state.taskJudge;taskOrigin=state.taskOrigin;taskRaw=state.taskRaw;taskInputs=state.taskInputs;taskWidth=state.taskWidth;taskHeight=state.taskHeight;floorColour=state.floorColour;startPose=state.startPose;mission=state.mission;physics.config=state.config;Object.assign(physics,state.physics);wiring=state.wiring;adapterConfig=state.adapterConfig;controller=state.controller;perceiver=state.perceiver;memory=state.memory;sugarPolicy=state.sugarPolicy;visionSettings=state.visionSettings;swarm=state.swarm;noiseConfig=state.noiseConfig;noise=state.noise;firmware=state.firmware;program=state.program;appliedProgram=state.appliedProgram;objectiveRun=state.objectiveRun;estimator=state.estimator;places=state.places;simTime=state.simTime;liveRecorder=state.liveRecorder;liveEpisode=state.liveEpisode;action=state.action;actualPWM=state.actualPWM;estimates=state.estimates;sensors=state.sensors;sonar=state.sonar;selected=state.selected;returnToPlace=state.returnToPlace;el<HTMLSelectElement>('drive-mode').value=state.mode;el<HTMLInputElement>('memory-enabled').checked=state.enabled;researchMode=false;scene.rebuildObjects(objects);scene.rebuildRobot(physics.config);scene.rebuildMission(mission,objectiveRun.collected);updateFloor();populateObjects();fillLearning();fillHardware();fillNoise();programInfo();el<HTMLTextAreaElement>('sketch').value=firmware.source;sketchEditor.refresh();captureTime=-Infinity;};
 }
 function configureTrial(c:TrialCase,v:Variant,brain?:ReturnType<SpikingNetwork['toJSON']>):void {
   const baseline=researchBaseline?.brain;if(!baseline||!perceiver)throw new Error('Load a controller and its eyes before research.');
-  researchMode=true;objects=structuredClone(c.objects);startPose={...c.pose};mission=structuredClone(c.mission);floorColour='#b7bea7';physics.config={...researchBaseline!.config,sonarEnabled:v!=='no-sonar'&&researchBaseline!.config.sonarEnabled};visionSettings={...researchBaseline!.visionSettings};sugarPolicy=SugarPolicy.fromJSON(researchBaseline!.policy.toJSON(),memorySettings.count);
+  taskSettings={...taskSettings,mode:'off'};researchMode=true;objects=structuredClone(c.objects);startPose={...c.pose};mission=structuredClone(c.mission);floorColour='#b7bea7';physics.config={...researchBaseline!.config,sonarEnabled:v!=='no-sonar'&&researchBaseline!.config.sonarEnabled};visionSettings={...researchBaseline!.visionSettings};sugarPolicy=SugarPolicy.fromJSON(researchBaseline!.policy.toJSON(),memorySettings.count);
   controller=brain?SpikingNetwork.fromJSON(brain):baseline.clone();
   if(v==='single')visionSettings={...visionSettings,layout:'single'};if(v==='swarm3')visionSettings={...visionSettings,layout:'circle3'};if(v==='filtered5')visionSettings={...visionSettings,layout:'circle5',normalize:true,smooth:true,temporal:4};
   el<HTMLInputElement>('memory-enabled').checked=v!=='no-memory';returnToPlace=false;memory=memory.fresh();places=new VisualPlaces();sugarPolicy.reset(c.seed);noiseConfig={...DEFAULT_NOISE,...(c.harsh?NOISE_PRESETS.harsh:NOISE_PRESETS.mild),seed:c.seed};noise=new NoiseSource(noiseConfig);
@@ -692,21 +714,42 @@ async function simulatedSegment(pwm:[number,number],seconds:number,gains:[number
 }
 function initializeResearch():void {
   const researchHost=document.createElement('section'),calibrationHost=document.createElement('section');hardwareHost.before(researchHost,calibrationHost);const jumps=document.createElement('div');jumps.className='row';jumps.innerHTML='<a href="#research-panel">Training, replay & export ↓</a><a href="#calibration-panel">Floor calibration ↓</a>';el('show-code').after(jumps);
-  researchPanel=new ResearchPanel(researchHost,{busy:()=>hardwarePanel.busy||!!training||!!calibrationPanel?.active,pause:()=>setRunning(false,'research job'),checkpoint:researchCheckpoint,configure:configureTrial,step:()=>{tick();return structuredClone(lastStep);},brain:()=>controller?.toJSON()??null,adopt:brain=>{pauseForEdit('Research winner adopted');controller=SpikingNetwork.fromJSON(brain);brainName='Research selected fly';setText('brain-name',brainName);rebuildSwarm();saveLocal();message('Selected research controller adopted. Export fly + eyes to keep it.');},download,message,context:()=>({objects,startPose,config:physics.config,wiring,adapter:adapterConfig,vision:perceiver?.model,visionSettings,memorySettings,calibration,sketch:firmware.source,controller:controller?.toJSON(),dt:1/30}),studentCode:(s,le)=>compactSketch(s,wiring,physics.config,le),studentRun:(s,cap,seconds)=>hardwarePanel.startStudent(s.hash,cap,seconds),stopHardware:()=>hardwarePanel.stop(),places:navigate=>{if(!researchMode)returnToPlace=navigate;const p=estimator.pose;return `${places.nodes.length} places / ${places.edges.length} edges · ${places.status}\nEstimated X ${p.x.toFixed(2)}, Z ${p.z.toFixed(2)}, heading ${(p.heading*180/Math.PI).toFixed(1)}° · position σ ${(Math.sqrt(Math.max(estimator.covariance[0],estimator.covariance[4]))*100).toFixed(1)} cm · ${estimator.source}; ${estimator.accepted} accepted, ${estimator.rejected} rejected observations · sugar route ${places.route().join(' → ')||'unknown'}`;},forgetPlaces:()=>{places=new VisualPlaces();saveLocal();}});
+  researchPanel=new ResearchPanel(researchHost,{busy:()=>hardwarePanel.busy||!!training||!!calibrationPanel?.active||!!taskPanel?.active,pause:()=>setRunning(false,'research job'),checkpoint:researchCheckpoint,configure:configureTrial,step:()=>{tick();return structuredClone(lastStep);},brain:()=>controller?.toJSON()??null,adopt:brain=>{pauseForEdit('Research winner adopted');controller=SpikingNetwork.fromJSON(brain);brainName='Research selected fly';setText('brain-name',brainName);rebuildSwarm();saveLocal();message('Selected research controller adopted. Export fly + eyes to keep it.');},download,message,context:()=>({objects,startPose,config:physics.config,wiring,adapter:adapterConfig,vision:perceiver?.model,visionSettings,memorySettings,calibration,sketch:firmware.source,controller:controller?.toJSON(),dt:1/30}),studentCode:(s,le)=>compactSketch(s,wiring,physics.config,le),studentRun:(s,cap,seconds)=>hardwarePanel.startStudent(s.hash,cap,seconds),stopHardware:()=>hardwarePanel.stop(),places:navigate=>{if(!researchMode)returnToPlace=navigate;const p=estimator.pose;return `${places.nodes.length} places / ${places.edges.length} edges · ${places.status}\nEstimated X ${p.x.toFixed(2)}, Z ${p.z.toFixed(2)}, heading ${(p.heading*180/Math.PI).toFixed(1)}° · position σ ${(Math.sqrt(Math.max(estimator.covariance[0],estimator.covariance[4]))*100).toFixed(1)} cm · ${estimator.source}; ${estimator.accepted} accepted, ${estimator.rejected} rejected observations · sugar route ${places.route().join(' → ')||'unknown'}`;},forgetPlaces:()=>{places=new VisualPlaces();saveLocal();}});
   researchPanel.liveLoader(()=>{const d=liveRecorder.finish(0,0,liveEpisode,mission.settings.mode!=='explore');return d;});
-  calibrationPanel=new CalibrationPanel(calibrationHost,{config:()=>physics.config,pose:()=>({...physics.pose}),profile:()=>calibration,apply:(p,enabled)=>{calibration=validateCalibration(p);compensationEnabled=enabled;estimator.profile=calibration;saveLocal();message('Calibration profile applied to command odometry'+(enabled?' and simulated / USB-host motor compensation.':'.'));},busy:()=>hardwarePanel.busy||researchPanel.active||!!training,checkpoint:researchCheckpoint,pause:()=>setRunning(false,'marked calibration'),segment:simulatedSegment,physical:(pwm,seconds,cancel,pid,settings)=>hardwarePanel.calibrationSegment(pwm,seconds,cancel,pid,settings),stop:()=>{hardwarePanel.stop();physics.left=physics.right=0;actualPWM=[0,0];},observe:(p,s,h)=>estimator.observe(p,s,h,simTime),wall:(cm,n,offset,sigma)=>estimator.wallRange(cm,n,offset,physics.config.length*.48,sigma,simTime),fov:degrees=>{physics.config.cameraFov=degrees;hardwareChanged();fillHardware();},mark:(origin,targets)=>scene.calibrationMarks(origin,targets),download,message});
+  calibrationPanel=new CalibrationPanel(calibrationHost,{config:()=>physics.config,pose:()=>({...physics.pose}),profile:()=>calibration,apply:(p,enabled)=>{calibration=validateCalibration(p);compensationEnabled=enabled;estimator.profile=calibration;saveLocal();message('Calibration profile applied to command odometry'+(enabled?' and simulated / USB-host motor compensation.':'.'));},busy:()=>hardwarePanel.busy||researchPanel.active||!!training||!!taskPanel?.active,checkpoint:researchCheckpoint,pause:()=>setRunning(false,'marked calibration'),segment:simulatedSegment,physical:(pwm,seconds,cancel,pid,settings)=>hardwarePanel.calibrationSegment(pwm,seconds,cancel,pid,settings),stop:()=>{hardwarePanel.stop();physics.left=physics.right=0;actualPWM=[0,0];},observe:(p,s,h)=>estimator.observe(p,s,h,simTime),wall:(cm,n,offset,sigma)=>estimator.wallRange(cm,n,offset,physics.config.length*.48,sigma,simTime),fov:degrees=>{physics.config.cameraFov=degrees;hardwareChanged();fillHardware();},mark:(origin,targets)=>scene.calibrationMarks(origin,targets),download,message});
   // Scene pointer edits and keyboard controls must not mutate a running research/calibration transaction.
-  document.addEventListener('click',event=>{if(!researchPanel.active&&!calibrationPanel.active)return;const target=event.target as HTMLElement;if(target.closest("#copy-log,#copy-log-json,#copy-serial,#save-serial,#export-log,#serial-stop,#serial-disconnect"))return;if(target.closest('#research-panel,#calibration-panel'))return;event.stopImmediatePropagation();event.preventDefault();},true);
-  el('habitat').addEventListener('pointerdown',event=>{if(researchPanel.active||calibrationPanel.active){event.stopImmediatePropagation();event.preventDefault();}},true);
+  document.addEventListener('click',event=>{if(!researchPanel.active&&!calibrationPanel.active&&!taskPanel?.active)return;const target=event.target as HTMLElement;if(target.closest("#copy-log,#copy-log-json,#copy-serial,#save-serial,#export-log,#serial-stop,#serial-disconnect"))return;if(target.closest('#research-panel,#calibration-panel,#lifecycle-panel'))return;event.stopImmediatePropagation();event.preventDefault();},true);
+  el('habitat').addEventListener('pointerdown',event=>{if(researchPanel.active||calibrationPanel.active||taskPanel?.active){event.stopImmediatePropagation();event.preventDefault();}},true);
+}
+
+function initializeJourney():void {
+  const host=document.createElement('section');learningPanel.before(host);
+  if(!el<HTMLSelectElement>('drive-mode').querySelector('option[value="task"]'))el<HTMLSelectElement>('drive-mode').add(new Option('Learned visual task network + inherited fly','task'));
+  if(!el<HTMLSelectElement>('drive-mode').querySelector('option[value="coach"]'))el<HTMLSelectElement>('drive-mode').add(new Option('Camera coach · demonstration teacher','coach'));
+  taskPanel=new LifecyclePanel(host,{snapshot:journeySnapshot,apply:settings=>{pauseForEdit('Task network selected');taskSettings=validateTaskSettings(settings);physics.config.cameraEnabled=settings.modules.camera;physics.config.sonarEnabled=settings.modules.sonar;chooseProgram('fly');el<HTMLSelectElement>('drive-mode').value=settings.mode==='off'?'fly':'task';taskJudge=new TaskJudge(taskSettings);taskEvidence=[];fillHardware();saveLocal();message('Frozen visual task network selected. Sugar and pain score training; they are absent from its observation vector.');},transfer:()=>{
+    pauseForEdit('Racer adapted');if(!controller||brainDomain!=='track'||!eyes.world)throw new Error('Import a track racer first. Its original is retained in journey lineage.');
+    taskParent={domain:'track',brain:controller.toJSON()};controller=SpikingNetwork.fromJSON(racerToRoom(controller.toJSON()));perceiver=validateEyes(eyes.world,'world');brainDomain='world';brainName='Room offspring of imported racer';sensors=new Array(19).fill(0);estimates=new Float32Array(perceiver.estimateCount);lineage('Adapted racer: body speed/commands and static obstacle remapped; novel room rows zero');clearMemory();rebuildSwarm();setText('brain-name',brainName);setText('adapter','WORLD INPUTS');taskPanel.sync();saveLocal();message('Room offspring created; original racer retained. Validate this new task mapping before deployment.');
+  },setup:setupTaskCase,checkpoint:researchCheckpoint,step:()=>{tick();return structuredClone(lastStep);},busy:()=>hardwarePanel.busy||!!training||researchPanel.active||calibrationPanel.active,pause:()=>setRunning(false,'training journey'),adopt:(b,event)=>{taskBrain=b.clone();lineage(event);chooseProgram('fly');el<HTMLSelectElement>('drive-mode').value='task';taskPanel.sync();saveLocal();message('Learned visual network installed. Use frozen held-out tests to assess actual task success.');},evidence:e=>{taskEvidence=e;saveLocal();},download,message,frame:r=>{taskFrameRecorder=r;if(r)capture();}});
+  taskPanel.sync();
+}
+function setupTaskCase(settings:TaskSettings,seed:number,heldOut:boolean,room:string,mode:'task'|'coach'):void {
+  if(!controller||!perceiver||brainDomain!=='world')throw new Error('Adapt the racer to room inputs, or load the bundled world fly first.');
+  if(!Number.isInteger(seed)||seed<0||seed>2000000)throw new Error('Task seed must be a nonnegative integer below 2,000,000.');
+  if(!taskPanel?.active){pauseForEdit('Room task prepared');editWorld();}
+  else researchMode=true;
+  const c=taskCase(seed,heldOut,settings,room);taskSettings=validateTaskSettings(settings);objects=c.objects;startPose=c.pose;taskOrigin=structuredClone(c.ball);taskEvidence=[];mission={settings:{...DEFAULT_OBJECTIVE},goals:[],trail:[]};physics.config={...physics.config,cameraEnabled:settings.modules.camera,sonarEnabled:settings.modules.sonar};
+  controller=controller.clone();taskBrain=taskBrain.clone();memory=memory.fresh();places=new VisualPlaces();chooseProgram('fly');el<HTMLSelectElement>('drive-mode').value=mode;noiseConfig={...(heldOut?NOISE_PRESETS.mild:noiseConfig),seed};scene.rebuildObjects(objects);scene.rebuildRobot(physics.config);resetRobot();capture();populateObjects();fillLearning();fillHardware();fillNoise();taskPanel?.sync();saveLocal();
+  if(!taskPanel?.active)message('Blue-ball task prepared. Collect demonstrations, evolve visual offspring, then test held-out seeds.');
 }
 
 async function main(): Promise<void> {
-  restoreLocal();
+  el<HTMLSelectElement>("drive-mode").add(new Option("Learned visual task network + inherited fly","task"));el<HTMLSelectElement>("drive-mode").add(new Option("Camera coach · demonstration teacher","coach"));
+  restoreLocal();const restoredJourney=journeySnapshot(),restoredDriveMode=value("drive-mode"),restoredController=controller,restoredEyes=perceiver,restoredDomain=brainDomain,restoredName=brainName,restoredFitness=brainFitness,restoredGeneration=brainGeneration;
   scene = new HabitatScene(el<HTMLCanvasElement>("habitat"), el<HTMLCanvasElement>("camera"), el<HTMLCanvasElement>("fly-eye")); scene.rebuildObjects(objects); scene.rebuildRobot(physics.config);
   updateFloor();
   resetObjectives();
-  hardwarePanel=new HardwarePanel(hardwareHost,{context:()=>({wiring,config:physics.config,adapter:adapterConfig,source:firmware.source,brain:controller,eyes:perceiver?.model??null,domain:brainDomain,memoryEnabled:check("memory-enabled"),mode:value("drive-mode"),manual:manualDemands(),memory,memorySettings,visionSettings,objective:mission.settings,sugarPolicy,calibration,compensationEnabled}),pause:()=>{if(training)endTraining("Hardware armed; simulated training stopped.");setRunning(false,"physical hardware armed");},download,message});
-  initializeLearning();initializeTraining();initializeResearch();
+  hardwarePanel=new HardwarePanel(hardwareHost,{context:()=>({wiring,config:physics.config,adapter:adapterConfig,source:firmware.source,brain:controller,eyes:perceiver?.model??null,domain:brainDomain,memoryEnabled:check("memory-enabled"),mode:value("drive-mode"),manual:manualDemands(),memory,memorySettings,visionSettings,objective:mission.settings,sugarPolicy,calibration,compensationEnabled,task:taskSettings,taskBrain}),pause:()=>{if(training)endTraining("Hardware armed; simulated training stopped.");setRunning(false,"physical hardware armed");},download,message});
+  initializeLearning();initializeTraining();initializeResearch();initializeJourney();
   el("spikes").innerHTML = Array.from({ length: 48 }, () => "<i></i>").join(""); populateObjects(); initializeHardware(); wireEvents(); initializeInstruments(); codeMessage("Applied sketch ready · edit, Apply, then Run");
   let previous = performance.now(), accumulator = 0, uiTime = 0;
   const frame = (now: number) => {
@@ -715,13 +758,13 @@ async function main(): Promise<void> {
     if (running) { accumulator += elapsed * Number(value("sim-rate")); while (accumulator >= 1 / 30 && running) { tick(); accumulator -= 1 / 30; } } else accumulator = 0;
     scene.updateRobot(physics.pose, physics.config, check("beam-visible"), 0, 0, 0);
     if (following) scene.controls.target.set(physics.pose.x, .06, physics.pose.z);
-    if ((!researchPanel?.active&&!calibrationPanel?.active)&&(simTime - captureTime >= 1 / physics.config.cameraHz || captureTime === -Infinity)) capture();
+    if ((!researchPanel?.active&&!calibrationPanel?.active&&!taskPanel?.active)&&(simTime - captureTime >= 1 / physics.config.cameraHz || captureTime === -Infinity)) capture();
     scene.render(); if (now - uiTime > 100) { telemetry(); uiTime = now; }
     } catch (error) { setRunning(false, "simulation error"); message(`Simulation paused: ${error instanceof Error ? error.message : error}`, true); }
     requestAnimationFrame(frame);
   };
   requestAnimationFrame(frame);
-  try { await loadBundled(); message("Ready. Start with Clear floor & run drive check, or choose a controller preset. Edit and Apply its code to change the machine."); }
+  try { await loadBundled();if(restoredController&&restoredEyes){controller=restoredController;perceiver=restoredEyes;brainDomain=restoredDomain;brainName=restoredName;brainFitness=restoredFitness;brainGeneration=restoredGeneration;estimates=new Float32Array(perceiver.estimateCount);sensors=new Array(controller.inputCount).fill(0);setText("brain-name",brainName);setText("adapter",`${brainDomain.toUpperCase()} INPUTS`);rebuildSwarm();}loadJourney(restoredJourney);el<HTMLSelectElement>("drive-mode").value=restoredDriveMode;taskPanel.sync();saveLocal(); message("Ready. Start with Clear floor & run drive check, or choose a controller preset. Edit and Apply its code to change the machine."); }
   catch (error) { message(`Bundled brain unavailable: ${error instanceof Error ? error.message : error}. Manual and sketch control still work.`, true); }
 }
 void main().catch(error => { message(`Could not start the 3D habitat: ${error instanceof Error ? error.message : error}`, true); });

@@ -3,11 +3,12 @@ import { Perceiver, VisionModel } from "../vision/perception";
 import type { Proprioception } from "../vision/interface";
 import { worldDomain } from "../vision/world/worldDomain";
 
-export type VisionSettings = { normalize: boolean; smooth: boolean; temporal: number; layout: "single" | "circle3" | "circle5" | "scales3"; radius: number };
+export type VisionSettings = { normalize: boolean; smooth: boolean; temporal: number; layout: "single" | "circle3" | "circle5" | "scales3"; radius: number; vote?:'confidence'|'mean'|'median';memberWeights?:number[] };
 export const DEFAULT_VISION: VisionSettings = {normalize:false,smooth:false,temporal:1,layout:"single",radius:.08};
 export function validateVisionSettings(raw:unknown):VisionSettings {
   const s=raw as VisionSettings;
   if(!s||typeof s.normalize!=="boolean"||typeof s.smooth!=="boolean"||![1,4,16].includes(s.temporal)||!["single","circle3","circle5","scales3"].includes(s.layout)||!Number.isFinite(s.radius)||s.radius<0||s.radius>.2)throw new Error("Invalid visual processing settings.");
+  if(s.vote!==undefined&&!['confidence','mean','median'].includes(s.vote)||s.memberWeights!==undefined&&(!Array.isArray(s.memberWeights)||s.memberWeights.length!==5||s.memberWeights.some(v=>!Number.isFinite(v)||v<0||v>10)||!s.memberWeights.slice(0,viewPatches(s).length).some(v=>v>0)))throw new Error('Invalid swarm vote/weights.');
   return {...s};
 }
 export type ViewPatch={x:number;y:number;scale:number};
@@ -52,7 +53,7 @@ export class VisualSwarm {
   votes:Action[]=[];
   processed:Float32Array=new Float32Array(0);
   constructor(readonly model:VisionModel,readonly settings:VisionSettings){this.readers=viewPatches(settings).map(()=>new Perceiver(model));}
-  reset():void {this.filter.reset();this.readers.forEach(p=>p.reset());this.brains=[];this.source=null;this.members.length=0;}
+  reset():void {this.filter.reset();this.readers.forEach(p=>p.reset());this.brains=[];this.source=null;this.members.length=0;this.votes=[];this.disagreement=0;}
   see(frame:Float32Array,body:Proprioception,domain:"world"|"track"):Float32Array {
     const {width:w,height:h}=this.model.spec;this.processed=this.filter.process(frame,w,h,this.settings);this.members.length=0;
     const patches=domain==="world"?viewPatches(this.settings):[{x:0,y:0,scale:1}],base=new Float32Array(this.readers[0].estimateCount);
@@ -78,9 +79,10 @@ export class VisualSwarm {
     const primary=controller.step(inputs);
     this.votes=[primary];
     if(domain!=="world"||this.members.length<2)return primary;
-    const votes=[primary,...this.brains.map((brain,i)=>{const local=[...inputs],mean=this.members[i+1].mean.slice();mean[4]=Math.max(mean[4],body.sonarCloseness??0);worldDomain.sensors(mean,mission,body,local);return brain.step(local);})],weight=this.members.reduce((a,m)=>a+m.weight,0);
+    const votes=[primary,...this.brains.map((brain,i)=>{const local=[...inputs],mean=this.members[i+1].mean.slice();mean[4]=Math.max(mean[4],body.sonarCloseness??0);worldDomain.sensors(mean,mission,body,local);return brain.step(local);})],weights=this.members.map((m,i)=>(this.settings.memberWeights?.[i]??1)*(this.settings.vote==='mean'||this.settings.vote==='median'?1:m.weight)),weight=weights.reduce((a,v)=>a+v,0);
     this.votes=votes;
     const result:Action={steer:0,throttle:0,brake:0,reverse:0};
-    votes.forEach((a,i)=>{const v=this.members[i].weight/weight;result.steer+=a.steer*v;result.throttle+=a.throttle*v;result.brake+=a.brake*v;result.reverse!+=(a.reverse??0)*v;});return result;
+    if(this.settings.vote==='median'){for(const k of ['steer','throttle','brake','reverse'] as const){const values=votes.map((v,i)=>({v:v[k]??0,w:weights[i]})).filter(v=>v.w>0).sort((a,b)=>a.v-b.v);let cumulative=0;for(const v of values){cumulative+=v.w;if(cumulative>=weight/2){result[k]=v.v;break;}}}return result;}
+    votes.forEach((a,i)=>{const v=weights[i]/Math.max(1e-8,weight);result.steer+=a.steer*v;result.throttle+=a.throttle*v;result.brake+=a.brake*v;result.reverse!+=(a.reverse??0)*v;});return result;
   }
 }
