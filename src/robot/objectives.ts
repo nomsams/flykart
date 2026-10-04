@@ -55,13 +55,14 @@ export class SugarPolicy {
   constructor(readonly count:number,seed=2048){this.weights=new Float32Array(count*3);this.random=mulberry32(seed);}
   reset(seed=2048):void {this.traces=[];this.random=mulberry32(seed);}
   remember(cells:number[],action:Action):void {const choice=action.steer<-.2?0:action.steer>.2?2:1;this.traces.forEach(t=>t.age++);this.traces=this.traces.filter(t=>t.age<150);this.traces.push({cells:[...cells],choice,age:0});}
-  action(cells:number[],base:Action,cue:SensoryCue,sonar:number,explore=true):Action {
+  rememberExecuted(cells:number[],pwm:[number,number]):void {if(Math.max(...pwm.map(Math.abs))<.05){this.traces.forEach(t=>t.age++);this.traces=this.traces.filter(t=>t.age<150);return;}this.remember(cells,{steer:pwm[0]-pwm[1],throttle:Math.max(0,(pwm[0]+pwm[1])/2),brake:0});}
+  action(cells:number[],base:Action,cue:SensoryCue,sonar:number,explore=true,recordChoice=true):Action {
     this.values=[0,0,0];for(const id of cells)for(let k=0;k<3;k++)this.values[k]+=this.weights[id*3+k]/Math.max(1,cells.length);
     const scores=this.values.map((v,k)=>v+cue.strength*(k===0?-cue.bearing*12:k===2?cue.bearing*12:.35-Math.abs(cue.bearing)*4));
     let choice=scores.indexOf(Math.max(...scores));if(!cue.strength&&scores.every(v=>v===0))choice=1;
     if(explore&&this.random()<.08)choice=Math.floor(this.random()*3);
     if(sonar>.87)choice=this.random()<.5?0:2;
-    this.lastChoice=choice;this.traces.forEach(t=>t.age++);this.traces=this.traces.filter(t=>t.age<150);this.traces.push({cells:[...cells],choice,age:0});
+    this.lastChoice=choice;if(recordChoice)this.remember(cells,{steer:choice===0?-1:choice===2?1:0,throttle:1,brake:0});
     const learned=choice===0?-.7:choice===2?.7:0;
     return {steer:clamp(base.steer*.25+learned*.75,-1,1),throttle:sonar>.87?0:choice===1?.5:.18,brake:0,reverse:sonar>.87?.35:0};
   }

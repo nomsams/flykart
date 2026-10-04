@@ -16,6 +16,7 @@ export class HabitatScene {
   private robot = new THREE.Group();
   private mission = new THREE.Group();
   private scentOverlay = new THREE.Group();
+  private calibrationView = new THREE.Group();
   private wheels: THREE.Object3D[] = [];
   private beam = new THREE.Group();
   private contactView = new THREE.Group();
@@ -46,7 +47,7 @@ export class HabitatScene {
     this.scene.add(sun);
     const floor = new THREE.Mesh(new THREE.PlaneGeometry(7, 7), this.floorMaterial); floor.rotation.x = -Math.PI / 2; floor.receiveShadow = true; this.scene.add(floor);
     const grid = new THREE.GridHelper(7, 35, 0x83927c, 0x9caa92); grid.position.y = .001; const gm = grid.material as THREE.Material; gm.transparent = true; gm.opacity = .23; this.scene.add(grid);
-    this.scene.add(this.objects, this.robot, this.mission, this.scentOverlay, this.beam, this.selection, this.contactView, this.envelope); this.robot.userData.id="@robot";this.selection.visible = this.contactView.visible = this.envelope.visible = false;
+    this.scene.add(this.objects, this.robot, this.mission, this.scentOverlay, this.calibrationView, this.beam, this.selection, this.contactView, this.envelope); this.robot.userData.id="@robot";this.selection.visible = this.contactView.visible = this.envelope.visible = false;
     this.camera.position.set(3.5, 4.8, 5.2);
     this.controls = new OrbitControls(this.camera, canvas); this.controls.target.set(0, .05, 0); this.controls.enableDamping = true; this.controls.maxPolarAngle = Math.PI / 2 - .025; this.controls.minDistance = .25; this.controls.maxDistance = 14;
     this.resizeObserver = new ResizeObserver(() => this.resize()); this.resizeObserver.observe(canvas.parentElement!); this.resize();
@@ -90,6 +91,7 @@ export class HabitatScene {
     this.tinyContext.putImageData(image,0,0);this.flyContext.imageSmoothingEnabled=false;this.flyContext.drawImage(this.tinyCanvas,0,0,this.flyContext.canvas.width,this.flyContext.canvas.height);
   }
   showContacts(show: boolean): void { this.contactView.visible = this.envelope.visible = show; }
+  calibrationMarks(origin:Pose|null,targets:Pose[]):void {this.clear(this.calibrationView);if(!origin)return;for(const [i,p]of [origin,...targets].entries()){const points=[new THREE.Vector3(p.x-.035,.008,p.z),new THREE.Vector3(p.x+.035,.008,p.z),new THREE.Vector3(p.x,.008,p.z),new THREE.Vector3(p.x,.008,p.z-.035),new THREE.Vector3(p.x,.008,p.z+.035)];this.calibrationView.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(points),new THREE.LineBasicMaterial({color:i?0xe5b669:0x61d9bd})));}const points=[origin,...targets].map(p=>new THREE.Vector3(p.x,.008,p.z));this.calibrationView.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(points),new THREE.LineBasicMaterial({color:0x94a6ab})));}
   private rebuildContacts(): void {
     this.clear(this.contactView); this.clear(this.envelope); const c = this.robotConfig; if (!c) return;
     for (const o of this.worldObjects) {
@@ -143,11 +145,12 @@ export class HabitatScene {
     const image = this.eyeContext.createImageData(160, 120);
     if (enabled) {
       const beamVisible = this.beam.visible, selectedVisible = this.selection.visible, robotVisible = this.robot.visible, contactsVisible = this.contactView.visible, envelopeVisible = this.envelope.visible, scentVisible=this.scentOverlay.visible;
-      this.beam.visible = this.selection.visible = this.robot.visible = this.contactView.visible = this.envelope.visible = this.scentOverlay.visible = false;
+      this.beam.visible = this.selection.visible = this.robot.visible = this.contactView.visible = this.envelope.visible = this.scentOverlay.visible = this.calibrationView.visible = false;
       this.renderer.setRenderTarget(this.target); this.renderer.render(this.scene, this.eye); this.renderer.readRenderTargetPixels(this.target, 0, 0, 160, 120, this.bytes); this.renderer.setRenderTarget(null);
       this.beam.visible = beamVisible; this.selection.visible = selectedVisible; this.robot.visible = robotVisible;
       this.contactView.visible = contactsVisible; this.envelope.visible = envelopeVisible;
       this.scentOverlay.visible=scentVisible;
+      this.calibrationView.visible=true;
       for (let y = 0; y < 120; y++) for (let x = 0; x < 160; x++) {
         const i = (y * 160 + x) * 4, source = ((119 - y) * 160 + x) * 4;
         image.data[i] = Math.round(this.bytes[source] / 255 * 31) / 31 * 255;

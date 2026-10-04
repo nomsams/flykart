@@ -21,6 +21,14 @@ import { DEFAULT_VISION, VisualSwarm, VisionSettings, validateVisionSettings, vi
 import { DEFAULT_OBJECTIVE, MissionSnapshot, ObjectiveRun, SugarPolicy, SensoryCue, EMPTY_CUE, cameraCue, scentCue, validateMission } from "./objectives";
 import { placementError, validatePose } from "./placement";
 import type { Pose } from "./model";
+import { CalibrationProfile, DEFAULT_CALIBRATION, StateEstimator, HeadingPID, PIDSettings, compensate, validateCalibration } from './state-estimator';
+import { VisualPlaces } from './places';
+import { CalibrationPanel } from './calibration-panel';
+import { ResearchPanel } from './research-panel';
+import { compactInput } from './compact';
+import { compactSketch } from './compact-firmware';
+import { EpisodeRecorder, EpisodeStep } from './training';
+import type { TrialCase, Variant } from './experiments';
 
 const root = document.querySelector<HTMLDivElement>("#robot-app")!;
 root.innerHTML = `
@@ -77,6 +85,12 @@ let floorColour = "#b7bea7", surfaceEvent = "", contactEvent = "";
 let wiring: Wiring = { ...ESP_WIRING };
 const physics = new RobotPhysics();
 let startPose={...physics.pose};
+let calibration:CalibrationProfile={...DEFAULT_CALIBRATION},compensationEnabled=false;
+let estimator=new StateEstimator(physics.pose,calibration),places=new VisualPlaces();
+let researchPanel:ResearchPanel,calibrationPanel:CalibrationPanel;
+let liveRecorder=new EpisodeRecorder(),liveEpisode=0,lastStep:EpisodeStep;
+let researchBaseline:{brain:SpikingNetwork|null;visionSettings:VisionSettings;config:RobotConfig;source:string;mode:string;policy:SugarPolicy}|null=null;
+let compactFeatures=new Array(30).fill(0),researchMode=false,returnToPlace=false;
 let memorySettings:MemorySettings={...DEFAULT_MEMORY},visionSettings:VisionSettings={...DEFAULT_VISION};
 let mission:MissionSnapshot={settings:{...DEFAULT_OBJECTIVE},goals:[],trail:[]};
 let objectiveRun=new ObjectiveRun(mission),sugarPolicy=new SugarPolicy(memorySettings.count),cue:SensoryCue={...EMPTY_CUE};
@@ -137,9 +151,10 @@ workbench.after(editTools);
 el<HTMLSelectElement>("drive-mode").add(new Option("Fly + sugar memory steering","reward"));
 el<HTMLSelectElement>("console-filter").add(new Option("reward","reward"));
 el("room-map").closest(".map-card")!.querySelector(".sensor-title span")!.id="kenyon-title";
-function clearMemory():void { memory=memory.settings.count===memorySettings.count&&memory.settings.sparsity===memorySettings.sparsity&&memory.settings.rareWeighting===memorySettings.rareWeighting?memory.fresh():new RoomMemory(memorySettings);swarm?.reset();sugarPolicy.reset(); }
+function clearMemory():void { memory=memory.settings.count===memorySettings.count&&memory.settings.sparsity===memorySettings.sparsity&&memory.settings.rareWeighting===memorySettings.rareWeighting?memory.fresh():new RoomMemory(memorySettings);swarm?.reset();sugarPolicy.reset();places=new VisualPlaces(); }
 function rebuildSwarm():void { swarm=perceiver?new VisualSwarm(perceiver.model,visionSettings):null;captureTime=-Infinity; }
 function pauseForEdit(reason:string):void {
+  if(researchPanel?.active||calibrationPanel?.active)throw new Error("Finish the current research or marked run before editing.");
   if(hardwarePanel?.busy)throw new Error("Disconnect hardware before editing this experiment.");
   if(training)endTraining(reason+"; training stopped.");setRunning(false,reason);physics.left=physics.right=0;actualPWM=[0,0];
 }
@@ -196,7 +211,7 @@ function entityPose(id:string):{x:number;z:number;yaw:number}|null {
   return objects.find(o=>o.id===id)??mission.goals.find(o=>o.id===id)??null;
 }
 function setEntityPose(id:string,p:{x:number;z:number;yaw:number}):void {
-  if(id==="@robot"){const next=validatePose({x:p.x,z:p.z,heading:p.yaw}),error=placementError(next,physics.config,objects);if(error)throw new Error(error);physics.pose=next;physics.odometry={...next};startPose={...next};physics.blocked=false;physics.contact=null;scene.updateRobot(next,physics.config,check("beam-visible"),0,0,0);}
+  if(id==="@robot"){const next=validatePose({x:p.x,z:p.z,heading:p.yaw}),error=placementError(next,physics.config,objects);if(error)throw new Error(error);physics.pose=next;physics.odometry={...next};estimator=new StateEstimator(next,calibration);startPose={...next};physics.blocked=false;physics.contact=null;scene.updateRobot(next,physics.config,check("beam-visible"),0,0,0);}
   else {const o=objects.find(o=>o.id===id),g=mission.goals.find(o=>o.id===id);if(o){const next={...o,...p};validateObjects([next]);Object.assign(o,p);scene.rebuildObjects(objects);}else if(g){validateMission({...mission,goals:mission.goals.map(goal=>goal.id===id?{...goal,...p}:goal)});Object.assign(g,p);scene.rebuildMission(mission,objectiveRun.collected);}}
   scene.select(id);captureTime=-Infinity;
 }
@@ -257,7 +272,7 @@ function validateWiring(raw: unknown): Wiring {
 function validateFloor(raw: unknown): string { if (raw === undefined) return "#b7bea7"; if (typeof raw !== "string" || !/^#[0-9a-f]{6}$/i.test(raw)) throw new Error("Invalid floor colour."); return raw; }
 function updateFloor(): void { scene.setFloorColour(floorColour); el<HTMLInputElement>("floor-colour").value = floorColour; }
 function learningData(includeMemory=false) {
-  return {format:"robot-learning",version:1,memorySettings:{...memorySettings},visionSettings:{...visionSettings},sugarPolicy:sugarPolicy.toJSON(),learn:check("sugar-learn"),...(includeMemory?{memory:memory.toJSON()}:{})};
+  return {format:"robot-learning",version:1,memorySettings:{...memorySettings},visionSettings:{...visionSettings},sugarPolicy:sugarPolicy.toJSON(),learn:check("sugar-learn"),calibration,compensationEnabled,places:places.toJSON(),...(includeMemory?{memory:memory.toJSON()}:{})};
 }
 function parseLearning(raw:unknown,fallbackMemory?:RoomMemory) {
   const r=raw as ReturnType<typeof learningData>|undefined;
@@ -265,9 +280,10 @@ function parseLearning(raw:unknown,fallbackMemory?:RoomMemory) {
   const ms=r?validateMemorySettings(r.memorySettings):fallbackMemory?.settings??{...DEFAULT_MEMORY},vs=r?validateVisionSettings(r.visionSettings):{...DEFAULT_VISION};
   const mem=r?.memory?RoomMemory.fromJSON(r.memory):fallbackMemory??new RoomMemory(ms);
   if(mem.settings.count!==ms.count||mem.settings.sparsity!==ms.sparsity||mem.settings.rareWeighting!==ms.rareWeighting)throw new Error("Memory settings differ from the saved visual memory.");
-  return {memorySettings:ms,visionSettings:vs,memory:mem,policy:r?SugarPolicy.fromJSON(r.sugarPolicy,ms.count):new SugarPolicy(ms.count),learn:r?.learn??true};
+  return {memorySettings:ms,visionSettings:vs,memory:mem,policy:r?SugarPolicy.fromJSON(r.sugarPolicy,ms.count):new SugarPolicy(ms.count),learn:r?.learn??true,calibration:r?.calibration?validateCalibration(r.calibration):{...DEFAULT_CALIBRATION},compensationEnabled:r?.compensationEnabled===true,places:r?.places?VisualPlaces.fromJSON(r.places):new VisualPlaces()};
 }
 function saveLocal(): void {
+  if(researchMode)return;
   try { localStorage.setItem("flykart-robot-habitat-v1", JSON.stringify({ objects, floorColour,startPose,mission,learning:learningData(), config: physics.config, wiring, sketch: firmware.source, program: appliedProgram, mode: value("drive-mode"), adapter: adapterConfig, noise: noiseConfig })); }
   catch { message("Browser storage is unavailable. Export lab to keep your work.", true); }
 }
@@ -277,7 +293,7 @@ function restoreLocal(): void {
     const data = JSON.parse(text), nextObjects = validateObjects(data.objects), config = validateConfig(data.config), nextWiring = validateWiring(data.wiring), nextFirmware = new Firmware(data.sketch);
     floorColour = validateFloor(data.floorColour); objects = nextObjects; physics.config = config; wiring = nextWiring; firmware = nextFirmware; el<HTMLTextAreaElement>("sketch").value = firmware.source;
     adapterConfig = validateAdapter(data.adapter ?? DEFAULT_ADAPTER); noiseConfig = validateNoise(data.noise ?? DEFAULT_NOISE); noise = new NoiseSource(noiseConfig);
-    const learned=parseLearning(data.learning);startPose=validatePose(data.startPose??new RobotPhysics().pose);physics.pose={...startPose};physics.odometry={...startPose};mission=data.mission?validateMission(data.mission):{settings:{...DEFAULT_OBJECTIVE},goals:[],trail:[]};memorySettings=learned.memorySettings;visionSettings=learned.visionSettings;memory=learned.memory;sugarPolicy=learned.policy;el<HTMLInputElement>("sugar-learn").checked=learned.learn;
+    const learned=parseLearning(data.learning);startPose=validatePose(data.startPose??new RobotPhysics().pose);physics.pose={...startPose};physics.odometry={...startPose};mission=data.mission?validateMission(data.mission):{settings:{...DEFAULT_OBJECTIVE},goals:[],trail:[]};memorySettings=learned.memorySettings;visionSettings=learned.visionSettings;memory=learned.memory;sugarPolicy=learned.policy;calibration=learned.calibration;compensationEnabled=learned.compensationEnabled;places=learned.places;estimator=new StateEstimator(physics.pose,calibration);el<HTMLInputElement>("sugar-learn").checked=learned.learn;
     program = appliedProgram = PROGRAMS.some(p => p.id === data.program) ? data.program : "custom";
     el<HTMLSelectElement>("drive-mode").value = ["fly", "manual", "sketch", "reward"].includes(data.mode) ? data.mode : "sketch";
   } catch { message("Saved habitat could not be restored; using the workshop preset.", true); }
@@ -339,7 +355,7 @@ function hardwareChanged(): void { scene.rebuildRobot(physics.config); physics.l
 
 function log(kind: EventKind, text: string, data?: unknown): void { if (check("log-enabled")) consoleLog.push(simTime, kind, text, data); }
 function setRunning(next: boolean, reason = "operator"): void { if (running !== next) log("system", next ? "Simulation running" : `Simulation paused: ${reason}`); running = next; pauseReason = reason; el("run").textContent = running ? "Ⅱ Pause simulation" : "▶ Run simulation"; }
-function resetRobot(): void { setRunning(false); physics.reset();physics.pose={...startPose};physics.odometry={...startPose};resetObjectives();swarm?.reset(); sonar = new RobotSonar(); noise = new NoiseSource(noiseConfig); driveCheck = new DrivetrainCheck(); phaseIndex = -1; controller?.reset(); perceiver?.reset(); action = { steer: 0, throttle: 0, brake: 0 }; requests = motorRequests(action, adapterConfig); estimates.fill(0); sensors.fill(0); simTime = 0; cameraFrame = 0; neuralLogTime = -Infinity; captureTime = -Infinity; actualPWM = [0, 0]; firmware = new Firmware(firmware.source); keys.clear(); log("system", "Robot and program clock reset; room memory retained"); }
+function resetRobot(): void { setRunning(false);liveRecorder=new EpisodeRecorder();liveEpisode++; physics.reset();physics.pose={...startPose};physics.odometry={...startPose};estimator=new StateEstimator(startPose,calibration);places.reset();resetObjectives();swarm?.reset(); sonar = new RobotSonar(); noise = new NoiseSource(noiseConfig); driveCheck = new DrivetrainCheck(); phaseIndex = -1; controller?.reset(); perceiver?.reset(); action = { steer: 0, throttle: 0, brake: 0 }; requests = motorRequests(action, adapterConfig); estimates.fill(0); sensors.fill(0); simTime = 0; cameraFrame = 0; neuralLogTime = -Infinity; captureTime = -Infinity; actualPWM = [0, 0]; firmware = new Firmware(firmware.source); keys.clear(); log("system", "Robot and program clock reset; room memory retained"); }
 function applyCode(source: string): void {
   if (hardwarePanel?.busy) { codeMessage("Disconnect hardware before changing controller code.", true); return; }
   if (training) endTraining("Sketch changed; training stopped.");
@@ -386,7 +402,7 @@ function installBrain(text: string): void {
   const nextController = SpikingNetwork.fromJSON(snapshot);
   const extension=JSON.parse(text).robotLearning,learned=extension?parseLearning(extension):null;
   controller = nextController; perceiver = nextPerceiver; brainDomain = nextDomain; brainName = imported.name;const meta=usingWorld?imported.world!.controller.meta:imported.controller.meta;brainFitness=meta.fitness??0;brainGeneration=meta.generation??0;estimates = new Float32Array(perceiver.estimateCount); sensors = new Array(controller.inputCount).fill(0);
-  captureTime = -Infinity; clearMemory();if(learned){memorySettings=learned.memorySettings;visionSettings=learned.visionSettings;memory=learned.memory;sugarPolicy=learned.policy;el<HTMLInputElement>("sugar-learn").checked=learned.learn;fillLearning();}rebuildSwarm(); setText("brain-name", brainName); setText("adapter", `${brainDomain.toUpperCase()} INPUTS`);
+  captureTime = -Infinity; clearMemory();if(learned){memorySettings=learned.memorySettings;visionSettings=learned.visionSettings;memory=learned.memory;sugarPolicy=learned.policy;calibration=learned.calibration;compensationEnabled=learned.compensationEnabled;places=learned.places;estimator=new StateEstimator(physics.pose,calibration);el<HTMLInputElement>("sugar-learn").checked=learned.learn;fillLearning();}rebuildSwarm(); setText("brain-name", brainName); setText("adapter", `${brainDomain.toUpperCase()} INPUTS`);
   setText("brain-note", brainDomain === "track" ? "Track input meanings retained. A racing brain may not navigate a room; room recall is off." : "Eyes trained in the old renderer; transfer to 3D is experimental.");
   message(`Imported ${brainName}. ${imported.warnings.join(" ")}`);
 }
@@ -419,7 +435,9 @@ function capture(): void {
   let processed=frame.planar;
   if (perceiver && physics.config.cameraEnabled) {swarm??=new VisualSwarm(perceiver.model,visionSettings);estimates.set(swarm.see(frame.planar,body,brainDomain));processed=swarm.processed;scene.showFlyInput(processed,width,height);} else estimates.fill(0);
   cue=mission.settings.mode==="trail"&&mission.settings.cue==="scent"?scentCue(physics.pose,mission,simTime):cameraCue(processed,width,height,mission.settings.mode);
-  training?.recorder.frame(cameraFrame,width,height,processed,frame.dropped);showSwarmViews();
+  training?.recorder.frame(cameraFrame,width,height,processed,frame.dropped,frame.planar);liveRecorder.frame(cameraFrame,width,height,processed,frame.dropped,frame.planar);researchPanel?.frame(cameraFrame,width,height,processed,frame.planar,frame.dropped);compactFeatures=compactInput(el<HTMLCanvasElement>("camera").getContext("2d")!.getImageData(0,0,160,120).data,sonar.reading.echo?sonar.metres*100:null,actualPWM);showSwarmViews();
+  if(physics.config.cameraEnabled&&!frame.dropped&&(!researchPanel||check("place-enabled")))places.observe(Array.from(visualFeatures(processed,width,height)),estimator,simTime);
+  if(returnToPlace&&!cue.strength){const navigation=places.cue(estimator.pose);if(navigation)cue={...cue,...navigation};}
   if (brainDomain === "world" && physics.config.sonarEnabled) estimates[4] = Math.max(estimates[4], sonar.closeness);
   if (brainDomain === "world" && physics.config.cameraEnabled && perceiver) {
     const remembered = memory.observe(visualFeatures(processed,width,height), estimates,check("memory-enabled"));
@@ -435,11 +453,11 @@ function capture(): void {
 function neuralBody() { return { speed: clamp((physics.left + physics.right) / 2 / .99, -1, 1), lastSteer: action.steer, lastDrive: action.throttle - (action.reverse ?? 0), sonarCloseness: sonar.closeness, sonarStrength: +sonar.reading.echo }; }
 function manualDemands(): [number,number] {const forward=+(keys.has("w")||keys.has("ArrowUp"))-+(keys.has("s")||keys.has("ArrowDown")),steer=+(keys.has("d")||keys.has("ArrowRight"))-+(keys.has("a")||keys.has("ArrowLeft"));return [clamp(forward*.65+steer*.5,-1,1)*255,clamp(forward*.65-steer*.5,-1,1)*255];}
 function tick(): void {
-  const dt = 1 / 30; simTime += dt;
+  const previousPWM=[...actualPWM];const dt = 1 / 30; simTime += dt;
   if(mission.settings.mode==="trail"&&mission.settings.cue==="scent")cue=scentCue(physics.pose,mission,simTime);
   if (sonar.update(simTime, physics.pose, objects, physics.config, noise)) {
     log("sonar", sonar.reading.echo ? `${(sonar.metres * 100).toFixed(1)} cm · ECHO ${Math.round(sonar.pulseMicroseconds)} µs` : "No echo · distance unknown", { cm: sonar.reading.echo ? sonar.metres * 100 : null, echoUs: sonar.pulseMicroseconds });
-    if (check("memory-enabled") && physics.config.sonarEnabled) memory.mapPing(physics.odometry, physics.config.length * .48, sonar.metres, sonar.reading.echo);
+    if (check("memory-enabled") && physics.config.sonarEnabled) memory.mapPing(estimator.pose, physics.config.length * .48, sonar.metres, sonar.reading.echo);
   }
   if (simTime - captureTime >= 1 / physics.config.cameraHz - 1e-8) capture();
   if (controller) {
@@ -448,8 +466,7 @@ function tick(): void {
     action = swarm?swarm.step(controller,sensors,neuralBody(),[cue.bearing,cue.strength],brainDomain):controller.step(sensors);
   }
   const mode = value("drive-mode");
-  if(mode==="reward")action=sugarPolicy.action(memory.active,action,cue,sonar.reading.echo?sonar.closeness:0,!training);
-  else if(!training&&check("sugar-learn")&&["fly","manual"].includes(mode)){const manual=manualDemands();sugarPolicy.remember(memory.active,mode==="manual"?{steer:(manual[0]-manual[1])/255,throttle:Math.max(0,(manual[0]+manual[1])/510),brake:0}:action);}
+  if(mode==="reward")action=sugarPolicy.action(memory.active,action,cue,sonar.reading.echo?sonar.closeness:0,!training&&!researchMode,false);
   requests = motorRequests(action, adapterConfig);
   let demands: [number, number] = [requests.left, requests.right];
   if (mode === "manual") {
@@ -465,6 +482,9 @@ function tick(): void {
       if (result) log("check", `${result.passed ? "PASS" : "CHECK"} · ${result.title} · ${result.distanceCm.toFixed(1)} cm · ${result.yawDeg.toFixed(1)}° · ${result.contacts} contacts`, result);
     } });
     actualPWM = wiringIssues(wiring).errors.length ? [0, 0] : firmware.motors(wiring);
+    if(compensationEnabled)actualPWM=compensate(actualPWM,calibration);
+    if(!training&&!researchMode&&check("sugar-learn")&&["fly","manual","reward"].includes(mode))sugarPolicy.rememberExecuted(memory.active,actualPWM);
+    estimator.predict(actualPWM,physics.config,dt);
     physics.step(...actualPWM, objects, dt);
     const contact = physics.contact ? `${physics.contact.objectId}/${physics.contact.part}` : "";
     if (contact && contact !== contactEvent) log("system", `Contact · ${physics.contact!.part} · motion blocked`, physics.contact); contactEvent = contact;
@@ -474,10 +494,12 @@ function tick(): void {
   if (simTime - neuralLogTime >= .2) { neuralLogTime = simTime; log("brain", `steer ${action.steer.toFixed(2)} · drive ${action.throttle.toFixed(2)} · reverse ${(action.reverse ?? 0).toFixed(2)} · brake ${action.brake.toFixed(2)} | request ${demands.map(Math.round).join(" / ")} → PWM ${actualPWM.map(n => Math.round(n * 255)).join(" / ")}`, { mode, action: { ...action }, inputs: [...sensors], estimates: [...estimates], legs: requests.legs, requests: demands, pwm: actualPWM.map(n => n * 255) }); }
   scene.updateRobot(physics.pose, physics.config, check("beam-visible"), physics.left, physics.right, dt);
   const rewards=objectiveRun.update(physics.pose,physics.blocked),taskReward=rewards.reduce((a,r)=>a+r.amount,0);
-  for(const reward of rewards){log("reward",reward.message+" · "+(reward.amount>0?"+":"")+reward.amount.toFixed(2),reward);if(!training&&check("sugar-learn"))sugarPolicy.reward(reward.amount);}
-  if(rewards.some(r=>r.kind==="sugar")){scene.rebuildMission(mission,objectiveRun.collected);captureTime=-Infinity;}if(rewards.length&&!training)saveLocal();
+  for(const reward of rewards){log("reward",reward.message+" · "+(reward.amount>0?"+":"")+reward.amount.toFixed(2),reward);if(!training&&!researchMode&&check("sugar-learn"))sugarPolicy.reward(reward.amount);}
+  if(rewards.some(r=>r.kind==="sugar")){places.sugar();scene.rebuildMission(mission,objectiveRun.collected);captureTime=-Infinity;}if(rewards.length&&!training)saveLocal();
+  lastStep={time:simTime,inputs:[...sensors],action:{...action},pwm:actualPWM.map(v=>v*255),cameraFrame,sonar:{cm:sonar.reading.echo?sonar.metres*100:null,echo:sonar.reading.echo},evaluation:{pose:{...physics.pose},blocked:physics.blocked,contact:physics.contact?.part??null,surface:physics.surface?.kind??null,taskReward,success:mission.settings.mode==="sugar"?mission.goals.length>0&&objectiveRun.collected.size===mission.goals.length:mission.settings.mode==="trail"&&mission.trail.length>0&&objectiveRun.checkpoint===mission.trail.length&&objectiveRun.collected.size===mission.goals.length},diagnostics:{estimated:{...estimator.pose},odometry:{...physics.odometry},covariance:[...estimator.covariance],cells:memory.active.slice(0,200),activeCount:memory.active.length,estimates:[...estimates],votes:swarm?.votes.map(v=>({...v}))??[],requests:[...demands],compactInput:[...compactFeatures.slice(0,26),...previousPWM,...compactFeatures.slice(28)],rewards:rewards.map(r=>r.message)}};
+  liveRecorder.step(lastStep,dt);
   if (training) {
-    training.recorder.step({ time: simTime, inputs: [...sensors], action: { ...action }, pwm: actualPWM.map(n=>n*255), cameraFrame, sonar: { cm: sonar.reading.echo ? sonar.metres*100 : null, echo: sonar.reading.echo }, evaluation: { pose: { ...physics.pose }, blocked: physics.blocked, contact: physics.contact?.part ?? null, surface: physics.surface?.kind ?? null,taskReward } }, dt);
+    training.recorder.step(lastStep,dt);
     if (training.recorder.seconds >= training.options.seconds - 1e-8) {
       const job = training, more = job.advance(), result = job.results.at(-1)!;
       log("training", `G${result.generation} C${result.candidate+1} trial ${result.episode} · score ${result.score.toFixed(2)} · ${result.cells} cells · ${result.contacts} contacts · ${result.blockedSeconds.toFixed(1)}s blocked`, result);
@@ -508,14 +530,14 @@ function startTraining(evolve: boolean): void {
   if(hardwarePanel.busy) throw new Error("Disconnect hardware before simulated training.");
   if(!controller||!perceiver) throw new Error("Load a fly and its matching eyes first.");
   if(wiringIssues(wiring).errors.length)throw new Error("Fix wiring conflicts before training.");
-  const options:TrainingOptions={evolve,seconds:Number(value("train-seconds")),episodes:Number(value("train-episodes")),population:Number(value("train-population")),generations:Number(value("train-generations")),seed:Number(value("train-seed")),rate:Number(value("train-rate")),amount:Number(value("train-amount"))};
+  const options:TrainingOptions={evolve,task:mission.settings.mode!=="explore",seconds:Number(value("train-seconds")),episodes:Number(value("train-episodes")),population:Number(value("train-population")),generations:Number(value("train-generations")),seed:Number(value("train-seed")),rate:Number(value("train-rate")),amount:Number(value("train-amount"))};
   const job=new TrainingRun(controller,options);
   trainingContext={objects:structuredClone(objects),floorColour,config:{...physics.config},wiring:{...wiring},adapter:{...adapterConfig},noise:{...noiseConfig},domain:brainDomain,initialGeneration:brainGeneration,vision:perceiver.model,memoryEnabled:check("memory-enabled"),sketch:programSketch("fly",wiring),initialPose:{...startPose},visionSettings:{...visionSettings},memorySettings:{...memorySettings},mission:structuredClone(mission),sugarPolicy:sugarPolicy.toJSON(),dt:1/30,initialBrain:controllerCheckpoint(controller,{domain:brainDomain,fitness:brainFitness,generation:brainGeneration})};
   const trainingMode=value("drive-mode")==="reward"?"reward":"fly";trainingContext.mode=trainingMode;chooseProgram("fly");el<HTMLInputElement>("drive-mode").value=trainingMode;trainingNoise={...noiseConfig};training=job;lastTraining=null;log("training",evolve?"Seeded controller evolution started; eyes and reward policy frozen":"Seeded evaluation started; weights unchanged",options);beginEpisode();
 }
 function initializeTraining(): void {
   button("train-evaluate",()=>safe(()=>startTraining(false)));button("train-evolve",()=>safe(()=>startTraining(true)));button("train-stop",()=>endTraining("Training stopped · last completed generation retained."));
-  button("train-export",()=>{const job=training??lastTraining;if(!job)return;download("robot-training.json",JSON.stringify({format:"flykart-robot-training",version:1,settings:job.options,context:trainingContext,scoreDefinition:"0.5 * (unique20cmCells - 1) + min(distanceMetres, unique20cmCells * 0.4) - 2 * contacts - blockedSeconds - 0.1 * cableSeconds + objectiveReward",completed:job.completed,results:job.results,episodes:job.datasets,controller:controllerCheckpoint(job.best,{domain:trainingContext?.domain??brainDomain,fitness:job.fitness,generation:(trainingContext?.initialGeneration??0)+(job.options.evolve?job.completedGeneration:0)}),notes:"Evaluation pose/contact fields are privileged labels, never neural inputs. Pixels are delivered CNN input crops. Last two episodes retained; omittedFrames reports pixel-byte limits."},null,2));});
+  button("train-export",()=>{const job=training??lastTraining;if(!job)return;download("robot-training.json",JSON.stringify({format:"flykart-robot-training",version:1,settings:job.options,context:trainingContext,scoreDefinition:job.options.task?"objectiveReward +20 success -0.05 * seconds -2 * contacts - blockedSeconds":"0.5 * (unique20cmCells - 1) + min(distanceMetres, unique20cmCells * 0.4) - 2 * contacts - blockedSeconds - 0.1 * cableSeconds + objectiveReward",completed:job.completed,results:job.results,episodes:job.datasets,controller:controllerCheckpoint(job.best,{domain:trainingContext?.domain??brainDomain,fitness:job.fitness,generation:(trainingContext?.initialGeneration??0)+(job.options.evolve?job.completedGeneration:0)}),notes:"Evaluation pose/contact fields are privileged labels, never neural inputs. Pixels are delivered CNN input crops. Last two episodes retained; omittedFrames reports pixel-byte limits."},null,2));});
   button("export-fly",()=>{if(!controller)return;const combined=JSON.parse(exportVisionBrain({name:brainName,controller:controllerCheckpoint(controller,{domain:brainDomain,fitness:brainFitness,generation:brainGeneration}),profile:controller.inputCount>17?"robot":"kart",vision:perceiver?.model??null,fusion:{fade:1,mode:"belief",visionTemperature:1},memory:null,world:brainDomain==="world"?{controller:controllerCheckpoint(controller,{domain:"world",fitness:brainFitness,generation:brainGeneration}),vision:perceiver?.model??null}:null,notes:"3D habitat controller and eyes. robotLearning contains this workbench\u0027s visual/reward extension; other labs may ignore it."}));combined.robotLearning=learningData(true);download("robot-fly-with-eyes.json",JSON.stringify(combined,null,2));});
 }
 
@@ -526,8 +548,8 @@ function renderMap(): void {
   ctx.strokeStyle = "#26383d"; ctx.lineWidth = 1;
   for (let i = -4; i <= 4; i++) { ctx.beginPath(); ctx.moveTo(originX + i * scale, 0); ctx.lineTo(originX + i * scale, canvas.height); ctx.moveTo(0, originY + i * scale); ctx.lineTo(canvas.width, originY + i * scale); ctx.stroke(); }
   for (const [key, occupancy] of memory.map) { const [x, z] = key.split(",").map(Number); ctx.fillStyle = occupancy > 0 ? `rgba(233,186,115,${Math.min(.9, occupancy / 3 + .2)})` : "#466c5d"; ctx.fillRect(originX + x * .1 * scale, originY + z * .1 * scale, 3, 3); }
-  const p = physics.odometry; ctx.save(); ctx.translate(originX + p.x * scale, originY + p.z * scale); ctx.rotate(p.heading); ctx.fillStyle = "#d4e7de"; ctx.beginPath(); ctx.moveTo(7, 0); ctx.lineTo(-4, -4); ctx.lineTo(-4, 4); ctx.closePath(); ctx.fill(); ctx.restore();
-  ctx.fillStyle = "#8fa6a7"; ctx.font = "9px system-ui"; ctx.fillText("DEAD RECKONING / 1 m GRID", 9, 14);
+  const p = estimator.pose; ctx.save(); ctx.translate(originX + p.x * scale, originY + p.z * scale); ctx.rotate(p.heading); ctx.fillStyle = "#d4e7de"; ctx.beginPath(); ctx.moveTo(7, 0); ctx.lineTo(-4, -4); ctx.lineTo(-4, 4); ctx.closePath(); ctx.fill(); ctx.restore();
+  ctx.fillStyle = "#8fa6a7"; ctx.font = "9px system-ui"; ctx.fillText("ESTIMATED POSE / 1 m GRID", 9, 14);
 }
 function telemetry(): void {
   if (training) renderTraining();
@@ -559,7 +581,7 @@ function telemetry(): void {
   setText("contact-note", physics.blocked ? `Blocked by ${physics.contact?.part ?? "solid geometry"}. Contacts use visible solids at chassis height, independently of the fly's memory map. Reset or reverse to move away.` : physics.surface ? physics.surface.kind === "cable" ? "Crossing a loose cable · drive-over allowed, possible snag · 25% simulated speed reduction" : "Crossing a doormat · 15% simulated speed reduction" : `Chassis clearance envelope ${((physics.config.mountHeight + .04) * 100).toFixed(1)} cm · furniture tops above it do not block movement · low mats and cables are traversable`);
   el("motion-state").classList.toggle("blocked", physics.blocked || errors.length > 0);
   setText("memory-count", `${memory.taught} cells learned`); setText("memory-recall", check("memory-enabled") && memory.recalled && brainDomain === "world" ? "Recalling · 20% cue" : "No recall");
-  refreshLearning();
+  refreshLearning();researchPanel?.refreshPlaces();
   setText("camera-rate", String(physics.config.cameraHz)); setText("camera-height", (physics.config.mountHeight * 100).toFixed(1));
   setText("perception-note", !physics.config.cameraEnabled ? "Camera disconnected · visual estimates zero" : perceiver ? `${brainDomain === "world" ? "9 obstacle sectors + surface" : "13 racing estimates"} → ${controller?.inputCount ?? 17} brain inputs` : "No eyes loaded · import a vision brain");
   const spikes = controller?.activity().spikes;
@@ -633,7 +655,7 @@ function wireEvents(): void {
     let nextBrain: SpikingNetwork | null = null, nextEyes: Perceiver | null = null, nextDomain: "world" | "track" = "world", nextFitness=0, nextGeneration=0;
     if (data.controller) { const parsed = importFile(JSON.stringify(data.controller)); nextDomain = parsed.controller!.domain; nextFitness=parsed.controller!.meta.fitness??0;nextGeneration=parsed.controller!.meta.generation??0;nextBrain = SpikingNetwork.fromJSON(parsed.controller!.snapshot); if (data.vision) nextEyes = validateEyes(data.vision, nextDomain); }
     if(training)endTraining("Lab imported; training stopped.");brainFitness=nextFitness;brainGeneration=nextGeneration;brainName=nextBrain?"Imported lab controller":"No controller";
-    editWorld();startPose=nextPose;mission=nextMission;memorySettings=learned.memorySettings;visionSettings=learned.visionSettings;sugarPolicy=learned.policy;el<HTMLInputElement>("sugar-learn").checked=learned.learn;fillLearning();
+    editWorld();startPose=nextPose;mission=nextMission;memorySettings=learned.memorySettings;visionSettings=learned.visionSettings;sugarPolicy=learned.policy;calibration=learned.calibration;compensationEnabled=learned.compensationEnabled;places=learned.places;estimator=new StateEstimator(physics.pose,calibration);el<HTMLInputElement>("sugar-learn").checked=learned.learn;fillLearning();
     objects = nextObjects; floorColour = nextFloor; physics.config = nextConfig; wiring = nextWiring; controller = nextBrain; perceiver = nextEyes; brainDomain = nextDomain; firmware = nextFirmware; el<HTMLTextAreaElement>("sketch").value = firmware.source;
     adapterConfig = nextAdapter; noiseConfig = nextNoise; program = appliedProgram = PROGRAMS.some(p => p.id === data.program) ? data.program : "custom"; el<HTMLSelectElement>("drive-mode").value = ["fly", "manual", "sketch", "reward"].includes(data.mode) ? data.mode : "sketch"; programInfo(); fillNoise();
     estimates = new Float32Array(nextEyes?.estimateCount ?? (nextDomain === "world" ? 10 : 13)); sensors = new Array(controller?.inputCount ?? 19).fill(0); selected = null; scene.rebuildObjects(objects); scene.rebuildRobot(physics.config); scene.select(null); populateObjects(); selectObject(null); resetRobot(); memory = nextMemory;
@@ -644,13 +666,47 @@ function wireEvents(): void {
   window.addEventListener("keyup", e => keys.delete(e.key)); window.addEventListener("blur", () => { keys.clear(); if (value("drive-mode") === "manual") { hardwarePanel.stop();actualPWM = [0, 0]; physics.left = physics.right = 0; setRunning(false, "manual keyboard focus lost"); } });
 }
 
+function researchCheckpoint():()=>void {
+  if(training||researchPanel?.active)throw new Error("Finish the current training or research job before starting another run.");
+  const state={objects,floorColour,startPose:{...startPose},mission,config:physics.config,wiring,adapterConfig,controller,perceiver,memory,sugarPolicy,visionSettings,swarm,noiseConfig,noise,firmware,program,appliedProgram,objectiveRun,estimator,places,simTime,liveRecorder,liveEpisode,action,actualPWM,estimates:estimates.slice(),sensors:[...sensors],sonar,selected,returnToPlace,mode:value('drive-mode'),enabled:check('memory-enabled'),physics:{pose:{...physics.pose},odometry:{...physics.odometry},left:physics.left,right:physics.right,speed:physics.speed,blocked:physics.blocked,collisions:physics.collisions,contact:physics.contact,surface:physics.surface}};
+  researchBaseline={brain:controller,visionSettings:{...visionSettings},config:{...physics.config},source:firmware.source,mode:value("drive-mode"),policy:sugarPolicy};
+  swarm=perceiver?new VisualSwarm(perceiver.model,visionSettings):null;controller=controller?.clone()??null;
+  memory=memory.fresh();sugarPolicy=SugarPolicy.fromJSON(sugarPolicy.toJSON(),memorySettings.count);places=VisualPlaces.fromJSON(places.toJSON());estimator=new StateEstimator(physics.pose,calibration);
+  return ()=>{objects=state.objects;floorColour=state.floorColour;startPose=state.startPose;mission=state.mission;physics.config=state.config;Object.assign(physics,state.physics);wiring=state.wiring;adapterConfig=state.adapterConfig;controller=state.controller;perceiver=state.perceiver;memory=state.memory;sugarPolicy=state.sugarPolicy;visionSettings=state.visionSettings;swarm=state.swarm;noiseConfig=state.noiseConfig;noise=state.noise;firmware=state.firmware;program=state.program;appliedProgram=state.appliedProgram;objectiveRun=state.objectiveRun;estimator=state.estimator;places=state.places;simTime=state.simTime;liveRecorder=state.liveRecorder;liveEpisode=state.liveEpisode;action=state.action;actualPWM=state.actualPWM;estimates=state.estimates;sensors=state.sensors;sonar=state.sonar;selected=state.selected;returnToPlace=state.returnToPlace;el<HTMLSelectElement>('drive-mode').value=state.mode;el<HTMLInputElement>('memory-enabled').checked=state.enabled;researchMode=false;scene.rebuildObjects(objects);scene.rebuildRobot(physics.config);scene.rebuildMission(mission,objectiveRun.collected);updateFloor();populateObjects();fillLearning();fillHardware();fillNoise();programInfo();el<HTMLTextAreaElement>('sketch').value=firmware.source;sketchEditor.refresh();captureTime=-Infinity;};
+}
+function configureTrial(c:TrialCase,v:Variant,brain?:ReturnType<SpikingNetwork['toJSON']>):void {
+  const baseline=researchBaseline?.brain;if(!baseline||!perceiver)throw new Error('Load a controller and its eyes before research.');
+  researchMode=true;objects=structuredClone(c.objects);startPose={...c.pose};mission=structuredClone(c.mission);floorColour='#b7bea7';physics.config={...researchBaseline!.config,sonarEnabled:v!=='no-sonar'&&researchBaseline!.config.sonarEnabled};visionSettings={...researchBaseline!.visionSettings};sugarPolicy=SugarPolicy.fromJSON(researchBaseline!.policy.toJSON(),memorySettings.count);
+  controller=brain?SpikingNetwork.fromJSON(brain):baseline.clone();
+  if(v==='single')visionSettings={...visionSettings,layout:'single'};if(v==='swarm3')visionSettings={...visionSettings,layout:'circle3'};if(v==='filtered5')visionSettings={...visionSettings,layout:'circle5',normalize:true,smooth:true,temporal:4};
+  el<HTMLInputElement>('memory-enabled').checked=v!=='no-memory';returnToPlace=false;memory=memory.fresh();places=new VisualPlaces();sugarPolicy.reset(c.seed);noiseConfig={...DEFAULT_NOISE,...(c.harsh?NOISE_PRESETS.harsh:NOISE_PRESETS.mild),seed:c.seed};noise=new NoiseSource(noiseConfig);
+  // Use the edited sketch, including actual pin writes. Preserve teacher outputs through it.
+  firmware=new Firmware(brain?programSketch("fly",wiring):researchBaseline!.source);el<HTMLSelectElement>('drive-mode').value=brain?"reward":researchBaseline!.mode==="reward"?"reward":"fly";scene.rebuildObjects(objects);resetRobot();rebuildSwarm();capture();
+}
+async function simulatedSegment(pwm:[number,number],seconds:number,gains:[number,number],pidEnabled:boolean,settings:PIDSettings,cancel:()=>boolean):Promise<{pose:Pose;blocked:boolean}> {
+  if(hardwarePanel.busy)throw new Error('Disconnect hardware before simulated calibration.');if(gains.some(v=>v<.5||v>1.5))throw new Error('Demo gains must be 0.5–1.5.');
+  physics.left=physics.right=0;const pid=new HeadingPID(settings.kp,settings.ki,settings.kd,settings.limit),target=physics.pose.heading;let time=0,blocked=false;estimator=new StateEstimator(physics.pose,calibration);
+  while(time<seconds){if(cancel())throw new Error('Calibration demonstration cancelled.');for(let i=0;i<3&&time<seconds;i++){const dt=Math.min(1/30,seconds-time),correction=pidEnabled&&Math.abs(pwm[0]-pwm[1])<.01?pid.step(target,physics.pose.heading,dt,0):0,issued:[number,number]=[clamp(pwm[0]+correction,-1,1),clamp(pwm[1]-correction,-1,1)];estimator.predict(issued,physics.config,dt);physics.step(issued[0]*gains[0],issued[1]*gains[1],objects,dt);blocked||=physics.blocked;if(pidEnabled)estimator.observe(physics.pose,.02,.04,simTime,"virtual tracker · calibration demo");time+=dt;simTime+=dt;}scene.updateRobot(physics.pose,physics.config,check('beam-visible'),physics.left,physics.right,1/30);capture();await new Promise<void>(resolve=>requestAnimationFrame(()=>resolve()));}
+  // Endpoint protocol measures immediately after the timed pulse; each next mark starts from rest.
+  physics.left=physics.right=0;actualPWM=[0,0];log('check',`Marked simulation segment · ${pidEnabled?'virtual tracker PID':'open loop'} · hidden plant gain demo`,{pose:physics.pose});return {pose:{...physics.pose},blocked};
+}
+function initializeResearch():void {
+  const researchHost=document.createElement('section'),calibrationHost=document.createElement('section');hardwareHost.before(researchHost,calibrationHost);const jumps=document.createElement('div');jumps.className='row';jumps.innerHTML='<a href="#research-panel">Training, replay & export ↓</a><a href="#calibration-panel">Floor calibration ↓</a>';el('show-code').after(jumps);
+  researchPanel=new ResearchPanel(researchHost,{busy:()=>hardwarePanel.busy||!!training||!!calibrationPanel?.active,pause:()=>setRunning(false,'research job'),checkpoint:researchCheckpoint,configure:configureTrial,step:()=>{tick();return structuredClone(lastStep);},brain:()=>controller?.toJSON()??null,adopt:brain=>{pauseForEdit('Research winner adopted');controller=SpikingNetwork.fromJSON(brain);brainName='Research selected fly';setText('brain-name',brainName);rebuildSwarm();saveLocal();message('Selected research controller adopted. Export fly + eyes to keep it.');},download,message,context:()=>({objects,startPose,config:physics.config,wiring,adapter:adapterConfig,vision:perceiver?.model,visionSettings,memorySettings,calibration,sketch:firmware.source,controller:controller?.toJSON(),dt:1/30}),studentCode:(s,le)=>compactSketch(s,wiring,physics.config,le),studentRun:(s,cap,seconds)=>hardwarePanel.startStudent(s.hash,cap,seconds),stopHardware:()=>hardwarePanel.stop(),places:navigate=>{if(!researchMode)returnToPlace=navigate;const p=estimator.pose;return `${places.nodes.length} places / ${places.edges.length} edges · ${places.status}\nEstimated X ${p.x.toFixed(2)}, Z ${p.z.toFixed(2)}, heading ${(p.heading*180/Math.PI).toFixed(1)}° · position σ ${(Math.sqrt(Math.max(estimator.covariance[0],estimator.covariance[4]))*100).toFixed(1)} cm · ${estimator.source}; ${estimator.accepted} accepted, ${estimator.rejected} rejected observations · sugar route ${places.route().join(' → ')||'unknown'}`;},forgetPlaces:()=>{places=new VisualPlaces();saveLocal();}});
+  researchPanel.liveLoader(()=>{const d=liveRecorder.finish(0,0,liveEpisode,mission.settings.mode!=='explore');return d;});
+  calibrationPanel=new CalibrationPanel(calibrationHost,{config:()=>physics.config,pose:()=>({...physics.pose}),profile:()=>calibration,apply:(p,enabled)=>{calibration=validateCalibration(p);compensationEnabled=enabled;estimator.profile=calibration;saveLocal();message('Calibration profile applied to command odometry'+(enabled?' and simulated / USB-host motor compensation.':'.'));},busy:()=>hardwarePanel.busy||researchPanel.active||!!training,checkpoint:researchCheckpoint,pause:()=>setRunning(false,'marked calibration'),segment:simulatedSegment,physical:(pwm,seconds,cancel,pid,settings)=>hardwarePanel.calibrationSegment(pwm,seconds,cancel,pid,settings),stop:()=>{hardwarePanel.stop();physics.left=physics.right=0;actualPWM=[0,0];},observe:(p,s,h)=>estimator.observe(p,s,h,simTime),wall:(cm,n,offset,sigma)=>estimator.wallRange(cm,n,offset,physics.config.length*.48,sigma,simTime),fov:degrees=>{physics.config.cameraFov=degrees;hardwareChanged();fillHardware();},mark:(origin,targets)=>scene.calibrationMarks(origin,targets),download,message});
+  // Scene pointer edits and keyboard controls must not mutate a running research/calibration transaction.
+  document.addEventListener('click',event=>{if(!researchPanel.active&&!calibrationPanel.active)return;const target=event.target as HTMLElement;if(target.closest("#copy-log,#copy-log-json,#copy-serial,#save-serial,#export-log,#serial-stop,#serial-disconnect"))return;if(target.closest('#research-panel,#calibration-panel'))return;event.stopImmediatePropagation();event.preventDefault();},true);
+  el('habitat').addEventListener('pointerdown',event=>{if(researchPanel.active||calibrationPanel.active){event.stopImmediatePropagation();event.preventDefault();}},true);
+}
+
 async function main(): Promise<void> {
   restoreLocal();
   scene = new HabitatScene(el<HTMLCanvasElement>("habitat"), el<HTMLCanvasElement>("camera"), el<HTMLCanvasElement>("fly-eye")); scene.rebuildObjects(objects); scene.rebuildRobot(physics.config);
   updateFloor();
   resetObjectives();
-  hardwarePanel=new HardwarePanel(hardwareHost,{context:()=>({wiring,config:physics.config,adapter:adapterConfig,source:firmware.source,brain:controller,eyes:perceiver?.model??null,domain:brainDomain,memoryEnabled:check("memory-enabled"),mode:value("drive-mode"),manual:manualDemands(),memory,memorySettings,visionSettings,objective:mission.settings,sugarPolicy}),pause:()=>{if(training)endTraining("Hardware armed; simulated training stopped.");setRunning(false,"physical hardware armed");},download,message});
-  initializeLearning();initializeTraining();
+  hardwarePanel=new HardwarePanel(hardwareHost,{context:()=>({wiring,config:physics.config,adapter:adapterConfig,source:firmware.source,brain:controller,eyes:perceiver?.model??null,domain:brainDomain,memoryEnabled:check("memory-enabled"),mode:value("drive-mode"),manual:manualDemands(),memory,memorySettings,visionSettings,objective:mission.settings,sugarPolicy,calibration,compensationEnabled}),pause:()=>{if(training)endTraining("Hardware armed; simulated training stopped.");setRunning(false,"physical hardware armed");},download,message});
+  initializeLearning();initializeTraining();initializeResearch();
   el("spikes").innerHTML = Array.from({ length: 48 }, () => "<i></i>").join(""); populateObjects(); initializeHardware(); wireEvents(); initializeInstruments(); codeMessage("Applied sketch ready · edit, Apply, then Run");
   let previous = performance.now(), accumulator = 0, uiTime = 0;
   const frame = (now: number) => {
@@ -659,7 +715,7 @@ async function main(): Promise<void> {
     if (running) { accumulator += elapsed * Number(value("sim-rate")); while (accumulator >= 1 / 30 && running) { tick(); accumulator -= 1 / 30; } } else accumulator = 0;
     scene.updateRobot(physics.pose, physics.config, check("beam-visible"), 0, 0, 0);
     if (following) scene.controls.target.set(physics.pose.x, .06, physics.pose.z);
-    if (simTime - captureTime >= 1 / physics.config.cameraHz || captureTime === -Infinity) capture();
+    if ((!researchPanel?.active&&!calibrationPanel?.active)&&(simTime - captureTime >= 1 / physics.config.cameraHz || captureTime === -Infinity)) capture();
     scene.render(); if (now - uiTime > 100) { telemetry(); uiTime = now; }
     } catch (error) { setRunning(false, "simulation error"); message(`Simulation paused: ${error instanceof Error ? error.message : error}`, true); }
     requestAnimationFrame(frame);

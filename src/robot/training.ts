@@ -1,21 +1,23 @@
 import { Action, BrainSnapshot, SpikingNetwork } from "../core";
 import type { Pose } from "./model";
 
-export type TrainingOptions = { evolve: boolean; seconds: number; episodes: number; population: number; generations: number; seed: number; rate: number; amount: number };
-export type EpisodeStep = { time: number; inputs: number[]; action: Action; pwm: number[]; cameraFrame: number; sonar: { cm: number | null; echo: boolean }; evaluation: { pose: Pose; blocked: boolean; contact: string | null; surface: string | null; taskReward?:number } };
+export type TrainingOptions = { evolve: boolean; seconds: number; episodes: number; population: number; generations: number; seed: number; rate: number; amount: number; task?:boolean };
+export type EpisodeStep = { time: number; inputs: number[]; action: Action; pwm: number[]; cameraFrame: number; sonar: { cm: number | null; echo: boolean }; evaluation: { pose: Pose; blocked: boolean; contact: string | null; surface: string | null; taskReward?:number; success?:boolean }; diagnostics?: { estimated:Pose; odometry:Pose; covariance:number[]; cells:number[]; activeCount:number; estimates:number[]; votes:Action[]; requests:number[]; compactInput:number[]; rewards:string[] } };
 export type EpisodeSummary = { generation: number; candidate: number; episode: number; score: number; seconds: number; distance: number; cells: number; contacts: number; blockedSeconds: number; cableSeconds: number; taskReward:number };
-export type EpisodeDataset = { summary: EpisodeSummary; steps: EpisodeStep[]; frames: { id: number; width: number; height: number; encoding: "planar-rgb8-base64"; pixels: string; dropped: boolean }[]; omittedFrames: number };
+export type EpisodeDataset = { group?:string; summary: EpisodeSummary; steps: EpisodeStep[]; frames: { id: number; width: number; height: number; encoding: "planar-rgb8-base64"; pixels: string; rawPixels?:string; dropped: boolean }[]; omittedFrames: number };
 
 export class EpisodeRecorder {
+  private group=crypto.randomUUID();
   readonly steps: EpisodeStep[] = []; readonly frames: EpisodeDataset["frames"] = []; readonly cells = new Set<string>();
   distance = 0; contacts = 0; blockedSeconds = 0; cableSeconds = 0; seconds = 0; omittedFrames = 0;
   taskReward=0;
   private previous: Pose | null = null; private blocked = false; private bytes = 0;
-  frame(id: number, width: number, height: number, planar: Float32Array, dropped: boolean): void {
-    if (this.bytes + planar.length > 6_000_000) { this.omittedFrames++; return; }
-    this.bytes += planar.length;
+  frame(id: number, width: number, height: number, planar: Float32Array, dropped: boolean,raw?:Float32Array): void {
+    if (this.bytes + planar.length +(raw?.length??0)> 6_000_000) { this.omittedFrames++; return; }
+    this.bytes += planar.length+(raw?.length??0);
     let binary = ""; for (const value of planar) binary += String.fromCharCode(Math.round(Math.max(0, Math.min(1, value)) * 255));
-    this.frames.push({ id, width, height, encoding: "planar-rgb8-base64", pixels: btoa(binary), dropped });
+    let rawBinary='';if(raw)for(const v of raw)rawBinary+=String.fromCharCode(Math.round(Math.max(0,Math.min(1,v))*255));
+    this.frames.push({ id, width, height, encoding: "planar-rgb8-base64", pixels: btoa(binary), ...(raw?{rawPixels:btoa(rawBinary)}:{}), dropped });
   }
   step(step: EpisodeStep, dt: number): void {
     if (this.steps.length >= 1801) return;
@@ -27,9 +29,9 @@ export class EpisodeRecorder {
     this.seconds += dt; this.steps.push(structuredClone(step));
     this.taskReward+=step.evaluation.taskReward??0;
   }
-  finish(generation: number, candidate: number, episode: number): EpisodeDataset {
-    const score = (this.cells.size - 1) * .5 + Math.min(this.distance, this.cells.size * .4) - this.contacts * 2 - this.blockedSeconds - this.cableSeconds * .1+this.taskReward;
-    return { summary: { generation, candidate, episode, score, seconds: this.seconds, distance: this.distance, cells: this.cells.size, contacts: this.contacts, blockedSeconds: this.blockedSeconds, cableSeconds: this.cableSeconds,taskReward:this.taskReward }, steps: this.steps, frames: this.frames, omittedFrames: this.omittedFrames };
+  finish(generation: number, candidate: number, episode: number,task=false): EpisodeDataset {
+    const score = task ? this.taskReward+(this.steps.some(s=>s.evaluation.success)?20:0)-this.seconds*.05-this.contacts*2-this.blockedSeconds : (this.cells.size - 1) * .5 + Math.min(this.distance, this.cells.size * .4) - this.contacts * 2 - this.blockedSeconds - this.cableSeconds * .1+this.taskReward;
+    return { group:this.group, summary: { generation, candidate, episode, score, seconds: this.seconds, distance: this.distance, cells: this.cells.size, contacts: this.contacts, blockedSeconds: this.blockedSeconds, cableSeconds: this.cableSeconds,taskReward:this.taskReward }, steps: this.steps, frames: this.frames, omittedFrames: this.omittedFrames };
   }
 }
 
@@ -54,7 +56,7 @@ export class TrainingRun {
   get progress(): string { return `Generation ${this.generation}/${this.options.evolve ? this.options.generations : 1} · candidate ${this.candidate + 1}/${this.candidates.length} · episode ${this.episode + 1}/${this.options.episodes} · ${this.recorder.seconds.toFixed(1)}/${this.options.seconds}s`; }
   advance(): boolean {
     if(this.completed)throw new Error("This training run has finished.");
-    const data = this.recorder.finish(this.generation, this.candidate, this.episode + 1); this.results.push(data.summary); this.scores[this.candidate] += data.summary.score / this.options.episodes;
+    const data = this.recorder.finish(this.generation, this.candidate, this.episode + 1,this.options.task); this.results.push(data.summary); this.scores[this.candidate] += data.summary.score / this.options.episodes;
     this.datasets.push(data); if (this.datasets.length > 2) this.datasets.shift();
     this.recorder = new EpisodeRecorder(); this.episode++;
     if (this.episode < this.options.episodes) return true;

@@ -49,6 +49,7 @@ export class VisualSwarm {
   private source:SpikingNetwork|null=null;
   readonly members:Member[]=[];
   disagreement=0;
+  votes:Action[]=[];
   processed:Float32Array=new Float32Array(0);
   constructor(readonly model:VisionModel,readonly settings:VisionSettings){this.readers=viewPatches(settings).map(()=>new Perceiver(model));}
   reset():void {this.filter.reset();this.readers.forEach(p=>p.reset());this.brains=[];this.source=null;this.members.length=0;}
@@ -75,8 +76,10 @@ export class VisualSwarm {
   step(controller:SpikingNetwork,inputs:number[],body:Proprioception,mission:[number,number],domain:"world"|"track"):Action {
     if(domain==="world"&&this.members.length>1&&this.source!==controller){this.brains=this.members.slice(1).map(()=>controller.clone());this.source=controller;}
     const primary=controller.step(inputs);
+    this.votes=[primary];
     if(domain!=="world"||this.members.length<2)return primary;
     const votes=[primary,...this.brains.map((brain,i)=>{const local=[...inputs],mean=this.members[i+1].mean.slice();mean[4]=Math.max(mean[4],body.sonarCloseness??0);worldDomain.sensors(mean,mission,body,local);return brain.step(local);})],weight=this.members.reduce((a,m)=>a+m.weight,0);
+    this.votes=votes;
     const result:Action={steer:0,throttle:0,brake:0,reverse:0};
     votes.forEach((a,i)=>{const v=this.members[i].weight/weight;result.steer+=a.steer*v;result.throttle+=a.throttle*v;result.brake+=a.brake*v;result.reverse!+=(a.reverse??0)*v;});return result;
   }
