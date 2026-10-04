@@ -1223,6 +1223,12 @@
             return { win, rec, wout, bias };
         }
 
+        // Lab 9.1 can load this exact brain into the trained-brain inspector.
+        window.FlyKartHandWired = () => {
+            const w = wiredWeights();
+            return { version: 2, inputCount: N_IN, hiddenCount: N_H, outputCount: N_OUT, mutationSigma: 1, inputWeights: Array.from(w.win), recurrentWeights: Array.from(w.rec), outputWeights: Array.from(w.wout), bias: Array.from(w.bias) };
+        };
+
         // Same initial distribution as a new SpikingNetwork in the simulator.
         function randomWeights() {
             const random = seededRandom(11);
@@ -1507,6 +1513,452 @@
         reset();
         // Pre-roll a little so the raster is not empty before the first play.
         for (let i = 0; i < 45; i++) tick();
+        draw();
+    })();
+
+    /* ------------------------------------------------------------------
+       Shared: run a lab's clock only while it is on screen and not paused
+       ------------------------------------------------------------------ */
+    function labClock(el, hz, onTick, onDraw) {
+        const state = { running: true, visible: false, acc: 0, last: 0, loop: false };
+        function frame(stamp) {
+            if (!state.visible) { state.loop = false; state.last = 0; return; }
+            if (!state.last) state.last = stamp;
+            state.acc += Math.min(0.25, (stamp - state.last) / 1000); state.last = stamp;
+            if (state.running) { let guard = 0; while (state.acc >= 1 / hz && guard < 8) { onTick(); state.acc -= 1 / hz; guard++; } } else state.acc = 0;
+            onDraw();
+            requestAnimationFrame(frame);
+        }
+        const start = () => { if (state.loop) return; state.loop = true; state.last = 0; requestAnimationFrame(frame); };
+        if ('IntersectionObserver' in window) new IntersectionObserver(entries => { state.visible = entries.some(entry => entry.isIntersecting); if (state.visible) start(); }, { threshold: 0.05 }).observe(el);
+        else { state.visible = true; start(); }
+        return state;
+    }
+
+    /* ------------------------------------------------------------------
+       The progress bar names the current part, and the route map is built
+       from the chapters, parts and labs actually on the page.
+       ------------------------------------------------------------------ */
+    (function partsAndRouteMap() {
+        const guide = $('model-ladder');
+        if (!guide) return;
+        const chapters = Array.from(guide.querySelectorAll(':scope > article.book-chapter'));
+        const partEl = guide.querySelector('[data-tb-part]');
+        const partOf = head => {
+            const letter = ((head.querySelector('span') || {}).textContent || '').match(/Part\s+(\w+)/);
+            return (letter ? 'Part ' + letter[1] + ' · ' : '') + (head.querySelector('h4') || {}).textContent;
+        };
+        let queued = false;
+        function update() {
+            queued = false;
+            if (!partEl) return;
+            const marker = window.innerHeight * 0.35;
+            let label = '';
+            chapters.forEach(chapter => {
+                const box = chapter.getBoundingClientRect();
+                if (box.top > marker || box.bottom < marker) return;
+                chapter.querySelectorAll('.chapter-subhead').forEach(head => { if (head.getBoundingClientRect().top <= marker) label = partOf(head); });
+            });
+            partEl.textContent = label;
+        }
+        const schedule = () => { if (!queued) { queued = true; requestAnimationFrame(update); } };
+        window.addEventListener('scroll', schedule, { passive: true });
+        window.addEventListener('resize', schedule);
+        update();
+
+        const list = $('routeMap');
+        if (!list) return;
+        let parts = 0, labs = 0;
+        chapters.forEach((chapter, index) => {
+            const title = (chapter.dataset.title || '').replace(/^./, c => c.toUpperCase());
+            const question = ((chapter.querySelector('.chapter-question') || {}).textContent || '').replace(/^Question:\s*/, '');
+            const heads = Array.from(chapter.querySelectorAll('.chapter-subhead'));
+            const labList = Array.from(chapter.querySelectorAll('.ap-lab'));
+            parts += heads.length; labs += labList.length;
+            const item = document.createElement('li');
+            item.innerHTML = '<span class="rm-dot">' + (index + 1) + '</span><div class="rm-card"><h5><a href="#' + chapter.id + '">' + title + '</a></h5><p>' + question + '</p>' +
+                (heads.length ? '<div class="rm-parts">' + heads.map(head => '<a href="#' + head.id + '">' + partOf(head) + '</a>').join('') + '</div>' : '') +
+                (labList.length ? '<div class="rm-labs">' + labList.map(lab => { const tag = ((lab.querySelector('.chapter-number') || {}).textContent || '').split('·'); return '<a href="#' + lab.id + '">' + (tag[0] || 'Lab').trim() + ' · ' + ((lab.querySelector('h4') || {}).textContent || '').split(/\s+/).slice(0, 5).join(' ') + '…</a>'; }).join('') + '</div>' : '') + '</div>';
+            list.appendChild(item);
+        });
+        const summary = $('routeSummary');
+        if (summary) summary.textContent = 'See the whole route: ' + chapters.length + ' chapters, ' + parts + ' parts, ' + labs + ' labs';
+    })();
+
+    /* ------------------------------------------------------------------
+       Lab 3.1 · Synaptic pushes add up, fade, and fire
+       ------------------------------------------------------------------ */
+    (function summationLab() {
+        const canvas = $('summationCanvas');
+        if (!canvas) return;
+        const ctx = crispCanvas(canvas);
+        const W = 900, H = 400, REST = -70, T = 200, DT = 0.1;
+        const tauIn = $('sumTauInput'), weightIn = $('sumWeightInput'), inhibIn = $('sumInhibInput'), thresholdIn = $('sumThresholdInput');
+        const lanes = [['A', 'A · excitatory', '#fbbf24'], ['B', 'B · excitatory', '#fb923c'], ['I', 'C · inhibitory', '#a78bfa']];
+        const x0 = 96, x1 = 884, laneTop = 26, laneH = 30, py0 = 150, py1 = 350, vMin = -76, vMax = -40;
+        const mapT = t => x0 + t / T * (x1 - x0);
+        const mapV = v => py1 - (clamp(v, vMin, vMax) - vMin) / (vMax - vMin) * (py1 - py0);
+        let events = { A: [], B: [], I: [] };
+        const presets = {
+            far: { A: [30, 120], B: [], I: [], weight: 10 },
+            close: { A: [60, 68], B: [], I: [], weight: 10 },
+            both: { A: [80], B: [80], I: [], weight: 10 },
+            veto: { A: [60], B: [64], I: [62], weight: 10 },
+            drip: { A: [20, 26, 32, 38, 44, 50, 56, 62, 68, 74, 80, 86, 92, 98, 104, 110, 116, 122, 128, 134, 140, 146, 152, 158, 164, 170, 176], B: [], I: [], weight: 5 },
+        };
+        const preset = segmented('sumPreset', 'preset', key => loadPreset(key));
+
+        function loadPreset(key) {
+            const p = presets[key];
+            events = { A: [...p.A], B: [...p.B], I: [...p.I] };
+            weightIn.value = String(p.weight);
+            draw();
+        }
+
+        function simulate() {
+            const tau = Number(tauIn.value), wE = Number(weightIn.value), wI = -Number(inhibIn.value), th = Number(thresholdIn.value);
+            const list = [];
+            events.A.forEach(t => list.push({ t, w: wE, lane: 0 })); events.B.forEach(t => list.push({ t, w: wE, lane: 1 })); events.I.forEach(t => list.push({ t, w: wI, lane: 2 }));
+            list.sort((a, b) => a.t - b.t);
+            const n = Math.round(T / DT), V = new Float32Array(n + 1), ghost = new Float32Array(n + 1), spikes = [];
+            let v = REST, g = REST, k = 0, peak = REST;
+            for (let s = 0; s <= n; s++) {
+                const t = s * DT;
+                while (k < list.length && list[k].t <= t + 1e-9) { v += list[k].w; g += list[k].w; k++; }
+                peak = Math.max(peak, v);
+                V[s] = v; ghost[s] = g;
+                if (v >= th) { spikes.push(t); v = REST; }
+                v += DT * (-(v - REST) / tau); g += DT * (-(g - REST) / tau);
+            }
+            return { list, V, ghost, spikes, tau, wE, wI, th, peak };
+        }
+
+        function draw() {
+            const r = simulate();
+            ctx.clearRect(0, 0, W, H); ctx.fillStyle = BG; ctx.fillRect(0, 0, W, H);
+            lanes.forEach(([key, label, color], i) => {
+                const y = laneTop + i * (laneH + 4);
+                ctx.fillStyle = '#16241d'; ctx.fillRect(x0, y, x1 - x0, laneH);
+                text(ctx, label, x0 - 8, y + 19, color, '700 10px system-ui', 'right');
+                events[key].forEach(t => {
+                    ctx.strokeStyle = color; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(mapT(t), y + 3); ctx.lineTo(mapT(t), y + laneH - 3); ctx.stroke();
+                    ctx.strokeStyle = color + '33'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(mapT(t), y + laneH); ctx.lineTo(mapT(t), py1); ctx.stroke();
+                });
+            });
+            text(ctx, 'click a lane to add or remove a push', x1, laneTop + 3 * (laneH + 4) + 12, DIM, '10px system-ui', 'right');
+            // axes
+            ctx.strokeStyle = GRID; ctx.lineWidth = 1; ctx.strokeRect(x0, py0, x1 - x0, py1 - py0);
+            hLine(ctx, x0, x1, mapV(REST), '#456054', [4, 4]); text(ctx, 'rest ' + mv(REST), x0 - 8, mapV(REST) + 4, DIM, '10px system-ui', 'right');
+            hLine(ctx, x0, x1, mapV(r.th), '#ef6f61', [5, 4]); text(ctx, 'threshold ' + mv(r.th), x0 - 8, mapV(r.th) + 4, '#efb3aa', '10px system-ui', 'right');
+            ctx.strokeStyle = 'rgba(255,255,255,.08)'; ctx.beginPath(); ctx.moveTo(x0, mapV(REST)); ctx.lineTo(x0, mapV(r.th)); ctx.stroke();
+            const gapX = x0 + 6; ctx.strokeStyle = '#8f80d6'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(gapX, mapV(REST)); ctx.lineTo(gapX, mapV(r.th)); ctx.stroke();
+            text(ctx, (r.th - REST) + ' mV to go', gapX + 6, (mapV(REST) + mapV(r.th)) / 2 + 4, '#c4b5fd', '700 10px system-ui');
+            for (let t = 0; t <= T; t += 20) text(ctx, t + (t === T ? ' ms' : ''), mapT(t), py1 + 16, DIM, '10px system-ui', 'center');
+            // individual pushes (thin), sum without reset (dashed), real voltage (bold)
+            if (r.list.length <= 30) r.list.forEach(e => {
+                const color = lanes[e.lane][2];
+                ctx.strokeStyle = color + '99'; ctx.lineWidth = 1; ctx.beginPath();
+                for (let t = e.t; t <= T; t += 1) { const x = mapT(t), y = mapV(REST + e.w * Math.exp(-(t - e.t) / r.tau)); if (t === e.t) ctx.moveTo(x, y); else ctx.lineTo(x, y); }
+                ctx.stroke();
+            });
+            ctx.strokeStyle = 'rgba(255,255,255,.55)'; ctx.lineWidth = 1.4; ctx.setLineDash([4, 4]); ctx.beginPath();
+            for (let s = 0; s < r.ghost.length; s += 5) { const x = mapT(s * DT), y = mapV(r.ghost[s]); if (s === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); }
+            ctx.stroke(); ctx.setLineDash([]);
+            ctx.strokeStyle = '#67e8f9'; ctx.lineWidth = 2.6; ctx.beginPath();
+            for (let s = 0; s < r.V.length; s += 2) { const x = mapT(s * DT), y = mapV(r.V[s]); if (s === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); }
+            ctx.stroke();
+            r.spikes.forEach(t => { ctx.strokeStyle = '#ef6f61'; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.moveTo(mapT(t), mapV(r.th)); ctx.lineTo(mapT(t), py0 - 2); ctx.stroke(); ctx.fillStyle = '#ef6f61'; ctx.beginPath(); ctx.arc(mapT(t), py0 - 2, 3.5, 0, Math.PI * 2); ctx.fill(); });
+            text(ctx, 'bold: real voltage · dashed: sum if it never fired · thin: each push alone', x0, py1 + 34, DIM, '10px system-ui');
+            $('sumTauValue').textContent = r.tau + ' ms';
+            $('sumWeightValue').textContent = '+' + r.wE.toFixed(1).replace('.0', '') + ' mV';
+            $('sumInhibValue').textContent = '−' + (-r.wI).toFixed(1).replace('.0', '') + ' mV';
+            $('sumThresholdValue').textContent = mv(r.th);
+            $('sumPeakReadout').textContent = mv(Math.min(r.peak, 30));
+            $('sumSpikeReadout').textContent = String(r.spikes.length);
+            $('sumCountReadout').textContent = String(r.list.length);
+            setStatus($('summationStatusTag'), r.spikes.length ? 'Fires ' + r.spikes.length + (r.spikes.length === 1 ? ' time' : ' times') : (r.list.length ? 'Below threshold' : 'No inputs yet'), r.spikes.length ? 'firing' : '');
+        }
+
+        canvas.addEventListener('click', event => {
+            const rect = canvas.getBoundingClientRect();
+            const px = (event.clientX - rect.left) / rect.width * W, py = (event.clientY - rect.top) / rect.height * H;
+            const lane = Math.floor((py - laneTop) / (laneH + 4));
+            if (lane < 0 || lane > 2 || px < x0 || px > x1) return;
+            const key = lanes[lane][0], t = Math.round((px - x0) / (x1 - x0) * T);
+            const near = events[key].findIndex(e => Math.abs(e - t) <= 2);
+            if (near >= 0) events[key].splice(near, 1); else events[key].push(t);
+            draw();
+        });
+        [tauIn, weightIn, inhibIn, thresholdIn].forEach(input => input.addEventListener('input', draw));
+        $('sumClearBtn').addEventListener('click', () => { events = { A: [], B: [], I: [] }; draw(); });
+        $('sumRandomBtn').addEventListener('click', () => {
+            const random = seededRandom(Math.floor(Math.random() * 1e9));
+            events = { A: [], B: [], I: [] };
+            for (let i = 0; i < 9; i++) events[['A', 'B', 'I'][Math.floor(random() * 3.4) % 3]].push(Math.round(10 + random() * 180));
+            draw();
+        });
+        loadPreset('close');
+    })();
+
+    /* ------------------------------------------------------------------
+       Lab 4.2 · The weighted vote (one ANN neuron)
+       ------------------------------------------------------------------ */
+    (function voteLab() {
+        const canvas = $('voteCanvas');
+        if (!canvas) return;
+        const ctx = crispCanvas(canvas);
+        const W = 900, H = 380;
+        const ITEMS = ['Heading error', 'Lateral offset', 'Curvature at +150 px', 'Speed'];
+        const PRESETS = {
+            steer: { x: [0.35, -0.2, 0.1, 0.6], w: [2.4, -1.6, 1.0, 0], b: 0, act: 'tanh', name: 'Steering rule', out: 'steering command' },
+            gas: { x: [0.1, 0, 0, 0.6], w: [0, 0, 0, -3], b: 2.1, act: 'sigmoid', name: 'Speed governor', out: 'gas command' },
+            flat: { x: [0, 0, 0, 0], w: [0, 0, 0, 0], b: 0, act: 'tanh', name: 'All zero', out: 'output' },
+        };
+        let current = 'steer';
+        const rows = $('voteRows');
+        rows.innerHTML = ITEMS.map((label, i) => '<div class="vote-row"><strong>' + label + '</strong><label>x<input id="voteX' + i + '" type="range" min="-1" max="1" step="0.01" value="0"><output id="voteXo' + i + '">0</output></label><label>w<input id="voteW' + i + '" type="range" min="-3" max="3" step="0.05" value="0"><output id="voteWo' + i + '">0</output></label></div>').join('');
+        const biasIn = $('voteBias');
+        const preset = segmented('votePreset', 'preset', key => { current = key; load(key); });
+        const act = segmented('voteAct', 'act', () => draw());
+        const activation = (z, kind) => kind === 'relu' ? Math.max(0, z) : kind === 'sigmoid' ? 1 / (1 + Math.exp(-z)) : Math.tanh(z);
+
+        function load(key) {
+            const p = PRESETS[key];
+            ITEMS.forEach((_, i) => { $('voteX' + i).value = String(p.x[i]); $('voteW' + i).value = String(p.w[i]); });
+            biasIn.value = String(p.b); act.set(p.act);
+            draw();
+        }
+        function draw() {
+            const kind = act.get(), xs = ITEMS.map((_, i) => Number($('voteX' + i).value)), ws = ITEMS.map((_, i) => Number($('voteW' + i).value)), b = Number(biasIn.value);
+            const terms = xs.map((x, i) => x * ws[i]);
+            const z = terms.reduce((s, t) => s + t, b), y = activation(z, kind);
+            ctx.clearRect(0, 0, W, H); ctx.fillStyle = BG; ctx.fillRect(0, 0, W, H);
+            const zx0 = 250, zx1 = 560, zMax = 4, mapZ = v => zx0 + (clamp(v, -zMax, zMax) + zMax) / (2 * zMax) * (zx1 - zx0);
+            text(ctx, 'THE VOTE · each row adds its own push to the running total', 16, 20, TEXT, '800 11px system-ui');
+            for (let v = -4; v <= 4; v += 1) { ctx.strokeStyle = v === 0 ? '#5c7a6a' : '#1d2f27'; ctx.beginPath(); ctx.moveTo(mapZ(v), 34); ctx.lineTo(mapZ(v), 34 + 6 * 46 + 6); ctx.stroke(); text(ctx, String(v), mapZ(v), 34 + 6 * 46 + 22, DIM, '10px system-ui', 'center'); }
+            let cum = 0;
+            const lines = [{ label: 'bias b', detail: signed(b), delta: b }, ...ITEMS.map((label, i) => ({ label, detail: xs[i].toFixed(2) + ' × ' + ws[i].toFixed(2), delta: terms[i] }))];
+            lines.forEach((row, i) => {
+                const y0 = 40 + i * 46, from = cum, to = cum + row.delta;
+                text(ctx, row.label, 16, y0 + 16, '#eef6f0', '700 11px system-ui');
+                text(ctx, row.detail + ' = ' + signed(row.delta), 16, y0 + 31, DIM, '10px ui-monospace, monospace');
+                ctx.fillStyle = row.delta >= 0 ? '#fbbf24' : '#a78bfa';
+                ctx.fillRect(Math.min(mapZ(from), mapZ(to)), y0 + 8, Math.max(1.5, Math.abs(mapZ(to) - mapZ(from))), 22);
+                ctx.strokeStyle = 'rgba(255,255,255,.25)'; ctx.setLineDash([3, 3]); ctx.beginPath(); ctx.moveTo(mapZ(to), y0 + 30); ctx.lineTo(mapZ(to), y0 + 54); ctx.stroke(); ctx.setLineDash([]);
+                cum = to;
+            });
+            const yT = 40 + lines.length * 46;
+            text(ctx, 'z = ' + signed(z), 16, yT + 22, '#d8e985', '800 14px ui-monospace, monospace');
+            ctx.fillStyle = '#ef6f61'; ctx.beginPath(); ctx.moveTo(mapZ(z), yT + 4); ctx.lineTo(mapZ(z) - 7, yT + 18); ctx.lineTo(mapZ(z) + 7, yT + 18); ctx.closePath(); ctx.fill();
+            text(ctx, 'z', mapZ(z), yT + 32, '#ef6f61', '800 11px system-ui', 'center');
+            // activation plot
+            const ax0 = 610, ax1 = 880, ay0 = 60, ay1 = 250;
+            const yLo = kind === 'tanh' ? -1.2 : -0.1, yHi = kind === 'relu' ? 6 : kind === 'sigmoid' ? 1.1 : 1.2;
+            const mapAX = v => ax0 + (clamp(v, -zMax, zMax) + zMax) / (2 * zMax) * (ax1 - ax0), mapAY = v => ay1 - (clamp(v, yLo, yHi) - yLo) / (yHi - yLo) * (ay1 - ay0);
+            text(ctx, 'THEN SQUASH · ' + (kind === 'relu' ? 'ReLU' : kind), ax0, 40, TEXT, '800 11px system-ui');
+            ctx.strokeStyle = GRID; ctx.strokeRect(ax0, ay0, ax1 - ax0, ay1 - ay0);
+            hLine(ctx, ax0, ax1, mapAY(0), '#3a5548', [3, 3]); ctx.strokeStyle = '#3a5548'; ctx.beginPath(); ctx.moveTo(mapAX(0), ay0); ctx.lineTo(mapAX(0), ay1); ctx.stroke();
+            trace(ctx, 121, i => mapAX(-zMax + i * (2 * zMax / 120)), i => mapAY(activation(-zMax + i * (2 * zMax / 120), kind)), '#67e8f9', 2.6);
+            hLine(ctx, ax0, mapAX(z), mapAY(y), 'rgba(239,111,97,.6)', [3, 3]); ctx.strokeStyle = 'rgba(239,111,97,.6)'; ctx.setLineDash([3, 3]); ctx.beginPath(); ctx.moveTo(mapAX(z), ay1); ctx.lineTo(mapAX(z), mapAY(y)); ctx.stroke(); ctx.setLineDash([]);
+            ctx.fillStyle = '#ef6f61'; ctx.beginPath(); ctx.arc(mapAX(z), mapAY(y), 6, 0, Math.PI * 2); ctx.fill();
+            text(ctx, 'z →', ax1, ay1 + 16, DIM, '10px system-ui', 'right');
+            text(ctx, PRESETS[current] ? PRESETS[current].out.toUpperCase() : 'OUTPUT', ax0, 282, TEXT, '800 11px system-ui');
+            text(ctx, y.toFixed(3), ax0, 314, '#eef6f0', '800 28px Georgia, serif');
+            const meaning = current === 'steer' ? (y > 0.05 ? 'steer right ' + Math.round(Math.abs(y) * 100) + '%' : y < -0.05 ? 'steer left ' + Math.round(Math.abs(y) * 100) + '%' : 'go straight') : current === 'gas' ? 'gas ' + Math.round(clamp(y, 0, 1) * 100) + '%' : '';
+            if (meaning) text(ctx, meaning, ax0, 338, '#d8e985', '700 12px system-ui');
+            let top = 0; terms.forEach((t, i) => { if (Math.abs(t) > Math.abs(terms[top])) top = i; });
+            ITEMS.forEach((_, i) => { $('voteXo' + i).textContent = num2(xs[i]); $('voteWo' + i).textContent = num2(ws[i]); });
+            $('voteBiasValue').textContent = num2(b);
+            $('voteZReadout').textContent = signed(z);
+            $('voteYReadout').textContent = y.toFixed(3);
+            $('voteTopReadout').textContent = Math.abs(terms[top]) < 0.005 ? '—' : ITEMS[top].split(' ')[0];
+            setStatus($('voteStatusTag'), (PRESETS[current] ? PRESETS[current].name : 'Custom') + ' · z = ' + signed(z, 1), '');
+        }
+        const num2 = v => (v < 0 ? '−' : '') + Math.abs(v).toFixed(2);
+        ITEMS.forEach((_, i) => { $('voteX' + i).addEventListener('input', () => { current = 'custom'; draw(); }); $('voteW' + i).addEventListener('input', () => { current = 'custom'; draw(); }); });
+        biasIn.addEventListener('input', () => { current = 'custom'; draw(); });
+        load('steer');
+    })();
+
+    /* ------------------------------------------------------------------
+       Lab 5.2 · Two groups of LIF neurons compete
+       ------------------------------------------------------------------ */
+    (function competeLab() {
+        const canvas = $('competeCanvas');
+        if (!canvas) return;
+        const ctx = crispCanvas(canvas);
+        const W = 900, H = 400, GROUP = 10, HISTORY = 120;
+        const evR = $('competeEvR'), evL = $('competeEvL'), inhib = $('competeInhib'), selfEx = $('competeSelf'), noiseIn = $('competeNoise');
+        const gains = Array.from({ length: GROUP }, (_, i) => 0.85 + 0.3 * i / (GROUP - 1));
+        let random, v, prev, steer, raster, steerHist, rates;
+        function reset() {
+            random = seededRandom(5); v = [new Float64Array(GROUP), new Float64Array(GROUP)]; prev = [0, 0]; steer = 0; raster = []; steerHist = []; rates = [0, 0];
+        }
+        function tick() {
+            const e = [Number(evR.value), Number(evL.value)], g = Number(inhib.value), s = Number(selfEx.value), sigma = Number(noiseIn.value);
+            const fr = [prev[0] / GROUP, prev[1] / GROUP], now = [0, 0], spikes = new Uint8Array(2 * GROUP);
+            for (let side = 0; side < 2; side++) for (let i = 0; i < GROUP; i++) {
+                const current = gains[i] * e[side] + s * fr[side] * 2 - g * fr[1 - side] * 4 + sigma * gaussian(random);
+                v[side][i] = v[side][i] * 0.86 + 0.22 * current;
+                if (v[side][i] > 0.42) { now[side]++; v[side][i] = 0; spikes[side * GROUP + i] = 1; }
+            }
+            prev = now;
+            steer = steer * 0.72 + Math.tanh(4 * (now[0] - now[1]) / GROUP) * 0.28;
+            raster.push(spikes); steerHist.push(steer);
+            if (raster.length > HISTORY) { raster.shift(); steerHist.shift(); }
+            rates[0] = rates[0] * 0.95 + now[0] / GROUP * 30 * 0.05; rates[1] = rates[1] * 0.95 + now[1] / GROUP * 30 * 0.05;
+        }
+        function draw() {
+            ctx.clearRect(0, 0, W, H); ctx.fillStyle = BG; ctx.fillRect(0, 0, W, H);
+            const rx0 = 90, rx1 = 610, col = (rx1 - rx0) / HISTORY, rowH = 11;
+            text(ctx, 'STEER-RIGHT GROUP', rx0, 18, '#ef6f61', '800 11px system-ui'); text(ctx, 'STEER-LEFT GROUP', rx0, 162, '#67e8f9', '800 11px system-ui');
+            const top = [26, 170];
+            for (let side = 0; side < 2; side++) {
+                ctx.fillStyle = side ? 'rgba(103,232,249,.05)' : 'rgba(239,111,97,.06)'; ctx.fillRect(rx0, top[side], rx1 - rx0, GROUP * rowH);
+                for (let i = 0; i < GROUP; i++) text(ctx, String(i + 1), rx0 - 8, top[side] + i * rowH + 9, DIM, '9px system-ui', 'right');
+            }
+            const offset = HISTORY - raster.length;
+            raster.forEach((spikes, t) => { for (let side = 0; side < 2; side++) for (let i = 0; i < GROUP; i++) if (spikes[side * GROUP + i]) { ctx.fillStyle = side ? '#67e8f9' : '#ef6f61'; ctx.fillRect(rx0 + (offset + t) * col, top[side] + i * rowH + 1, Math.max(1.6, col - 0.5), rowH - 2); } });
+            text(ctx, 'last 4 s →', rx1, 150, DIM, '10px system-ui', 'right');
+            // steering trace
+            const sy0 = 312, sy1 = 392, mid = (sy0 + sy1) / 2;
+            text(ctx, 'STEERING OUTPUT', rx0, sy0 - 8, TEXT, '800 11px system-ui');
+            ctx.strokeStyle = GRID; ctx.strokeRect(rx0, sy0, rx1 - rx0, sy1 - sy0); hLine(ctx, rx0, rx1, mid, '#456054', [3, 4]);
+            text(ctx, 'R', rx0 - 8, sy0 + 10, '#ef6f61', '800 10px system-ui', 'right'); text(ctx, 'L', rx0 - 8, sy1 - 2, '#67e8f9', '800 10px system-ui', 'right');
+            if (steerHist.length > 1) trace(ctx, steerHist.length, i => rx0 + (offset + i + 0.5) * col, i => mid - steerHist[i] * (sy1 - sy0) / 2 * 0.95, '#eef6f0', 2);
+            // right panel
+            const ox = 650;
+            text(ctx, 'FIRING RATE (spikes / s per neuron)', ox, 18, TEXT, '800 11px system-ui');
+            [[0, 'right', '#ef6f61'], [1, 'left', '#67e8f9']].forEach(([side, label, color], k) => {
+                const y = 34 + k * 30; text(ctx, label, ox, y + 12, color, '700 11px system-ui');
+                ctx.fillStyle = '#1b2a23'; ctx.fillRect(ox + 44, y, 170, 16); ctx.fillStyle = color; ctx.fillRect(ox + 44, y, 170 * clamp(rates[side] / 15, 0, 1), 16);
+                text(ctx, rates[side].toFixed(1), ox + 222, y + 12, '#eef6f0', '700 11px ui-monospace, monospace');
+            });
+            const cx = ox + 120, cy = 190, r = 70;
+            ctx.strokeStyle = '#2e4a3d'; ctx.lineWidth = 11; ctx.beginPath(); ctx.arc(cx, cy, r, Math.PI * 1.08, Math.PI * 1.92); ctx.stroke();
+            const angle = -Math.PI / 2 + clamp(steer, -1, 1) * (Math.PI * 0.42);
+            ctx.strokeStyle = '#eef6f0'; ctx.lineWidth = 3.4; ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + Math.cos(angle) * (r + 5), cy + Math.sin(angle) * (r + 5)); ctx.stroke();
+            ctx.fillStyle = '#eef6f0'; ctx.beginPath(); ctx.arc(cx, cy, 5, 0, Math.PI * 2); ctx.fill();
+            text(ctx, 'L', cx - r - 14, cy - 8, '#67e8f9', '800 12px system-ui', 'center'); text(ctx, 'R', cx + r + 14, cy - 8, '#ef6f61', '800 12px system-ui', 'center');
+            text(ctx, 'steer ' + signed(steer), cx, cy + 32, '#eef6f0', '800 14px ui-monospace, monospace', 'center');
+            const hi = Math.max(rates[0], rates[1]), lo = Math.min(rates[0], rates[1]);
+            const decided = hi > 2 && lo / hi < 0.2;
+            text(ctx, decided ? 'Decided: one side has taken over.' : 'Blended: both sides are still voting.', ox, 290, decided ? '#d8e985' : '#f7dc86', '700 12px system-ui');
+            text(ctx, 'inhibition ' + Number(inhib.value).toFixed(2) + ' · noise ' + Number(noiseIn.value).toFixed(2), ox, 310, DIM, '11px system-ui');
+            $('competeEvRValue').textContent = Number(evR.value).toFixed(2); $('competeEvLValue').textContent = Number(evL.value).toFixed(2);
+            $('competeInhibValue').textContent = Number(inhib.value).toFixed(2); $('competeSelfValue').textContent = Number(selfEx.value).toFixed(2); $('competeNoiseValue').textContent = Number(noiseIn.value).toFixed(2);
+            $('competeRRate').textContent = rates[0].toFixed(1); $('competeLRate').textContent = rates[1].toFixed(1); $('competeSteer').textContent = signed(steer);
+            setStatus($('competeStatusTag'), (clock.running ? 'Running · ' : 'Paused · ') + (decided ? 'decided' : 'blended'), decided ? 'firing' : '');
+        }
+        const clock = labClock(canvas, 30, tick, draw);
+        reset(); for (let i = 0; i < 90; i++) tick();
+        $('competePlayBtn').addEventListener('click', () => { clock.running = !clock.running; $('competePlayBtn').textContent = clock.running ? 'Pause' : 'Play'; draw(); });
+        $('competeSwapBtn').addEventListener('click', () => { const a = evR.value; evR.value = evL.value; evL.value = a; });
+        $('competeResetBtn').addEventListener('click', () => { evR.value = '0.62'; evL.value = '0.5'; inhib.value = '0.12'; selfEx.value = '0.1'; noiseIn.value = '0.1'; reset(); for (let i = 0; i < 30; i++) tick(); clock.running = true; $('competePlayBtn').textContent = 'Pause'; draw(); });
+        draw();
+    })();
+
+    /* ------------------------------------------------------------------
+       Lab 6.1 · The staircase: spike count as a function of one weight
+       ------------------------------------------------------------------ */
+    (function stairsLab() {
+        const canvas = $('stairsCanvas');
+        if (!canvas) return;
+        const ctx = crispCanvas(canvas);
+        const W = 900, H = 360, TICKS = 60, W_MAX = 3, STEP = 0.005, N = Math.round(W_MAX / STEP) + 1;
+        const weightIn = $('stairsWeight'), smoothIn = $('stairsSmooth');
+        const counts = new Float64Array(N);
+        for (let i = 0; i < N; i++) { let v = 0, c = 0; const drive = i * STEP; for (let t = 0; t < TICKS; t++) { v = 0.86 * v + 0.22 * drive; if (v > 0.42) { c++; v = 0; } } counts[i] = c; }
+        let flat = 0; for (let i = 0; i < N - 1; i++) if (counts[i] === counts[i + 1]) flat++;
+        const flatShare = flat / (N - 1);
+        let smooth = new Float64Array(N);
+        function computeSmooth() {
+            const sigma = Number(smoothIn.value), span = Math.ceil(3 * sigma / STEP);
+            for (let i = 0; i < N; i++) { let num = 0, den = 0; for (let k = Math.max(0, i - span); k <= Math.min(N - 1, i + span); k++) { const d = (k - i) * STEP / sigma, w = Math.exp(-0.5 * d * d); num += counts[k] * w; den += w; } smooth[i] = num / den; }
+        }
+        const box = { x0: 66, x1: 880, y0: 24, y1: 320 };
+        const mapX = w => box.x0 + w / W_MAX * (box.x1 - box.x0), mapY = c => box.y1 - c / 60 * (box.y1 - box.y0);
+        function draw() {
+            computeSmooth();
+            const w = Number(weightIn.value), i = clamp(Math.round(w / STEP), 1, N - 2);
+            const trueSlope = (counts[i + 1] - counts[i - 1]) / (2 * STEP), smoothSlope = (smooth[i + 1] - smooth[i - 1]) / (2 * STEP);
+            ctx.clearRect(0, 0, W, H); ctx.fillStyle = BG; ctx.fillRect(0, 0, W, H);
+            ctx.strokeStyle = GRID; ctx.strokeRect(box.x0, box.y0, box.x1 - box.x0, box.y1 - box.y0);
+            [15, 30, 45, 60].forEach(c => { hLine(ctx, box.x0, box.x1, mapY(c), '#1d2f27'); text(ctx, String(c), box.x0 - 6, mapY(c) + 4, DIM, '10px system-ui', 'right'); });
+            text(ctx, '0', box.x0 - 6, box.y1 + 4, DIM, '10px system-ui', 'right');
+            for (let a = 0; a <= 3; a += 0.5) text(ctx, a.toFixed(1), mapX(a), box.y1 + 16, DIM, '10px system-ui', 'center');
+            text(ctx, 'weight w (input current = w) →', box.x1, box.y1 + 34, DIM, '10px system-ui', 'right');
+            text(ctx, 'spikes in 2 s', box.x0, box.y0 - 8, TEXT, '800 11px system-ui');
+            ctx.strokeStyle = '#67e8f9'; ctx.lineWidth = 2.4; ctx.beginPath();
+            for (let k = 0; k < N; k++) { const x = mapX(k * STEP), y = mapY(counts[k]); if (k === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); }
+            ctx.stroke();
+            ctx.strokeStyle = '#fbbf24'; ctx.lineWidth = 2.6; ctx.beginPath();
+            for (let k = 0; k < N; k++) { const x = mapX(k * STEP), y = mapY(smooth[k]); if (k === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); }
+            ctx.stroke();
+            text(ctx, 'true staircase', mapX(2.2), mapY(counts[Math.round(2.2 / STEP)]) + 22, '#67e8f9', '700 11px system-ui');
+            text(ctx, 'smoothed (σ = ' + Number(smoothIn.value).toFixed(2) + ')', mapX(0.55), mapY(smooth[Math.round(0.55 / STEP)]) - 12, '#fbbf24', '700 11px system-ui');
+            ctx.strokeStyle = '#ef6f61'; ctx.lineWidth = 1; ctx.setLineDash([4, 4]); ctx.beginPath(); ctx.moveTo(mapX(w), box.y0); ctx.lineTo(mapX(w), box.y1); ctx.stroke(); ctx.setLineDash([]);
+            const seg = (slope, color, y) => { const dx = 0.25; ctx.strokeStyle = color; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(mapX(w - dx), mapY(y - slope * dx)); ctx.lineTo(mapX(w + dx), mapY(y + slope * dx)); ctx.stroke(); };
+            seg(smoothSlope, '#fbbf24', smooth[i]); seg(trueSlope, '#ef6f61', counts[i]);
+            ctx.fillStyle = '#ef6f61'; ctx.beginPath(); ctx.arc(mapX(w), mapY(counts[i]), 5, 0, Math.PI * 2); ctx.fill();
+            text(ctx, 'red tangent: what backprop sees', box.x0 + 8, box.y0 + 16, '#ef6f61', '700 11px system-ui'); text(ctx, 'gold tangent: slope of the smoothed curve', box.x0 + 8, box.y0 + 32, '#fbbf24', '700 11px system-ui');
+            $('stairsWeightValue').textContent = w.toFixed(2); $('stairsSmoothValue').textContent = Number(smoothIn.value).toFixed(2);
+            $('stairsCountReadout').textContent = String(counts[i]);
+            $('stairsTrueReadout').textContent = Math.abs(trueSlope) < 1e-9 ? '0' : trueSlope.toFixed(0);
+            $('stairsSmoothReadout').textContent = (smoothSlope >= 0 ? '+' : '−') + Math.abs(smoothSlope).toFixed(1);
+            $('stairsFact').innerHTML = '<b>' + Math.round(flatShare * 100) + '%</b> of the weight axis is perfectly flat: nudge the weight and the spike count does not change at all. The remaining ' + Math.round((1 - flatShare) * 100) + '% are jumps of one spike, where the slope is effectively infinite.';
+            setStatus($('stairsStatusTag'), Math.abs(trueSlope) < 1e-9 ? 'Flat here · true slope 0' : 'On a step edge', Math.abs(trueSlope) < 1e-9 ? '' : 'firing');
+        }
+        [weightIn, smoothIn].forEach(input => input.addEventListener('input', draw));
+        draw();
+    })();
+
+    /* ------------------------------------------------------------------
+       Lab 7.1 · Where the joules go
+       ------------------------------------------------------------------ */
+    (function energyLab() {
+        const canvas = $('energyCanvas');
+        if (!canvas) return;
+        const ctx = crispCanvas(canvas);
+        const W = 900, H = 360;
+        const neuronsIn = $('energyNeurons'), activityIn = $('energyActivity');
+        const E_MAC = 4.6e-12, E_ADD = 0.9e-12, E_SRAM = 5e-12, E_DRAM = 640e-12, E_XBAR = 0.5e-12, I = 17, OUT = 4;
+        const neurons = () => Math.round(48 * Math.pow(100000 / 48, Number(neuronsIn.value) / 100));
+        const fmtJ = e => e >= 1 ? e.toFixed(2) + ' J' : e >= 1e-3 ? (e * 1e3).toFixed(2) + ' mJ' : e >= 1e-6 ? (e * 1e6).toFixed(2) + ' µJ' : e >= 1e-9 ? (e * 1e9).toFixed(2) + ' nJ' : (e * 1e12).toFixed(1) + ' pJ';
+        const fmtW = p => p >= 1 ? p.toFixed(1) + ' W' : p >= 1e-3 ? (p * 1e3).toFixed(1) + ' mW' : p >= 1e-6 ? (p * 1e6).toFixed(1) + ' µW' : (p * 1e9).toFixed(1) + ' nW';
+        const big = n => n >= 1e9 ? (n / 1e9).toFixed(2) + ' G' : n >= 1e6 ? (n / 1e6).toFixed(2) + ' M' : n >= 1e3 ? (n / 1e3).toFixed(1) + ' k' : String(Math.round(n));
+        function draw() {
+            const N = neurons(), f = Number(activityIn.value) / 100;
+            const dense = N * N + I * N + OUT * N, event = f * N * N + I * N + f * N * OUT;
+            const options = [
+                ['Dense, weights in DRAM', dense * (E_MAC + E_DRAM), '#d8574a', 'every weight fetched off-chip every tick'],
+                ['Dense, weights on-chip (SRAM)', dense * (E_MAC + E_SRAM), '#d99a1a', 'same arithmetic, near memory'],
+                ['Event-driven, on-chip SRAM', event * (E_ADD + E_SRAM), '#7fbf6a', 'only spiking neurons are processed'],
+                ['Event-driven, in-memory crossbar', event * E_XBAR, '#67e8f9', 'weights never move (0.5 pJ / event assumed)'],
+            ];
+            ctx.clearRect(0, 0, W, H); ctx.fillStyle = BG; ctx.fillRect(0, 0, W, H);
+            const bx0 = 230, bx1 = 700, decades = 11, minLog = -10;
+            const mapX = e => bx0 + clamp((Math.log10(e) - minLog) / decades, 0, 1) * (bx1 - bx0);
+            text(ctx, 'ENERGY PER BRAIN TICK · log scale', 16, 20, TEXT, '800 11px system-ui');
+            for (let d = 0; d <= decades; d += 1) { const x = bx0 + d / decades * (bx1 - bx0); ctx.strokeStyle = d % 3 === 0 ? '#2e4a3d' : '#1d2f27'; ctx.beginPath(); ctx.moveTo(x, 34); ctx.lineTo(x, 34 + 4 * 66 - 4); ctx.stroke(); }
+            [[-9, '1 nJ'], [-6, '1 µJ'], [-3, '1 mJ'], [0, '1 J']].forEach(([lg, label]) => text(ctx, label, bx0 + (lg - minLog) / decades * (bx1 - bx0), 34 + 4 * 66 + 10, DIM, '10px system-ui', 'center'));
+            const best = Math.min(...options.map(o => o[1]));
+            options.forEach(([label, e, color, note], i) => {
+                const y = 40 + i * 66;
+                text(ctx, label, 16, y + 16, '#eef6f0', '700 12px system-ui'); text(ctx, note, 16, y + 33, DIM, '10px system-ui');
+                ctx.fillStyle = color; ctx.fillRect(bx0, y + 6, Math.max(2, mapX(e) - bx0), 30);
+                text(ctx, fmtJ(e), bx1 + 14, y + 20, '#eef6f0', '800 13px ui-monospace, monospace');
+                text(ctx, fmtW(e * 30) + ' at 30 Hz', bx1 + 14, y + 36, DIM, '10px system-ui');
+                text(ctx, e / best < 1.5 ? 'cheapest' : '×' + (e / best >= 100 ? Math.round(e / best).toLocaleString('en-US') : (e / best).toFixed(1)), bx1 - 6, y + 25, '#9fb0a5', '700 11px system-ui', 'right');
+            });
+            text(ctx, 'per-operation energies: 32-bit float multiply 3.7 pJ, add 0.9 pJ, on-chip SRAM read 5 pJ, off-chip DRAM read 640 pJ (45 nm, Horowitz 2014)', 16, 348, DIM, '10px system-ui');
+            $('energyNeuronsValue').textContent = N.toLocaleString('en-US'); $('energyActivityValue').textContent = Number(activityIn.value).toFixed(1).replace('.0', '') + '%';
+            $('energyWeightsReadout').textContent = big(N * N + I * N + OUT * N); $('energyDenseReadout').textContent = big(dense); $('energyEventReadout').textContent = big(event);
+            const ratio = options[0][1] / options[3][1];
+            $('energyNote').innerHTML = N <= 60 ? 'At the kart\'s own size the worst case is ' + fmtW(options[0][1] * 30) + ' per kart. Nothing here is an energy problem in a browser; it is a lesson in what <em>would</em> matter at scale.' : 'Dense off-chip needs <b>' + fmtW(options[0][1] * 30) + '</b> for this layer; event-driven in-memory needs <b>' + fmtW(options[3][1] * 30) + '</b>: about <b>' + Math.round(ratio).toLocaleString('en-US') + '×</b> less, but only while just ' + Number(activityIn.value).toFixed(1).replace('.0', '') + '% of neurons spike per tick.';
+            setStatus($('energyStatusTag'), N.toLocaleString('en-US') + ' neurons · ' + Number(activityIn.value).toFixed(1).replace('.0', '') + '% active', '');
+        }
+        [neuronsIn, activityIn].forEach(input => input.addEventListener('input', draw));
         draw();
     })();
 })();

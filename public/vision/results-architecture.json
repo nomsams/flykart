@@ -1,0 +1,65 @@
+{
+ "description": "Same data (about 17,000 frames from 30 tracks, including 3,000 short traffic scenes), same 6 epochs, scored on 4,700 frames from tracks never trained on. R² per estimate.",
+ "variants": [
+  {
+   "label": "rgb, flatten only",
+   "parameters": 18171,
+   "macs": 186432,
+   "r2": {
+    "headingError": 0.63,
+    "curvature": 0.54,
+    "lateral": 0.72,
+    "edgeClearance": 0.71,
+    "roadAngle": 0.14,
+    "curveNear": 0.47,
+    "curveFar": 0.4,
+    "checkpoint": 0.15,
+    "trafficClose": 0.43,
+    "trafficSide": 0.28,
+    "trafficAhead": 0.38,
+    "closingSpeed": 0.18,
+    "obstacle": 0.09
+   }
+  },
+  {
+   "label": "retina, flatten only",
+   "parameters": 18225,
+   "macs": 201984,
+   "r2": {
+    "headingError": 0.6,
+    "curvature": 0.53,
+    "lateral": 0.7,
+    "edgeClearance": 0.68,
+    "roadAngle": 0.14,
+    "curveNear": 0.45,
+    "curveFar": 0.4,
+    "checkpoint": 0.15,
+    "trafficClose": 0.42,
+    "trafficSide": 0.28,
+    "trafficAhead": 0.31,
+    "closingSpeed": 0.13,
+    "obstacle": 0.03
+   }
+  },
+  {
+   "label": "retina + soft-argmax",
+   "parameters": 19953,
+   "macs": 203712,
+   "r2": {
+    "headingError": 0.56,
+    "curvature": 0.53,
+    "lateral": 0.71,
+    "edgeClearance": 0.72,
+    "roadAngle": 0.15,
+    "curveNear": 0.41,
+    "curveFar": 0.41,
+    "checkpoint": 0.15,
+    "trafficClose": 0.44,
+    "trafficSide": 0.27,
+    "trafficAhead": 0.41,
+    "closingSpeed": 0.17,
+    "obstacle": 0.11
+   }
+  }
+ ]
+}

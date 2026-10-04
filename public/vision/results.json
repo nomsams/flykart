@@ -1,0 +1,1238 @@
+{
+ "generatedAt": "2026-10-03T09:55:43.583Z",
+ "note": "full run",
+ "vision": {
+  "names": [
+   "headingError",
+   "curvature",
+   "lateral",
+   "edgeClearance",
+   "roadAngle",
+   "curveNear",
+   "curveFar",
+   "checkpoint",
+   "trafficClose",
+   "trafficSide",
+   "trafficAhead",
+   "closingSpeed",
+   "obstacle"
+  ],
+  "metrics": {
+   "rmse": [
+    0.11331785380949759,
+    0.1452467691257854,
+    0.3322930675233731,
+    0.146605538332727,
+    0.16637833539346766,
+    0.11830483281034392,
+    0.2313357366864159,
+    0.1658243843397796,
+    0.20508944143992247,
+    0.22441473331634,
+    0.28104317974901166,
+    0.2060323388500782,
+    0.36688372331418273
+   ],
+   "r2": [
+    0.7377435618969526,
+    0.5893509099405236,
+    0.510475302165497,
+    0.7985175731446721,
+    -0.06969833696628647,
+    0.5379045108394225,
+    0.3996656576290136,
+    0.5592190126891259,
+    0.6109121567259774,
+    0.4073700716633859,
+    0.597207774641038,
+    0.4456765795096882,
+    0.32723142595608
+   ],
+   "calibration": [
+    4.28808037287668,
+    2.3396807196770246,
+    2.6043083494726145,
+    1.5753180415093886,
+    2.7460837477197027,
+    2.6079216991099896,
+    2.452758374373902,
+    2.0403616450836726,
+    1.502257776343051,
+    0.9391578991603273,
+    1.659181548190035,
+    1.0329524026610666,
+    0.9042322537848351
+   ],
+   "coverage": [
+    0.9037011651816312,
+    0.9309458533241947,
+    0.8557230980123373,
+    0.8977039067854695,
+    0.8704592186429061,
+    0.9156956819739548,
+    0.882111034955449,
+    0.9288896504455106,
+    0.9078135709389993,
+    0.9578478409869774,
+    0.8923920493488691,
+    0.9415695681973955,
+    0.973954763536669
+   ],
+   "samples": 5836,
+   "heldOut": "mountain-pass,needle-eye,rainbow-rally,oval-sprint,gen-17000,gen-17400,gen-17800,gen-18201"
+  },
+  "heldOut": "mountain-pass,needle-eye,rainbow-rally,oval-sprint,gen-17000,gen-17400,gen-17800,gen-18201",
+  "network": "6-12-16 convolution channels, 48 hidden units, 18171 weights; Trained on 57616 frames over 4 DAgger rounds; evaluated on held-out tracks mountain-pass, needle-eye, rainbow-rally, oval-sprint, gen-17000, gen-17400, gen-17800, gen-18201."
+ },
+ "architecture": {
+  "description": "Same data (about 17,000 frames from 30 tracks, including 3,000 short traffic scenes), same 6 epochs, scored on 4,700 frames from tracks never trained on. R² per estimate.",
+  "variants": [
+   {
+    "label": "rgb, flatten only",
+    "parameters": 18171,
+    "macs": 186432,
+    "r2": {
+     "headingError": 0.63,
+     "curvature": 0.54,
+     "lateral": 0.72,
+     "edgeClearance": 0.71,
+     "roadAngle": 0.14,
+     "curveNear": 0.47,
+     "curveFar": 0.4,
+     "checkpoint": 0.15,
+     "trafficClose": 0.43,
+     "trafficSide": 0.28,
+     "trafficAhead": 0.38,
+     "closingSpeed": 0.18,
+     "obstacle": 0.09
+    }
+   },
+   {
+    "label": "retina, flatten only",
+    "parameters": 18225,
+    "macs": 201984,
+    "r2": {
+     "headingError": 0.6,
+     "curvature": 0.53,
+     "lateral": 0.7,
+     "edgeClearance": 0.68,
+     "roadAngle": 0.14,
+     "curveNear": 0.45,
+     "curveFar": 0.4,
+     "checkpoint": 0.15,
+     "trafficClose": 0.42,
+     "trafficSide": 0.28,
+     "trafficAhead": 0.31,
+     "closingSpeed": 0.13,
+     "obstacle": 0.03
+    }
+   },
+   {
+    "label": "retina + soft-argmax",
+    "parameters": 19953,
+    "macs": 203712,
+    "r2": {
+     "headingError": 0.56,
+     "curvature": 0.53,
+     "lateral": 0.71,
+     "edgeClearance": 0.72,
+     "roadAngle": 0.15,
+     "curveNear": 0.41,
+     "curveFar": 0.41,
+     "checkpoint": 0.15,
+     "trafficClose": 0.44,
+     "trafficSide": 0.27,
+     "trafficAhead": 0.41,
+     "closingSpeed": 0.17,
+     "obstacle": 0.11
+    }
+   }
+  ]
+ },
+ "pushPull": {
+  "generatedAt": "2026-10-03T00:07:52.870Z",
+  "seeds": 6,
+  "description": "Imitation of the built-in heuristic driver only (3 passes over 7 tracks), no evolution; the same random hidden layer for both layouts.",
+  "rows": {
+   "standard": {
+    "trained": {
+     "laps": 15,
+     "progress": 28.98214933699042,
+     "episodes": 42
+    },
+    "unseen": {
+     "laps": 28,
+     "progress": 46.060277717442766,
+     "episodes": 66
+    }
+   },
+   "push-pull": {
+    "trained": {
+     "laps": 13,
+     "progress": 26.59820592605972,
+     "episodes": 42
+    },
+    "unseen": {
+     "laps": 22,
+     "progress": 41.07674485943472,
+     "episodes": 66
+    }
+   }
+  }
+ },
+ "closedLoop": {
+  "description": "8 tracks the camera network never trained on (mountain-pass, needle-eye, rainbow-rally, oval-sprint, gen-17000, gen-17400, gen-17800, gen-18201), colours randomised a little. “Laps (walls)” is the simulator’s normal road-side walls; “no walls” makes leaving the road for real, which is a much stricter test of what the camera sees. Each driver ran each track once, so a difference of a lap or two is within noise.",
+  "rows": [
+   {
+    "label": "Feeling only · original FlyKart brain (exact numbers, as in v1)",
+    "laps": 6,
+    "episodes": 8,
+    "progress": 0.8874957760978144,
+    "meanLapSeconds": 30.7,
+    "offRoad": 0.018217410688488173,
+    "strictLaps": 5,
+    "strictProgress": 0.7437450761989806,
+    "strictCrashes": 3
+   },
+   {
+    "label": "Feeling only · robust controller (exact numbers)",
+    "laps": 7,
+    "episodes": 8,
+    "progress": 0.9974806029703007,
+    "meanLapSeconds": 23.876190476190477,
+    "offRoad": 0.015225518034121227,
+    "strictLaps": 5,
+    "strictProgress": 0.7517561136509595,
+    "strictCrashes": 3
+   },
+   {
+    "label": "Blind · robust controller (all estimates zero)",
+    "laps": 0,
+    "episodes": 8,
+    "progress": 0.060911698597312436,
+    "meanLapSeconds": null,
+    "offRoad": 0.1811111111111111,
+    "strictLaps": 0,
+    "strictProgress": 0.05366949515433043,
+    "strictCrashes": 8
+   },
+   {
+    "label": "Seeing only · original FlyKart brain",
+    "laps": 5,
+    "episodes": 8,
+    "progress": 0.7376001961746235,
+    "meanLapSeconds": 26.73333333333333,
+    "offRoad": 0.04514648969776798,
+    "strictLaps": 4,
+    "strictProgress": 0.7153690409448563,
+    "strictCrashes": 4
+   },
+   {
+    "label": "Seeing only · robust controller",
+    "laps": 5,
+    "episodes": 8,
+    "progress": 0.7421185917722575,
+    "meanLapSeconds": 19.173333333333332,
+    "offRoad": 0.07673611111111112,
+    "strictLaps": 6,
+    "strictProgress": 0.8033923273779251,
+    "strictCrashes": 2
+   },
+   {
+    "label": "Fusion · feeling weight 1",
+    "laps": 7,
+    "episodes": 8,
+    "progress": 0.9965605940617194,
+    "meanLapSeconds": 24.21904761904762,
+    "offRoad": 0.016078023316080412,
+    "strictLaps": 5,
+    "strictProgress": 0.753831695725668,
+    "strictCrashes": 3
+   },
+   {
+    "label": "Fusion · feeling weight 0.1",
+    "laps": 7,
+    "episodes": 8,
+    "progress": 0.9980401381739207,
+    "meanLapSeconds": 31.171428571428574,
+    "offRoad": 0.017979129299222754,
+    "strictLaps": 5,
+    "strictProgress": 0.7555213994420601,
+    "strictCrashes": 3
+   },
+   {
+    "label": "Fusion · feeling weight 0.01",
+    "laps": 6,
+    "episodes": 8,
+    "progress": 0.8034521153889423,
+    "meanLapSeconds": 20.32777777777778,
+    "offRoad": 0.0551383655150598,
+    "strictLaps": 4,
+    "strictProgress": 0.7200288066401992,
+    "strictCrashes": 4
+   },
+   {
+    "label": "Fusion · feeling weight 0.001",
+    "laps": 5,
+    "episodes": 8,
+    "progress": 0.7425979213217069,
+    "meanLapSeconds": 19.813333333333333,
+    "offRoad": 0.07886308324941255,
+    "strictLaps": 5,
+    "strictProgress": 0.7733068332831814,
+    "strictCrashes": 3
+   },
+   {
+    "label": "Fusion · feeling faded 1 → 0 during the lap",
+    "laps": 7,
+    "episodes": 8,
+    "progress": 0.9936797489320245,
+    "meanLapSeconds": 23.77142857142857,
+    "offRoad": 0.023373639253650692,
+    "strictLaps": 4,
+    "strictProgress": 0.7278961758007692,
+    "strictCrashes": 4
+   },
+   {
+    "label": "Averaging two brains’ actions (50/50)",
+    "laps": 6,
+    "episodes": 8,
+    "progress": 0.8860359411115092,
+    "meanLapSeconds": 19.83888888888889,
+    "offRoad": 0.034196467273515385,
+    "strictLaps": 5,
+    "strictProgress": 0.7521990323174201,
+    "strictCrashes": 3
+   },
+   {
+    "label": "Camera’s own action guess (no controller)",
+    "laps": 6,
+    "episodes": 8,
+    "progress": 0.8144859603725332,
+    "meanLapSeconds": 24.55,
+    "offRoad": 0.056632602887801406,
+    "strictLaps": 3,
+    "strictProgress": 0.5852465390228164,
+    "strictCrashes": 5
+   },
+   {
+    "label": "Traffic: feeling only · robust controller",
+    "laps": 7,
+    "episodes": 8,
+    "progress": 0.9959074336236543,
+    "meanLapSeconds": 33.74285714285715,
+    "offRoad": 0.02379888981286036,
+    "strictLaps": 1,
+    "strictProgress": 0.4549171247386304,
+    "strictCrashes": 7
+   },
+   {
+    "label": "Traffic: seeing only · robust controller",
+    "laps": 5,
+    "episodes": 8,
+    "progress": 0.7349957184382807,
+    "meanLapSeconds": 21.31333333333333,
+    "offRoad": 0.07027777777777777,
+    "strictLaps": 5,
+    "strictProgress": 0.7767871768873326,
+    "strictCrashes": 3
+   },
+   {
+    "label": "Traffic: fusion · feeling weight 0.1",
+    "laps": 7,
+    "episodes": 8,
+    "progress": 0.9979234115958348,
+    "meanLapSeconds": 31.652380952380952,
+    "offRoad": 0.02197578182275905,
+    "strictLaps": 4,
+    "strictProgress": 0.6409871819729712,
+    "strictCrashes": 4
+   }
+  ]
+ },
+ "memory": {
+  "description": "Vision only, no feeling channels. The Kenyon-cell memory is taught from the kart's own gyro and wheel odometry alone: at each place along the lap, where the kart was and which way it faced. From there it can recall the path ahead and turn it into the road-geometry estimates the camera also makes (heading to the look-ahead point, curvature at the look-ahead, +30 px and +150 px). Table (1): three laps in the same good light. Table (2): learn in daylight, then drive a lap with a dimmer, noisier camera, with and without the memory. Error averages the four estimates against the truth: camera alone versus what the controller used, on the same frames. The last column of table (1) is a control: the kart drives after a memory of a different track.",
+  "rows": [
+   {
+    "track": "Mountain pass",
+    "laps": [
+     {
+      "seconds": 30.7,
+      "finished": true,
+      "progress": 0.9993914166310859,
+      "offRoad": 0.04234527687296417,
+      "errorCamera": 0.13070878472880468,
+      "errorUsed": 0.13070878472880468
+     },
+     {
+      "seconds": 33.1,
+      "finished": true,
+      "progress": 0.9988453304265903,
+      "offRoad": 0.050352467270896276,
+      "errorCamera": 0.14427967615668685,
+      "errorUsed": 0.15004849719383073
+     },
+     {
+      "seconds": 30.7,
+      "finished": true,
+      "progress": 0.9985180285973113,
+      "offRoad": 0.04560260586319218,
+      "errorCamera": 0.14177590453322028,
+      "errorUsed": 0.1467134250724181
+     }
+    ],
+    "wrongPlace": {
+     "seconds": 32.166666666666664,
+     "finished": true,
+     "progress": 0.9988257640764249,
+     "offRoad": 0.04559585492227979,
+     "errorCamera": 0.1353259717638658,
+     "errorUsed": 0.13722743583633074
+    },
+    "dark": {
+     "dusk": {
+      "withMemory": {
+       "seconds": null,
+       "finished": false,
+       "progress": 0.5001680115436076,
+       "offRoad": 0.19833333333333333,
+       "errorCamera": 0.5759077363631445,
+       "errorUsed": 0.5799061343752332
+      },
+      "withoutMemory": {
+       "seconds": 29.933333333333334,
+       "finished": true,
+       "progress": 1,
+       "offRoad": 0.034521158129175944,
+       "errorCamera": 0.13711817973855853,
+       "errorUsed": 0.13711817973855853
+      }
+     },
+     "dim": {
+      "withMemory": {
+       "seconds": null,
+       "finished": false,
+       "progress": 0.8666508829392843,
+       "offRoad": 0.1725,
+       "errorCamera": 0.26712024913529836,
+       "errorUsed": 0.26692543477240865
+      },
+      "withoutMemory": {
+       "seconds": null,
+       "finished": false,
+       "progress": 1,
+       "offRoad": 0.13055555555555556,
+       "errorCamera": 0.21720277780853411,
+       "errorUsed": 0.21720277780853411
+      }
+     },
+     "night": {
+      "withMemory": {
+       "seconds": null,
+       "finished": false,
+       "progress": 0.5353409649659504,
+       "offRoad": 0.15055555555555555,
+       "errorCamera": 0.43331438619071383,
+       "errorUsed": 0.43310313017339874
+      },
+      "withoutMemory": {
+       "seconds": null,
+       "finished": false,
+       "progress": 0.060460694940624324,
+       "offRoad": 0.18555555555555556,
+       "errorCamera": 0.3593292671576853,
+       "errorUsed": 0.3593292671576853
+      }
+     }
+    }
+   },
+   {
+    "track": "Needle Eye",
+    "laps": [
+     {
+      "seconds": null,
+      "finished": false,
+      "progress": 0.10424858766323611,
+      "offRoad": 0.2125,
+      "errorCamera": 0.7774748874976098,
+      "errorUsed": 0.7774748874976098
+     },
+     {
+      "seconds": null,
+      "finished": false,
+      "progress": 0.10065039996775849,
+      "offRoad": 0.21305555555555555,
+      "errorCamera": 0.7796681636887813,
+      "errorUsed": 0.7795022356253172
+     },
+     {
+      "seconds": null,
+      "finished": false,
+      "progress": 0.10424858766323611,
+      "offRoad": 0.2127777777777778,
+      "errorCamera": 0.7768707738050651,
+      "errorUsed": 0.7765883010478669
+     }
+    ],
+    "wrongPlace": {
+     "seconds": null,
+     "finished": false,
+     "progress": 0.10299466155739986,
+     "offRoad": 0.21333333333333335,
+     "errorCamera": 0.780759751492556,
+     "errorUsed": 0.7832003948817391
+    },
+    "dark": {
+     "dusk": {
+      "withMemory": {
+       "seconds": null,
+       "finished": false,
+       "progress": 0.10424858766323611,
+       "offRoad": 0.21194444444444444,
+       "errorCamera": 0.7847788087081318,
+       "errorUsed": 0.7846278960181986
+      },
+      "withoutMemory": {
+       "seconds": null,
+       "finished": false,
+       "progress": 0.10424858766323611,
+       "offRoad": 0.21166666666666667,
+       "errorCamera": 0.782138977342226,
+       "errorUsed": 0.782138977342226
+      }
+     },
+     "dim": {
+      "withMemory": {
+       "seconds": null,
+       "finished": false,
+       "progress": 0.10424858766323611,
+       "offRoad": 0.21222222222222223,
+       "errorCamera": 0.8007174921946556,
+       "errorUsed": 0.8009941736281908
+      },
+      "withoutMemory": {
+       "seconds": null,
+       "finished": false,
+       "progress": 0.10424858766323611,
+       "offRoad": 0.21222222222222223,
+       "errorCamera": 0.8039074258375588,
+       "errorUsed": 0.8039074258375588
+      }
+     },
+     "night": {
+      "withMemory": {
+       "seconds": null,
+       "finished": false,
+       "progress": 0.10424858766323611,
+       "offRoad": 0.21222222222222223,
+       "errorCamera": 0.8723592797156591,
+       "errorUsed": 0.872758653935435
+      },
+      "withoutMemory": {
+       "seconds": null,
+       "finished": false,
+       "progress": 0.1196323795983364,
+       "offRoad": 0.16527777777777777,
+       "errorCamera": 0.7086559278662662,
+       "errorUsed": 0.7086559278662662
+      }
+     }
+    }
+   },
+   {
+    "track": "Rainbow Rally",
+    "laps": [
+     {
+      "seconds": null,
+      "finished": false,
+      "progress": 0.3330036452418297,
+      "offRoad": 0.20305555555555554,
+      "errorCamera": 0.5693038351047418,
+      "errorUsed": 0.5693038351047418
+     },
+     {
+      "seconds": null,
+      "finished": false,
+      "progress": 0.3330036452418297,
+      "offRoad": 0.20277777777777778,
+      "errorCamera": 0.5647952723694429,
+      "errorUsed": 0.5666582070259433
+     },
+     {
+      "seconds": null,
+      "finished": false,
+      "progress": 0.3330036452418297,
+      "offRoad": 0.20222222222222222,
+      "errorCamera": 0.5637439346038498,
+      "errorUsed": 0.5665548266222741
+     }
+    ],
+    "wrongPlace": {
+     "seconds": null,
+     "finished": false,
+     "progress": 0.3330036452418297,
+     "offRoad": 0.2025,
+     "errorCamera": 0.5646717434223297,
+     "errorUsed": 0.5711020208253208
+    },
+    "dark": {
+     "dusk": {
+      "withMemory": {
+       "seconds": null,
+       "finished": false,
+       "progress": 0.3330036452418297,
+       "offRoad": 0.2036111111111111,
+       "errorCamera": 0.5615253758211636,
+       "errorUsed": 0.5622179188189745
+      },
+      "withoutMemory": {
+       "seconds": null,
+       "finished": false,
+       "progress": 0.3330036452418297,
+       "offRoad": 0.20333333333333334,
+       "errorCamera": 0.5562379939718997,
+       "errorUsed": 0.5562379939718997
+      }
+     },
+     "dim": {
+      "withMemory": {
+       "seconds": null,
+       "finished": false,
+       "progress": 0.3128010310964606,
+       "offRoad": 0.20055555555555554,
+       "errorCamera": 0.49722096335821964,
+       "errorUsed": 0.493214826143254
+      },
+      "withoutMemory": {
+       "seconds": null,
+       "finished": false,
+       "progress": 0.2926104904188449,
+       "offRoad": 0.1947222222222222,
+       "errorCamera": 0.42451759927863936,
+       "errorUsed": 0.42451759927863936
+      }
+     },
+     "night": {
+      "withMemory": {
+       "seconds": null,
+       "finished": false,
+       "progress": 0.3330036452418297,
+       "offRoad": 0.19916666666666666,
+       "errorCamera": 0.6263970914721392,
+       "errorUsed": 0.6201757706820471
+      },
+      "withoutMemory": {
+       "seconds": null,
+       "finished": false,
+       "progress": 0.32102012287413634,
+       "offRoad": 0.15833333333333333,
+       "errorCamera": 0.5221132457908446,
+       "errorUsed": 0.5221132457908446
+      }
+     }
+    }
+   },
+   {
+    "track": "Oval sprint",
+    "laps": [
+     {
+      "seconds": 20.233333333333334,
+      "finished": true,
+      "progress": 0.9924767773539147,
+      "offRoad": 0,
+      "errorCamera": 0.04904228204323032,
+      "errorUsed": 0.04904228204323032
+     },
+     {
+      "seconds": 21.333333333333332,
+      "finished": true,
+      "progress": 0.9943531968943904,
+      "offRoad": 0,
+      "errorCamera": 0.0484157374765526,
+      "errorUsed": 0.043357069879675095
+     },
+     {
+      "seconds": 20.833333333333332,
+      "finished": true,
+      "progress": 0.9924612340002961,
+      "offRoad": 0,
+      "errorCamera": 0.0497988237860757,
+      "errorUsed": 0.043447554804191456
+     }
+    ],
+    "wrongPlace": {
+     "seconds": 22.8,
+     "finished": true,
+     "progress": 0.99529006693198,
+     "offRoad": 0.0029239766081871343,
+     "errorCamera": 0.04610202008876789,
+     "errorUsed": 0.13721686682953368
+    },
+    "dark": {
+     "dusk": {
+      "withMemory": {
+       "seconds": 20.233333333333334,
+       "finished": true,
+       "progress": 1,
+       "offRoad": 0,
+       "errorCamera": 0.05448907466021929,
+       "errorUsed": 0.04732162469970624
+      },
+      "withoutMemory": {
+       "seconds": 20.133333333333333,
+       "finished": true,
+       "progress": 0.9962797944551302,
+       "offRoad": 0,
+       "errorCamera": 0.05332628881158,
+       "errorUsed": 0.05332628881158
+      }
+     },
+     "dim": {
+      "withMemory": {
+       "seconds": 41.333333333333336,
+       "finished": true,
+       "progress": 1,
+       "offRoad": 0.004032258064516129,
+       "errorCamera": 0.0750685299861775,
+       "errorUsed": 0.06570826844565034
+      },
+      "withoutMemory": {
+       "seconds": 24.666666666666668,
+       "finished": true,
+       "progress": 0.9932095760866988,
+       "offRoad": 0.013513513513513514,
+       "errorCamera": 0.07418645891611785,
+       "errorUsed": 0.07418645891611785
+      }
+     },
+     "night": {
+      "withMemory": {
+       "seconds": 78.36666666666666,
+       "finished": true,
+       "progress": 1,
+       "offRoad": 0.028498511271799233,
+       "errorCamera": 0.09678454974708699,
+       "errorUsed": 0.0884680524223446
+      },
+      "withoutMemory": {
+       "seconds": 32.9,
+       "finished": true,
+       "progress": 1,
+       "offRoad": 0.04154002026342452,
+       "errorCamera": 0.09357105767199127,
+       "errorUsed": 0.09357105767199127
+      }
+     }
+    }
+   },
+   {
+    "track": "Generated 17000",
+    "laps": [
+     {
+      "seconds": 18.233333333333334,
+      "finished": true,
+      "progress": 1,
+      "offRoad": 0,
+      "errorCamera": 0.038904524251420325,
+      "errorUsed": 0.038904524251420325
+     },
+     {
+      "seconds": 18.566666666666666,
+      "finished": true,
+      "progress": 1,
+      "offRoad": 0,
+      "errorCamera": 0.03723484036385813,
+      "errorUsed": 0.03393402164246632
+     },
+     {
+      "seconds": 18.4,
+      "finished": true,
+      "progress": 1,
+      "offRoad": 0,
+      "errorCamera": 0.03898089095304241,
+      "errorUsed": 0.03525553155040619
+     }
+    ],
+    "wrongPlace": {
+     "seconds": 23.566666666666666,
+     "finished": true,
+     "progress": 1,
+     "offRoad": 0.036775106082036775,
+     "errorCamera": 0.05127834161727325,
+     "errorUsed": 0.1696862643215183
+    },
+    "dark": {
+     "dusk": {
+      "withMemory": {
+       "seconds": 18.2,
+       "finished": true,
+       "progress": 1,
+       "offRoad": 0,
+       "errorCamera": 0.03780127927229929,
+       "errorUsed": 0.0345996997847359
+      },
+      "withoutMemory": {
+       "seconds": 18.5,
+       "finished": true,
+       "progress": 1,
+       "offRoad": 0,
+       "errorCamera": 0.03728736197094693,
+       "errorUsed": 0.03728736197094693
+      }
+     },
+     "dim": {
+      "withMemory": {
+       "seconds": 18.566666666666666,
+       "finished": true,
+       "progress": 1,
+       "offRoad": 0,
+       "errorCamera": 0.05432879670204331,
+       "errorUsed": 0.04013139178656446
+      },
+      "withoutMemory": {
+       "seconds": 19.1,
+       "finished": true,
+       "progress": 1,
+       "offRoad": 0,
+       "errorCamera": 0.0457284220791575,
+       "errorUsed": 0.0457284220791575
+      }
+     },
+     "night": {
+      "withMemory": {
+       "seconds": 18.6,
+       "finished": true,
+       "progress": 1,
+       "offRoad": 0,
+       "errorCamera": 0.06076751004819484,
+       "errorUsed": 0.03950544259339502
+      },
+      "withoutMemory": {
+       "seconds": 26.6,
+       "finished": true,
+       "progress": 1,
+       "offRoad": 0.03007518796992481,
+       "errorCamera": 0.07401407343147527,
+       "errorUsed": 0.07401407343147527
+      }
+     }
+    }
+   },
+   {
+    "track": "Generated 17400",
+    "laps": [
+     {
+      "seconds": 18.833333333333332,
+      "finished": true,
+      "progress": 1,
+      "offRoad": 0,
+      "errorCamera": 0.0517472656062657,
+      "errorUsed": 0.0517472656062657
+     },
+     {
+      "seconds": 36.833333333333336,
+      "finished": true,
+      "progress": 1,
+      "offRoad": 0,
+      "errorCamera": 0.05502769735817234,
+      "errorUsed": 0.05317784200123134
+     },
+     {
+      "seconds": 18.8,
+      "finished": true,
+      "progress": 1,
+      "offRoad": 0,
+      "errorCamera": 0.05503973876822574,
+      "errorUsed": 0.05177501393584582
+     }
+    ],
+    "wrongPlace": {
+     "seconds": 32.6,
+     "finished": true,
+     "progress": 0.9896732872390198,
+     "offRoad": 0.09100204498977506,
+     "errorCamera": 0.12180386569972498,
+     "errorUsed": 0.26645069112448455
+    },
+    "dark": {
+     "dusk": {
+      "withMemory": {
+       "seconds": 18.833333333333332,
+       "finished": true,
+       "progress": 1,
+       "offRoad": 0,
+       "errorCamera": 0.06682199678316529,
+       "errorUsed": 0.06185657713590971
+      },
+      "withoutMemory": {
+       "seconds": 19.266666666666666,
+       "finished": true,
+       "progress": 1,
+       "offRoad": 0,
+       "errorCamera": 0.06443258157868349,
+       "errorUsed": 0.06443258157868349
+      }
+     },
+     "dim": {
+      "withMemory": {
+       "seconds": 21.433333333333334,
+       "finished": true,
+       "progress": 1,
+       "offRoad": 0.01088646967340591,
+       "errorCamera": 0.09412637360676167,
+       "errorUsed": 0.0732248094141774
+      },
+      "withoutMemory": {
+       "seconds": 23.4,
+       "finished": true,
+       "progress": 1,
+       "offRoad": 0.01282051282051282,
+       "errorCamera": 0.09321286566400351,
+       "errorUsed": 0.09321286566400351
+      }
+     },
+     "night": {
+      "withMemory": {
+       "seconds": 21.333333333333332,
+       "finished": true,
+       "progress": 0.997161247531798,
+       "offRoad": 0.0109375,
+       "errorCamera": 0.10599723589269075,
+       "errorUsed": 0.07780038251861429
+      },
+      "withoutMemory": {
+       "seconds": 33.13333333333333,
+       "finished": true,
+       "progress": 1,
+       "offRoad": 0.04527162977867203,
+       "errorCamera": 0.11335678459726765,
+       "errorUsed": 0.11335678459726765
+      }
+     }
+    }
+   },
+   {
+    "track": "Generated 17800",
+    "laps": [
+     {
+      "seconds": 21.6,
+      "finished": true,
+      "progress": 1,
+      "offRoad": 0.010802469135802469,
+      "errorCamera": 0.04598842854615417,
+      "errorUsed": 0.04598842854615417
+     },
+     {
+      "seconds": 20.666666666666668,
+      "finished": true,
+      "progress": 1,
+      "offRoad": 0.008064516129032258,
+      "errorCamera": 0.04558561347771974,
+      "errorUsed": 0.04389711045848599
+     },
+     {
+      "seconds": 21.233333333333334,
+      "finished": true,
+      "progress": 0.9974208242262173,
+      "offRoad": 0.01098901098901099,
+      "errorCamera": 0.044281493965171226,
+      "errorUsed": 0.04269868047593697
+     }
+    ],
+    "wrongPlace": {
+     "seconds": 59.56666666666667,
+     "finished": true,
+     "progress": 1,
+     "offRoad": 0.039731393396754335,
+     "errorCamera": 0.054805651739803285,
+     "errorUsed": 0.2885412651467278
+    },
+    "dark": {
+     "dusk": {
+      "withMemory": {
+       "seconds": 20.7,
+       "finished": true,
+       "progress": 0.9983395347772309,
+       "offRoad": 0.00644122383252818,
+       "errorCamera": 0.05614723942519883,
+       "errorUsed": 0.05110985735088156
+      },
+      "withoutMemory": {
+       "seconds": 21.166666666666668,
+       "finished": true,
+       "progress": 1,
+       "offRoad": 0.009448818897637795,
+       "errorCamera": 0.05486379417650065,
+       "errorUsed": 0.05486379417650065
+      }
+     },
+     "dim": {
+      "withMemory": {
+       "seconds": 21.866666666666667,
+       "finished": true,
+       "progress": 0.9972289771365788,
+       "offRoad": 0.01676829268292683,
+       "errorCamera": 0.07775620633334583,
+       "errorUsed": 0.06337093017951506
+      },
+      "withoutMemory": {
+       "seconds": 21.7,
+       "finished": true,
+       "progress": 1,
+       "offRoad": 0.009216589861751152,
+       "errorCamera": 0.07522594319790307,
+       "errorUsed": 0.07522594319790307
+      }
+     },
+     "night": {
+      "withMemory": {
+       "seconds": 26.433333333333334,
+       "finished": true,
+       "progress": 1,
+       "offRoad": 0.0403530895334174,
+       "errorCamera": 0.10433418397018052,
+       "errorUsed": 0.0757367803793986
+      },
+      "withoutMemory": {
+       "seconds": 35.266666666666666,
+       "finished": true,
+       "progress": 1,
+       "offRoad": 0.057655954631379965,
+       "errorCamera": 0.10501705955559255,
+       "errorUsed": 0.10501705955559255
+      }
+     }
+    }
+   },
+   {
+    "track": "Generated 18201",
+    "laps": [
+     {
+      "seconds": 22.366666666666667,
+      "finished": true,
+      "progress": 1,
+      "offRoad": 0.01788375558867362,
+      "errorCamera": 0.06397226629306443,
+      "errorUsed": 0.06397226629306443
+     },
+     {
+      "seconds": 19.133333333333333,
+      "finished": true,
+      "progress": 1,
+      "offRoad": 0,
+      "errorCamera": 0.05898225160915346,
+      "errorUsed": 0.05409566503585092
+     },
+     {
+      "seconds": 23.4,
+      "finished": true,
+      "progress": 1,
+      "offRoad": 0.027065527065527065,
+      "errorCamera": 0.0628943159882028,
+      "errorUsed": 0.06060268179764772
+     }
+    ],
+    "wrongPlace": {
+     "seconds": 99.53333333333333,
+     "finished": true,
+     "progress": 1,
+     "offRoad": 0.06731413261888815,
+     "errorCamera": 0.10959862509221208,
+     "errorUsed": 0.2581359361081658
+    },
+    "dark": {
+     "dusk": {
+      "withMemory": {
+       "seconds": 21.5,
+       "finished": true,
+       "progress": 1,
+       "offRoad": 0.010852713178294573,
+       "errorCamera": 0.06693320168960704,
+       "errorUsed": 0.060103400371541355
+      },
+      "withoutMemory": {
+       "seconds": 19.833333333333332,
+       "finished": true,
+       "progress": 1,
+       "offRoad": 0,
+       "errorCamera": 0.06828055865875349,
+       "errorUsed": 0.06828055865875349
+      }
+     },
+     "dim": {
+      "withMemory": {
+       "seconds": 101.73333333333333,
+       "finished": true,
+       "progress": 1,
+       "offRoad": 0.03669724770642202,
+       "errorCamera": 0.09424010527019262,
+       "errorUsed": 0.09116668361750398
+      },
+      "withoutMemory": {
+       "seconds": 31.066666666666666,
+       "finished": true,
+       "progress": 1,
+       "offRoad": 0.05472103004291846,
+       "errorCamera": 0.10250782023585948,
+       "errorUsed": 0.10250782023585948
+      }
+     },
+     "night": {
+      "withMemory": {
+       "seconds": 30.3,
+       "finished": true,
+       "progress": 1,
+       "offRoad": 0.061606160616061605,
+       "errorCamera": 0.10984347382000777,
+       "errorUsed": 0.08439850065004272
+      },
+      "withoutMemory": {
+       "seconds": null,
+       "finished": false,
+       "progress": 0.7681983995037199,
+       "offRoad": 0.15472222222222223,
+       "errorCamera": 0.545090400207622,
+       "errorUsed": 0.545090400207622
+      }
+     }
+    }
+   }
+  ],
+  "levels": [
+   {
+    "id": "dusk",
+    "label": "dusk (brightness 0.62, noise 0.04)",
+    "finishedWith": 5,
+    "finishedWithout": 6,
+    "progressWith": 0.741969972403238,
+    "progressWithout": 0.8041915034200244,
+    "errorCamera": 0.2755505890903662,
+    "errorUsed": 0.27271788856939766,
+    "errorBetter": 6,
+    "bothFinished": 5,
+    "secondsWith": 19.893333333333334,
+    "secondsWithout": 19.779999999999998
+   },
+   {
+    "id": "dim",
+    "label": "dim (brightness 0.50, noise 0.07)",
+    "finishedWith": 5,
+    "finishedWithout": 5,
+    "progressWith": 0.7851161848544449,
+    "progressWithout": 0.7987585817710975,
+    "errorCamera": 0.24507233957333685,
+    "errorUsed": 0.2368420647484081,
+    "errorBetter": 7,
+    "bothFinished": 5,
+    "secondsWith": 40.986666666666665,
+    "secondsWithout": 23.986666666666665
+   },
+   {
+    "id": "night",
+    "label": "night (brightness 0.42, noise 0.10)",
+    "finishedWith": 5,
+    "finishedWithout": 4,
+    "progressWith": 0.7462193056753518,
+    "progressWithout": 0.6586639496146022,
+    "errorCamera": 0.3012247138570841,
+    "errorUsed": 0.28649333916933445,
+    "errorBetter": 7,
+    "bothFinished": 4,
+    "secondsWith": 36.18333333333333,
+    "secondsWithout": 31.974999999999998
+   }
+  ],
+  "tracks": 8,
+  "summary": "In the same good light the memory lowered the estimate error on 6 of 8 tracks (4% on average) and lap 2 was faster than lap 1 on 2 of 6 tracks finished both times: it changes little when the camera is already good. When the light fails the results are mixed (see the table); at night 5 of 8 tracks were finished with the memory against 4 without, mean progress 75% against 66%, and the estimate error fell from 0.301 to 0.286.",
+  "sameBetter": 6,
+  "sameFaster": 2,
+  "finishedBoth": 6,
+  "errorGain": 0.037946111869172724,
+  "night": {
+   "id": "night",
+   "label": "night (brightness 0.42, noise 0.10)",
+   "finishedWith": 5,
+   "finishedWithout": 4,
+   "progressWith": 0.7462193056753518,
+   "progressWithout": 0.6586639496146022,
+   "errorCamera": 0.3012247138570841,
+   "errorUsed": 0.28649333916933445,
+   "errorBetter": 7,
+   "bothFinished": 4,
+   "secondsWith": 36.18333333333333,
+   "secondsWithout": 31.974999999999998
+  }
+ },
+ "gates": [
+  {
+   "id": "controller",
+   "title": "Controller expects imperfect eyes",
+   "status": "pass",
+   "detail": "Clean laps 6/7 (original 6/7). With brutal noise and 333 ms delay: 7/7 (original 2/7)."
+  },
+  {
+   "id": "vision",
+   "title": "The camera drives on its own",
+   "status": "partial",
+   "detail": "Camera only: 5/8 laps on unseen tracks (exact numbers: 7/8; blind: 0/8). Without walls: 6/8 vs 5/8. That is 71% of the exact-number kart’s laps."
+  },
+  {
+   "id": "fade",
+   "title": "The feeling can be faded out",
+   "status": "pass",
+   "detail": "Feeling weight faded 1 → 0 over one lap: 7/8 laps, 99% progress. Averaging the two brains’ actions instead: 6/8 laps."
+  },
+  {
+   "id": "memory",
+   "title": "A lap teaches the kart what to expect",
+   "status": "partial",
+   "detail": "In the same good light the memory lowered the estimate error on 6 of 8 tracks (4% on average) and lap 2 was faster than lap 1 on 2 of 6 tracks finished both times: it changes little when the camera is already good. When the light fails the results are mixed (see the table); at night 5 of 8 tracks were finished with the memory against 4 without, mean progress 75% against 66%, and the estimate error fell from 0.301 to 0.286. By light, with the memory versus without: dusk 5 vs 6 laps (20 s vs 20 s where both finished); dim 5 vs 5 laps (41 s vs 24 s where both finished); night 5 vs 4 laps (36 s vs 32 s where both finished)."
+  },
+  {
+   "id": "world",
+   "title": "The same logic drives an open world",
+   "status": "pass",
+   "detail": "Camera only: 2.65 goals per run and 6/20 crashes, against 2.20 and 5/20 for the same spiking controller on exact numbers. The hand-written expert reaches 3.35 goals with 0/20 crashes, so the spiking controller itself is the weaker part here, not the eyes."
+  }
+ ],
+ "world": {
+  "description": "20 random worlds the networks never saw (trees, rocks, ponds, sand and mud, new colours). Goals are flags 170–390 px away, one after another, for 60 seconds. A pond ends the run; so do 8 collisions.",
+  "rows": [
+   {
+    "label": "Hand-written expert (exact numbers)",
+    "episodes": 20,
+    "goals": 3.35,
+    "crashes": 0,
+    "collisions": 0.1
+   },
+   {
+    "label": "Spiking controller · exact numbers",
+    "episodes": 20,
+    "goals": 2.2,
+    "crashes": 5,
+    "collisions": 2.95
+   },
+   {
+    "label": "Spiking controller · camera only",
+    "episodes": 20,
+    "goals": 2.65,
+    "crashes": 6,
+    "collisions": 2.95
+   },
+   {
+    "label": "Spiking controller · camera + exact whiskers (fused)",
+    "episodes": 20,
+    "goals": 2.55,
+    "crashes": 6,
+    "collisions": 2.3
+   },
+   {
+    "label": "Spiking controller · blind (control)",
+    "episodes": 20,
+    "goals": 0.45,
+    "crashes": 15,
+    "collisions": 5.6
+   }
+  ]
+ }
+}

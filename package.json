@@ -4,15 +4,43 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
+    "build:lab": "esbuild src/lab.ts --bundle --format=iife --global-name=FlyKartCore --target=es2020 --minify --outfile=public/flykart-core.js",
+    "predev": "npm run build:lab",
     "dev": "vite",
-    "build": "tsc --noEmit && vite build --base=./",
+    "build": "npm run build:lab && tsc --noEmit && vite build --base=./",
     "test": "vitest run",
     "test:watch": "vitest",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "vision:controller": "vite-node scripts/robust-evolve.ts --from=public/sample-brain.json --out=public/vision/controller.json --gens=40",
+    "vision:controller-check": "vite-node scripts/eval-controller.ts --brains=public/sample-brain.json,public/vision/controller.json --out=public/vision/results-controller.json",
+    "vision:train": "vite-node scripts/vision-train.ts --domain=track --teacher=public/vision/controller.json --out=public/vision/vision-net.json",
+    "vision:world-controller": "vite-node scripts/world-controller.ts --out=public/vision/world-controller.json --gens=40",
+    "vision:world-train": "vite-node scripts/vision-train.ts --domain=world --teacher=public/vision/world-controller.json --out=public/vision/world-vision-net.json --capacity=36000",
+    "vision:experiments": "vite-node scripts/experiments.ts --out=public/vision/results.json",
+    "robot:controller": "vite-node scripts/robust-evolve.ts --from=public/vision/controller.json --out=public/vision/robot/controller.json --profile=robot --sonar-init=zero --gens=60 --pop=20 --noisy=10 --miss=0.4 --penalty=0.2",
+    "robot:controller-camera": "vite-node scripts/robust-evolve.ts --from=public/vision/robot/controller.json --out=public/vision/robot/controller.json --profile=robot --eyes=public/vision/robot/vision-net.json --camera=8 --noisy=6 --miss=0.3 --penalty=0.2 --gens=30 --pop=16",
+    "robot:train": "vite-node scripts/vision-train.ts --domain=track --profile=robot",
+    "robot:world-controller": "vite-node scripts/world-controller.ts --profile=robot --from=public/vision/world-controller.json --out=public/vision/robot/world-controller.json --gens=30",
+    "robot:world-controller-camera": "vite-node scripts/world-controller.ts --profile=robot --from=public/vision/robot/world-controller.json --eyes=public/vision/robot/world-vision-net.json --out=public/vision/robot/world-controller.json --gens=30 --pop=16",
+    "robot:world-train": "vite-node scripts/vision-train.ts --domain=world --profile=robot --capacity=36000",
+    "robot:experiments": "vite-node scripts/robot-experiments.ts --out=public/vision/robot/results.json",
+    "vision:camera": "vite-node scripts/preview-camera.ts camera-preview.png",
+    "robot:camera": "vite-node scripts/preview-camera.ts robot-camera-preview.png robot",
+    "robot:ui-check": "node scripts/robot-ui-check.mjs",
+    "vision:world-camera": "vite-node scripts/preview-world.ts world-preview.png"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
+    "@types/three": "^0.186.0",
+    "esbuild": "^0.25.0",
     "typescript": "^5.7.3",
     "vite": "^6.1.0",
+    "vite-node": "^3.0.5",
     "vitest": "^3.0.5"
+  },
+  "dependencies": {
+    "esptool-js": "0.7.0",
+    "js-md5": "0.8.3",
+    "three": "^0.186.1"
   }
 }

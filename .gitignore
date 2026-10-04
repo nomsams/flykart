@@ -3,3 +3,6 @@ dist/
 .pytest_cache/
 __pycache__/
 .DS_Store
+public/flykart-core.js
+.cache/
+datasets/
