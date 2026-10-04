@@ -2,13 +2,14 @@ import { Action, BrainSnapshot, SpikingNetwork } from "../core";
 import type { Pose } from "./model";
 
 export type TrainingOptions = { evolve: boolean; seconds: number; episodes: number; population: number; generations: number; seed: number; rate: number; amount: number };
-export type EpisodeStep = { time: number; inputs: number[]; action: Action; pwm: number[]; cameraFrame: number; sonar: { cm: number | null; echo: boolean }; evaluation: { pose: Pose; blocked: boolean; contact: string | null; surface: string | null } };
-export type EpisodeSummary = { generation: number; candidate: number; episode: number; score: number; seconds: number; distance: number; cells: number; contacts: number; blockedSeconds: number; cableSeconds: number };
+export type EpisodeStep = { time: number; inputs: number[]; action: Action; pwm: number[]; cameraFrame: number; sonar: { cm: number | null; echo: boolean }; evaluation: { pose: Pose; blocked: boolean; contact: string | null; surface: string | null; taskReward?:number } };
+export type EpisodeSummary = { generation: number; candidate: number; episode: number; score: number; seconds: number; distance: number; cells: number; contacts: number; blockedSeconds: number; cableSeconds: number; taskReward:number };
 export type EpisodeDataset = { summary: EpisodeSummary; steps: EpisodeStep[]; frames: { id: number; width: number; height: number; encoding: "planar-rgb8-base64"; pixels: string; dropped: boolean }[]; omittedFrames: number };
 
 export class EpisodeRecorder {
   readonly steps: EpisodeStep[] = []; readonly frames: EpisodeDataset["frames"] = []; readonly cells = new Set<string>();
   distance = 0; contacts = 0; blockedSeconds = 0; cableSeconds = 0; seconds = 0; omittedFrames = 0;
+  taskReward=0;
   private previous: Pose | null = null; private blocked = false; private bytes = 0;
   frame(id: number, width: number, height: number, planar: Float32Array, dropped: boolean): void {
     if (this.bytes + planar.length > 6_000_000) { this.omittedFrames++; return; }
@@ -24,10 +25,11 @@ export class EpisodeRecorder {
     if (step.evaluation.blocked && !this.blocked) this.contacts++;
     this.blocked = step.evaluation.blocked; this.blockedSeconds += +this.blocked * dt; this.cableSeconds += +(step.evaluation.surface === "cable") * dt;
     this.seconds += dt; this.steps.push(structuredClone(step));
+    this.taskReward+=step.evaluation.taskReward??0;
   }
   finish(generation: number, candidate: number, episode: number): EpisodeDataset {
-    const score = (this.cells.size - 1) * .5 + Math.min(this.distance, this.cells.size * .4) - this.contacts * 2 - this.blockedSeconds - this.cableSeconds * .1;
-    return { summary: { generation, candidate, episode, score, seconds: this.seconds, distance: this.distance, cells: this.cells.size, contacts: this.contacts, blockedSeconds: this.blockedSeconds, cableSeconds: this.cableSeconds }, steps: this.steps, frames: this.frames, omittedFrames: this.omittedFrames };
+    const score = (this.cells.size - 1) * .5 + Math.min(this.distance, this.cells.size * .4) - this.contacts * 2 - this.blockedSeconds - this.cableSeconds * .1+this.taskReward;
+    return { summary: { generation, candidate, episode, score, seconds: this.seconds, distance: this.distance, cells: this.cells.size, contacts: this.contacts, blockedSeconds: this.blockedSeconds, cableSeconds: this.cableSeconds,taskReward:this.taskReward }, steps: this.steps, frames: this.frames, omittedFrames: this.omittedFrames };
   }
 }
 

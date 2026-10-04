@@ -224,9 +224,9 @@ describe("bounded Arduino-style firmware", () => {
 describe("sparse visual Kenyon room memory", () => {
   it("recalls previous observations, exports them and never teaches when disabled", () => {
     const memory = new RoomMemory(), features = new Float32Array(24).fill(.3), estimates = new Float32Array(10).fill(.7);
-    expect(memory.observe(features, estimates)).toBeNull(); expect(memory.active).toHaveLength(16);
+    expect(memory.observe(features, estimates)).toBeNull(); expect(memory.active).toHaveLength(Math.round(memory.count * memory.settings.sparsity));
     memory.observe(features, estimates); memory.observe(features, estimates); const recall = memory.observe(features, estimates, false);
-    expect(recall?.[0]).toBeCloseTo(.7); expect(memory.taught).toBe(16);
+    expect(recall?.[0]).toBeCloseTo(.7); expect(memory.taught).toBe(Math.round(memory.count * memory.settings.sparsity));
     const before = memory.toJSON(); memory.observe(features, estimates, false); expect(memory.toJSON()).toEqual(before);
     const loaded = RoomMemory.fromJSON(JSON.parse(JSON.stringify(before))); expect(loaded.observe(features, estimates, false)?.[0]).toBeCloseTo(.7);
   });

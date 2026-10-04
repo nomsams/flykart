@@ -5,7 +5,7 @@ import { Perceiver, VisionModel } from "../vision/perception";
 import { worldDomain } from "../vision/world/worldDomain";
 import { sensorsFromEstimates } from "../vision/interface";
 import { Firmware } from "./firmware";
-import { RoomMemory } from "./memory";
+import { RoomMemory, DEFAULT_MEMORY, MemorySettings, validateMemorySettings } from "./memory";
 import { DEFAULT_ROBOT, ESP_WIRING, UNO_WIRING, RobotConfig, RobotPhysics, RobotSonar, Wiring, WorldObject, ObjectKind, OBJECT_TYPES, ROOM_TYPES, traversable, makeObject, preset, wiringIssues } from "./model";
 import { HabitatScene } from "./scene";
 import { CHECK_PHASES, DEFAULT_ADAPTER, DrivetrainCheck, MotorAdapter, motorRequests, PROGRAMS, ProgramId, programSketch, validateAdapter } from "./controls";
@@ -17,6 +17,10 @@ import { reconnect, rewritePins } from "./rewiring";
 import { copyText } from "./serial";
 import { HardwarePanel } from "./hardware-panel";
 import { TrainingOptions, TrainingRun } from "./training";
+import { DEFAULT_VISION, VisualSwarm, VisionSettings, validateVisionSettings, visualFeatures } from "./vision-workbench";
+import { DEFAULT_OBJECTIVE, MissionSnapshot, ObjectiveRun, SugarPolicy, SensoryCue, EMPTY_CUE, cameraCue, scentCue, validateMission } from "./objectives";
+import { placementError, validatePose } from "./placement";
+import type { Pose } from "./model";
 
 const root = document.querySelector<HTMLDivElement>("#robot-app")!;
 root.innerHTML = `
@@ -72,6 +76,11 @@ let trainingContext: { domain: "world" | "track"; initialGeneration: number; [ke
 let floorColour = "#b7bea7", surfaceEvent = "", contactEvent = "";
 let wiring: Wiring = { ...ESP_WIRING };
 const physics = new RobotPhysics();
+let startPose={...physics.pose};
+let memorySettings:MemorySettings={...DEFAULT_MEMORY},visionSettings:VisionSettings={...DEFAULT_VISION};
+let mission:MissionSnapshot={settings:{...DEFAULT_OBJECTIVE},goals:[],trail:[]};
+let objectiveRun=new ObjectiveRun(mission),sugarPolicy=new SugarPolicy(memorySettings.count),cue:SensoryCue={...EMPTY_CUE};
+let swarm:VisualSwarm|null=null;
 let sonar = new RobotSonar();
 let memory = new RoomMemory();
 let controller: SpikingNetwork | null = null;
@@ -103,7 +112,7 @@ let estimates = new Float32Array(10), sensors: number[] = new Array(19).fill(0);
 let action: Action = { steer: 0, throttle: 0, brake: 0 };
 let actualPWM: [number, number] = [0, 0];
 const keys = new Set<string>();
-const history: { objects: WorldObject[]; floorColour: string }[] = [];
+const history: { objects: WorldObject[]; floorColour: string; startPose:Pose; robotPose:Pose; mission:MissionSnapshot }[] = [];
 let scene: HabitatScene;
 const pinoutDiagram = new WiringDiagram(el("pinout-diagram")), hardwareDiagram = new WiringDiagram(el("hardware-diagram"));
 el("preset").innerHTML = ROOM_TYPES.map(r => `<option value="${r.id}">${r.label}</option>`).join("");
@@ -115,19 +124,110 @@ const contactNote = document.createElement("p"); contactNote.id = "contact-note"
 const roomCheck = document.createElement("button"); roomCheck.id = "bench-current"; roomCheck.textContent = "Run check in this habitat"; el("bench-check").before(roomCheck);
 const survey = document.createElement("button"); survey.id = "survey-room"; survey.textContent = "Explore with sonar"; survey.className = "quiet"; el("bench-check").after(survey);
 const trainingPanel = document.createElement("section"); trainingPanel.className = "card training-panel";
-trainingPanel.innerHTML = `<div class="training-head"><div><p class="eyebrow">LEARN / MEASURE / EXPORT</p><h2>Fly training bench</h2><p>Train the spiking controller through the actual 3D camera and sonar. Eyes stay fixed. Each candidate gets the same room, start pose and noise seeds; room memory resets between trials.</p></div><button id="export-fly">Export fly + eyes</button></div><div class="training-settings"><label>Episode seconds<input id="train-seconds" type="number" min="5" max="60" value="20"></label><label>Trials / candidate<input id="train-episodes" type="number" min="1" max="5" value="2"></label><label>Candidates<input id="train-population" type="number" min="2" max="8" value="4"></label><label>Generations<input id="train-generations" type="number" min="1" max="10" value="3"></label><label>Seed<input id="train-seed" type="number" min="0" max="2147483647" value="2048"></label><label>Mutation rate<input id="train-rate" type="number" min="0" max="1" step=".05" value=".15"></label><label>Mutation amount<input id="train-amount" type="number" min="0" max="1" step=".05" value=".12"></label></div><div class="row"><button id="train-evaluate">Evaluate current fly</button><button id="train-evolve" class="primary">Evolve fly in this room</button><button id="train-stop" disabled>Stop training</button><button id="train-export" disabled>Export training dataset</button></div><p id="train-status" role="status">Ready · evaluations keep weights unchanged; evolution keeps the best candidate each generation.</p><progress id="train-progress" value="0" max="100"></progress><div id="train-results"></div><small>Score = new 20 cm cells × 0.5 + bounded distance − contacts × 2 − blocked seconds − cable seconds × 0.1. True pose is used only for scoring and labelled evaluation data. Exports retain all trial summaries and the last two episodes, with bounded actual input-crop pixels, neural inputs, actions and motor writes. Sensor noise uses the controls below. Test the winner in other rooms before drawing conclusions.</small>`;
+trainingPanel.innerHTML = `<div class="training-head"><div><p class="eyebrow">LEARN / MEASURE / EXPORT</p><h2>Fly training bench</h2><p>Train the spiking controller through the actual 3D camera and sonar. Eyes stay fixed. Each candidate gets the same room, start pose and noise seeds; room memory resets between trials.</p></div><button id="export-fly">Export fly + eyes</button></div><div class="training-settings"><label>Episode seconds<input id="train-seconds" type="number" min="5" max="60" value="20"></label><label>Trials / candidate<input id="train-episodes" type="number" min="1" max="5" value="2"></label><label>Candidates<input id="train-population" type="number" min="2" max="8" value="4"></label><label>Generations<input id="train-generations" type="number" min="1" max="10" value="3"></label><label>Seed<input id="train-seed" type="number" min="0" max="2147483647" value="2048"></label><label>Mutation rate<input id="train-rate" type="number" min="0" max="1" step=".05" value=".15"></label><label>Mutation amount<input id="train-amount" type="number" min="0" max="1" step=".05" value=".12"></label></div><div class="row"><button id="train-evaluate">Evaluate current fly</button><button id="train-evolve" class="primary">Evolve fly in this room</button><button id="train-stop" disabled>Stop training</button><button id="train-export" disabled>Export training dataset</button></div><p id="train-status" role="status">Ready · evaluations keep weights unchanged; evolution keeps the best candidate each generation.</p><progress id="train-progress" value="0" max="100"></progress><div id="train-results"></div><small>Score = new 20 cm cells × 0.5 + bounded distance − contacts × 2 − blocked seconds − cable seconds × 0.1 + objective rewards. True pose is used only for scoring and labelled evaluation data. Exports retain all trial summaries and the last two episodes, with bounded actual input-crop pixels, neural inputs, actions and motor writes. Sensor noise uses the controls below. Test the winner in other rooms before drawing conclusions.</small>`;
 el("sensor-console").before(trainingPanel);
 const hardwareHost = document.createElement("section"); hardwareHost.className = "card hardware-panel"; el("sensor-console").after(hardwareHost);
 const copyLog = document.createElement("button"); copyLog.id = "copy-log"; copyLog.textContent = "Copy log"; el("export-log").before(copyLog);
 const copyJson = document.createElement("button"); copyJson.id = "copy-log-json"; copyJson.textContent = "Copy JSON"; el("export-log").before(copyJson);
 el<HTMLSelectElement>("console-filter").add(new Option("training", "training"));
 
+const learningPanel=document.createElement("section");learningPanel.className="card learning-panel";learningPanel.id="learning-panel";learningPanel.innerHTML="<div class=\"learning-header\"><div><p class=\"eyebrow\">SUGAR / SENSES / COLLECTIVE VISION</p><h2>Give the fly a task</h2><p>Place sugar, draw a trail, then choose how the fly senses and learns. Rewards are a simulated taste signal; the physical car has a camera and sonar.</p></div><a href=\"./docs/robot-learning.html\">Methods & guide findings ↗</a></div><div class=\"learning-columns\"><section><h3>Objective & reward</h3><div class=\"learning-fields\"><label>Task<select id=\"objective-mode\"><option value=\"explore\">Explore the habitat</option><option value=\"sugar\">Find sugar</option><option value=\"trail\">Follow the trail to sugar</option></select></label><label>Trail sense<select id=\"objective-cue\"><option value=\"paint\">Camera · cyan painted trail</option><option value=\"scent\">Virtual antennae · scent field</option></select></label><label>Sugar reward<input id=\"objective-sugar\" type=\"number\" min=\"0\" max=\"100\" value=\"10\"></label><label>Trail checkpoint reward<input id=\"objective-trailReward\" type=\"number\" min=\"0\" max=\"20\" value=\"2\"></label><label>Contact penalty<input id=\"objective-pain\" type=\"number\" min=\"0\" max=\"10\" value=\"1\"></label><label>Trail sensing width · m<input id=\"objective-width\" type=\"number\" min=\".05\" max=\".5\" step=\".01\" value=\".18\"></label><label>Scent decay / second<input id=\"objective-decay\" type=\"number\" min=\"0\" max=\"1\" step=\".01\" value=\"0\"></label></div><div class=\"row\"><button id=\"apply-objective\">Apply objective</button><button id=\"add-sugar\">＋ Sugar ahead</button><button id=\"demo-trail\">Create a short trail</button><button id=\"clear-trail\">Clear trail</button><button id=\"clear-sugar\">Clear sugar</button></div><div class=\"row\"><button id=\"forage\" class=\"primary\">Use sugar memory steering</button><button id=\"reset-pickups\">Reset pickups</button><button id=\"forget-sugar\">Forget reward learning</button></div><label class=\"check\"><input id=\"sugar-learn\" type=\"checkbox\" checked> Learn reward associations during live runs</label><p id=\"objective-status\" role=\"status\"></p><p id=\"sugar-status\"></p><small>Sugar is awarded once per target per episode. Cyan paint is visible in the raw camera; virtual scent is an extra simulated sensor with three local antenna readings. Coordinates are used only by the reward evaluator. Training uses a frozen reward policy for fair candidate comparisons.</small></section><section><h3>What the fly sees</h3><div class=\"learning-fields\"><label>Virtual swarm<select id=\"vision-layout\"><option value=\"single\">One fly · original camera crop</option><option value=\"circle3\">3 flies · separate gaze patches</option><option value=\"circle5\">5 flies · separate gaze patches</option><option value=\"scales3\">3 flies · different zoom levels</option></select></label><label>Gaze radius<input id=\"vision-radius\" type=\"number\" min=\"0\" max=\".2\" step=\".01\" value=\".08\"></label><label>Average recent frames<select id=\"vision-temporal\"><option value=\"1\">1 · current frame</option><option value=\"4\">4 · reduce noise, add lag</option><option value=\"16\">16 · more averaging and lag</option></select></label><label>Kenyon cells<select id=\"kenyon-count\"><option value=\"512\">512 · legacy</option><option value=\"2048\">2,048</option><option value=\"4096\" selected>4,096</option><option value=\"10000\">10,000</option><option value=\"20000\">20,000</option></select></label><label>Active cells · fraction<input id=\"kenyon-sparsity\" type=\"number\" min=\".005\" max=\".05\" step=\".005\" value=\".01\"></label></div><label class=\"check\"><input id=\"vision-normalize\" type=\"checkbox\">Contrast normalization</label><label class=\"check\"><input id=\"vision-smooth\" type=\"checkbox\">Smooth neighbouring pixels</label><label class=\"check\"><input id=\"kenyon-rare\" type=\"checkbox\" checked>Rare Kenyon cells count more in recall</label><button id=\"apply-vision\">Apply vision & memory settings</button><p id=\"swarm-status\"></p><div id=\"swarm-views\"></div><canvas id=\"kenyon-cells\" width=\"320\" height=\"96\" aria-label=\"Kenyon memory occupancy and active cells\"></canvas><p id=\"kenyon-status\"></p><small>The raw camera stays separate from the processed fly input. Swarm members share one frame and wiring, inspect different crops and vote using predicted visual variance; world-brain sectors are remapped before voting. Track brains use the central view. Extra looks add compute. Compare these options in multiple rooms before claiming an accuracy gain.</small></section></div>";trainingPanel.before(learningPanel);
+const editTools=document.createElement("div");editTools.className="scene-edit-tools";editTools.innerHTML='<label>Scene tool <select id="scene-tool"><option value="orbit">Orbit & select</option><option value="move">Move selected robot / item</option><option value="rotate">Rotate selected robot / item</option><option value="trail">Draw trail on floor</option></select></label><button id="select-robot">Select robot</button><button id="rotate-left">↶ 15°</button><button id="rotate-right">↷ 15°</button><span>Move: drag the selected body. Rotate: drag around it. Use the inspector for exact values.</span>';
+workbench.after(editTools);
+el<HTMLSelectElement>("drive-mode").add(new Option("Fly + sugar memory steering","reward"));
+el<HTMLSelectElement>("console-filter").add(new Option("reward","reward"));
+el("room-map").closest(".map-card")!.querySelector(".sensor-title span")!.id="kenyon-title";
+function clearMemory():void { memory=memory.settings.count===memorySettings.count&&memory.settings.sparsity===memorySettings.sparsity&&memory.settings.rareWeighting===memorySettings.rareWeighting?memory.fresh():new RoomMemory(memorySettings);swarm?.reset();sugarPolicy.reset(); }
+function rebuildSwarm():void { swarm=perceiver?new VisualSwarm(perceiver.model,visionSettings):null;captureTime=-Infinity; }
+function pauseForEdit(reason:string):void {
+  if(hardwarePanel?.busy)throw new Error("Disconnect hardware before editing this experiment.");
+  if(training)endTraining(reason+"; training stopped.");setRunning(false,reason);physics.left=physics.right=0;actualPWM=[0,0];
+}
+function fillLearning():void {
+  el<HTMLInputElement>("objective-mode").value=mission.settings.mode;el<HTMLInputElement>("objective-cue").value=mission.settings.cue;
+  for(const k of ["sugar","trailReward","pain","width","decay"] as const)el<HTMLInputElement>("objective-"+k).value=String(mission.settings[k]);
+  el<HTMLInputElement>("vision-layout").value=visionSettings.layout;el<HTMLInputElement>("vision-radius").value=String(visionSettings.radius);el<HTMLInputElement>("vision-temporal").value=String(visionSettings.temporal);
+  el<HTMLInputElement>("vision-normalize").checked=visionSettings.normalize;el<HTMLInputElement>("vision-smooth").checked=visionSettings.smooth;
+  el<HTMLInputElement>("kenyon-count").value=String(memorySettings.count);el<HTMLInputElement>("kenyon-sparsity").value=String(memorySettings.sparsity);el<HTMLInputElement>("kenyon-rare").checked=memorySettings.rareWeighting;
+}
+function resetObjectives():void {objectiveRun=new ObjectiveRun(mission);sugarPolicy.reset();scene.rebuildMission(mission);cue={...EMPTY_CUE,antennae:[0,0,0]};}
+function refreshLearning():void {
+  setText("objective-status","Reward "+objectiveRun.total.toFixed(2)+" · sugar "+objectiveRun.collected.size+"/"+mission.goals.length+" · trail "+objectiveRun.checkpoint+"/"+mission.trail.length);
+  setText("sugar-status","Reward updates "+sugarPolicy.updates+" · MBON values "+sugarPolicy.values.map(v=>v.toFixed(2)).join(" / ")+" · cue "+cue.strength.toFixed(2)+" · antennae "+cue.antennae.map(v=>v.toFixed(2)).join(" / "));
+  setText("kenyon-title",memory.count.toLocaleString()+" KENYON CELLS");
+  setText("kenyon-status",memory.active.length+" active · "+(memory.occupancy*100).toFixed(1)+"% have observations · recall confidence "+(memory.confidence*100).toFixed(0)+"%"+(memory.occupancy>.8?" · crowded: compare against a fresh memory":""));
+  setText("swarm-status",(swarm?.members.length??1)+" virtual fly view(s) · disagreement "+(swarm?.disagreement??0).toFixed(3)+" · "+(brainDomain==="track"?"track brain uses central view":"variance-weighted world perception and motor votes"));
+  const canvas=el<HTMLCanvasElement>("kenyon-cells"),ctx=canvas.getContext("2d")!,active=new Set(memory.active),cols=160,rows=Math.ceil(memory.count/cols),sx=canvas.width/cols,sy=canvas.height/rows;
+  ctx.fillStyle="#102027";ctx.fillRect(0,0,canvas.width,canvas.height);
+  for(let id=0;id<memory.count;id++)if(active.has(id)||memory.counts[id]>0){ctx.fillStyle=active.has(id)?"#efc179":"#69a994";ctx.fillRect(id%cols*sx,Math.floor(id/cols)*sy,Math.max(1,sx*.75),Math.max(1,sy*.75));}
+}
+function showSwarmViews():void {
+  const box=el("swarm-views");box.replaceChildren();
+  if(!swarm||swarm.members.length<2)return;
+  const w=swarm.model.spec.width,h=swarm.model.spec.height,n=w*h;
+  for(const [i,member]of swarm.members.entries()){
+    const wrap=document.createElement("div"),label=document.createElement("small"),canvas=document.createElement("canvas");canvas.width=w;canvas.height=h;const ctx=canvas.getContext("2d")!,image=ctx.createImageData(w,h);
+    for(let p=0;p<n;p++){for(let k=0;k<3;k++)image.data[p*4+k]=member.frame[k*n+p]*255;image.data[p*4+3]=255;}ctx.putImageData(image,0,0);
+    label.textContent="Fly "+(i+1)+" · "+Math.round(member.patch.scale*100)+"% view";wrap.append(canvas,label);box.append(wrap);
+  }
+}
+function initializeLearning():void {
+  fillLearning();
+  button("apply-objective",()=>safe(()=>{
+    const settings={...mission.settings,mode:value("objective-mode") as MissionSnapshot["settings"]["mode"],cue:value("objective-cue") as MissionSnapshot["settings"]["cue"]};
+    for(const k of ["sugar","trailReward","pain","width","decay"] as const)settings[k]=Number(value("objective-"+k));
+    const next=validateMission({...mission,settings,goals:mission.goals.map(g=>({...g,amount:settings.sugar}))});pauseForEdit("Objective changed");editWorld();mission=next;resetObjectives();saveLocal();message("Objective applied. Rewards are logged and included in training scores.");
+  }));
+  button("add-sugar",()=>safe(()=>{if(mission.goals.length>=30)throw new Error("Sugar target limit is 30.");pauseForEdit("Sugar target added");editWorld();const p=physics.pose;const goal={id:"sugar-"+crypto.randomUUID(),x:clamp(p.x+Math.cos(p.heading)*.7,-3.2,3.2),z:clamp(p.z+Math.sin(p.heading)*.7,-3.2,3.2),yaw:0,radius:.18,amount:mission.settings.sugar};mission.goals.push(goal);if(mission.settings.mode==="explore")mission.settings.mode="sugar";resetObjectives();fillLearning();populateObjects();selectObject(goal.id);saveLocal();message("Sugar placed ahead. Select Move or Rotate to position it; choose sugar memory steering to forage.");}));
+  button("demo-trail",()=>safe(()=>{pauseForEdit("Trail added");editWorld();const p=physics.pose;mission.trail=Array.from({length:17},(_,i)=>{const f=i*.085,s=Math.max(0,i-8)*.035;return {x:clamp(p.x+Math.cos(p.heading)*f-Math.sin(p.heading)*s,-3.2,3.2),z:clamp(p.z+Math.sin(p.heading)*f+Math.cos(p.heading)*s,-3.2,3.2)};});const end=mission.trail.at(-1)!;if(mission.goals.length<30)mission.goals.push({...end,id:"sugar-"+crypto.randomUUID(),yaw:0,radius:.18,amount:mission.settings.sugar});mission.settings.mode="trail";resetObjectives();fillLearning();populateObjects();saveLocal();message("Short trail added in this room. Draw a different path with the scene tool; it may need moving around furniture.");}));
+  for(const [id,kind]of [["clear-trail","trail"],["clear-sugar","goals"]] as const)button(id,()=>safe(()=>{pauseForEdit("Objectives edited");editWorld();mission[kind]=[];resetObjectives();populateObjects();selectObject(null);saveLocal();}));
+  button("reset-pickups",()=>safe(()=>{pauseForEdit("Pickups reset");resetObjectives();message("Sugar and checkpoints reset. Learned reward weights retained.");}));
+  button("forget-sugar",()=>safe(()=>{pauseForEdit("Reward memory cleared");sugarPolicy=new SugarPolicy(memorySettings.count);saveLocal();message("Reward associations cleared. The imported spiking brain is retained.");}));
+  button("forage",()=>safe(()=>{if(brainDomain!=="world")throw new Error("Sugar memory steering requires a world-domain fly. Load bundled habitat fly first.");pauseForEdit("Sugar steering selected");chooseProgram("fly");el<HTMLInputElement>("drive-mode").value="reward";if(mission.settings.mode==="explore")mission.settings.mode="sugar";fillLearning();saveLocal();message("Sugar memory steering selected. Press Run. Steering uses camera cues or explicit virtual antennae, not goal coordinates.");}));
+  el("sugar-learn").addEventListener("change",()=>{if(training)endTraining("Learning option changed; training stopped.");hardwarePanel.stop();saveLocal();});
+  button("apply-vision",()=>safe(()=>{
+    const nextVision=validateVisionSettings({layout:value("vision-layout"),radius:Number(value("vision-radius")),temporal:Number(value("vision-temporal")),normalize:check("vision-normalize"),smooth:check("vision-smooth")});
+    const nextMemory=validateMemorySettings({count:Number(value("kenyon-count")),sparsity:Number(value("kenyon-sparsity")),rareWeighting:check("kenyon-rare")});
+    pauseForEdit("Visual processing changed");visionSettings=nextVision;memorySettings=nextMemory;memory=new RoomMemory(nextMemory);sugarPolicy=new SugarPolicy(memorySettings.count);clearMemory();rebuildSwarm();saveLocal();message("Vision settings applied. Visual and reward memories reset because their sensory representation changed; compare results on held-out rooms.");
+  }));
+}
+function entityPose(id:string):{x:number;z:number;yaw:number}|null {
+  if(id==="@robot")return {...physics.pose,yaw:physics.pose.heading};
+  return objects.find(o=>o.id===id)??mission.goals.find(o=>o.id===id)??null;
+}
+function setEntityPose(id:string,p:{x:number;z:number;yaw:number}):void {
+  if(id==="@robot"){const next=validatePose({x:p.x,z:p.z,heading:p.yaw}),error=placementError(next,physics.config,objects);if(error)throw new Error(error);physics.pose=next;physics.odometry={...next};startPose={...next};physics.blocked=false;physics.contact=null;scene.updateRobot(next,physics.config,check("beam-visible"),0,0,0);}
+  else {const o=objects.find(o=>o.id===id),g=mission.goals.find(o=>o.id===id);if(o){const next={...o,...p};validateObjects([next]);Object.assign(o,p);scene.rebuildObjects(objects);}else if(g){validateMission({...mission,goals:mission.goals.map(goal=>goal.id===id?{...goal,...p}:goal)});Object.assign(g,p);scene.rebuildMission(mission,objectiveRun.collected);}}
+  scene.select(id);captureTime=-Infinity;
+}
+function specialInspector(id:string|null):boolean {
+  const g=mission.goals.find(o=>o.id===id),robot=id==="@robot";if(!g&&!robot)return false;
+  const editor=el("object-editor"),p=entityPose(id!)!;
+  editor.innerHTML='<p class="object-hint">'+(robot?"Robot placement also sets the reset and training start. Colliding placements are rejected.":"Sugar is a nonblocking task marker. Radius defines the reward zone.")+'</p><div class="form-grid">'+["x","z","yaw",...(g?["radius","amount"]:[])].map(k=>'<label>'+(k==="yaw"?"Rotation · degrees":k)+'<input data-property="'+k+'" type="number" step="'+(k==="yaw"?"5":".05")+'" value="'+(k==="yaw"?p.yaw*180/Math.PI:k==="x"?p.x:k==="z"?p.z:g![k as "radius"|"amount"])+'"></label>').join("")+'</div>';
+  editor.querySelectorAll<HTMLInputElement>("input").forEach(input=>input.addEventListener("change",()=>safe(()=>{const k=input.dataset.property!,n=Number(input.value)*(k==="yaw"?Math.PI/180:1);pauseForEdit("Scene placement changed");if(["x","z","yaw"].includes(k)){const next={...entityPose(id!)!,[k]:n};if(robot){const error=placementError(validatePose({...next,heading:next.yaw}),physics.config,objects);if(error)throw new Error(error);}editWorld();setEntityPose(id!,next);}else {const next={...g!,[k]:n};validateMission({...mission,goals:mission.goals.map(goal=>goal.id===id?next:goal)});editWorld();Object.assign(g!,next);}worldChanged();selectObject(id);})));
+  if(g){const remove=document.createElement("button");remove.textContent="Remove sugar";remove.addEventListener("click",()=>safe(()=>{pauseForEdit("Sugar removed");editWorld();mission.goals=mission.goals.filter(goal=>goal.id!==id);worldChanged();selectObject(null);}));editor.append(remove);}
+  return true;
+}
+function bindSceneEditing():void {
+  const canvas=el<HTMLCanvasElement>("habitat");let drag:{id:string;point:{x:number;z:number};pose:{x:number;z:number;yaw:number};angle:number;mode:string}|null=null,down={x:0,y:0},drawing=false;
+  const finish=()=>{if(!drag&&!drawing)return;drag=null;drawing=false;worldChanged();selectObject(selected);log("system","Scene placement / trail edited",{startPose});};
+  el("scene-tool").addEventListener("change",()=>{finish();const orbit=value("scene-tool")==="orbit";scene.controls.enabled=orbit;canvas.classList.toggle("scene-editing",!orbit);});
+  button("select-robot",()=>selectObject("@robot"));
+  for(const [id,angle]of [["rotate-left",-Math.PI/12],["rotate-right",Math.PI/12]] as const)button(id,()=>safe(()=>{const target=selected??"@robot",p=entityPose(target);if(!p)return;pauseForEdit("Entity rotated");const next={...p,yaw:p.yaw+angle};if(target==="@robot"){const error=placementError(validatePose({...next,heading:next.yaw}),physics.config,objects);if(error)throw new Error(error);}editWorld();setEntityPose(target,next);worldChanged();selectObject(target);}));
+  canvas.addEventListener("pointerdown",e=>safe(()=>{if(e.button!==0)return;down={x:e.clientX,y:e.clientY};const mode=value("scene-tool");if(mode==="orbit")return;const point=scene.floorPoint(e.clientX,e.clientY);if(!point)return;pauseForEdit("Scene drag");const hit=scene.pick(e.clientX,e.clientY);if(hit)selectObject(hit);
+    if(mode==="trail"){editWorld();if(mission.trail.length>=500)throw new Error("Trail limit is 500 points; clear it to draw another.");if(mission.trail.length&&Math.hypot(point.x-mission.trail.at(-1)!.x,point.z-mission.trail.at(-1)!.z)>.5)mission.trail=[];mission.trail.push(point);mission.settings.mode="trail";fillLearning();drawing=true;}
+    else {const id=selected??"@robot",p=entityPose(id);if(!p)return;selectObject(id);editWorld();drag={id,point,pose:{x:p.x,z:p.z,yaw:p.yaw},angle:Math.atan2(point.z-p.z,point.x-p.x),mode};}canvas.setPointerCapture(e.pointerId);
+  }));
+  canvas.addEventListener("pointermove",e=>{const point=scene.floorPoint(e.clientX,e.clientY);if(!point)return;if(drawing){const last=mission.trail.at(-1)!;if(mission.trail.length<500&&Math.hypot(point.x-last.x,point.z-last.z)>.085){mission.trail.push(point);scene.rebuildMission(mission);}return;}if(!drag)return;safe(()=>{const p=drag!.pose,next=drag!.mode==="move"?{...p,x:p.x+point.x-drag!.point.x,z:p.z+point.z-drag!.point.z}:{...p,yaw:p.yaw+Math.atan2(point.z-p.z,point.x-p.x)-drag!.angle};setEntityPose(drag!.id,next);});});
+  canvas.addEventListener("pointerup",e=>{if(value("scene-tool")==="orbit"){if(Math.hypot(e.clientX-down.x,e.clientY-down.y)<4)selectObject(scene.pick(e.clientX,e.clientY));}else finish();if(canvas.hasPointerCapture(e.pointerId))canvas.releasePointerCapture(e.pointerId);});
+  canvas.addEventListener("pointercancel",finish);
+}
 function validateObjects(raw: unknown): WorldObject[] {
   const kinds = OBJECT_TYPES.map(o => o.kind);
   if (!Array.isArray(raw) || raw.length > 200) throw new Error("A habitat must contain at most 200 objects.");
   const ids = new Set<string>();
   return raw.map(o => {
-    if (!o || typeof o.id !== "string" || o.id.length > 100 || ids.has(o.id) || !kinds.includes(o.kind)) throw new Error("Invalid habitat object."); ids.add(o.id);
+    if (!o || typeof o.id !== "string" || !o.id || o.id === "@robot" || o.id.length > 100 || ids.has(o.id) || !kinds.includes(o.kind)) throw new Error("Invalid habitat object."); ids.add(o.id);
     if (![o.x, o.z, o.yaw, o.width, o.depth, o.height].every(Number.isFinite) || Math.abs(o.x) > 3.5 || Math.abs(o.z) > 3.5 || Math.abs(o.yaw) > Math.PI * 100 || o.width < .02 || o.width > 6 || o.depth < .02 || o.depth > 6 || o.height < .002 || o.height > 4) throw new Error("Object position or dimensions are out of range.");
     return { id: o.id, kind: o.kind, x: o.x, z: o.z, yaw: o.yaw, width: o.width, depth: o.depth, height: o.height };
   });
@@ -156,8 +256,19 @@ function validateWiring(raw: unknown): Wiring {
 
 function validateFloor(raw: unknown): string { if (raw === undefined) return "#b7bea7"; if (typeof raw !== "string" || !/^#[0-9a-f]{6}$/i.test(raw)) throw new Error("Invalid floor colour."); return raw; }
 function updateFloor(): void { scene.setFloorColour(floorColour); el<HTMLInputElement>("floor-colour").value = floorColour; }
+function learningData(includeMemory=false) {
+  return {format:"robot-learning",version:1,memorySettings:{...memorySettings},visionSettings:{...visionSettings},sugarPolicy:sugarPolicy.toJSON(),learn:check("sugar-learn"),...(includeMemory?{memory:memory.toJSON()}:{})};
+}
+function parseLearning(raw:unknown,fallbackMemory?:RoomMemory) {
+  const r=raw as ReturnType<typeof learningData>|undefined;
+  if(r&&(r.format!=="robot-learning"||r.version!==1||typeof r.learn!=="boolean"))throw new Error("Invalid robot learning extension.");
+  const ms=r?validateMemorySettings(r.memorySettings):fallbackMemory?.settings??{...DEFAULT_MEMORY},vs=r?validateVisionSettings(r.visionSettings):{...DEFAULT_VISION};
+  const mem=r?.memory?RoomMemory.fromJSON(r.memory):fallbackMemory??new RoomMemory(ms);
+  if(mem.settings.count!==ms.count||mem.settings.sparsity!==ms.sparsity||mem.settings.rareWeighting!==ms.rareWeighting)throw new Error("Memory settings differ from the saved visual memory.");
+  return {memorySettings:ms,visionSettings:vs,memory:mem,policy:r?SugarPolicy.fromJSON(r.sugarPolicy,ms.count):new SugarPolicy(ms.count),learn:r?.learn??true};
+}
 function saveLocal(): void {
-  try { localStorage.setItem("flykart-robot-habitat-v1", JSON.stringify({ objects, floorColour, config: physics.config, wiring, sketch: firmware.source, program: appliedProgram, mode: value("drive-mode"), adapter: adapterConfig, noise: noiseConfig })); }
+  try { localStorage.setItem("flykart-robot-habitat-v1", JSON.stringify({ objects, floorColour,startPose,mission,learning:learningData(), config: physics.config, wiring, sketch: firmware.source, program: appliedProgram, mode: value("drive-mode"), adapter: adapterConfig, noise: noiseConfig })); }
   catch { message("Browser storage is unavailable. Export lab to keep your work.", true); }
 }
 function restoreLocal(): void {
@@ -166,23 +277,26 @@ function restoreLocal(): void {
     const data = JSON.parse(text), nextObjects = validateObjects(data.objects), config = validateConfig(data.config), nextWiring = validateWiring(data.wiring), nextFirmware = new Firmware(data.sketch);
     floorColour = validateFloor(data.floorColour); objects = nextObjects; physics.config = config; wiring = nextWiring; firmware = nextFirmware; el<HTMLTextAreaElement>("sketch").value = firmware.source;
     adapterConfig = validateAdapter(data.adapter ?? DEFAULT_ADAPTER); noiseConfig = validateNoise(data.noise ?? DEFAULT_NOISE); noise = new NoiseSource(noiseConfig);
+    const learned=parseLearning(data.learning);startPose=validatePose(data.startPose??new RobotPhysics().pose);physics.pose={...startPose};physics.odometry={...startPose};mission=data.mission?validateMission(data.mission):{settings:{...DEFAULT_OBJECTIVE},goals:[],trail:[]};memorySettings=learned.memorySettings;visionSettings=learned.visionSettings;memory=learned.memory;sugarPolicy=learned.policy;el<HTMLInputElement>("sugar-learn").checked=learned.learn;
     program = appliedProgram = PROGRAMS.some(p => p.id === data.program) ? data.program : "custom";
-    el<HTMLSelectElement>("drive-mode").value = ["fly", "manual", "sketch"].includes(data.mode) ? data.mode : "sketch";
+    el<HTMLSelectElement>("drive-mode").value = ["fly", "manual", "sketch", "reward"].includes(data.mode) ? data.mode : "sketch";
   } catch { message("Saved habitat could not be restored; using the workshop preset.", true); }
 }
-function editWorld(): void { history.push({ objects: structuredClone(objects), floorColour }); if (history.length > 30) history.shift(); }
+function editWorld(): void { history.push({ objects: structuredClone(objects), floorColour, startPose:{...startPose},robotPose:{...physics.pose},mission:structuredClone(mission) }); if (history.length > 30) history.shift(); }
 function worldChanged(): void {
   if (training) endTraining("Habitat changed; training stopped.");
-  scene.rebuildObjects(objects); updateFloor(); scene.select(selected); populateObjects(); memory = new RoomMemory(); saveLocal();
+  scene.rebuildObjects(objects); updateFloor(); resetObjectives();scene.select(selected); populateObjects(); clearMemory(); saveLocal();
   captureTime = -Infinity; sonar = new RobotSonar();
 }
 function populateObjects(): void {
-  const list = el<HTMLSelectElement>("object-list"); list.replaceChildren(new Option("Select an object…", ""));
+  const list = el<HTMLSelectElement>("object-list"); list.replaceChildren(new Option("Select an object…", ""),new Option("Robot · position & rotation","@robot"));
   objects.forEach((o, i) => list.add(new Option(`${String(i + 1).padStart(2, "0")} / ${o.kind}`, o.id))); list.value = selected ?? "";
+  mission.goals.forEach((g,i)=>list.add(new Option("Sugar "+(i+1)+" · "+g.amount+" reward",g.id)));list.value=selected??"";
   setText("object-count", `${objects.length} objects / 200 max`);
 }
 function selectObject(id: string | null): void {
   selected = id; scene.select(id); el<HTMLSelectElement>("object-list").value = id ?? "";
+  if(specialInspector(id))return;
   const o = objects.find(o => o.id === id), editor = el("object-editor");
   if (!o) { editor.innerHTML = '<p class="inspector-empty">Select an object to move, rotate or resize it. All dimensions are in metres.</p>'; return; }
   editor.innerHTML = `<div class="form-grid">${(["x", "z", "yaw", "width", "depth", "height"] as const).map(k => `<label>${k === "yaw" ? "Rotation · degrees" : k}<input data-property="${k}" type="number" step="${k === "yaw" ? "5" : ".05"}" value="${k === "yaw" ? (o[k] * 180 / Math.PI).toFixed(1) : o[k].toFixed(3)}"></label>`).join("")}</div><button id="remove-object" class="full quiet" style="margin-top:12px">Remove ${o.kind}</button>`;
@@ -191,7 +305,7 @@ function selectObject(id: string | null): void {
   editor.append(note);
   editor.querySelectorAll<HTMLInputElement>("input").forEach(input => input.addEventListener("change", () => safe(() => {
     const property = input.dataset.property as keyof WorldObject; const n = Number(input.value) * (property === "yaw" ? Math.PI / 180 : 1);
-    const updated = { ...o, [property]: n }; validateObjects([updated]); editWorld(); Object.assign(o, updated); worldChanged(); selectObject(o.id);
+    const updated = { ...o, [property]: n }; validateObjects([updated]);pauseForEdit("Object edited"); editWorld(); Object.assign(o, updated); worldChanged(); selectObject(o.id);
   })));
   button("remove-object", () => { editWorld(); objects = objects.filter(item => item.id !== id); selected = null; worldChanged(); selectObject(null); });
 }
@@ -221,11 +335,11 @@ function previewWiring(w: Wiring): void {
   const issues = wiringIssues(w); const box = el("wiring-message"); box.replaceChildren();
   for (const [text, error] of [...issues.errors.map(s => [s, true] as const), ...issues.notes.map(s => [s, false] as const)]) { const p = document.createElement("p"); p.textContent = text; p.className = error ? "problem" : ""; box.append(p); }
 }
-function hardwareChanged(): void { scene.rebuildRobot(physics.config); physics.left = physics.right = 0; sonar = new RobotSonar(); memory = new RoomMemory(); captureTime = -Infinity; firmware = new Firmware(firmware.source); saveLocal(); }
+function hardwareChanged(): void { scene.rebuildRobot(physics.config); physics.left = physics.right = 0; sonar = new RobotSonar(); clearMemory(); captureTime = -Infinity; firmware = new Firmware(firmware.source); saveLocal(); }
 
 function log(kind: EventKind, text: string, data?: unknown): void { if (check("log-enabled")) consoleLog.push(simTime, kind, text, data); }
 function setRunning(next: boolean, reason = "operator"): void { if (running !== next) log("system", next ? "Simulation running" : `Simulation paused: ${reason}`); running = next; pauseReason = reason; el("run").textContent = running ? "Ⅱ Pause simulation" : "▶ Run simulation"; }
-function resetRobot(): void { setRunning(false); physics.reset(); sonar = new RobotSonar(); noise = new NoiseSource(noiseConfig); driveCheck = new DrivetrainCheck(); phaseIndex = -1; controller?.reset(); perceiver?.reset(); action = { steer: 0, throttle: 0, brake: 0 }; requests = motorRequests(action, adapterConfig); estimates.fill(0); sensors.fill(0); simTime = 0; cameraFrame = 0; neuralLogTime = -Infinity; captureTime = -Infinity; actualPWM = [0, 0]; firmware = new Firmware(firmware.source); keys.clear(); log("system", "Robot and program clock reset; room memory retained"); }
+function resetRobot(): void { setRunning(false); physics.reset();physics.pose={...startPose};physics.odometry={...startPose};resetObjectives();swarm?.reset(); sonar = new RobotSonar(); noise = new NoiseSource(noiseConfig); driveCheck = new DrivetrainCheck(); phaseIndex = -1; controller?.reset(); perceiver?.reset(); action = { steer: 0, throttle: 0, brake: 0 }; requests = motorRequests(action, adapterConfig); estimates.fill(0); sensors.fill(0); simTime = 0; cameraFrame = 0; neuralLogTime = -Infinity; captureTime = -Infinity; actualPWM = [0, 0]; firmware = new Firmware(firmware.source); keys.clear(); log("system", "Robot and program clock reset; room memory retained"); }
 function applyCode(source: string): void {
   if (hardwarePanel?.busy) { codeMessage("Disconnect hardware before changing controller code.", true); return; }
   if (training) endTraining("Sketch changed; training stopped.");
@@ -270,8 +384,9 @@ function installBrain(text: string): void {
   if (!model) throw new Error("A matching vision network is required for this brain.");
   const nextPerceiver = validateEyes(model, nextDomain);
   const nextController = SpikingNetwork.fromJSON(snapshot);
+  const extension=JSON.parse(text).robotLearning,learned=extension?parseLearning(extension):null;
   controller = nextController; perceiver = nextPerceiver; brainDomain = nextDomain; brainName = imported.name;const meta=usingWorld?imported.world!.controller.meta:imported.controller.meta;brainFitness=meta.fitness??0;brainGeneration=meta.generation??0;estimates = new Float32Array(perceiver.estimateCount); sensors = new Array(controller.inputCount).fill(0);
-  captureTime = -Infinity; memory = new RoomMemory(); setText("brain-name", brainName); setText("adapter", `${brainDomain.toUpperCase()} INPUTS`);
+  captureTime = -Infinity; clearMemory();if(learned){memorySettings=learned.memorySettings;visionSettings=learned.visionSettings;memory=learned.memory;sugarPolicy=learned.policy;el<HTMLInputElement>("sugar-learn").checked=learned.learn;fillLearning();}rebuildSwarm(); setText("brain-name", brainName); setText("adapter", `${brainDomain.toUpperCase()} INPUTS`);
   setText("brain-note", brainDomain === "track" ? "Track input meanings retained. A racing brain may not navigate a room; room recall is off." : "Eyes trained in the old renderer; transfer to 3D is experimental.");
   message(`Imported ${brainName}. ${imported.warnings.join(" ")}`);
 }
@@ -298,18 +413,20 @@ function capture(): void {
   const width = perceiver?.model.spec.width ?? 48, height = perceiver?.model.spec.height ?? 24;
   const frame = scene.capture(width, height, physics.config.cameraEnabled, noise);
   cameraFrame++; cameraRGB = frame.rgb; cameraDropped = frame.dropped;
-  training?.recorder.frame(cameraFrame, width, height, frame.planar, frame.dropped);
   log("camera", `Frame ${cameraFrame} · 160×120 RGB565 · mean RGB ${cameraRGB.map(n => Math.round(n)).join(",")} · ${cameraDropped ? "missing/black frame" : "delivered"}`, { frame: cameraFrame, rgb: cameraRGB, dropped: cameraDropped });
   setText("retina-size", `${width} × ${height}`);
   const body = neuralBody();
-  if (perceiver && physics.config.cameraEnabled) estimates.set(perceiver.see(frame.planar, body).mean); else estimates.fill(0);
+  let processed=frame.planar;
+  if (perceiver && physics.config.cameraEnabled) {swarm??=new VisualSwarm(perceiver.model,visionSettings);estimates.set(swarm.see(frame.planar,body,brainDomain));processed=swarm.processed;scene.showFlyInput(processed,width,height);} else estimates.fill(0);
+  cue=mission.settings.mode==="trail"&&mission.settings.cue==="scent"?scentCue(physics.pose,mission,simTime):cameraCue(processed,width,height,mission.settings.mode);
+  training?.recorder.frame(cameraFrame,width,height,processed,frame.dropped);showSwarmViews();
   if (brainDomain === "world" && physics.config.sonarEnabled) estimates[4] = Math.max(estimates[4], sonar.closeness);
-  if (check("memory-enabled") && brainDomain === "world" && physics.config.cameraEnabled && perceiver) {
-    const remembered = memory.observe(frame.features, estimates);
-    if (remembered) for (let k = 0; k < estimates.length; k++) estimates[k] = estimates[k] * .8 + remembered[k] * .2;
+  if (brainDomain === "world" && physics.config.cameraEnabled && perceiver) {
+    const remembered = memory.observe(visualFeatures(processed,width,height), estimates,check("memory-enabled"));
+    if (check("memory-enabled") && remembered) for (let k = 0; k < estimates.length; k++) estimates[k] = estimates[k] * .8 + remembered[k] * .2;
   }
   if (controller) {
-    if (brainDomain === "world") worldDomain.sensors(estimates, [0, 0], body, sensors);
+    if (brainDomain === "world") worldDomain.sensors(estimates, [cue.bearing, cue.strength], body, sensors);
     else sensorsFromEstimates(estimates, body, sensors);
     if (controller.inputCount > 17) { sensors[17] = sonar.closeness; sensors[18] = +sonar.reading.echo; }
   }
@@ -319,19 +436,22 @@ function neuralBody() { return { speed: clamp((physics.left + physics.right) / 2
 function manualDemands(): [number,number] {const forward=+(keys.has("w")||keys.has("ArrowUp"))-+(keys.has("s")||keys.has("ArrowDown")),steer=+(keys.has("d")||keys.has("ArrowRight"))-+(keys.has("a")||keys.has("ArrowLeft"));return [clamp(forward*.65+steer*.5,-1,1)*255,clamp(forward*.65-steer*.5,-1,1)*255];}
 function tick(): void {
   const dt = 1 / 30; simTime += dt;
+  if(mission.settings.mode==="trail"&&mission.settings.cue==="scent")cue=scentCue(physics.pose,mission,simTime);
   if (sonar.update(simTime, physics.pose, objects, physics.config, noise)) {
     log("sonar", sonar.reading.echo ? `${(sonar.metres * 100).toFixed(1)} cm · ECHO ${Math.round(sonar.pulseMicroseconds)} µs` : "No echo · distance unknown", { cm: sonar.reading.echo ? sonar.metres * 100 : null, echoUs: sonar.pulseMicroseconds });
     if (check("memory-enabled") && physics.config.sonarEnabled) memory.mapPing(physics.odometry, physics.config.length * .48, sonar.metres, sonar.reading.echo);
   }
   if (simTime - captureTime >= 1 / physics.config.cameraHz - 1e-8) capture();
   if (controller) {
-    if (brainDomain === "world") worldDomain.sensors(estimates, [0, 0], neuralBody(), sensors); else sensorsFromEstimates(estimates, neuralBody(), sensors);
+    if (brainDomain === "world") worldDomain.sensors(estimates, [cue.bearing, cue.strength], neuralBody(), sensors); else sensorsFromEstimates(estimates, neuralBody(), sensors);
     if (controller.inputCount > 17) { sensors[17] = sonar.closeness; sensors[18] = +sonar.reading.echo; }
-    action = controller.step(sensors);
+    action = swarm?swarm.step(controller,sensors,neuralBody(),[cue.bearing,cue.strength],brainDomain):controller.step(sensors);
   }
+  const mode = value("drive-mode");
+  if(mode==="reward")action=sugarPolicy.action(memory.active,action,cue,sonar.reading.echo?sonar.closeness:0,!training);
+  else if(!training&&check("sugar-learn")&&["fly","manual"].includes(mode)){const manual=manualDemands();sugarPolicy.remember(memory.active,mode==="manual"?{steer:(manual[0]-manual[1])/255,throttle:Math.max(0,(manual[0]+manual[1])/510),brake:0}:action);}
   requests = motorRequests(action, adapterConfig);
   let demands: [number, number] = [requests.left, requests.right];
-  const mode = value("drive-mode");
   if (mode === "manual") {
     const forward = +(keys.has("w") || keys.has("ArrowUp")) - +(keys.has("s") || keys.has("ArrowDown"));
     const steer = +(keys.has("d") || keys.has("ArrowRight")) - +(keys.has("a") || keys.has("ArrowLeft"));
@@ -353,8 +473,11 @@ function tick(): void {
   } catch (error) { actualPWM = [0, 0]; physics.left = physics.right = 0; setRunning(false, "sketch error"); codeMessage(error instanceof Error ? error.message : String(error), true); message("Controller code stopped. Fix the sketch and apply it again.", true); }
   if (simTime - neuralLogTime >= .2) { neuralLogTime = simTime; log("brain", `steer ${action.steer.toFixed(2)} · drive ${action.throttle.toFixed(2)} · reverse ${(action.reverse ?? 0).toFixed(2)} · brake ${action.brake.toFixed(2)} | request ${demands.map(Math.round).join(" / ")} → PWM ${actualPWM.map(n => Math.round(n * 255)).join(" / ")}`, { mode, action: { ...action }, inputs: [...sensors], estimates: [...estimates], legs: requests.legs, requests: demands, pwm: actualPWM.map(n => n * 255) }); }
   scene.updateRobot(physics.pose, physics.config, check("beam-visible"), physics.left, physics.right, dt);
+  const rewards=objectiveRun.update(physics.pose,physics.blocked),taskReward=rewards.reduce((a,r)=>a+r.amount,0);
+  for(const reward of rewards){log("reward",reward.message+" · "+(reward.amount>0?"+":"")+reward.amount.toFixed(2),reward);if(!training&&check("sugar-learn"))sugarPolicy.reward(reward.amount);}
+  if(rewards.some(r=>r.kind==="sugar")){scene.rebuildMission(mission,objectiveRun.collected);captureTime=-Infinity;}if(rewards.length&&!training)saveLocal();
   if (training) {
-    training.recorder.step({ time: simTime, inputs: [...sensors], action: { ...action }, pwm: actualPWM.map(n=>n*255), cameraFrame, sonar: { cm: sonar.reading.echo ? sonar.metres*100 : null, echo: sonar.reading.echo }, evaluation: { pose: { ...physics.pose }, blocked: physics.blocked, contact: physics.contact?.part ?? null, surface: physics.surface?.kind ?? null } }, dt);
+    training.recorder.step({ time: simTime, inputs: [...sensors], action: { ...action }, pwm: actualPWM.map(n=>n*255), cameraFrame, sonar: { cm: sonar.reading.echo ? sonar.metres*100 : null, echo: sonar.reading.echo }, evaluation: { pose: { ...physics.pose }, blocked: physics.blocked, contact: physics.contact?.part ?? null, surface: physics.surface?.kind ?? null,taskReward } }, dt);
     if (training.recorder.seconds >= training.options.seconds - 1e-8) {
       const job = training, more = job.advance(), result = job.results.at(-1)!;
       log("training", `G${result.generation} C${result.candidate+1} trial ${result.episode} · score ${result.score.toFixed(2)} · ${result.cells} cells · ${result.contacts} contacts · ${result.blockedSeconds.toFixed(1)}s blocked`, result);
@@ -365,7 +488,7 @@ function tick(): void {
 
 function beginEpisode(): void {
   if (!training) return;
-  resetRobot(); controller = training.brain; perceiver?.reset(); memory = new RoomMemory(); noiseConfig = { ...noiseConfig, seed: training.noiseSeed }; noise = new NoiseSource(noiseConfig);
+  resetRobot(); controller = training.brain; perceiver?.reset(); clearMemory();swarm?.reset();sugarPolicy.reset(training.noiseSeed); noiseConfig = { ...noiseConfig, seed: training.noiseSeed }; noise = new NoiseSource(noiseConfig);
   setRunning(true); renderTraining();
 }
 function endTraining(reason: string): void {
@@ -379,7 +502,7 @@ function renderTraining(): void {
   const job=training??lastTraining; el<HTMLButtonElement>("train-stop").disabled=!training;el<HTMLButtonElement>("train-evaluate").disabled=!!training;el<HTMLButtonElement>("train-evolve").disabled=!!training;el<HTMLButtonElement>("train-export").disabled=!job?.results.length;
   if(training) {setText("train-status",training.progress);const total=training.options.episodes*(training.options.evolve?training.options.population*training.options.generations:1);el<HTMLProgressElement>("train-progress").value=(training.results.length+training.recorder.seconds/training.options.seconds)/total*100;}
   else if(job?.completed) el<HTMLProgressElement>("train-progress").value=100;
-  el("train-results").replaceChildren(...(job?.results.slice(-12)??[]).map(r=>{const p=document.createElement("p");p.textContent=`G${r.generation} · C${r.candidate+1} · trial ${r.episode}: ${r.score.toFixed(2)} score / ${r.cells} cells / ${r.contacts} contacts`;return p;}));
+  el("train-results").replaceChildren(...(job?.results.slice(-12)??[]).map(r=>{const p=document.createElement("p");p.textContent=`G${r.generation} · C${r.candidate+1} · trial ${r.episode}: ${r.score.toFixed(2)} score / ${r.cells} cells / ${r.contacts} contacts / ${r.taskReward.toFixed(2)} reward`;return p;}));
 }
 function startTraining(evolve: boolean): void {
   if(hardwarePanel.busy) throw new Error("Disconnect hardware before simulated training.");
@@ -387,13 +510,13 @@ function startTraining(evolve: boolean): void {
   if(wiringIssues(wiring).errors.length)throw new Error("Fix wiring conflicts before training.");
   const options:TrainingOptions={evolve,seconds:Number(value("train-seconds")),episodes:Number(value("train-episodes")),population:Number(value("train-population")),generations:Number(value("train-generations")),seed:Number(value("train-seed")),rate:Number(value("train-rate")),amount:Number(value("train-amount"))};
   const job=new TrainingRun(controller,options);
-  trainingContext={objects:structuredClone(objects),floorColour,config:{...physics.config},wiring:{...wiring},adapter:{...adapterConfig},noise:{...noiseConfig},domain:brainDomain,initialGeneration:brainGeneration,vision:perceiver.model,memoryEnabled:check("memory-enabled"),sketch:programSketch("fly",wiring),initialPose:{...new RobotPhysics().pose},dt:1/30,initialBrain:controllerCheckpoint(controller,{domain:brainDomain,fitness:brainFitness,generation:brainGeneration})};
-  chooseProgram("fly");trainingNoise={...noiseConfig};training=job;lastTraining=null;log("training",evolve?"Seeded controller evolution started; eyes frozen":"Seeded evaluation started; weights unchanged",options);beginEpisode();
+  trainingContext={objects:structuredClone(objects),floorColour,config:{...physics.config},wiring:{...wiring},adapter:{...adapterConfig},noise:{...noiseConfig},domain:brainDomain,initialGeneration:brainGeneration,vision:perceiver.model,memoryEnabled:check("memory-enabled"),sketch:programSketch("fly",wiring),initialPose:{...startPose},visionSettings:{...visionSettings},memorySettings:{...memorySettings},mission:structuredClone(mission),sugarPolicy:sugarPolicy.toJSON(),dt:1/30,initialBrain:controllerCheckpoint(controller,{domain:brainDomain,fitness:brainFitness,generation:brainGeneration})};
+  const trainingMode=value("drive-mode")==="reward"?"reward":"fly";trainingContext.mode=trainingMode;chooseProgram("fly");el<HTMLInputElement>("drive-mode").value=trainingMode;trainingNoise={...noiseConfig};training=job;lastTraining=null;log("training",evolve?"Seeded controller evolution started; eyes and reward policy frozen":"Seeded evaluation started; weights unchanged",options);beginEpisode();
 }
 function initializeTraining(): void {
   button("train-evaluate",()=>safe(()=>startTraining(false)));button("train-evolve",()=>safe(()=>startTraining(true)));button("train-stop",()=>endTraining("Training stopped · last completed generation retained."));
-  button("train-export",()=>{const job=training??lastTraining;if(!job)return;download("robot-training.json",JSON.stringify({format:"flykart-robot-training",version:1,settings:job.options,context:trainingContext,scoreDefinition:"0.5 * (unique20cmCells - 1) + min(distanceMetres, unique20cmCells * 0.4) - 2 * contacts - blockedSeconds - 0.1 * cableSeconds",completed:job.completed,results:job.results,episodes:job.datasets,controller:controllerCheckpoint(job.best,{domain:trainingContext?.domain??brainDomain,fitness:job.fitness,generation:(trainingContext?.initialGeneration??0)+(job.options.evolve?job.completedGeneration:0)}),notes:"Evaluation pose/contact fields are privileged labels, never neural inputs. Pixels are delivered CNN input crops. Last two episodes retained; omittedFrames reports pixel-byte limits."},null,2));});
-  button("export-fly",()=>{if(!controller)return;download("robot-fly-with-eyes.json",exportVisionBrain({name:brainName,controller:controllerCheckpoint(controller,{domain:brainDomain,fitness:brainFitness,generation:brainGeneration}),profile:controller.inputCount>17?"robot":"kart",vision:perceiver?.model??null,fusion:{fade:1,mode:"belief",visionTemperature:1},memory:null,world:brainDomain==="world"?{controller:controllerCheckpoint(controller,{domain:"world",fitness:brainFitness,generation:brainGeneration}),vision:perceiver?.model??null}:null,notes:"3D habitat controller and eyes. Robot room memory is preserved by Export lab."}));});
+  button("train-export",()=>{const job=training??lastTraining;if(!job)return;download("robot-training.json",JSON.stringify({format:"flykart-robot-training",version:1,settings:job.options,context:trainingContext,scoreDefinition:"0.5 * (unique20cmCells - 1) + min(distanceMetres, unique20cmCells * 0.4) - 2 * contacts - blockedSeconds - 0.1 * cableSeconds + objectiveReward",completed:job.completed,results:job.results,episodes:job.datasets,controller:controllerCheckpoint(job.best,{domain:trainingContext?.domain??brainDomain,fitness:job.fitness,generation:(trainingContext?.initialGeneration??0)+(job.options.evolve?job.completedGeneration:0)}),notes:"Evaluation pose/contact fields are privileged labels, never neural inputs. Pixels are delivered CNN input crops. Last two episodes retained; omittedFrames reports pixel-byte limits."},null,2));});
+  button("export-fly",()=>{if(!controller)return;const combined=JSON.parse(exportVisionBrain({name:brainName,controller:controllerCheckpoint(controller,{domain:brainDomain,fitness:brainFitness,generation:brainGeneration}),profile:controller.inputCount>17?"robot":"kart",vision:perceiver?.model??null,fusion:{fade:1,mode:"belief",visionTemperature:1},memory:null,world:brainDomain==="world"?{controller:controllerCheckpoint(controller,{domain:"world",fitness:brainFitness,generation:brainGeneration}),vision:perceiver?.model??null}:null,notes:"3D habitat controller and eyes. robotLearning contains this workbench\u0027s visual/reward extension; other labs may ignore it."}));combined.robotLearning=learningData(true);download("robot-fly-with-eyes.json",JSON.stringify(combined,null,2));});
 }
 
 function renderMap(): void {
@@ -436,6 +559,7 @@ function telemetry(): void {
   setText("contact-note", physics.blocked ? `Blocked by ${physics.contact?.part ?? "solid geometry"}. Contacts use visible solids at chassis height, independently of the fly's memory map. Reset or reverse to move away.` : physics.surface ? physics.surface.kind === "cable" ? "Crossing a loose cable · drive-over allowed, possible snag · 25% simulated speed reduction" : "Crossing a doormat · 15% simulated speed reduction" : `Chassis clearance envelope ${((physics.config.mountHeight + .04) * 100).toFixed(1)} cm · furniture tops above it do not block movement · low mats and cables are traversable`);
   el("motion-state").classList.toggle("blocked", physics.blocked || errors.length > 0);
   setText("memory-count", `${memory.taught} cells learned`); setText("memory-recall", check("memory-enabled") && memory.recalled && brainDomain === "world" ? "Recalling · 20% cue" : "No recall");
+  refreshLearning();
   setText("camera-rate", String(physics.config.cameraHz)); setText("camera-height", (physics.config.mountHeight * 100).toFixed(1));
   setText("perception-note", !physics.config.cameraEnabled ? "Camera disconnected · visual estimates zero" : perceiver ? `${brainDomain === "world" ? "9 obstacle sectors + surface" : "13 racing estimates"} → ${controller?.inputCount ?? 17} brain inputs` : "No eyes loaded · import a vision brain");
   const spikes = controller?.activity().spikes;
@@ -458,10 +582,10 @@ function wireEvents(): void {
   el("collision-visible").addEventListener("change", () => scene.showContacts(check("collision-visible")));
   button("add-object", () => { if (objects.length >= 200) { message("The habitat limit is 200 objects.", true); return; } editWorld(); const o = makeObject(value("object-kind") as ObjectKind, clamp(physics.pose.x + Math.cos(physics.pose.heading) * .75, -3, 3), clamp(physics.pose.z + Math.sin(physics.pose.heading) * .75, -3, 3)); objects.push(o); selected = o.id; worldChanged(); selectObject(o.id); });
   button("add-room", () => { if (objects.length > 196) { message("Four free object slots are needed for a room.", true); return; } editWorld(); const x = .5, z = .5; objects.push(...[{ x, z: z - .8, width: 1.6 }, { x: x - .8, z, width: 1.6, yaw: Math.PI / 2 }, { x: x + .8, z, width: 1.6, yaw: Math.PI / 2 }, { x: x + .45, z: z + .8, width: .7 }].map(p => ({ ...makeObject("wall"), ...p, height: .8 }))); worldChanged(); message("Added a 1.6 m room with a doorway. Select its walls to adjust dimensions."); });
-  button("undo", () => { const previous = history.pop(); if (previous) { objects = previous.objects; floorColour = previous.floorColour; selected = null; worldChanged(); selectObject(null); } });
+  button("undo", () => { const previous = history.pop(); if (previous) { pauseForEdit("Undo scene edit");objects = previous.objects; floorColour = previous.floorColour;startPose={...previous.startPose};physics.pose={...previous.robotPose};physics.odometry={...physics.pose};mission=structuredClone(previous.mission);fillLearning(); selected = null; worldChanged(); selectObject(null); } });
   el("object-list").addEventListener("change", () => selectObject(value("object-list") || null));
-  const canvas = el("habitat"); let downX = 0, downY = 0;
-  canvas.addEventListener("pointerdown", e => { downX = e.clientX; downY = e.clientY; }); canvas.addEventListener("pointerup", e => { if (Math.hypot(e.clientX - downX, e.clientY - downY) < 4) selectObject(scene.pick(e.clientX, e.clientY)); });
+  bindSceneEditing();
+
   button("advanced", () => { fillHardware(); el<HTMLDialogElement>("hardware").showModal(); }); button("close-hardware", () => el<HTMLDialogElement>("hardware").close());
   const pinoutButton = document.createElement("button"); pinoutButton.id = "show-pinout"; pinoutButton.textContent = "Pinout & wires"; el("advanced").before(pinoutButton);
   button("show-pinout", () => { pinoutDiagram.update(wiring, physics.config); pinoutDiagram.live(firmware.pins, sonar.pulseMicroseconds); el<HTMLDialogElement>("pinout").showModal(); });
@@ -469,7 +593,7 @@ function wireEvents(): void {
     if(hardwarePanel.busy)throw new Error("Disconnect hardware before reconnecting GPIOs.");
     const next=reconnect(wiring,signal,pin), rewritten=rewritePins(value("sketch"),next), nextFirmware=new Firmware(rewritten.source);
     nextFirmware.tick({timeMs:0,brainLeft:0,brainRight:0,echoUs:0,wiring:next});
-    if(training)endTraining("Wiring changed; training stopped.");setRunning(false,"GPIO reconnected");wiring=next;firmware=nextFirmware;el<HTMLTextAreaElement>("sketch").value=rewritten.source;sketchEditor.refresh();physics.left=physics.right=0;actualPWM=[0,0];sonar=new RobotSonar();memory=new RoomMemory();captureTime=-Infinity;
+    if(training)endTraining("Wiring changed; training stopped.");setRunning(false,"GPIO reconnected");wiring=next;firmware=nextFirmware;el<HTMLTextAreaElement>("sketch").value=rewritten.source;sketchEditor.refresh();physics.left=physics.right=0;actualPWM=[0,0];sonar=new RobotSonar();clearMemory();captureTime=-Infinity;
     pinoutDiagram.update(wiring,physics.config);codeMessage(`GPIOs synchronized · ${rewritten.changed.join(" / ")||"unchanged"}`);saveLocal();log("system",`Reconnected ${signal.toUpperCase()} → ${pin<0?"enable jumper":`GPIO ${pin}`} · code updated`,wiring);message("Wiring and sketch updated together. Simulation paused; reflash the bridge before changing real wires.");
   }));
   button("close-pinout", () => el<HTMLDialogElement>("pinout").close());
@@ -490,12 +614,12 @@ function wireEvents(): void {
   el("sketch").addEventListener("input", () => codeMessage("Unapplied changes · click Apply & restart code"));
   el("sketch").addEventListener("keydown", event => { if (event instanceof KeyboardEvent && event.key === "Tab") { event.preventDefault(); const editor = el<HTMLTextAreaElement>("sketch"); editor.setRangeText("  ", editor.selectionStart, editor.selectionEnd, "end"); editor.dispatchEvent(new Event("input")); } });
   button("export-code", () => download("robot-controller.ino", value("sketch"), "text/plain"));
-  button("forget", () => { if(training)endTraining("Memory cleared; training stopped.");memory = new RoomMemory(); message("Forgot the room's learned visual cells and sonar map."); });
+  button("forget", () => { if(training)endTraining("Memory cleared; training stopped.");clearMemory(); message("Forgot the room's learned visual cells and sonar map."); });
   el("memory-enabled").addEventListener("change", () => { hardwarePanel.stop();if(training)endTraining("Memory setting changed; training stopped.");if (!check("memory-enabled")) memory.recalled = false; });
   button("export-brain", () => { if (controller) download("robot-flykart-brain.json", JSON.stringify(controllerCheckpoint(controller, { domain: brainDomain, fitness: brainFitness, generation: brainGeneration }), null, 2)); });
   button("restore-brain", () => { setRunning(false); void loadBundled().catch(error => message(String(error), true)); });
-  button("save-lab", () => safe(() => download("robot-habitat.json", JSON.stringify({ format: "flykart-robot-lab", version: 1, savedAt: new Date().toISOString(), objects, floorColour, config: physics.config, wiring, sketch: value("sketch"), program: appliedProgram, mode: value("drive-mode"), adapter: adapterConfig, noise: noiseConfig, controller: controller ? controllerCheckpoint(controller, { domain: brainDomain, fitness: brainFitness, generation: brainGeneration }) : null, vision: perceiver?.model ?? null, memory: memory.toJSON() }, null, 2))));
-  const file = (id: string, callback: (text: string) => void, max = 12000000) => el<HTMLInputElement>(id).addEventListener("change", async e => { const input = e.target as HTMLInputElement, upload = input.files?.[0]; if (!upload) return; if (upload.size > max) { message("File exceeds the size limit.", true); input.value = ""; return; } try { callback(await upload.text()); } catch (error) { message(error instanceof Error ? error.message : String(error), true); } input.value = ""; });
+  button("save-lab", () => safe(() => download("robot-habitat.json", JSON.stringify({ format: "flykart-robot-lab", version: 1, savedAt: new Date().toISOString(), objects, floorColour,startPose,currentPose:{...physics.pose},mission,learning:learningData(), config: physics.config, wiring, sketch: value("sketch"), program: appliedProgram, mode: value("drive-mode"), adapter: adapterConfig, noise: noiseConfig, controller: controller ? controllerCheckpoint(controller, { domain: brainDomain, fitness: brainFitness, generation: brainGeneration }) : null, vision: perceiver?.model ?? null, memory: memory.toJSON() }, null, 2))));
+  const file = (id: string, callback: (text: string) => void, max = 64000000) => el<HTMLInputElement>(id).addEventListener("change", async e => { const input = e.target as HTMLInputElement, upload = input.files?.[0]; if (!upload) return; if (upload.size > max) { message("File exceeds the size limit.", true); input.value = ""; return; } try { const opening="Opening " + upload.name + "…"; message(opening); callback(await upload.text()); if(el("status").textContent===opening)message("Opened " + upload.name + "."); } catch (error) { message(error instanceof Error ? error.message : String(error), true); } input.value = ""; });
   file("brain-file", text => { setRunning(false); installBrain(text); });
   file("ino-file", text => { program = "custom"; customDraft = text; el<HTMLTextAreaElement>("sketch").value = text; programInfo(); codeMessage("Sketch opened. Click Apply code to run it."); }, 60000);
   file("lab-file", text => {
@@ -504,13 +628,16 @@ function wireEvents(): void {
     // Validate every component before mutating the current session.
     const nextObjects = validateObjects(data.objects), nextConfig = validateConfig(data.config), nextWiring = validateWiring(data.wiring), nextFirmware = new Firmware(data.sketch), nextMemory = RoomMemory.fromJSON(data.memory);
     const nextAdapter = validateAdapter(data.adapter ?? DEFAULT_ADAPTER), nextNoise = validateNoise(data.noise ?? DEFAULT_NOISE), nextFloor = validateFloor(data.floorColour);
+    const nextPose=validatePose(data.startPose??new RobotPhysics().pose),nextMission=data.mission?validateMission(data.mission):{settings:{...DEFAULT_OBJECTIVE},goals:[],trail:[]},learned=parseLearning(data.learning,nextMemory);
+    if(nextMission.goals.some(g=>nextObjects.some(o=>o.id===g.id)||g.id==="@robot"))throw new Error("Sugar and object IDs must be unique.");
     let nextBrain: SpikingNetwork | null = null, nextEyes: Perceiver | null = null, nextDomain: "world" | "track" = "world", nextFitness=0, nextGeneration=0;
     if (data.controller) { const parsed = importFile(JSON.stringify(data.controller)); nextDomain = parsed.controller!.domain; nextFitness=parsed.controller!.meta.fitness??0;nextGeneration=parsed.controller!.meta.generation??0;nextBrain = SpikingNetwork.fromJSON(parsed.controller!.snapshot); if (data.vision) nextEyes = validateEyes(data.vision, nextDomain); }
     if(training)endTraining("Lab imported; training stopped.");brainFitness=nextFitness;brainGeneration=nextGeneration;brainName=nextBrain?"Imported lab controller":"No controller";
-    editWorld(); objects = nextObjects; floorColour = nextFloor; physics.config = nextConfig; wiring = nextWiring; controller = nextBrain; perceiver = nextEyes; brainDomain = nextDomain; firmware = nextFirmware; el<HTMLTextAreaElement>("sketch").value = firmware.source;
-    adapterConfig = nextAdapter; noiseConfig = nextNoise; program = appliedProgram = PROGRAMS.some(p => p.id === data.program) ? data.program : "custom"; el<HTMLSelectElement>("drive-mode").value = ["fly", "manual", "sketch"].includes(data.mode) ? data.mode : "sketch"; programInfo(); fillNoise();
+    editWorld();startPose=nextPose;mission=nextMission;memorySettings=learned.memorySettings;visionSettings=learned.visionSettings;sugarPolicy=learned.policy;el<HTMLInputElement>("sugar-learn").checked=learned.learn;fillLearning();
+    objects = nextObjects; floorColour = nextFloor; physics.config = nextConfig; wiring = nextWiring; controller = nextBrain; perceiver = nextEyes; brainDomain = nextDomain; firmware = nextFirmware; el<HTMLTextAreaElement>("sketch").value = firmware.source;
+    adapterConfig = nextAdapter; noiseConfig = nextNoise; program = appliedProgram = PROGRAMS.some(p => p.id === data.program) ? data.program : "custom"; el<HTMLSelectElement>("drive-mode").value = ["fly", "manual", "sketch", "reward"].includes(data.mode) ? data.mode : "sketch"; programInfo(); fillNoise();
     estimates = new Float32Array(nextEyes?.estimateCount ?? (nextDomain === "world" ? 10 : 13)); sensors = new Array(controller?.inputCount ?? 19).fill(0); selected = null; scene.rebuildObjects(objects); scene.rebuildRobot(physics.config); scene.select(null); populateObjects(); selectObject(null); resetRobot(); memory = nextMemory;
-    updateFloor(); setText("brain-name", controller ? "Imported lab controller" : "No controller · use manual or sketch"); setText("adapter", `${brainDomain.toUpperCase()} INPUTS`); saveLocal(); message("Imported habitat, components, sketch, brain and learned memory. Robot reset to its starting pose.");
+    updateFloor();rebuildSwarm(); setText("brain-name", controller ? "Imported lab controller" : "No controller · use manual or sketch"); setText("adapter", `${brainDomain.toUpperCase()} INPUTS`); saveLocal(); message("Imported habitat, components, sketch, brain and learned memory. Robot reset to its starting pose.");
   });
   const editable = (target: EventTarget | null) => target instanceof HTMLElement && (target.matches("input,textarea,select") || target.isContentEditable);
   window.addEventListener("keydown", e => { if (!editable(e.target) && !el<HTMLDialogElement>("hardware").open && !el<HTMLDialogElement>("pinout").open && ["w", "a", "s", "d", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key)) { if (value("drive-mode") === "manual") e.preventDefault(); keys.add(e.key); } });
@@ -521,8 +648,9 @@ async function main(): Promise<void> {
   restoreLocal();
   scene = new HabitatScene(el<HTMLCanvasElement>("habitat"), el<HTMLCanvasElement>("camera"), el<HTMLCanvasElement>("fly-eye")); scene.rebuildObjects(objects); scene.rebuildRobot(physics.config);
   updateFloor();
-  hardwarePanel=new HardwarePanel(hardwareHost,{context:()=>({wiring,config:physics.config,adapter:adapterConfig,source:firmware.source,brain:controller,eyes:perceiver?.model??null,domain:brainDomain,memoryEnabled:check("memory-enabled"),mode:value("drive-mode"),manual:manualDemands()}),pause:()=>{if(training)endTraining("Hardware armed; simulated training stopped.");setRunning(false,"physical hardware armed");},download,message});
-  initializeTraining();
+  resetObjectives();
+  hardwarePanel=new HardwarePanel(hardwareHost,{context:()=>({wiring,config:physics.config,adapter:adapterConfig,source:firmware.source,brain:controller,eyes:perceiver?.model??null,domain:brainDomain,memoryEnabled:check("memory-enabled"),mode:value("drive-mode"),manual:manualDemands(),memory,memorySettings,visionSettings,objective:mission.settings,sugarPolicy}),pause:()=>{if(training)endTraining("Hardware armed; simulated training stopped.");setRunning(false,"physical hardware armed");},download,message});
+  initializeLearning();initializeTraining();
   el("spikes").innerHTML = Array.from({ length: 48 }, () => "<i></i>").join(""); populateObjects(); initializeHardware(); wireEvents(); initializeInstruments(); codeMessage("Applied sketch ready · edit, Apply, then Run");
   let previous = performance.now(), accumulator = 0, uiTime = 0;
   const frame = (now: number) => {

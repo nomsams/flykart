@@ -3,6 +3,7 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { RobotConfig, Pose, WorldObject, solidsFor, robotContactParts, traversable } from "./model";
 import { NoiseSource } from "./noise";
 import { naturalGeometry, naturalShapes } from "./natural-shapes";
+import type { MissionSnapshot } from "./objectives";
 
 const COLORS = { wall: 0xcac5b8, table: 0xb58b60, chair: 0x859989, rock: 0x969c96, stone: 0xb3ada1, bush: 0x527e5b, tree: 0x557a56, water: 0x679faa, bed: 0x97775d, block: 0xcb805e, cable: 0x303b43, shoe: 0x63839e, doormat: 0xc49a62 };
 export class HabitatScene {
@@ -13,6 +14,8 @@ export class HabitatScene {
   readonly controls: OrbitControls;
   private objects = new THREE.Group();
   private robot = new THREE.Group();
+  private mission = new THREE.Group();
+  private scentOverlay = new THREE.Group();
   private wheels: THREE.Object3D[] = [];
   private beam = new THREE.Group();
   private contactView = new THREE.Group();
@@ -21,6 +24,7 @@ export class HabitatScene {
   private worldObjects: WorldObject[] = [];
   private robotConfig: RobotConfig | null = null;
   private selection = new THREE.Box3Helper(new THREE.Box3(), 0xe2a65b);
+  private selectedId: string|null=null;
   private target = new THREE.WebGLRenderTarget(160, 120, { depthBuffer: true });
   private bytes = new Uint8Array(160 * 120 * 4);
   private eyeContext: CanvasRenderingContext2D;
@@ -42,7 +46,7 @@ export class HabitatScene {
     this.scene.add(sun);
     const floor = new THREE.Mesh(new THREE.PlaneGeometry(7, 7), this.floorMaterial); floor.rotation.x = -Math.PI / 2; floor.receiveShadow = true; this.scene.add(floor);
     const grid = new THREE.GridHelper(7, 35, 0x83927c, 0x9caa92); grid.position.y = .001; const gm = grid.material as THREE.Material; gm.transparent = true; gm.opacity = .23; this.scene.add(grid);
-    this.scene.add(this.objects, this.robot, this.beam, this.selection, this.contactView, this.envelope); this.selection.visible = this.contactView.visible = this.envelope.visible = false;
+    this.scene.add(this.objects, this.robot, this.mission, this.scentOverlay, this.beam, this.selection, this.contactView, this.envelope); this.robot.userData.id="@robot";this.selection.visible = this.contactView.visible = this.envelope.visible = false;
     this.camera.position.set(3.5, 4.8, 5.2);
     this.controls = new OrbitControls(this.camera, canvas); this.controls.target.set(0, .05, 0); this.controls.enableDamping = true; this.controls.maxPolarAngle = Math.PI / 2 - .025; this.controls.minDistance = .25; this.controls.maxDistance = 14;
     this.resizeObserver = new ResizeObserver(() => this.resize()); this.resizeObserver.observe(canvas.parentElement!); this.resize();
@@ -73,6 +77,18 @@ export class HabitatScene {
     this.rebuildContacts();
   }
   setFloorColour(colour: string): void { this.floorMaterial.color.set(colour); }
+  rebuildMission(mission: MissionSnapshot, collected: Set<string> = new Set()): void {
+    this.clear(this.mission);this.clear(this.scentOverlay);
+    for(const goal of mission.goals){if(collected.has(goal.id))continue;const group=new THREE.Group();group.userData.id=goal.id;this.mission.add(group);const cube=this.mesh(new THREE.BoxGeometry(.08,.08,.08),0xf768ce,group,goal.x,.04,goal.z);cube.rotation.y=-goal.yaw;
+      const ring=new THREE.Mesh(new THREE.RingGeometry(goal.radius*.96,goal.radius,32),new THREE.MeshBasicMaterial({color:0xf8addf,side:THREE.DoubleSide,transparent:true,opacity:.55}));ring.rotation.x=-Math.PI/2;ring.position.set(goal.x,.003,goal.z);group.add(ring);}
+    const trail=mission.trail;
+    for(let i=1;i<trail.length;i++){const a=trail[i-1],b=trail[i],length=Math.hypot(b.x-a.x,b.z-a.z);if(length<.001)continue;const group=mission.settings.cue==="paint"?this.mission:this.scentOverlay;const mesh=this.mesh(new THREE.BoxGeometry(length,.002,mission.settings.width*.45),0x28c9db,group,(a.x+b.x)/2,.004,(a.z+b.z)/2);mesh.rotation.y=-Math.atan2(b.z-a.z,b.x-a.x);if(mission.settings.cue==="scent"){const material=mesh.material as THREE.MeshStandardMaterial;material.transparent=true;material.opacity=.3;}}
+  }
+  showFlyInput(planar:Float32Array,width:number,height:number):void {
+    this.tinyCanvas.width=width;this.tinyCanvas.height=height;const image=this.tinyContext.createImageData(width,height),n=width*height;
+    for(let i=0;i<n;i++){for(let k=0;k<3;k++)image.data[i*4+k]=planar[k*n+i]*255;image.data[i*4+3]=255;}
+    this.tinyContext.putImageData(image,0,0);this.flyContext.imageSmoothingEnabled=false;this.flyContext.drawImage(this.tinyCanvas,0,0,this.flyContext.canvas.width,this.flyContext.canvas.height);
+  }
   showContacts(show: boolean): void { this.contactView.visible = this.envelope.visible = show; }
   private rebuildContacts(): void {
     this.clear(this.contactView); this.clear(this.envelope); const c = this.robotConfig; if (!c) return;
@@ -113,6 +129,7 @@ export class HabitatScene {
   }
   updateRobot(pose: Pose, c: RobotConfig, showBeam: boolean, left: number, right: number, dt: number): void {
     this.robot.position.set(pose.x, 0, pose.z); this.robot.rotation.y = -pose.heading;
+    if(this.selectedId==="@robot")this.selection.box.setFromObject(this.robot);
     this.envelope.position.copy(this.robot.position); this.envelope.rotation.copy(this.robot.rotation);
     this.wheels.forEach((w, i) => { w.rotation.y += (i % 2 === 0 ? left : right) * dt / (c.wheelDiameter / 2); });
     this.beam.position.set(pose.x + Math.cos(pose.heading) * c.length * .48, c.mountHeight, pose.z + Math.sin(pose.heading) * c.length * .48); this.beam.rotation.y = -pose.heading; this.beam.visible = showBeam && c.sonarEnabled;
@@ -125,11 +142,12 @@ export class HabitatScene {
   capture(width: number, height: number, enabled: boolean, noise?: NoiseSource): { planar: Float32Array; features: Float32Array; rgb: number[]; dropped: boolean } {
     const image = this.eyeContext.createImageData(160, 120);
     if (enabled) {
-      const beamVisible = this.beam.visible, selectedVisible = this.selection.visible, robotVisible = this.robot.visible, contactsVisible = this.contactView.visible, envelopeVisible = this.envelope.visible;
-      this.beam.visible = this.selection.visible = this.robot.visible = this.contactView.visible = this.envelope.visible = false;
+      const beamVisible = this.beam.visible, selectedVisible = this.selection.visible, robotVisible = this.robot.visible, contactsVisible = this.contactView.visible, envelopeVisible = this.envelope.visible, scentVisible=this.scentOverlay.visible;
+      this.beam.visible = this.selection.visible = this.robot.visible = this.contactView.visible = this.envelope.visible = this.scentOverlay.visible = false;
       this.renderer.setRenderTarget(this.target); this.renderer.render(this.scene, this.eye); this.renderer.readRenderTargetPixels(this.target, 0, 0, 160, 120, this.bytes); this.renderer.setRenderTarget(null);
       this.beam.visible = beamVisible; this.selection.visible = selectedVisible; this.robot.visible = robotVisible;
       this.contactView.visible = contactsVisible; this.envelope.visible = envelopeVisible;
+      this.scentOverlay.visible=scentVisible;
       for (let y = 0; y < 120; y++) for (let x = 0; x < 160; x++) {
         const i = (y * 160 + x) * 4, source = ((119 - y) * 160 + x) * 4;
         image.data[i] = Math.round(this.bytes[source] / 255 * 31) / 31 * 255;
@@ -158,18 +176,23 @@ export class HabitatScene {
     return { planar, features, rgb, dropped };
   }
   select(id: string | null): void {
-    const selected = this.objects.children.find(o => o.userData.id === id);
+    this.selectedId=id;
+    const selected = id==="@robot"?this.robot:[...this.objects.children,...this.mission.children].find(o => o.userData.id === id);
     this.selection.visible = !!selected;
     if (selected) this.selection.box.setFromObject(selected);
   }
   pick(clientX: number, clientY: number): string | null {
     const rect = this.canvas.getBoundingClientRect(); const ray = new THREE.Raycaster(); ray.setFromCamera(new THREE.Vector2((clientX - rect.left) / rect.width * 2 - 1, -(clientY - rect.top) / rect.height * 2 + 1), this.camera);
-    const hit = ray.intersectObjects(this.objects.children, true)[0]; let object: THREE.Object3D | null = hit?.object ?? null;
+    const hit = ray.intersectObjects([...this.objects.children,this.robot,...this.mission.children.filter(o=>o.userData.id)], true)[0]; let object: THREE.Object3D | null = hit?.object ?? null;
     while (object && !object.userData.id) object = object.parent;
     return object?.userData.id ?? null;
+  }
+  floorPoint(clientX:number,clientY:number):{x:number;z:number}|null {
+    const rect=this.canvas.getBoundingClientRect(),ray=new THREE.Raycaster();ray.setFromCamera(new THREE.Vector2((clientX-rect.left)/rect.width*2-1,-(clientY-rect.top)/rect.height*2+1),this.camera);
+    const p=ray.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0,1,0),0),new THREE.Vector3());return p&&Math.abs(p.x)<=3.5&&Math.abs(p.z)<=3.5?{x:p.x,z:p.z}:null;
   }
   focus(pose: Pose): void { this.controls.target.set(pose.x, .06, pose.z); this.camera.position.set(pose.x - .6, .8, pose.z + .9); }
   overview(): void { this.controls.target.set(0, .05, 0); this.camera.position.set(3.5, 4.8, 5.2); }
   render(): void { this.controls.update(); this.renderer.render(this.scene, this.camera); }
-  dispose(): void { this.resizeObserver.disconnect(); this.controls.dispose(); this.clear(this.objects); this.clear(this.robot); this.clear(this.beam); this.target.dispose(); this.renderer.dispose(); }
+  dispose(): void { this.resizeObserver.disconnect(); this.controls.dispose(); this.clear(this.objects); this.clear(this.robot); this.clear(this.mission);this.clear(this.scentOverlay);this.clear(this.beam); this.target.dispose(); this.renderer.dispose(); }
 }

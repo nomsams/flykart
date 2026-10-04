@@ -13,3 +13,31 @@ button:disabled{opacity:.45;cursor:default}.component-overview{display:grid;grid
 @media(max-width:720px){header{align-items:flex-start}h1{font-size:23px}nav{gap:10px;flex-wrap:wrap;justify-content:flex-end}nav .pill{display:none}.workspace{grid-template-columns:1fr}.stage{height:400px}.sidebar{display:grid;grid-template-columns:1fr 1fr;gap:12px}.card+.card{margin-top:0}.sidebar>.card:last-child{grid-column:1/-1}.code-body{grid-template-columns:1fr}.code-help{border-left:0;border-top:1px solid var(--line)}.advanced-fields{grid-template-columns:1fr 1fr}.object-tools{flex-wrap:wrap}.object-tools small{display:none}.sensors .map-card{display:block;grid-column:auto}.sensors{grid-template-columns:1fr 1fr}.sensors .map-card{grid-column:1/-1}.toolbar{gap:10px}.toolbar-group button{font-size:11px;padding:8px}.stage-note{display:none}.code-panel>summary span{display:none}footer{flex-direction:column}.wiring-grid{grid-template-columns:1fr 1fr}}
 
 .habitat-tools{display:flex;align-items:center;flex-wrap:wrap;gap:12px 22px;padding:12px 14px;background:#17282c;border:1px solid #344b49;border-radius:9px;margin-top:10px}.habitat-tools .check{margin:0}.habitat-tools small{flex:1;min-width:230px;font-size:10px;line-height:1.6;color:#a4bcb1}.floor-control{display:flex;align-items:center;gap:10px;font-size:11px}.floor-control input{width:42px;height:29px;padding:2px;cursor:pointer}.contact-note,.object-hint{font-size:10px;line-height:1.65;color:#c7b891;margin:10px 3px}.object-hint{margin-top:14px}.stage-chip{max-width:calc(100% - 32px);white-space:normal}
+
+.scene-edit-tools{display:flex;align-items:center;flex-wrap:wrap;gap:8px;padding:12px 14px;background:#152930;border:1px solid #3c5858;border-radius:9px;margin-top:10px}
+.scene-edit-tools label{display:flex;align-items:center;gap:10px;font-size:11px;color:var(--green)}
+.scene-edit-tools select{max-width:100%;min-width:0;margin:0}
+.scene-edit-tools span{flex:1;min-width:200px;font-size:10px;line-height:1.7;color:var(--muted)}
+#habitat.scene-editing{cursor:grab;touch-action:none}#habitat.scene-editing:active{cursor:grabbing}
+.learning-panel{margin-top:18px;background:linear-gradient(115deg,#26302e,#192d35)}
+.learning-header{display:flex;align-items:flex-start;justify-content:space-between;gap:20px;margin-bottom:20px}
+.learning-header .eyebrow{color:#dab4db;margin-bottom:7px}.learning-header p:last-child{max-width:760px;color:#b8c8bf;font-size:12px;line-height:1.75;margin-top:10px}
+.learning-header a{flex-shrink:0;font-size:11px;color:var(--green);padding:8px 0}
+.learning-columns{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:24px}
+.learning-columns>section{min-width:0;border:1px solid #3b5454;background:#16262c;border-radius:9px;padding:18px}
+.learning-columns h3{font-size:14px;color:#e7d6dc;margin-bottom:16px}
+.learning-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 14px;margin-bottom:16px}
+.learning-fields label{min-width:0;font-size:11px;line-height:1.5;color:#b0c4bf}
+.learning-fields select,.learning-fields input{display:block;width:100%;margin-top:6px;font-size:12px}
+.learning-columns .row{flex-wrap:wrap;gap:8px;margin:12px 0}.learning-columns button{font-size:11px}
+.learning-columns .check{font-size:11px;line-height:1.7;margin:12px 0}
+.learning-columns small{display:block;font-size:10px;line-height:1.85;color:#a9bfb8}
+#objective-status,#sugar-status,#swarm-status,#kenyon-status{font:11px/1.8 Consolas,monospace;color:#c7d7c4;margin:12px 0;overflow-wrap:anywhere}
+#objective-status{color:#edbfd7}#sugar-status{color:#d9c693}
+#swarm-views{display:grid;grid-template-columns:repeat(auto-fit,minmax(100px,1fr));gap:8px;margin:12px 0}
+#swarm-views>div{padding:7px;background:#102027;border:1px solid #34544e;border-radius:6px;min-width:0}
+#swarm-views canvas{width:100%;image-rendering:pixelated;display:block;border-radius:3px}
+#swarm-views small{margin-top:5px;font-size:9px}#kenyon-cells{width:100%;height:96px;display:block;border-radius:5px;border:1px solid #35514c;image-rendering:pixelated}
+.event-reward span{color:#edbfd7}
+@media(max-width:900px){.learning-columns{grid-template-columns:1fr}.learning-header{display:block}.learning-header a{display:inline-block;margin-top:10px}}
+@media(max-width:480px){.learning-panel{padding:12px}.learning-columns>section{padding:12px}.scene-edit-tools label{display:block;width:100%}.scene-edit-tools select{display:block;width:100%;margin-top:6px}.learning-fields{gap:10px}.learning-fields select{font-size:11px}.learning-fields label:has(select){grid-column:1/-1}}
