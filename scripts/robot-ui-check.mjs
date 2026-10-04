@@ -12,7 +12,7 @@ const page = await context.newPage();
 const errors = [];
 page.on("pageerror", error => errors.push(error.message));
 try {
-  await page.goto(`${base}/robot.html`, { waitUntil: "domcontentloaded", timeout: 60000 });
+  await page.goto(`${base}/robot.html?tools=all`, { waitUntil: "domcontentloaded", timeout: 60000 });
   await page.locator("#status").filter({ hasText: "Ready." }).waitFor({ timeout: 60000 });
   assert.equal(await page.locator("#brain-name").textContent(), "Bundled robot world brain");
   assert.equal(await page.locator("#spikes i").count(), 48);

@@ -22,7 +22,7 @@ const point=async(x,z,y=0)=>{
 const drag=async(a,b)=>{await page.mouse.move(a.x,a.y);await page.mouse.down();await page.mouse.move(b.x,b.y,{steps:16});await page.mouse.up();};
 const hash=async id=>page.locator(`#${id}`).evaluate(c=>{let hash=0;for(const v of c.getContext("2d").getImageData(0,0,c.width,c.height).data)hash=(hash*31+v)|0;return hash;});
 try{
-  await page.goto((process.env.ROBOT_LAB_URL??"http://127.0.0.1:5173")+"/robot.html",{waitUntil:"domcontentloaded",timeout:60000});await page.locator("#status").filter({hasText:"Ready."}).waitFor({timeout:60000});await page.locator("#preset").selectOption("empty");
+  await page.goto((process.env.ROBOT_LAB_URL??"http://127.0.0.1:5173")+"/robot.html?tools=all",{waitUntil:"domcontentloaded",timeout:60000});await page.locator("#status").filter({hasText:"Ready."}).waitFor({timeout:60000});await page.locator("#preset").selectOption("empty");
   await page.locator("#select-robot").click();await set("x",-.7);await set("z",.6);await set("yaw",30);let lab=await download("save-lab");near(lab.startPose.heading,Math.PI/6,.001);near(lab.currentPose.x,-.7,.001);
   await page.locator("#rotate-right").click();near((await download("save-lab")).startPose.heading,Math.PI/4,.001);
   await page.locator("#undo").click();await page.locator("#select-robot").click();near((await download("save-lab")).startPose.heading,Math.PI/6,.001);

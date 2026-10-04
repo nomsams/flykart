@@ -21,7 +21,7 @@ const recapture = async () => {
   await page.waitForTimeout(250);
 };
 try {
-  await page.goto(`${base}/robot.html`, { waitUntil: "domcontentloaded", timeout: 60000 });
+  await page.goto(`${base}/robot.html?tools=all`, { waitUntil: "domcontentloaded", timeout: 60000 });
   await page.locator("#status").filter({ hasText: "Ready." }).waitFor({ timeout: 60000 });
   assert.equal(await page.locator("#preset option").count(), 8);
   assert.equal(await page.locator("#object-kind option").count(), 14);

@@ -21,7 +21,7 @@ const download=async id=>{const[d]=await Promise.all([page.waitForEvent('downloa
 const stopReason=reason=>page.locator('#serial-log').filter({hasText:reason}).waitFor();
 const armed=()=>page.locator('#serial-log').filter({hasText:'USB controller armed'}).waitFor();
 try{
-  await page.goto((process.env.ROBOT_LAB_URL??'http://127.0.0.1:5173')+'/robot.html',{waitUntil:'domcontentloaded',timeout:60000});await ready();
+  await page.goto((process.env.ROBOT_LAB_URL??'http://127.0.0.1:5173')+'/robot.html?tools=all',{waitUntil:'domcontentloaded',timeout:60000});await ready();
   const baseline=await download('save-lab');
   for(const corruption of ['adapter','eyes']){
     await page.evaluate(corruption=>{const data=JSON.parse(localStorage.getItem('flykart-robot-habitat-v1'));data.objects=[];data.floorColour='#ff0000';if(corruption==='adapter')data.adapter.turnGain=-1;else data.vision.targetScale[0]=null;localStorage.setItem('flykart-robot-habitat-v1',JSON.stringify(data));},corruption);

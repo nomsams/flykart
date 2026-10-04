@@ -7,7 +7,7 @@ page.on('pageerror',e=>errors.push(e.message));
 const base=process.env.ROBOT_LAB_URL??'http://127.0.0.1:5173';
 const downloaded=async id=>{const[d]=await Promise.all([page.waitForEvent('download'),page.locator('#'+id).click()]);return readFile(await d.path(),'utf8');};
 try{
-  await page.goto(base+'/robot.html');await page.locator('#status').filter({hasText:'Ready.'}).waitFor({timeout:60000});
+  await page.goto(base+'/robot.html?tools=all');await page.locator('#status').filter({hasText:'Ready.'}).waitFor({timeout:60000});
   const bounds=await page.evaluate(()=>{const rect=s=>{const r=document.querySelector(s).getBoundingClientRect();return{x:r.x,y:r.y,bottom:r.bottom,right:r.right};};return{stage:rect('.stage'),tools:rect('.scene-edit-tools'),sensors:rect('.workspace>.sensors')};});
   assert.ok(bounds.tools.y>=bounds.stage.bottom&&bounds.tools.y<bounds.stage.bottom+20);assert.ok(bounds.sensors.x>=bounds.stage.right);assert.ok(Math.abs(bounds.sensors.y-bounds.stage.y)<2);
   const initial=JSON.parse(await downloaded('save-lab'));assert.equal(initial.config.vibration.enabled,false);assert.equal(initial.wiring.vibration,-1);

@@ -9,7 +9,7 @@ const context = await browser.newContext({ viewport: { width: 1440, height: 1080
 const page = await context.newPage(), errors = [];
 page.on("pageerror", e => errors.push(e.message));
 try {
-  await page.goto(`${base}/robot.html`, { waitUntil: "domcontentloaded", timeout: 60000 });
+  await page.goto(`${base}/robot.html?tools=all`, { waitUntil: "domcontentloaded", timeout: 60000 });
   await page.locator("#status").filter({ hasText: "Ready." }).waitFor({ timeout: 60000 });
   await page.locator("#show-pinout").click();
   const view = page.locator("#pinout-diagram");

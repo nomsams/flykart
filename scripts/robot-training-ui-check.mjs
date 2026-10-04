@@ -12,7 +12,7 @@ await page.addInitScript(()=>{
 });
 const download=async id=>{const[d]=await Promise.all([page.waitForEvent("download"),page.locator(`#${id}`).click()]);return readFile(await d.path(),"utf8");};
 try{
-  await page.goto((process.env.ROBOT_LAB_URL??"http://127.0.0.1:5173")+"/robot.html",{waitUntil:"domcontentloaded",timeout:60000});await page.locator("#status").filter({hasText:"Ready."}).waitFor({timeout:60000});
+  await page.goto((process.env.ROBOT_LAB_URL??"http://127.0.0.1:5173")+"/robot.html?tools=all",{waitUntil:"domcontentloaded",timeout:60000});await page.locator("#status").filter({hasText:"Ready."}).waitFor({timeout:60000});
   await page.locator("#show-pinout").click();
   const pinout=page.locator("#pinout-diagram");
   await pinout.locator('[data-signal="in1"]').click();await pinout.locator('[data-gpio="13"]').click();

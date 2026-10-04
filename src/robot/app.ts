@@ -1,4 +1,5 @@
 import { DEFAULT_VIBRATION, validateVibration, VibrationSensor } from "./vibration";
+import { RobotWorkbench } from "./workbench";
 import { validateRobotConfig } from "./model";
 import "./robot.css";
 import { Action, SpikingNetwork, clamp } from "../core";
@@ -92,6 +93,7 @@ const safe = (fn: () => void) => { try { fn(); } catch (error) { message(error i
 let objects = preset("room");
 let vibration=new VibrationSensor();
 let hardwarePanel: HardwarePanel;
+let lowerWorkbench:RobotWorkbench|undefined;
 let training: TrainingRun | null = null, lastTraining: TrainingRun | null = null;
 let trainingContext: { domain: "world" | "track"; initialGeneration: number; [key: string]: unknown } | null = null, trainingNoise: SensorNoise | null = null;
 let floorColour = "#b7bea7", surfaceEvent = "", contactEvent = "";
@@ -601,6 +603,7 @@ function renderMap(): void {
   ctx.fillStyle = "#8fa6a7"; ctx.font = "9px system-ui"; ctx.fillText("ESTIMATED POSE / 1 m GRID", 9, 14);
 }
 function telemetry(): void {
+  lowerWorkbench?.refresh();
   const vr=vibration.reading;setText("vibration-status",vr.valid?`DO ${vr.level} · ${vr.active?"Vibration event held":"Quiet"} · ${vr.count} events${(wiring.vibration??-1)<0?" · virtual DO (unwired)":""}`:"Disabled · optional sensor");
   if (training) renderTraining();
   if (el<HTMLDialogElement>("pinout").open) pinoutDiagram.live(firmware.pins, sonar.pulseMicroseconds);
@@ -750,7 +753,7 @@ function initializeResearch():void {
   researchPanel.liveLoader(()=>{const d=liveRecorder.finish(0,0,liveEpisode,mission.settings.mode!=='explore');return d;});
   calibrationPanel=new CalibrationPanel(calibrationHost,{config:()=>physics.config,pose:()=>({...physics.pose}),profile:()=>calibration,apply:(p,enabled)=>{calibration=validateCalibration(p);compensationEnabled=enabled;estimator.profile=calibration;saveLocal();message('Calibration profile applied to command odometry'+(enabled?' and simulated / USB-host motor compensation.':'.'));},busy:()=>hardwarePanel.busy||researchPanel.active||!!training||!!taskPanel?.active,checkpoint:researchCheckpoint,pause:()=>setRunning(false,'marked calibration'),segment:simulatedSegment,physical:(pwm,seconds,cancel,pid,settings)=>hardwarePanel.calibrationSegment(pwm,seconds,cancel,pid,settings),stop:()=>{hardwarePanel.stop();physics.left=physics.right=0;actualPWM=[0,0];},observe:(p,s,h)=>estimator.observe(p,s,h,simTime),wall:(cm,n,offset,sigma)=>estimator.wallRange(cm,n,offset,physics.config.length*.48,sigma,simTime),fov:degrees=>{physics.config.cameraFov=degrees;hardwareChanged();fillHardware();},mark:(origin,targets)=>scene.calibrationMarks(origin,targets),download,message});
   // Scene pointer edits and keyboard controls must not mutate a running research/calibration transaction.
-  document.addEventListener('click',event=>{if(!researchPanel.active&&!calibrationPanel.active&&!taskPanel?.active)return;const target=event.target as HTMLElement;if(target.closest("#copy-log,#copy-log-json,#copy-serial,#save-serial,#export-log,#serial-stop,#serial-disconnect"))return;if(target.closest('#research-panel,#calibration-panel,#lifecycle-panel'))return;event.stopImmediatePropagation();event.preventDefault();},true);
+  document.addEventListener('click',event=>{if(!researchPanel.active&&!calibrationPanel.active&&!taskPanel?.active)return;const target=event.target as HTMLElement;if(target.closest("#workbench-stop,.wb-navigation,.wb-view,#copy-log,#copy-log-json,#copy-serial,#save-serial,#export-log,#serial-stop,#serial-disconnect"))return;if(target.closest('#research-panel,#calibration-panel,#lifecycle-panel'))return;event.stopImmediatePropagation();event.preventDefault();},true);
   el('habitat').addEventListener('pointerdown',event=>{if(researchPanel.active||calibrationPanel.active||taskPanel?.active){event.stopImmediatePropagation();event.preventDefault();}},true);
 }
 
@@ -784,7 +787,9 @@ async function main(): Promise<void> {
   resetObjectives();
   hardwarePanel=new HardwarePanel(hardwareHost,{context:()=>({wiring,config:physics.config,adapter:adapterConfig,source:firmware.source,brain:controller,eyes:perceiver?.model??null,domain:brainDomain,memoryEnabled:check("memory-enabled"),mode:value("drive-mode"),manual:manualDemands(),memory,memorySettings,visionSettings,objective:mission.settings,sugarPolicy,calibration,compensationEnabled,task:taskSettings,taskBrain}),pause:()=>{if(training)endTraining("Hardware armed; simulated training stopped.");setRunning(false,"physical hardware armed");},download,message});
   initializeLearning();initializeTraining();initializeResearch();initializeJourney();
-  el("spikes").innerHTML = Array.from({ length: 48 }, () => "<i></i>").join(""); populateObjects(); initializeHardware(); wireEvents(); initializeInstruments(); codeMessage("Applied sketch ready · edit, Apply, then Run");
+  el("spikes").innerHTML = Array.from({ length: 48 }, () => "<i></i>").join(""); populateObjects(); initializeHardware(); wireEvents(); initializeInstruments();
+  lowerWorkbench=new RobotWorkbench(root.querySelector('.shell')!,{tasks:el('lifecycle-panel'),senses:learningPanel,train:trainingPanel,research:el('research-panel'),calibrate:el('calibration-panel'),logs:el('sensor-console'),hardware:hardwareHost},()=>({controller:brainName,senses:[physics.config.cameraEnabled?'Camera':'',physics.config.sonarEnabled?'HC-SR04':'',physics.config.vibration?.enabled?'SW-420':''].filter(Boolean).join(' · ')||'Sensors disconnected',task:taskSettings.mode!=='off'?`${taskSettings.mode==='follow'?'Follow blue ball':'Approach blue ball'} · ${taskBrain.updates} visual updates`:mission.settings.mode==='explore'?'Explore the habitat':mission.settings.mode==='trail'?'Follow trail to sugar':'Find sugar',job:taskPanel.active?el('task-status').textContent??'Task training active':researchPanel.active?el('research-status').textContent??'Research active':calibrationPanel.active?el('cal-status').textContent??'Calibration active':training?el('train-status').textContent??'Controller training active':hardwarePanel.busy?'USB / hardware session active':running?'Simulation running · pause above or stop here':'Idle · choose a task or inspect a recording',busy:!!training||taskPanel.active||researchPanel.active||calibrationPanel.active||hardwarePanel.busy||running}),()=>{if(taskPanel.active)el('task-cancel').click();if(researchPanel.active)el('research-cancel').click();if(calibrationPanel.active)el('cal-stop').click();if(training)endTraining('Training stopped from the workbench');setRunning(false,'workbench stop');hardwarePanel.stop();message('Stop requested. Active jobs finish cancellation and restore their saved context.');});
+  codeMessage("Applied sketch ready · edit, Apply, then Run");
   let previous = performance.now(), accumulator = 0, uiTime = 0;
   const frame = (now: number) => {
     try {
