@@ -3,7 +3,7 @@ import { mulberry32 } from '../vision/rng';
 import { visualFeatures } from './vision-workbench';
 import { widenBrain } from '../vision/inputs';
 
-import { TASK_INPUT_NAMES, TASK_LEGACY, TASK_TRACKED, TaskRecipe, SensorModules, ColourTarget, rgbHue, validateTaskRecipe } from './sensor-contract';
+import { TASK_INPUT_NAMES, TASK_LEGACY, TASK_TRACKED, TASK_HUNGER, TaskRecipe, SensorModules, ColourTarget, rgbHue, validateTaskRecipe } from './sensor-contract';
 import { TargetSight, targetSight } from './target-tracker';
 export { TASK_INPUT_NAMES, TASK_LEGACY, TASK_TRACKED, BLUE_TARGET, DEFAULT_MODULES, rgbHue, validateModules, validateTarget } from './sensor-contract';
 export type { SensorModules, ColourTarget } from './sensor-contract';
@@ -15,10 +15,10 @@ export function legacyTargetSight(frame:Float32Array,w:number,h:number,target:Co
   for(let i=0;i<n;i++){const [hue,s,v]=rgbHue(frame[i],frame[n+i],frame[2*n+i]),delta=Math.abs(hue-target.hue);if(Math.min(delta,360-delta)<=target.tolerance&&s>=target.minSaturation&&v>=target.minValue){count++;moment+=(i%w)/Math.max(1,w-1)*2-1;}}
   const visible=count>=Math.max(3,n*.002);return {bearing:visible?moment/count:0,area:visible?count/n:0,visible};
 }
-export function taskObservation(frame:Float32Array,w:number,h:number,modules:SensorModules,target:ColourTarget,cm:number|null,last:[number,number],contact:boolean|null,cameraValid=true,recipe:TaskRecipe=TASK_TRACKED,observed?:TargetSight):number[] {
+export function taskObservation(frame:Float32Array,w:number,h:number,modules:SensorModules,target:ColourTarget,cm:number|null,last:[number,number],contact:boolean|null,cameraValid=true,recipe:TaskRecipe=TASK_TRACKED,observed?:TargetSight,energy?:{hunger:number;charging:boolean}):number[] {
   const sight=modules.camera&&cameraValid?(recipe===TASK_LEGACY?legacyTargetSight(frame,w,h,target):observed??targetSight(frame,w,h,target)):{bearing:0,area:0,visible:false},rgb=modules.camera&&cameraValid?Array.from(visualFeatures(frame,w,h)):Array(24).fill(0),valid=modules.sonar&&cm!==null&&Number.isFinite(cm)&&cm>=2&&cm<=400;
   const light=modules.light&&modules.camera&&cameraValid?rgb.reduce((a,v)=>a+v,0)/24:0;
-  return [...rgb,valid?clamp(1-cm!/220,0,1):0,+valid,...last.map(v=>clamp(v,-1,1)),sight.bearing,clamp(sight.area*20,0,1),modules.bumper&&contact!==null?+contact:0,+(modules.bumper&&contact!==null),light,+(modules.light&&modules.camera&&cameraValid),+(modules.camera&&cameraValid)];
+  return [...rgb,valid?clamp(1-cm!/220,0,1):0,+valid,...last.map(v=>clamp(v,-1,1)),sight.bearing,clamp(sight.area*20,0,1),modules.bumper&&contact!==null?+contact:0,+(modules.bumper&&contact!==null),recipe===TASK_HUNGER?clamp(energy?.hunger??1,0,1):light,recipe===TASK_HUNGER?+(energy?.charging??false):+(modules.light&&modules.camera&&cameraValid),+(modules.camera&&cameraValid)];
 }
 export type TaskSnapshot={format:'robot-visual-task';version:1;inputs:string[];hidden:16;weights:number[];updates:number;origin:string;observation?:TaskRecipe};
 const N=35,H=16,COUNT=H*(N+1)+2*(H+1);
@@ -34,15 +34,17 @@ export class TaskBrain {
   static fromJSON(raw:unknown):TaskBrain {const s=raw as TaskSnapshot;if(!s||s.format!=='robot-visual-task'||s.version!==1||s.hidden!==H||JSON.stringify(s.inputs)!==JSON.stringify(TASK_INPUT_NAMES)||!Array.isArray(s.weights)||s.weights.length!==COUNT||s.weights.some(v=>!Number.isFinite(v)||Math.abs(v)>4)||!Number.isInteger(s.updates)||s.updates<0||typeof s.origin!=='string'||s.origin.length>200)throw new Error('Invalid visual task network/schema.');const c=new TaskBrain();c.observation=validateTaskRecipe(s.observation??TASK_LEGACY);c.weights=[...s.weights];c.updates=s.updates;c.origin=s.origin;return c;}
 }
 /** Visible teacher for demonstrations; explicitly excluded from neural-only validation. */
-export function visualCoach(input:number[],follow=false):Action {
+export function visualCoach(input:number[],follow=false,forage=false):Action {
+  if(forage&&(input[33]||input[32]<.15))return {steer:0,throttle:0,brake:1};
   const close=input[24],valid=input[25],bearing=input[28],area=input[29];
   // A centred visible target needs a closer approach than an unknown obstacle.
   // 20 cm from the front sonar would prevent reaching the default task radius.
-  const near=area>0&&Math.abs(bearing)<.35&&input[34] ? .98 : .91;
+  if(forage&&area&&Math.abs(bearing)<.3&&((valid&&close>=1-5/220)||(!valid&&area>=.8)))return {steer:0,throttle:0,brake:1};
+  const near=area>0&&Math.abs(bearing)<.35&&input[34] ? (forage?.995:.98) : .91;
   if(valid&&close>near)return {steer:.65,throttle:0,reverse:.25,brake:0};
   if(!input[34])return {steer:0,throttle:0,brake:0};
   if(!area)return {steer:.8,throttle:.28,brake:0};
-  return {steer:clamp(bearing*2,-.8,.8),throttle:follow?clamp((.18-area)*3,0,.4):clamp((.32-area)*2,.22,.4),reverse:follow?clamp((area-.23)*2,0,.25):0,brake:0};
+  return {steer:clamp(bearing*2,-.8,.8),throttle:forage?.28:follow?clamp((.18-area)*3,0,.4):clamp((.32-area)*2,.22,.4),reverse:follow?clamp((area-.23)*2,0,.25):0,brake:0};
 }
 /** Preserve the recurrent motor circuit; transfer only inputs with matching meanings. */
 export function racerToRoom(raw:BrainSnapshot):BrainSnapshot {

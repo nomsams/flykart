@@ -21,6 +21,7 @@ void runStudent(camera_fb_t *fb);
   source=source.replace('Serial.printf("CONFIG %s\\n",BRIDGE_CONFIG); emitting=true;',`Serial.printf("STUDENT ${s.hash}\\n");\n  if(autonomous) { runStudent(fb); if(fb) esp_camera_fb_return(fb); return; }\n  Serial.printf("CONFIG %s\\n",BRIDGE_CONFIG); emitting=true;`);
   source=source.replace('void setup() {',`
 void runStudent(camera_fb_t *fb) {
+  RangeSample sample=rangeSample();float sonarCm=sample.cm;
   if(!armed || int32_t(millis()-autoUntil)>=0 || !fb ${c.sonarEnabled?'|| sonarCm<0 || sonarCm<12':''}) { autonomous=false; armed=false; stopMotors(); Serial.println("LOG AUTO stopped: deadline, watchdog or sensor guard"); return; }
   float input[30]={},hidden[12]={},output[2]={}; float mass=0,moment=0;
   for(int y=${recipe.top};y<${recipe.bottom};y++) for(int x=0;x<${recipe.width};x++) {
@@ -36,7 +37,7 @@ void runStudent(camera_fb_t *fb) {
   // Recheck after camera/inference; STOP and the independent watchdog take priority.
   pollCommands(); if(!autonomous || !armed || int32_t(millis()-autoUntil)>=0) { armed=false; stopMotors(); return; }
   demandL=constrain(int(lroundf(output[0]*255)),-autoCap,autoCap); demandR=constrain(int(lroundf(output[1]*255)),-autoCap,autoCap); commandAt=millis();
-  Serial.printf("AUTOFRAME %lu %.2f %d %d %lu\\n",++frameId,sonarCm,demandL,demandR,autoUntil-millis());
+  Serial.printf("AUTOFRAME %lu %.2f %d %d %lu\\n",++frameId,sonarCm,issuedL,issuedR,autoUntil-millis());
 }
 void setup() {`);
   source=source.replace('if(millis()-frameAt>=250)', 'if(millis()-frameAt>=(autonomous?100:250))');return source;

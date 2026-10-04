@@ -51,7 +51,7 @@ function clippedProjection(vertices: Vertex[], triangles: number[], bottom: numb
 // Bounded cache invalidates when an inspector edit changes any shape dimension.
 const cache = new Map<string, { key: string; parts: ContactPart[] }>();
 export function contactParts(o: WorldObject, solids: Solid[], robotTop: number): ContactPart[] {
-  const key = `${o.kind}/${o.x}/${o.z}/${o.yaw}/${o.width}/${o.depth}/${o.height}/${robotTop}`;
+  const key = `${o.kind}/${o.x}/${o.z}/${o.yaw}/${o.width}/${o.depth}/${o.height}/${robotTop}/${JSON.stringify(o.visual?.boxes??[])}`;
   const existing = cache.get(o.id); if (existing?.key === key) return existing.parts;
   const shapes = naturalShapes(o), parts: ContactPart[] = [];
   if (shapes.length) {

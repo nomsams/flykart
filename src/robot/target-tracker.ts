@@ -1,10 +1,12 @@
+import {appearanceBoxes} from './appearance';
 import { ColourTarget, rgbHue } from './sensor-contract';
 export type TargetSight={bearing:number;area:number;visible:boolean};
-export type TargetComponent=TargetSight & {vertical:number;pixels:number;fill:number;aspect:number};
+export type TargetComponent=TargetSight & {vertical:number;pixels:number;fill:number;aspect:number;box?:{x:number;y:number;width:number;height:number};similarity?:number};
 export type TargetTrack=TargetSight & {id:number|null;components:number;misses:number;confidence:number};
 export const EMPTY_TARGET:TargetTrack={bearing:0,area:0,visible:false,id:null,components:0,misses:0,confidence:0};
 export function targetComponents(frame:Float32Array,w:number,h:number,target:ColourTarget):TargetComponent[]{
   const n=w*h;if(!Number.isInteger(w)||!Number.isInteger(h)||w<1||h<1||w>160||h>120||frame.length!==n*3)throw new Error('Invalid target camera frame.');
+  if(target.appearance)return appearanceBoxes(frame,w,h,target.appearance).map(({box,score})=>({visible:true,bearing:(box.x+box.width/2)/w*2-1,vertical:(box.y+box.height/2)/h*2-1,area:box.width*box.height/n,pixels:box.width*box.height,fill:1,aspect:box.width/box.height,box,similarity:score}));
   const mask=new Uint8Array(n),queue=new Int32Array(n),found:TargetComponent[]=[];
   for(let i=0;i<n;i++){const [hue,s,v]=rgbHue(frame[i],frame[n+i],frame[2*n+i]),d=Math.abs(hue-target.hue);mask[i]=+(Math.min(d,360-d)<=target.tolerance&&s>=target.minSaturation&&v>=target.minValue);}
   for(let i=0;i<n;i++)if(mask[i]){
@@ -12,11 +14,11 @@ export function targetComponents(frame:Float32Array,w:number,h:number,target:Col
     while(head<tail){const k=queue[head++],x=k%w,y=Math.floor(k/w);sx+=x;sy+=y;minX=Math.min(minX,x);maxX=Math.max(maxX,x);minY=Math.min(minY,y);maxY=Math.max(maxY,y);
       for(const next of [x>0?k-1:-1,x<w-1?k+1:-1,y>0?k-w:-1,y<h-1?k+w:-1])if(next>=0&&mask[next]){mask[next]=0;queue[tail++]=next;}
     }
-    if(tail>=Math.max(3,n*.002))found.push({visible:true,bearing:sx/tail/Math.max(1,w-1)*2-1,vertical:sy/tail/Math.max(1,h-1)*2-1,area:tail/n,pixels:tail,fill:tail/((maxX-minX+1)*(maxY-minY+1)),aspect:(maxX-minX+1)/(maxY-minY+1)});
+    if(tail>=Math.max(3,n*.002))found.push({visible:true,bearing:sx/tail/Math.max(1,w-1)*2-1,vertical:sy/tail/Math.max(1,h-1)*2-1,area:tail/n,pixels:tail,box:{x:minX,y:minY,width:maxX-minX+1,height:maxY-minY+1},fill:tail/((maxX-minX+1)*(maxY-minY+1)),aspect:(maxX-minX+1)/(maxY-minY+1)});
   }
   return found;
 }
-const quality=(c:TargetComponent)=>c.area*Math.min(c.aspect,1/c.aspect)*c.fill;
+const quality=(c:TargetComponent)=>c.similarity??c.area*Math.min(c.aspect,1/c.aspect)*c.fill;
 export function targetSight(frame:Float32Array,w:number,h:number,target:ColourTarget):TargetSight {const c=targetComponents(frame,w,h,target).sort((a,b)=>quality(b)-quality(a))[0];return c?{bearing:c.bearing,area:c.area,visible:true}:{bearing:0,area:0,visible:false};}
 export class TargetTracker {
   current:TargetTrack={...EMPTY_TARGET};private previous:TargetComponent|null=null;private sequence=0;private at=-Infinity;private targetKey='';
@@ -30,6 +32,6 @@ export class TargetTracker {
     else chosen=components.sort((a,b)=>quality(b)-quality(a))[0];
     if(!chosen){const misses=this.current.misses+1;this.current={...EMPTY_TARGET,id:this.current.id,components:components.length,misses};if(misses>=3){this.previous=null;this.current.id=null;}return {...this.current};}
     const id=this.previous?this.current.id:++this.sequence;this.previous=chosen;
-    this.current={bearing:chosen.bearing,area:chosen.area,visible:true,id,components:components.length,misses:0,confidence:Math.min(1,chosen.fill*Math.min(chosen.aspect,1/chosen.aspect))};return {...this.current};
+    this.current={bearing:chosen.bearing,area:chosen.area,visible:true,id,components:components.length,misses:0,confidence:chosen.similarity??Math.min(1,chosen.fill*Math.min(chosen.aspect,1/chosen.aspect))};return {...this.current};
   }
 }

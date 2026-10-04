@@ -1,3 +1,5 @@
+import {GuardSettings,validateGuard} from './collision-guard';
+import { ObjectVisual } from './imported-assets';
 import { DEFAULT_VIBRATION, VibrationSettings, validateVibration } from "./vibration";
 import { clamp } from "../core";
 import { HC_SR04, CM_PER_PIXEL } from "../vision/robot";
@@ -6,9 +8,10 @@ import { mulberry32 } from "../vision/rng";
 import { NoiseSource } from "./noise";
 import { contactParts, polygonsOverlap, rectangle } from "./contacts";
 
-export type ObjectKind = "wall" | "table" | "chair" | "rock" | "stone" | "bush" | "tree" | "water" | "block" | "cable" | "shoe" | "doormat" | "bed" | "ball";
+export type ObjectKind = "wall" | "table" | "chair" | "rock" | "stone" | "bush" | "tree" | "water" | "block" | "cable" | "shoe" | "doormat" | "bed" | "ball" | "image" | "model" | "pod";
 export const OBJECT_TYPES: { kind: ObjectKind; label: string }[] = [
   { kind: "ball", label: "Blue ball · visual target" },
+  { kind: "pod", label: "Charging pod · virtual food" }, { kind: "image", label: "Image card · import target" }, { kind: "model", label: "3D model · import GLB" },
   { kind: "wall", label: "Wall" }, { kind: "table", label: "Table" }, { kind: "chair", label: "Chair" },
   { kind: "bed", label: "Bed" }, { kind: "block", label: "Simple block" }, { kind: "shoe", label: "Shoe" },
   { kind: "cable", label: "Loose cable · drive-over caution" }, { kind: "doormat", label: "Doormat" },
@@ -20,9 +23,10 @@ export const ROOM_TYPES = [
   { id: "maze", label: "Wall maze", floor: "#929e99" }, { id: "clutter", label: "Clutter challenge", floor: "#b8a58e" },
   { id: "garden", label: "Garden", floor: "#b7bea7" }, { id: "empty", label: "Empty floor", floor: "#b7bea7" },
 ];
-export type WorldObject = { id: string; kind: ObjectKind; x: number; z: number; yaw: number; width: number; depth: number; height: number };
+export type WorldObject = { id: string; kind: ObjectKind; x: number; z: number; yaw: number; width: number; depth: number; height: number; visual?:ObjectVisual };
 export type Solid = { x: number; z: number; yaw: number; width: number; depth: number; bottom: number; top: number; soft?: boolean };
 export type RobotConfig = {
+  guard?:GuardSettings;
   vibration?: VibrationSettings;
   length: number; width: number; wheelbase: number; mountHeight: number; wheelDiameter: number; wheelWidth: number;
   rpm: number; voltage: number; bridgeDrop: number; turnGrip: number; deadband: number;
@@ -35,7 +39,7 @@ export function validateRobotConfig(raw:unknown):RobotConfig {
   if(!c||typeof c.cameraEnabled!=='boolean'||typeof c.sonarEnabled!=='boolean')throw new Error('Invalid component settings.');
   const result={...DEFAULT_ROBOT,cameraEnabled:c.cameraEnabled,sonarEnabled:c.sonarEnabled};
   for(const [name,[min,max]]of Object.entries(bounds)){const v=c[name as keyof RobotConfig];if(typeof v!=='number'||!Number.isFinite(v)||v<min-1e-8||v>max+1e-8)throw new Error(`Invalid ${name}.`);Object.assign(result,{[name]:v});}
-  if(result.wheelbase>result.length||result.wheelWidth*2>=result.width)throw new Error('Wheel spacing and width must fit the chassis.');return {...result,vibration:validateVibration(c.vibration)};
+  if(result.wheelbase>result.length||result.wheelWidth*2>=result.width)throw new Error('Wheel spacing and width must fit the chassis.');return {...result,guard:validateGuard(c.guard),vibration:validateVibration(c.vibration)};
 }
 export type Wiring = { vibration?: number; board: "esp32-cam" | "uno"; in1: number; in2: number; in3: number; in4: number; ena: number; enb: number; trig: number; echo: number; commonGround: boolean; echoDivider: boolean; sdCard: boolean };
 export const ESP_WIRING: Wiring = { board: "esp32-cam", in1: 12, in2: 13, in3: 14, in4: 15, ena: -1, enb: -1, trig: 2, echo: 4, vibration: -1, commonGround: true, echoDivider: true, sdCard: false };
@@ -66,7 +70,7 @@ export function wiringIssues(w: Wiring): { errors: string[]; notes: string[] } {
 
 let sequence = 0;
 export function makeObject(kind: ObjectKind, x = 0, z = 0): WorldObject {
-  const dims: Record<ObjectKind, number[]> = { ball: [.06,.06,.06], wall: [1.6, .09, .7], table: [1.05, .7, .72], chair: [.42, .42, .8], rock: [.4, .34, .28], stone: [.15, .12, .045], bush: [.5, .5, .4], tree: [.65, .65, 1.6], water: [.9, .7, .008], block: [.25, .25, .25], cable: [.7, .02, .01], shoe: [.28, .11, .1], doormat: [.75, .45, .008], bed: [1.9, .95, .5] };
+  const dims: Record<ObjectKind, number[]> = { image:[.03,.2,.2], model:[.2,.2,.2], pod:[.12,.22,.18], ball: [.06,.06,.06], wall: [1.6, .09, .7], table: [1.05, .7, .72], chair: [.42, .42, .8], rock: [.4, .34, .28], stone: [.15, .12, .045], bush: [.5, .5, .4], tree: [.65, .65, 1.6], water: [.9, .7, .008], block: [.25, .25, .25], cable: [.7, .02, .01], shoe: [.28, .11, .1], doormat: [.75, .45, .008], bed: [1.9, .95, .5] };
   const [width, depth, height] = dims[kind];
   return { id: `object-${Date.now()}-${sequence++}`, kind, x, z, yaw: 0, width, depth, height };
 }
@@ -76,6 +80,8 @@ export function solidsFor(o: WorldObject): Solid[] {
   const part = (x: number, z: number, width: number, depth: number, bottom: number, top: number): Solid => ({
     x: o.x + x * Math.cos(o.yaw) - z * Math.sin(o.yaw), z: o.z + x * Math.sin(o.yaw) + z * Math.cos(o.yaw), yaw: o.yaw, width, depth, bottom, top,
   });
+  if (o.visual?.type==='glb'&&o.visual.boxes?.length)return o.visual.boxes.map(b=>part(b.x*o.width,b.z*o.depth,b.width*o.width,b.depth*o.depth,(b.y-b.height/2)*o.height,(b.y+b.height/2)*o.height));
+  if (o.kind === "pod")return [part(0,0,o.width,o.depth,.03,o.height)];
   if (o.kind === "water") return [];
   if (o.kind === "table" || o.kind === "chair" || o.kind === "bed") {
     const seat = o.kind === "table" ? o.height : o.kind === "bed" ? o.height * .48 : o.height * .55;

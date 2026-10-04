@@ -1,3 +1,4 @@
+import {prepareVisual,visualMesh} from './imported-assets';
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { RobotConfig, Pose, WorldObject, solidsFor, robotContactParts, traversable } from "./model";
@@ -5,7 +6,7 @@ import { NoiseSource } from "./noise";
 import { naturalGeometry, naturalShapes } from "./natural-shapes";
 import type { MissionSnapshot } from "./objectives";
 
-const COLORS = { ball: 0x1459ee, wall: 0xcac5b8, table: 0xb58b60, chair: 0x859989, rock: 0x969c96, stone: 0xb3ada1, bush: 0x527e5b, tree: 0x557a56, water: 0x679faa, bed: 0x97775d, block: 0xcb805e, cable: 0x303b43, shoe: 0x63839e, doormat: 0xc49a62 };
+const COLORS = { image:0xffffff,model:0x879ba3,pod:0x164de2,ball: 0x1459ee, wall: 0xcac5b8, table: 0xb58b60, chair: 0x859989, rock: 0x969c96, stone: 0xb3ada1, bush: 0x527e5b, tree: 0x557a56, water: 0x679faa, bed: 0x97775d, block: 0xcb805e, cable: 0x303b43, shoe: 0x63839e, doormat: 0xc49a62 };
 export class HabitatScene {
   readonly scene = new THREE.Scene();
   readonly renderer: THREE.WebGLRenderer;
@@ -56,11 +57,13 @@ export class HabitatScene {
   private mesh(geometry: THREE.BufferGeometry, color: number, parent: THREE.Object3D, x: number, y: number, z: number): THREE.Mesh {
     const mesh = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ color, roughness: .8 })); mesh.position.set(x, y, z); mesh.castShadow = mesh.receiveShadow = true; parent.add(mesh); return mesh;
   }
-  private clear(group: THREE.Group): void { group.traverse(o => { if (o instanceof THREE.Mesh || o instanceof THREE.Line) { o.geometry.dispose(); const materials = Array.isArray(o.material) ? o.material : [o.material]; materials.forEach(m => m.dispose()); } }); group.clear(); }
+  private clear(group: THREE.Group): void { group.traverse(o => { if (o instanceof THREE.Mesh || o instanceof THREE.Line) { o.geometry.dispose(); const materials = Array.isArray(o.material) ? o.material : [o.material]; materials.forEach(m => {for(const value of Object.values(m))if(value instanceof THREE.Texture&&value.userData.robotImported)value.dispose();m.dispose();}); } }); group.clear(); }
   rebuildObjects(objects: WorldObject[]): void {
     this.worldObjects = objects;
     this.clear(this.objects);
     for (const o of objects) {
+      if(o.visual){const group=new THREE.Group();group.userData.id=o.id;group.position.set(o.x,0,o.z);group.rotation.y=-o.yaw;this.objects.add(group);const attach=()=>{if(!this.objects.children.includes(group))return;const mesh=visualMesh(o.visual!);if(mesh){mesh.scale.set(o.width,o.height,o.depth);group.add(mesh);return true;}return false;};if(!attach())void prepareVisual(o.visual).then(attach).catch(()=>{});continue;}
+
       const group = new THREE.Group(); group.userData.id = o.id; this.objects.add(group);
       const shapes = naturalShapes(o);
       if (!shapes.length) {

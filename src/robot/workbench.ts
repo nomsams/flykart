@@ -34,7 +34,7 @@ export class RobotWorkbench {
   private results:HTMLDivElement;private query:HTMLInputElement;private nav:HTMLElement;
   constructor(shell:HTMLElement,panels:{tasks:HTMLElement;senses:HTMLElement;train:HTMLElement;research:HTMLElement;calibrate:HTMLElement;logs:HTMLElement;hardware:HTMLElement},private state:()=>WorkbenchState,stop:()=>void){
     this.tools=[
-      {key:'tasks',title:'Tasks & skills',note:'Blue-ball objectives, demonstrations and held-out tests',panel:panels.tasks},
+      {key:'tasks',title:'Tasks & skills',note:'Imported targets, hungry foraging and frozen skill tests',panel:panels.tasks},
       {key:'senses',title:'Senses & memory',note:'Sugar, trails, virtual gaze and Kenyon cells',panel:panels.senses},
       {key:'train',title:'Controller training',note:'Evaluate or evolve the fly in this room',panel:panels.train},
       {key:'research',title:'Experiments & replay',note:'Paired benchmarks, curriculum and onboard student',panel:panels.research},
