@@ -1,3 +1,5 @@
+import { RoomMemory } from '../robot/memory';
+import { visualFeatures } from '../robot/vision-workbench';
 // The whole nervous system for one tick:
 //
 //   camera -> vision net -> estimates (+ variance) ─┐
@@ -24,6 +26,9 @@ export type DriverMode = "belief" | "action-average" | "vision-action";
 export type DriverOptions = {
   /** Deployment rehearsal: require pixels and exclude privileged cues, goal coordinates and pose-indexed lap memory. */
   sensorOnly?: boolean;
+  /** Explicit goal compass/localization cue; rewards and collision labels remain excluded. */
+  missionCue?: boolean;
+  roomMemory?: RoomMemory | null;
   visual?: RacingSettings["visual"]; resolution?: RacingSettings["resolution"];
   perceiver: Perceiver | null;
   controller: SpikingNetwork;
@@ -106,13 +111,21 @@ export class VisionDriver {
     if (this.options.blind) { this.fused.mean.fill(0); this.fused.variance.fill(1); }
     else if (perceiver && (!this.started || episode.tick % VISION_STRIDE === 0)) {
       this.started = true; seen = true;
-      this.perception = (this.ensemble ?? perceiver).see(episode.render(), this.options.sonarOff && body.sonarCloseness !== undefined ? { ...body, sonarCloseness: 0, sonarStrength: 0 } : body);
+      this.memoryCue=null;
+      const pixels=episode.render();
+      this.perception = (this.ensemble ?? perceiver).see(pixels, this.options.sonarOff && body.sonarCloseness !== undefined ? { ...body, sonarCloseness: 0, sonarStrength: 0 } : body);
       const cues: (Cue | null)[] = [visionCue(this.perception.mean, this.perception.variance, this.fusion, this.visionScratch), this.mode === "belief"&&!this.options.sensorOnly&&this.fusion.fade>0 ? privilegedCue(episode.truth(), this.fusion, this.feelingScratch) : null];
       if (memory && lap) {
         fuseCues(cues, this.provisional);
         memory.observe({ gate: lap.gate, sinceGate: this.sinceGate, heading: lap.heading, x: lap.x, y: lap.y, speed: lap.speed }, this.options.learnMemory !== false);
         const remembered = memory.cue(this.memoryScratch);
         cues.push(remembered); this.memoryCue = remembered ? this.memoryScratch : null;
+      }
+      if(this.options.roomMemory&&this.domain.id==='world'){
+        const camera=perceiver.model.spec;
+        const image=this.ensemble?.frames[0]??pixels;
+        const recall=this.options.roomMemory.observe(visualFeatures(image,camera.width,camera.height),this.perception.mean,this.options.learnMemory!==false);
+        if(recall){this.memoryScratch.mean.set(recall);for(let i=0;i<n;i++)this.memoryScratch.variance[i]=Math.max(.04,this.perception.variance[i]*2);cues.push(this.memoryScratch);this.memoryCue=this.memoryScratch;}
       }
       fuseCues(cues, this.fused);
     } else if (!perceiver) {
@@ -121,7 +134,7 @@ export class VisionDriver {
       for (let c = 0; c < n; c += 1) { this.fused.mean[c] = truth[c]; this.fused.variance[c] = 1e-3; }
     }
     const sonar = this.options.sonarOff ? null : episode.sonar();
-    assembleInputs(this.domain, this.fused.mean, this.options.sensorOnly?[0,0]:episode.mission(), body, sonar, controller.inputCount, this.sensors);
+    assembleInputs(this.domain, this.fused.mean, this.options.sensorOnly&&!this.options.missionCue?[0,0]:episode.mission(), body, sonar, controller.inputCount, this.sensors);
     let action: Action;
     if (this.mode === "vision-action" && this.perception) {
       const [steer, drive, reverse] = this.perception.action;

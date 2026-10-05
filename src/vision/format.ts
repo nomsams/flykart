@@ -1,3 +1,5 @@
+import { ArenaFile, validateArena } from './world/arena';
+import { RoomMemory, RoomMemorySnapshot } from '../robot/memory';
 // Files FlyKart Vision reads and writes.
 //
 //   flykart-brain          the original FlyKart checkpoint: a 17 -> 48 -> 4 spiking controller.
@@ -25,6 +27,9 @@ export type ControllerCheckpoint = {
   trainingRecipe?: TrainingRecipe;
 };
 
+export type RoomTrainingSettings={version:1;task:"forage"|"reverse";crashWeight:number;maxTicks:number;memoryEnabled:boolean;reverseCoach:boolean};
+export function validateRoomTraining(raw:unknown):RoomTrainingSettings{const s=raw as RoomTrainingSettings;if(!s||s.version!==1||!["forage","reverse"].includes(s.task)||!Number.isFinite(s.crashWeight)||s.crashWeight<0||s.crashWeight>1||!Number.isInteger(s.maxTicks)||s.maxTicks<300||s.maxTicks>3000||typeof s.memoryEnabled!=="boolean"||typeof s.reverseCoach!=="boolean")throw Error("Invalid room training settings.");return {...s};}
+
 export type FusionSettings = { fade: number; mode: DriverMode; visionTemperature: number };
 
 export type VisionBrainFile = {
@@ -35,6 +40,9 @@ export type VisionBrainFile = {
   vision: VisionModel | null;
   fusion: FusionSettings;
   memory: MemorySnapshot | null;
+  worldMemory?:RoomMemorySnapshot|null;
+  worldArena?:ArenaFile|null;
+  worldTraining?:RoomTrainingSettings;
   world: { controller: ControllerCheckpoint; vision: VisionModel | null } | null;
   notes?: string;
   experiment?: RacingSettings;
@@ -52,6 +60,9 @@ export type Imported = {
   vision?: VisionModel | null;
   fusion?: FusionSettings;
   memory?: MemorySnapshot | null;
+  worldMemory?:RoomMemorySnapshot|null;
+  worldArena?:ArenaFile|null;
+  worldTraining?:RoomTrainingSettings;
   world?: { controller: { snapshot: BrainSnapshot; meta: BrainMeta }; vision: VisionModel | null;trainingRecipe?:TrainingRecipe } | null;
   experiment?: RacingSettings;
   warnings: string[];
@@ -78,6 +89,7 @@ export function importFile(text: string): Imported {
     if(file.world?.controller?.domain!==undefined&&file.world.controller.domain!=='world')throw new Error('Invalid secondary world controller domain.');
     if(file.world?.vision)validateVisionModel(file.world.vision,'world');
     if(file.memory)MushroomBody.fromJSON(file.memory);
+    if(file.worldMemory)RoomMemory.fromJSON(file.worldMemory);
     if(file.fusion&&(!['belief','action-average','vision-action'].includes(file.fusion.mode)||!Number.isFinite(file.fusion.fade)||file.fusion.fade<0||!Number.isFinite(file.fusion.visionTemperature)||file.fusion.visionTemperature<=0))throw new Error('Invalid vision fusion settings.');
     const warnings: string[] = [];
     if (!file.vision) warnings.push("This file has a controller but no eyes; the bundled camera network will be used.");
@@ -85,7 +97,7 @@ export function importFile(text: string): Imported {
       kind: "vision-brain", name: file.name ?? "vision brain", profile: file.profile === "robot" ? "robot" : "kart",
       trainingRecipe: file.controller.trainingRecipe === undefined ? undefined : validateRecipe(file.controller.trainingRecipe),
       controller: { snapshot: controller.snapshot, meta: controller.meta, domain: file.controller.domain ?? "track" },
-      vision: file.vision ?? null, fusion: file.fusion, memory: file.memory ?? null,
+      vision: file.vision ?? null, fusion: file.fusion, memory: file.memory ?? null,worldMemory:file.worldMemory??null,worldArena:file.worldArena?validateArena(file.worldArena):null,worldTraining:file.worldTraining?validateRoomTraining(file.worldTraining):undefined,
       experiment: file.experiment === undefined ? undefined : validateRacingSettings(file.experiment),
       world: file.world ? { controller: parseBrainFile(JSON.stringify(file.world.controller), { allowSonar: true }), vision: file.world.vision,trainingRecipe:file.world.controller.trainingRecipe===undefined?undefined:validateRecipe(file.world.controller.trainingRecipe) } : null,
       warnings,

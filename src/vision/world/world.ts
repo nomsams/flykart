@@ -104,18 +104,21 @@ export class WorldSim {
   private readonly random: Random;
   private cooldown = 0;
   readonly maxTicks: number;
+  readonly goalLimit: number;
   surface: Surface = "grass";
 
-  constructor(seed: number, options: { density?: number; maxTicks?: number } = {}) {
-    this.world = generateWorld(seed, options.density ?? 0.6);
+  constructor(seed: number, options: { density?: number; maxTicks?: number; world?:WorldDef; start?:{x:number;y:number;heading:number}; goal?:{x:number;y:number}; goalLimit?:number } = {}) {
+    this.world = options.world ? structuredClone(options.world) : generateWorld(seed, options.density ?? 0.6);
+    this.goalLimit=options.goalLimit??Infinity;
     this.random = mulberry32(seed * 977 + 5);
     this.maxTicks = options.maxTicks ?? 2400;
     this.kart.heading = (this.random() * 2 - 1) * Math.PI;
     this.status = { goals: 0, collisions: 0, crashed: false, ticks: 0, score: 0, distanceToGoal: 0, goalX: 0, goalY: 0, timedOut: false };
-    this.nextGoal();
+    if(options.start)Object.assign(this.kart,options.start);
+    if(options.goal){this.status.goalX=options.goal.x;this.status.goalY=options.goal.y;this.status.distanceToGoal=Math.hypot(options.goal.x-this.kart.x,options.goal.y-this.kart.y);}else this.nextGoal();
   }
 
-  get done(): boolean { return this.status.crashed || this.status.timedOut; }
+  get done(): boolean { return this.status.crashed || this.status.timedOut || this.status.goals>=this.goalLimit; }
 
   private nextGoal(): void {
     const { world, kart } = this;
@@ -159,7 +162,7 @@ export class WorldSim {
     let hit = false;
     for (const o of world.obstacles) {
       const dx = kart.x - o.x, dy = kart.y - o.y; const d = Math.hypot(dx, dy), reach = o.radius + KART_RADIUS;
-      if (d < reach) { const push = (reach - d + 0.5) / Math.max(d, 1e-6); kart.x += dx * push; kart.y += dy * push; hit = true; }
+      if (d < reach) { const nx=d>1e-6?dx/d:Math.cos(kart.heading+Math.PI),ny=d>1e-6?dy/d:Math.sin(kart.heading+Math.PI); kart.x += nx*(reach-d+.5); kart.y += ny*(reach-d+.5); hit = true; }
     }
     const limit = world.half - KART_RADIUS;
     if (Math.abs(kart.x) > limit) { kart.x = Math.sign(kart.x) * limit; hit = true; }
@@ -172,7 +175,7 @@ export class WorldSim {
     if (surfaceAt(world, kart.x, kart.y) === "water") { status.crashed = true; status.crashReason = "drove into a pond"; status.score -= 60; kart.speed = 0; }
     const distance = Math.hypot(status.goalX - kart.x, status.goalY - kart.y);
     status.distanceToGoal = distance; status.score += (before - distance) * 0.05 - 0.002;
-    if (distance < GOAL_RADIUS) { status.goals += 1; status.score += 100; this.nextGoal(); }
+    if (distance < GOAL_RADIUS) { status.goals += 1; status.score += 100; if(status.goals<this.goalLimit)this.nextGoal(); }
     kart.action = { steer: action.steer, throttle: action.throttle, brake: action.brake, reverse: action.reverse ?? 0 };
     if (status.ticks >= this.maxTicks) status.timedOut = true;
   }

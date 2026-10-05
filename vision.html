@@ -81,7 +81,7 @@
             </section>
             <section class="panel" id="sonar-panel" aria-labelledby="sonar-title" hidden>
               <div class="panel-title"><div><span class="kicker">SONAR · HC-SR04</span><strong id="sonar-title">What the ping hears</strong></div><span id="sonar-status" class="muted">—</span></div>
-              <canvas id="sonar-canvas" width="760" height="170" aria-label="Recent distance readings of the ultrasonic sensor"></canvas>
+              <canvas id="track-sonar-map" width="480" height="260" aria-label="Sonar echo history map"></canvas><p class="note">Echo arcs have uncertain direction; no echo means unknown. Diagnostic uses simulator pose; excluded from neural inputs. Nominal full beam 15°; soft sensitivity tails can detect outside it.</p><canvas id="sonar-canvas" width="760" height="170" aria-label="Recent distance readings of the ultrasonic sensor"></canvas>
               <p class="note">One ping about every 66 ms, a beam roughly 15° wide that returns the nearest echo. It sees cones, barriers, other karts, trees and rocks, but not paint, kerbs, oil or ponds (flat things the sound skims over), and a thin or slanted target can fade away. The two numbers the controller gets are how close the echo is and how strong it was.</p>
             </section>
             <section class="panel" aria-labelledby="memory-title">
@@ -134,7 +134,7 @@
             <section class="panel-section">
               <div class="section-title"><h2>Lap memory</h2></div>
               <label class="check-row"><input id="memory-on" type="checkbox" /> <span>Kenyon cells <small>learn the path of a lap and recall it on the next</small></span></label>
-              <div class="button-row"><button id="memory-forget" class="quiet">Forget</button></div>
+              <label>Kenyon cells <input id="memory-count" type="number" min="64" max="64000" step="64" value="4000"></label><small>Changing capacity starts a fresh lap memory; controller size stays the same. Pose-indexed lap memory is excluded from camera-only evolution.</small><div class="button-row"><button id="memory-forget" class="quiet">Forget</button></div>
             </section>
             <section class="panel-section">
               <div class="section-title"><h2>Track</h2></div>

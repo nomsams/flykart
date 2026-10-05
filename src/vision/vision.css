@@ -101,3 +101,6 @@ label > .control-help { flex-basis:100%; }
 .check-row > .control-help { grid-column:1/-1; }
 #camera-experiment label:has(textarea) { flex-wrap:wrap; gap:6px; }
 #camera-experiment label textarea { flex-basis:100%; }
+
+#world-training-tools details{padding:10px;margin-top:12px;border:1px solid #33495b;border-radius:9px;background:#111e2a}#world-training-tools summary{cursor:pointer;color:#b9d9ff;font-size:12px;font-weight:650}#world-sensor-log{width:100%;max-width:100%;resize:vertical;background:#09131e;color:#d5e4f7;border:1px solid #3c4d65;border-radius:6px;font:11px/1.5 monospace;margin-top:10px}#world-training-tools small{display:block;font-size:11px;color:#9dafbd;line-height:1.5;margin:7px 0}#world-training-tools .toolbar{flex-wrap:wrap}
+@media(min-width:1041px){#tab-world .game-card{position:sticky;top:12px;align-self:start;max-height:calc(100vh - 24px);overflow:auto}}

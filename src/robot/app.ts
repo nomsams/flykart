@@ -1,3 +1,4 @@
+import { mountHabitatPicker } from './map-picker';
 import { mountBrainShelf } from '../browser-brain';
 import { TrainingRecipe, roomRewards } from '../training-recipe';
 import { attachJsonImport } from '../json-import';
@@ -170,8 +171,9 @@ const pinoutDiagram = new WiringDiagram(el("pinout-diagram")), hardwareDiagram =
 el("preset").innerHTML = ROOM_TYPES.map(r => `<option value="${r.id}">${r.label}</option>`).join("");
 el("object-kind").innerHTML = OBJECT_TYPES.map(o => `<option value="${o.kind}">${o.label}</option>`).join("");
 const roomTools = document.createElement("div"); roomTools.className = "habitat-tools";
-roomTools.innerHTML = '<label class="floor-control">Floor colour <input id="floor-colour" type="color" value="#b7bea7" aria-label="Floor colour"></label><label class="check"><input id="collision-visible" type="checkbox"> Show contact shapes</label><small>Amber: blocking geometry at chassis height · blue: drive-over surfaces · green: chassis. Overhead furniture is clear if it fits.</small>';
+roomTools.innerHTML = '<label class="floor-control">Floor colour <input id="floor-colour" type="color" value="#b7bea7" aria-label="Floor colour"></label><label class="check"><input id="driving-trail-visible" type="checkbox" checked> Crayon driving history</label><button id="driving-trail-clear">Clear history</button><label class="check"><input id="collision-visible" type="checkbox"> Show contact shapes</label><small>Amber: blocking geometry at chassis height · blue: drive-over surfaces · green: chassis. Overhead furniture is clear if it fits.</small>';
 document.querySelector(".object-tools")!.after(roomTools);
+mountHabitatPicker(el<HTMLSelectElement>("preset"),preset);
 const contactNote = document.createElement("p"); contactNote.id = "contact-note"; contactNote.className = "contact-note"; roomTools.after(contactNote);
 const roomCheck = document.createElement("button"); roomCheck.id = "bench-current"; roomCheck.textContent = "Run check in this habitat"; el("bench-check").before(roomCheck);
 const survey = document.createElement("button"); survey.id = "survey-room"; survey.textContent = "Explore with sonar"; survey.className = "quiet"; el("bench-check").after(survey);
@@ -250,7 +252,7 @@ function entityPose(id:string):{x:number;z:number;yaw:number}|null {
   if(id==="@robot")return {...physics.pose,yaw:physics.pose.heading};
   return objects.find(o=>o.id===id)??mission.goals.find(o=>o.id===id)??null;
 }
-function setEntityPose(id:string,p:{x:number;z:number;yaw:number}):void {
+function setEntityPose(id:string,p:{x:number;z:number;yaw:number}):void { if(id==="@robot")scene.breakDrivingTrail();
   if(id==="@robot"){const next=validatePose({x:p.x,z:p.z,heading:p.yaw}),error=placementError(next,physics.config,objects);if(error)throw new Error(error);physics.pose=next;physics.odometry={...next};estimator=new StateEstimator(next,calibration);startPose={...next};physics.blocked=false;physics.contact=null;scene.updateRobot(next,physics.config,check("beam-visible"),0,0,0);}
   else {const o=objects.find(o=>o.id===id),g=mission.goals.find(o=>o.id===id);if(o){const next={...o,...p};validateObjects([next]);Object.assign(o,p);scene.rebuildObjects(objects);}else if(g){validateMission({...mission,goals:mission.goals.map(goal=>goal.id===id?{...goal,...p}:goal)});Object.assign(g,p);scene.rebuildMission(mission,objectiveRun.collected);}}
   scene.select(id);captureTime=-Infinity;
@@ -406,7 +408,7 @@ function hardwareChanged(): void { vibration=new VibrationSensor(noiseConfig.see
 
 function log(kind: EventKind, text: string, data?: unknown): void { if (check("log-enabled")) consoleLog.push(simTime, kind, text, data); }
 function setRunning(next: boolean, reason = "operator"): void { if (running !== next) log("system", next ? "Simulation running" : `Simulation paused: ${reason}`); running = next; pauseReason = reason; el("run").textContent = running ? "Ⅱ Pause simulation" : "▶ Run simulation"; }
-function resetRobot(): void { sensorTiming.reset();vibration=new VibrationSensor(noiseConfig.seed); setRunning(false);targetTracker=new TargetTracker();taskSeen={...EMPTY_TARGET};cameraDelay=new CameraDelay(cameraDelay.seconds);liveRecorder=new EpisodeRecorder();liveEpisode++; physics.reset();physics.pose={...startPose};physics.odometry={...startPose};estimator=new StateEstimator(startPose,calibration);places.reset();resetObjectives();swarm?.reset(); sonar = new RobotSonar(); noise = new NoiseSource(noiseConfig); driveCheck = new DrivetrainCheck(); phaseIndex = -1; controller?.reset(); perceiver?.reset(); action = { steer: 0, throttle: 0, brake: 0 }; requests = motorRequests(action, adapterConfig); estimates.fill(0); sensors.fill(0); simTime = 0; cameraFrame = 0; neuralLogTime = -Infinity; captureTime = -Infinity; actualPWM = [0, 0]; firmware = new Firmware(firmware.source); keys.clear(); log("system", "Robot and program clock reset; room memory retained"); }
+function resetRobot(): void { scene.clearDrivingTrail(); sensorTiming.reset();vibration=new VibrationSensor(noiseConfig.seed); setRunning(false);targetTracker=new TargetTracker();taskSeen={...EMPTY_TARGET};cameraDelay=new CameraDelay(cameraDelay.seconds);liveRecorder=new EpisodeRecorder();liveEpisode++; physics.reset();physics.pose={...startPose};physics.odometry={...startPose};estimator=new StateEstimator(startPose,calibration);places.reset();resetObjectives();swarm?.reset(); sonar = new RobotSonar(); noise = new NoiseSource(noiseConfig); driveCheck = new DrivetrainCheck(); phaseIndex = -1; controller?.reset(); perceiver?.reset(); action = { steer: 0, throttle: 0, brake: 0 }; requests = motorRequests(action, adapterConfig); estimates.fill(0); sensors.fill(0); simTime = 0; cameraFrame = 0; neuralLogTime = -Infinity; captureTime = -Infinity; actualPWM = [0, 0]; firmware = new Firmware(firmware.source); keys.clear(); log("system", "Robot and program clock reset; room memory retained"); }
 function applyCode(source: string): void {
   if (hardwarePanel?.busy) { codeMessage("Disconnect hardware before changing controller code.", true); return; }
   if (training) endTraining("Sketch changed; training stopped.");
@@ -460,6 +462,7 @@ function installBrain(text: string): void {
   const nextPerceiver = validateEyes(model, nextDomain);
   const nextController = SpikingNetwork.fromJSON(snapshot);
   const raw=JSON.parse(text),extension=raw.robotLearning,learned=extension?parseLearning(extension):null;
+  const portableMemory=imported.worldMemory&&nextDomain==="world"?RoomMemory.fromJSON(imported.worldMemory):null;
   const importedMission=raw.robotMission?validateMission(raw.robotMission):null;
   if(importedMission?.goals.some(goal=>objects.some(object=>object.id===goal.id)))throw new Error("Mission goal ID conflicts with a scene object. Rename the goal or object before importing.");
   if (training) endTraining("Brain replaced; training stopped.");
@@ -468,8 +471,8 @@ function installBrain(text: string): void {
   if(importedMission)mission=importedMission;
   else if(raceRecipe&&!learned){const rewards=roomRewards(raceRecipe);mission={...mission,settings:{...mission.settings,...rewards}};taskSettings={...taskSettings,sugar:rewards.sugar,pain:rewards.pain};taskPanel?.sync();}
   controller = nextController; perceiver = nextPerceiver; brainDomain = nextDomain; brainName = imported.name;const meta=imported.controller.meta;brainFitness=meta.fitness??0;brainGeneration=meta.generation??0;estimates = new Float32Array(perceiver.estimateCount); sensors = new Array(controller.inputCount).fill(0);
-  captureTime = -Infinity; clearMemory();if(learned){memorySettings=learned.memorySettings;visionSettings=learned.visionSettings;memory=learned.memory;sugarPolicy=learned.policy;calibration=learned.calibration;compensationEnabled=learned.compensationEnabled;places=learned.places;estimator=new StateEstimator(physics.pose,calibration);el<HTMLInputElement>("sugar-learn").checked=learned.learn;if(learned.lifecycle)loadJourney(learned.lifecycle);fillLearning();}rebuildSwarm(); setText("brain-name", brainName); setText("adapter", `${brainDomain.toUpperCase()} INPUTS`);
-  setText("brain-note", brainDomain === "track" ? "Track input meanings retained. A racing brain may not navigate a room; room recall is off." : "Eyes trained in the old renderer; transfer to 3D is experimental.");
+  captureTime = -Infinity; clearMemory();if(learned){memorySettings=learned.memorySettings;visionSettings=learned.visionSettings;memory=learned.memory;sugarPolicy=learned.policy;calibration=learned.calibration;compensationEnabled=learned.compensationEnabled;places=learned.places;estimator=new StateEstimator(physics.pose,calibration);el<HTMLInputElement>("sugar-learn").checked=learned.learn;if(learned.lifecycle)loadJourney(learned.lifecycle);fillLearning();}else if(portableMemory){memory=portableMemory;memorySettings={...memory.settings};sugarPolicy=new SugarPolicy(memory.count);}rebuildSwarm(); setText("brain-name", brainName); setText("adapter", `${brainDomain.toUpperCase()} INPUTS`);
+  setText("brain-note", brainDomain === "track" ? "Track input meanings retained. A racing brain may not navigate a room; room recall is off." : imported.worldTraining ? "Room practice used a simulated goal compass. Use Tasks to train observed targets here; a real robot needs a physical goal source. Camera transfer remains experimental." : "Eyes trained in the old renderer; transfer to 3D is experimental.");
   resetObjectives();fillLearning();updateRecipeNote();
   message(`Imported ${brainName}. ${imported.warnings.join(" ")}`);if(!loadingBundled)saveLocal();
 }
@@ -567,6 +570,7 @@ function tick(): void {
     if (surface && surface !== surfaceEvent) log("system", physics.surface!.kind === "cable" ? "Crossing loose cable · snag caution · traction approximation −25%" : "Crossing doormat · traction approximation −15%", physics.surface); surfaceEvent = surface;
   } catch (error) { actualPWM = [0, 0]; physics.left = physics.right = 0; setRunning(false, "sketch error"); codeMessage(error instanceof Error ? error.message : String(error), true); message("Controller code stopped. Fix the sketch and apply it again.", true); }
   if (simTime - neuralLogTime >= .2) { neuralLogTime = simTime; log("brain", `steer ${action.steer.toFixed(2)} · drive ${action.throttle.toFixed(2)} · reverse ${(action.reverse ?? 0).toFixed(2)} · brake ${action.brake.toFixed(2)} | request ${demands.map(Math.round).join(" / ")} → PWM ${actualPWM.map(n => Math.round(n * 255)).join(" / ")}`, { mode, action: { ...action }, inputs: [...sensors], ...(taskActive()?{taskInput:[...taskInputs],taskSource:mode==="coach"?"coach":"neural"}:{}), estimates: [...estimates], legs: requests.legs, requests: demands, pwm: actualPWM.map(n => n * 255) }); }
+  scene.recordDrivingTrail(physics.pose);
   scene.updateRobot(physics.pose, physics.config, check("beam-visible"), physics.left, physics.right, dt);
   const dock=taskActive()&&taskSettings.mode==='forage'?objects.find(o=>o.id==='task-blue-ball'):undefined;
   let dockContact=false;
@@ -690,6 +694,8 @@ function wireEvents(): void {
   let floorEditing=false;
   el("floor-colour").addEventListener("input", () => {if(!floorEditing){editWorld();floorEditing=true;} if(training)endTraining("Floor changed; training stopped.");floorColour = validateFloor(value("floor-colour")); updateFloor(); captureTime = -Infinity; });
   el("floor-colour").addEventListener("change",()=>{floorEditing=false;saveLocal();});
+  el("driving-trail-visible").addEventListener("change",()=>scene.showDrivingTrail(check("driving-trail-visible")));
+  button("driving-trail-clear",()=>scene.clearDrivingTrail());
   el("collision-visible").addEventListener("change", () => scene.showContacts(check("collision-visible")));
   button("add-object", () => { if (objects.length >= 200) { message("The habitat limit is 200 objects.", true); return; } editWorld(); const o = makeObject(value("object-kind") as ObjectKind, clamp(physics.pose.x + Math.cos(physics.pose.heading) * .75, -3, 3), clamp(physics.pose.z + Math.sin(physics.pose.heading) * .75, -3, 3)); objects.push(o); selected = o.id; worldChanged(); selectObject(o.id); });
   button("add-room", () => { if (objects.length > 196) { message("Four free object slots are needed for a room.", true); return; } editWorld(); const x = .5, z = .5; objects.push(...[{ x, z: z - .8, width: 1.6 }, { x: x - .8, z, width: 1.6, yaw: Math.PI / 2 }, { x: x + .8, z, width: 1.6, yaw: Math.PI / 2 }, { x: x + .45, z: z + .8, width: .7 }].map(p => ({ ...makeObject("wall"), ...p, height: .8 }))); worldChanged(); message("Added a 1.6 m room with a doorway. Select its walls to adjust dimensions."); });
@@ -730,6 +736,8 @@ function wireEvents(): void {
   button("forget", () => { if(training)endTraining("Memory cleared; training stopped.");clearMemory(); message("Forgot the room's learned visual cells and sonar map."); });
   el("memory-enabled").addEventListener("change", () => { hardwarePanel.stop();if(training)endTraining("Memory setting changed; training stopped.");if (!check("memory-enabled")) memory.recalled = false; });
   button("export-brain", () => { if (controller) download("robot-flykart-brain.json", JSON.stringify(controllerCheckpoint(controller, {trainingRecipe:raceRecipe, domain: brainDomain, fitness: brainFitness, generation: brainGeneration }), null, 2)); });
+  const racerButton=document.createElement("button");racerButton.id="load-racer-checkpoint";racerButton.textContent="Your trained racer · generation 3";el("restore-brain").after(racerButton);
+  button("load-racer-checkpoint",()=>{if(hardwarePanel.busy||training||researchPanel?.active||taskPanel?.active||calibrationPanel?.active)return;void fetch(`${import.meta.env.BASE_URL}checkpoints/flykart-brain-racer.json`).then(r=>{if(!r.ok)throw Error("Checkpoint download failed");return r.text();}).then(text=>{setRunning(false);installBrain(text);message("Your racer checkpoint loaded. Use Tasks → Adapt racer to room before room training.");}).catch(e=>message(String(e),true));});
   button("restore-brain", () => { setRunning(false); void loadBundled().then(()=>saveLocal()).catch(error => message(String(error), true)); });
   button("save-lab", () => safe(() => download("robot-habitat.json", JSON.stringify(labData(), null, 2))));
   const file = (id: string, callback: (text: string) => void|Promise<void>, max = 64000000) => el<HTMLInputElement>(id).addEventListener("change", async e => { const input = e.target as HTMLInputElement, upload = input.files?.[0]; if (!upload) return; if (upload.size > max) { message("File exceeds the size limit.", true); input.value = ""; return; } try { const opening="Opening " + upload.name + "…"; message(opening); await callback(await upload.text()); if(el("status").textContent===opening)message("Opened " + upload.name + "."); } catch (error) { message(error instanceof Error ? error.message : String(error), true); } input.value = ""; });

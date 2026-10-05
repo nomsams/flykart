@@ -30,6 +30,15 @@ export function drawEye(canvas: HTMLCanvasElement, frame: Float32Array, config: 
 }
 
 /* ------------------------------ top views ------------------------------ */
+export const GHOST_COLORS=['#ffd166','#83d5ff','#caa5ff','#7cf0b6','#ff87a7','#ffb36b'];
+export type MapGhost={x:number;y:number;heading:number;trail?:{x:number;y:number}[];label:string;color:string};
+function drawCrayon(c:CanvasRenderingContext2D,points:{x:number;y:number}[],color:string):void{
+  if(points.length<2)return;c.save();c.lineCap='round';c.lineJoin='round';c.strokeStyle=color;c.globalAlpha=.25;c.lineWidth=6;c.beginPath();points.forEach((p,i)=>i?c.lineTo(p.x,p.y):c.moveTo(p.x,p.y));c.stroke();c.globalAlpha=.65;c.lineWidth=1.5;c.stroke();c.restore();
+}
+function drawGhosts(c:CanvasRenderingContext2D,ghosts:MapGhost[]):void{
+  ghosts.forEach(g=>{if(g.trail)drawCrayon(c,g.trail,g.color);c.save();c.globalAlpha=.8;carShapes(c,g,24,14,g.color,'#ffffff');c.fillStyle=g.color;c.font='bold 13px system-ui';c.fillText(g.label,g.x+14,g.y-10);c.restore();});
+}
+
 
 /** What the top views need to show of the sonar: where it points, how far it heard, and whether it is switched on. */
 export type SonarView = { x: number; y: number; heading: number; rangePx: number; echo: boolean; on: boolean; beamDeg?:number };
@@ -41,7 +50,7 @@ function drawSonarBeam(context: CanvasRenderingContext2D, sonar: SonarView, reac
   grad.addColorStop(0, sonar.on ? "rgba(255,176,64,.42)" : "rgba(160,160,160,.16)"); grad.addColorStop(1, "rgba(255,176,64,0)");
   context.fillStyle = grad; context.beginPath(); context.moveTo(sonar.x, sonar.y); context.arc(sonar.x, sonar.y, reach, sonar.heading - half, sonar.heading + half); context.closePath(); context.fill();
   if (sonar.on && sonar.echo) {
-    context.strokeStyle = "#ffb040"; context.lineWidth = 2.4; context.beginPath(); context.arc(sonar.x, sonar.y, Math.max(3, sonar.rangePx), sonar.heading - half * 1.6, sonar.heading + half * 1.6); context.stroke();
+    context.strokeStyle = "#ffb040"; context.lineWidth = 2.4; context.beginPath(); context.arc(sonar.x, sonar.y, Math.max(3, sonar.rangePx), sonar.heading - half, sonar.heading + half); context.stroke();
   }
 }
 
@@ -53,7 +62,7 @@ const carShapes = (context: CanvasRenderingContext2D, car: { x: number; y: numbe
   context.restore();
 };
 
-export function drawTrackMap(canvas: HTMLCanvasElement, route: TrackDefinition, car: Car, others: Car[], hfov: number, extras: { nextGate?: { x: number; y: number }; label?: string; sonar?: SonarView | null } = {}): void {
+export function drawTrackMap(canvas: HTMLCanvasElement, route: TrackDefinition, car: Car, others: Car[], hfov: number, extras: { nextGate?: { x: number; y: number }; label?: string; sonar?: SonarView | null;checkpointCount?:number;ghosts?:MapGhost[] } = {}): void {
   const context = fit(canvas); const W = Number(canvas.dataset.w), H = Number(canvas.dataset.h);
   context.clearRect(0, 0, W, H); context.fillStyle = "#0b1117"; context.fillRect(0, 0, W, H);
   const scale = Math.min(W / 780, H / 500); context.save(); context.translate(W / 2, H / 2); context.scale(scale, scale);
@@ -62,8 +71,8 @@ export function drawTrackMap(canvas: HTMLCanvasElement, route: TrackDefinition, 
   path(); context.strokeStyle = "#5a6b82"; context.lineWidth = route.width + 5; context.stroke();
   path(); context.strokeStyle = "#313846"; context.lineWidth = route.width - 1; context.stroke();
   path(); context.strokeStyle = "rgba(235,238,245,.28)"; context.lineWidth = 1.5; context.setLineDash([9, 11]); context.stroke(); context.setLineDash([]);
-  for (let i = 0; i < 8; i += 1) {
-    const gate = trackCheckpoint(i, route, 8); const half = route.width / 2;
+  for (let i = 0; i < (extras.checkpointCount??8); i += 1) {
+    const gate = trackCheckpoint(i, route, extras.checkpointCount??8); const half = route.width / 2;
     context.strokeStyle = i === 0 ? "#f2f6fc" : "rgba(243,201,107,.7)"; context.lineWidth = i === 0 ? 4 : 2.2; context.setLineDash(i === 0 ? [5, 5] : []);
     context.beginPath(); context.moveTo(gate.point.x - gate.normal.x * half, gate.point.y - gate.normal.y * half); context.lineTo(gate.point.x + gate.normal.x * half, gate.point.y + gate.normal.y * half); context.stroke(); context.setLineDash([]);
   }
@@ -83,11 +92,12 @@ export function drawTrackMap(canvas: HTMLCanvasElement, route: TrackDefinition, 
   if (extras.nextGate) { context.strokeStyle = "rgba(243,201,107,.55)"; context.setLineDash([3, 5]); context.lineWidth = 1.2; context.beginPath(); context.moveTo(car.position.x, car.position.y); context.lineTo(extras.nextGate.x, extras.nextGate.y); context.stroke(); context.setLineDash([]); }
   if (car.trail.length > 1) { context.strokeStyle = "rgba(255,209,102,.4)"; context.lineWidth = 2; context.beginPath(); car.trail.forEach((p, i) => (i === 0 ? context.moveTo(p.x, p.y) : context.lineTo(p.x, p.y))); context.stroke(); }
   carShapes(context, { x: car.position.x, y: car.position.y, heading: car.heading }, 24, 14, "#ffd166", "#fff6d6");
+  drawGhosts(context,extras.ghosts??[]);
   context.restore();
   if (extras.label) { context.fillStyle = COLORS.text; context.font = "600 12px system-ui, sans-serif"; context.fillText(extras.label, 14, H - 14); }
 }
 
-export function drawWorldMap(canvas: HTMLCanvasElement, world: WorldDef, kart: WorldKart, goal: { x: number; y: number }, scan: { truth: ArrayLike<number>; seen: ArrayLike<number> | null; sigma: ArrayLike<number> | null }, label: string, sonar: SonarView | null = null): void {
+export function drawWorldMap(canvas: HTMLCanvasElement, world: WorldDef, kart: WorldKart, goal: { x: number; y: number }, scan: { truth: ArrayLike<number>; seen: ArrayLike<number> | null; sigma: ArrayLike<number> | null }, label: string, sonar: SonarView | null = null,extras:{trail?:{x:number;y:number}[];ghosts?:MapGhost[]}={}): void {
   const context = fit(canvas); const W = Number(canvas.dataset.w), H = Number(canvas.dataset.h);
   context.clearRect(0, 0, W, H); context.fillStyle = "#0b1117"; context.fillRect(0, 0, W, H);
   const scale = Math.min(W, H) / (world.half * 2 + 36); context.save(); context.translate(W / 2, H / 2); context.scale(scale, scale);
@@ -111,8 +121,10 @@ export function drawWorldMap(canvas: HTMLCanvasElement, world: WorldDef, kart: W
     draw(scan.truth[k], "rgba(242,246,252,.55)", 2);
     if (scan.seen) draw(scan.seen[k], COLORS.camera, 3);
   }
+  if(extras.trail)drawCrayon(context,extras.trail,"#ffc475");
   if (sonar) drawSonarBeam(context, sonar);
   carShapes(context, { x: kart.x, y: kart.y, heading: kart.heading }, 24, 14, "#ffd166", "#fff6d6");
+  drawGhosts(context,extras.ghosts??[]);
   context.restore();
   context.fillStyle = COLORS.text; context.font = "600 12px system-ui, sans-serif"; context.fillText(label, 14, H - 14);
 }

@@ -1,3 +1,7 @@
+import { RoomMemory, MemorySettings } from '../../robot/memory';
+import { WorldDef } from '../world/world';
+import { reverseGoal } from '../world/arena';
+import { SonarHistory } from '../sonar-history';
 // A running drive: the simulation, the driver and the little bits of history the dashboards plot.
 import { Action, BrainSnapshot, SpikingNetwork, TRACKS, TrackDefinition, RewardConfig, RoadObjectKind } from "../../core";
 import { trackDomain, worldDomain } from "../domains";
@@ -37,6 +41,7 @@ export class TrackSession {
   readonly perceiver: Perceiver | null;
   readonly trace: TraceSample[] = [];
   readonly sonarTrace: SonarSample[] = [];
+  readonly sonarMap=new SonarHistory();
   lastTruth: number[] = new Array(13).fill(0);
   private sonarCount = 0;
   private cameraErrorSum = 0; private usedErrorSum = 0; private errorCount = 0;
@@ -73,7 +78,7 @@ export class TrackSession {
     this.episode.step(frame.action);
     if(this.episode.car.laps>previousLaps&&!this.episode.done)this.settings.memory?.beginLap();
     const reading = this.episode.sonar();
-    if (reading && this.episode.sonarUnit!.count !== this.sonarCount) { this.sonarCount=this.episode.sonarUnit!.count; this.sonarTrace.push({ cm: reading.range * CM_PER_PIXEL, echo: reading.echo, strength: reading.strength }); if (this.sonarTrace.length > 240) this.sonarTrace.shift(); }
+    if (reading && this.episode.sonarUnit!.count !== this.sonarCount) { this.sonarCount=this.episode.sonarUnit!.count; this.sonarMap.record(this.episode.sonarUnit!,{x:this.episode.car.position.x,y:this.episode.car.position.y,heading:this.episode.car.heading}); this.sonarTrace.push({ cm: reading.range * CM_PER_PIXEL, echo: reading.echo, strength: reading.strength }); if (this.sonarTrace.length > 240) this.sonarTrace.shift(); }
   }
 
   lap(lapNumber: number): LapRecord {
@@ -87,22 +92,36 @@ export class TrackSession {
 }
 
 export type WorldDriverKind = "vision" | "both" | "feeling" | "expert" | "blind";
-export type WorldSettings = { seed: number; density: number; style: number; kind: WorldDriverKind; fade: number; controller: BrainSnapshot; vision: VisionModel | null; profile?: SensorProfile; sonarOn?: boolean; visual?:RacingSettings["visual"]; resolution?:RacingSettings["resolution"] };
+export type WorldSettings = { seed: number; density: number; style: number; kind: WorldDriverKind; fade: number; controller: BrainSnapshot; vision: VisionModel | null; profile?: SensorProfile; sonarOn?: boolean; visual?:RacingSettings["visual"]; resolution?:RacingSettings["resolution"]; cameraNoise?:number;cameraBrightness?:number;maxTicks?:number; task?:"forage"|"reverse"; world?:WorldDef; start?:{x:number;y:number;heading:number}; memorySettings?:MemorySettings; roomMemory?:RoomMemory|null; sensorOnly?:boolean };
 
 export class WorldSession {
   readonly episode: WorldEpisode;
   readonly controller: SpikingNetwork;
   readonly driver: VisionDriver | null;
   lastTruth: number[] = new Array(SECTORS + 1).fill(0);
+  readonly trail:{x:number;y:number}[]=[];
+  readonly sonarMap=new SonarHistory();
+  readonly memory:RoomMemory|null;
+  readonly initialPose:{x:number;y:number;heading:number};
+  reverseDistance=0;
   lastAction: Action = { steer: 0, throttle: 0, brake: 0, reverse: 0 };
 
   constructor(readonly settings: WorldSettings) {
     this.controller = SpikingNetwork.fromJSON(settings.controller);
-    this.episode = new WorldEpisode({ seed: settings.seed, density: settings.density, styleStrength: settings.style, camera: WORLD_CAMERA, maxTicks: 4200, profile: settings.profile });
+    this.episode = new WorldEpisode({ seed: settings.seed, density: settings.density, styleStrength: settings.style,cameraNoise:settings.cameraNoise,cameraBrightness:settings.cameraBrightness, camera: WORLD_CAMERA, maxTicks: settings.maxTicks??4200, world:settings.world,start:settings.start, profile: settings.profile });
+    this.initialPose={x:this.episode.sim.kart.x,y:this.episode.sim.kart.y,heading:this.episode.sim.kart.heading};
+    if(settings.task==='reverse'||settings.sensorOnly){
+      const goal=settings.task==='reverse'?reverseGoal(this.episode.sim.world,this.episode.sim.kart):{x:this.episode.sim.status.goalX,y:this.episode.sim.status.goalY};
+      // Rebuild a fixed-goal episode so arrival ends the trial rather than moving the flag.
+      this.episode=new WorldEpisode({...this.episode.options,goal,goalLimit:1});
+    }
+    this.memory=settings.roomMemory??(settings.memorySettings?new RoomMemory(settings.memorySettings):null);
+    this.trail.push({x:this.episode.sim.kart.x,y:this.episode.sim.kart.y});
+    this.sonarMap.record(this.episode.sonarUnit,this.episode.sim.kart);
     const needsEyes = settings.kind === "vision" || settings.kind === "both";
     const perceiver = needsEyes && settings.vision ? new Perceiver(settings.vision) : null;
     this.driver = settings.kind === "expert" ? null : new VisionDriver({
-      perceiver, visual:settings.visual, resolution:settings.resolution, controller: this.controller, domain: worldDomain, blind: settings.kind === "blind", mode: "belief", sonarOff: settings.sonarOn === false,
+      sensorOnly:settings.sensorOnly,missionCue:true,roomMemory:this.memory,perceiver, visual:settings.visual, resolution:settings.resolution, controller: this.controller, domain: worldDomain, blind: settings.kind === "blind", mode: "belief", sonarOff: settings.sonarOn === false,
       fusion: { fade: settings.kind === "both" ? settings.fade : 0 },
     });
     this.driver?.reset();
@@ -113,6 +132,7 @@ export class WorldSession {
   get done(): boolean { return this.episode.done; }
 
   step(): void {
+    const before={x:this.episode.sim.kart.x,y:this.episode.sim.kart.y};
     if (this.driver) {
       const frame = this.driver.act(this.episode);
       this.lastAction = frame.action; this.episode.step(frame.action);
@@ -120,5 +140,9 @@ export class WorldSession {
       const sensors = worldDomain.sensors(this.episode.truth(this.lastTruth), this.episode.mission(), this.episode.proprioception());
       this.lastAction = worldExpert(sensors); this.episode.step(this.lastAction);
     }
+    const kart=this.episode.sim.kart,travel=Math.hypot(kart.x-before.x,kart.y-before.y);
+    if(kart.speed<0)this.reverseDistance+=travel;
+    const last=this.trail[this.trail.length-1];if(Math.hypot(kart.x-last.x,kart.y-last.y)>=2){this.trail.push({x:kart.x,y:kart.y});if(this.trail.length>4000)this.trail.shift();}
+    this.sonarMap.record(this.episode.sonarUnit,kart);
   }
 }

@@ -1,3 +1,12 @@
+import { racerToRoom } from '../robot/task-brain';
+import { generateWorld } from './world/world';
+import { RoomMemory } from '../robot/memory';
+import { mountMapPicker } from '../map-picker';
+import { mountRoomPanel } from './room-panel';
+import { ArenaFile, validateArena, reverseGoal } from './world/arena';
+import { WorldTrainingResult, trainWorldController } from './world/training';
+import { drawSonarHistory } from './sonar-history';
+import { GHOST_COLORS } from './ui/draw';
 import { mountBrainShelf } from '../browser-brain';
 import { TrainingRecipe, validateRecipe } from '../training-recipe';
 import { widenBrain } from './inputs';
@@ -22,7 +31,7 @@ import { Assets, loadAssets } from "./ui/assets";
 import { SonarView, drawBrain, drawEstimates, drawEye, drawKenyon, drawSonarTrace, drawTrace, drawTrackMap, drawWorldMap, estimateRows } from "./ui/draw";
 import { renderEvidence } from "./ui/evidence";
 import { HOW_IT_WORKS } from "./ui/how";
-import { LapRecord, TrackSession, TrackSettings, WorldDriverKind, WorldSession } from "./ui/sessions";
+import { LapRecord, TrackSession, TrackSettings, WorldDriverKind, WorldSession, WorldSettings } from "./ui/sessions";
 import { trackDomain, worldDomain } from "./domains";
 import { proceduralTrack } from "./proceduralTracks";
 import { CM_PER_PIXEL, KART_PROFILE, MOUNT, ROBOT, ROBOT_PROFILE, SensorProfile } from "./robot";
@@ -35,10 +44,13 @@ const state = {
   assets: null as Assets | null,
   imported: null as Imported | null,
   sourceRecipe: null as TrainingRecipe | null,
+  dormantObstacleCount:0,
   importedVision: null as VisionModel | null,
-  importedWorld: null as { controller: BrainSnapshot; vision: VisionModel | null; fitness?:number;generation?:number;trainingRecipe?:TrainingRecipe } | null,
+  importedWorld: null as { controller: BrainSnapshot; vision: VisionModel | null; fitness?:number;generation?:number;trainingRecipe?:TrainingRecipe;provenance?:unknown[] } | null,
   robotExtensions: null as {robotLearning?:unknown;robotMission?:unknown} | null,
   memory: new MushroomBody({ seed: 11 }),
+  worldMemory: null as RoomMemory|null,
+  arena: null as ArenaFile|null,
   track: null as TrackSession | null,
   world: null as WorldSession | null,
   running: { track: false, world: false },
@@ -94,8 +106,11 @@ let cameraTraining=false, cancelTraining=false, trainedCamera:CameraTrainingResu
 let trainedExperiment:RacingSettings|null=null;
 let trainedContext:TrackSettings|null=null;
 let trainedParentGeneration=0;
-const sensorLog:string[]=[];let loggedPing=-1;
-function logSensor(line:string):void{sensorLog.push(line);while(sensorLog.length>500)sensorLog.shift();const box=$("sensor-log") as HTMLTextAreaElement;box.value=sensorLog.join("\n");box.scrollTop=box.scrollHeight;}
+let trainedWorld:WorldTrainingResult|null=null,trainedWorldContext:WorldSettings|null=null;
+let trainedWorldExperiment:RacingSettings|null=null,worldParentGeneration=0;
+let trainedWorldRecipe:TrainingRecipe|undefined,trainedWorldProvenance:unknown[]=[];
+const sensorLog:string[]=[];let loggedPing=-1,loggedWorldPing=-1;
+function logSensor(line:string):void{sensorLog.push(line);while(sensorLog.length>500)sensorLog.shift();for(const id of ["sensor-log","world-sensor-log"]){const box=document.getElementById(id) as HTMLTextAreaElement|null;if(box){box.value=sensorLog.join("\n");box.scrollTop=box.scrollHeight;}}}
 const robotAssets = () => state.assets?.robot ?? null;
 const baseProfile = ():SensorProfile => state.profile === "robot" ? ROBOT_PROFILE : KART_PROFILE;
 const sensorProfile = (): SensorProfile => experiment ? calibratedProfile(baseProfile(),experiment.applied()) : baseProfile();
@@ -162,6 +177,7 @@ function buildTrack(options: { keepMemory?: boolean } = {}): void {
   state.running.track=false;$("track-run").textContent="Start";setStatus("track","ready");
   const gates=boundedInput('race-checkpoints',2,64,8),variation=boundedInput('race-variation',0,35,0)/100;
   if(state.memory.config.gates!==gates){state.memory=new MushroomBody({...state.memory.config,gates});options.keepMemory=false;}
+  const capacity=boundedInput("memory-count",64,64000,4000);if(state.memory.kenyonCount!==capacity){state.memory=new MushroomBody({...state.memory.config,kenyonCells:capacity});options.keepMemory=false;}
   const select = $("track-select") as HTMLSelectElement;
   const memoryOn = $<HTMLInputElement>("memory-on").checked;
   if (!options.keepMemory) { state.memory.forget(); state.lapNumber = 0; state.laps = []; renderLapTable(); }
@@ -197,14 +213,14 @@ function finishLap(): void {
 
 function setStatus(which: "track" | "world", text: string): void { $(`${which}-status`).textContent = text; }
 
-function paintTrack(): void {
-  const session = state.track; if (!session) return;
+function paintTrack(preview?:TrackSession,ghosts:TrackSession[]=[]): void {
+  const session = preview??state.track; if (!session) return;
   const episode = session.episode; const car = episode.car; const driver = session.driver;
   const resolution=session.settings.resolution??'native';$('track-camera-size').textContent=`${resolution==='native'?episode.camera.width+'×'+episode.camera.height:resolution.replace('x','×')} colour pixels · 15 Hz simulation clock`;
   const reading = episode.sonar();
   const spec=episode.sonarUnit?.spec;
   const sonarView: SonarView | null = reading ? { x: car.position.x + Math.cos(car.heading) * (spec?.mountForward??MOUNT.forward), y: car.position.y + Math.sin(car.heading) * (spec?.mountForward??MOUNT.forward), heading: car.heading+(spec?.yawDeg??0)*Math.PI/180, beamDeg:(spec?.lobeSigmaDeg??12)*1.25, rangePx: reading.range, echo: reading.echo, on: state.sonarOn } : null;
-  drawTrackMap($("track-map") as HTMLCanvasElement, session.route, car, episode.cars, episode.camera.hfov, { sonar: sonarView, nextGate: episode.nextGate(), label: `progress ${(car.totalProgress * 100).toFixed(0)}%   speed ${car.speed.toFixed(0)}   time ${(car.ticks / 30).toFixed(1)} s   gates ${car.checkpointsPassed}` });
+  drawTrackMap($("track-map") as HTMLCanvasElement, session.route, car, episode.cars, episode.camera.hfov, { ghosts:ghosts.map((s,i)=>({x:s.episode.car.position.x,y:s.episode.car.position.y,heading:s.episode.car.heading,label:String(i+1),color:GHOST_COLORS[i%GHOST_COLORS.length]})),checkpointCount:session.settings.checkpointCount,sonar: sonarView, nextGate: episode.nextGate(), label: `progress ${(car.totalProgress * 100).toFixed(0)}%   speed ${car.speed.toFixed(0)}   time ${(car.ticks / 30).toFixed(1)} s   gates ${car.checkpointsPassed}` });
   if (!session.perceiver) episode.render();
   drawEye($("track-eye") as HTMLCanvasElement, lowResolution(episode.frame,episode.camera.width,episode.camera.height,session.settings.resolution??"native"), episode.camera);
   const ensemble=driver.ensemble;if(ensemble){const canvas=$("virtual-eyes") as HTMLCanvasElement,ctx=canvas.getContext('2d')!;ctx.clearRect(0,0,canvas.width,canvas.height);ensemble.frames.forEach((f,i)=>{const thumb=document.createElement('canvas');thumb.width=episode.camera.width;thumb.height=episode.camera.height;const c=thumb.getContext('2d')!,image=c.createImageData(thumb.width,thumb.height),n=thumb.width*thumb.height;for(let p=0;p<n;p++){for(let k=0;k<3;k++)image.data[p*4+k]=Math.round(f[k*n+p]*255);image.data[p*4+3]=255;}c.putImageData(image,0,0);ctx.imageSmoothingEnabled=false;ctx.drawImage(thumb,i*canvas.width/ensemble.frames.length,0,canvas.width/ensemble.frames.length,canvas.height);});$("eye-disagreement").textContent=`${ensemble.frames.length} view(s) · estimate disagreement ${ensemble.disagreement.toFixed(3)} · filtered RGB is the controller's image`;}
@@ -218,6 +234,7 @@ function paintTrack(): void {
   const cells: number[] = []; for (let j = gate; j < memory.kenyonCount; j += memory.config.gates) cells.push(j);
   drawKenyon($("memory-cells") as HTMLCanvasElement, cells, new Set(Array.from(memory.active).filter((j) => j >= 0)), (j) => memory.isTaught(j), (j) => memory.cellDistance(j), on);
   if (reading) { drawSonarTrace($("sonar-canvas") as HTMLCanvasElement, session.sonarTrace, state.sonarOn); const age=(episode.tick-(episode.sonarUnit?.lastTick??0))/30;$("sonar-status").textContent = `${!state.sonarOn ? 'ignored by controller' : reading.echo ? `${(reading.range*CM_PER_PIXEL).toFixed(1)} cm · strength ${reading.strength.toFixed(1)}` : 'no echo (not zero distance)'} · ping ${episode.sonarUnit!.count} · age ${(age*1000).toFixed(0)} ms · ${state.running.track?'15 Hz simulation clock':'paused; held sample'}`;logFreshPing(session); }
+  drawSonarHistory($("track-sonar-map") as HTMLCanvasElement,session.sonarMap,{x:car.position.x,y:car.position.y,heading:car.heading},session.settings.sonarOn!==false);
   drawTrace($("memory-trace") as HTMLCanvasElement, session.trace, "bend 150 px ahead   white: truth · blue: camera · violet: memory · green: used");
   $("memory-status").textContent = on ? `lap ${Math.max(1,memory.lap)} · ${memory.taughtCells} of ${memory.kenyonCount} cells taught · ${memory.remembering ? "recalling an earlier lap" : "nothing remembered here yet"}` : "off";
 }
@@ -236,7 +253,7 @@ function setProfile(next: "kart" | "robot"): void {
   const keepImported=$<HTMLSelectElement>("track-controller").value === "imported";
   state.profile = next; $<HTMLSelectElement>("profile").value = next;
   if(experiment)experiment.write(experiment.applied());
-  state.memory.forget(); state.laps = []; state.lapNumber = 0; renderLapTable();
+  state.memory.forget(); state.worldMemory=null;state.laps = []; state.lapNumber = 0; renderLapTable();
   const hasEyes = next === "robot" ? Boolean(robotAssets()?.vision) : Boolean(state.assets!.vision);
   refreshBrainSelects({ controller: keepImported ? "imported" : next === "robot" && robotAssets()?.controller ? "robot" : "robust", eyes: hasEyes ? "bundled" : "none" });
   buildTrack();
@@ -251,23 +268,28 @@ function buildWorld(): void {
   const robotWorld = state.profile === "robot" ? robotAssets() : null;
   const controller = state.importedWorld?.controller ?? robotWorld?.worldController ?? assets.worldController ?? assets.robust!;
   const vision = state.importedWorld?.vision ?? (state.profile === "robot" ? robotWorld?.worldVision ?? null : assets.worldVision);
-  const settings=experiment.applied();state.accumulator.world=0;
+  const settings=experiment.applied();state.accumulator.world=0;loggedWorldPing=-1;
+  if(state.worldMemory&&state.worldMemory.count!==Number($<HTMLSelectElement>("world-memory-count").value))state.worldMemory=null;
   const profile=sensorProfile();if(vision)profile.worldCamera={...profile.worldCamera,width:vision.spec.width,height:vision.spec.height};
-  state.world = new WorldSession({ visual:settings.visual,resolution:settings.resolution, profile, sonarOn: state.sonarOn, seed: Number($<HTMLInputElement>("world-seed").value), density: Number($<HTMLInputElement>("world-density").value), style: Number($<HTMLInputElement>("world-style").value), kind, fade: Number($<HTMLInputElement>("world-fade").value), controller, vision });
+  state.world = new WorldSession({ cameraNoise:settings.cameraNoise,cameraBrightness:settings.cameraBrightness,visual:settings.visual,resolution:settings.resolution, profile, sonarOn: state.sonarOn, roomMemory:$<HTMLInputElement>("world-memory-on").checked?state.worldMemory:null,memorySettings:$<HTMLInputElement>("world-memory-on").checked?{count:Number($<HTMLSelectElement>("world-memory-count").value),sparsity:.01,rareWeighting:true}:undefined,task:$<HTMLSelectElement>("world-task").value as "forage"|"reverse",world:worldScene(),start:$<HTMLSelectElement>("world-map-preset").value==="imported"?state.arena?.start:undefined,seed: boundedInput("world-seed",1,999999,7), density: Number($<HTMLInputElement>("world-density").value), style: Number($<HTMLInputElement>("world-style").value), kind, fade: Number($<HTMLInputElement>("world-fade").value), controller, vision });
+  state.worldMemory=state.world.memory;
+  renderWorldPreviews();
   $("world-brain-info").textContent = !assets.worldController ? "The trained world controller was not found; the track controller is being used instead, which does not understand this world." : !vision && (kind === "vision" || kind === "both") ? "The world camera network was not found, so the kart is driving without eyes." : "";
   $("world-caption").textContent = `world ${$<HTMLInputElement>("world-seed").value}`;
   paintWorld();
 }
 
-function paintWorld(): void {
-  const session = state.world; if (!session) return;
+function paintWorld(preview?:WorldSession,ghosts:WorldSession[]=[]): void {
+  const session = preview??state.world; if (!session) return;
   const episode = session.episode; const sim = episode.sim; const driver = session.driver;
   const truth = episode.truth(session.lastTruth); const perception = driver?.perception ?? null;
   const reading = episode.sonar();
   const spec=episode.sonarUnit?.spec;
   const sonarView: SonarView | null = reading ? { x: sim.kart.x + Math.cos(sim.kart.heading) * (spec?.mountForward??MOUNT.forward), y: sim.kart.y + Math.sin(sim.kart.heading) * (spec?.mountForward??MOUNT.forward), heading: sim.kart.heading+(spec?.yawDeg??0)*Math.PI/180,beamDeg:(spec?.lobeSigmaDeg??12)*1.25, rangePx: reading.range, echo: reading.echo, on: state.sonarOn } : null;
   drawWorldMap($("world-map") as HTMLCanvasElement, sim.world, sim.kart, { x: sim.status.goalX, y: sim.status.goalY }, { truth, seen: perception ? perception.mean : null, sigma: perception ? perception.variance : null },
-    `goals ${sim.status.goals}   speed ${sim.kart.speed.toFixed(0)}   ${sim.surface}${sim.status.crashed ? "   " + sim.status.crashReason : ""}`, sonarView);
+    `goals ${sim.status.goals}   speed ${sim.kart.speed.toFixed(0)}   ${sim.surface}${sim.status.crashed ? "   " + sim.status.crashReason : ""}`, sonarView,{trail:$<HTMLInputElement>("world-trail-visible").checked?session.trail:undefined,ghosts:ghosts.map((s,i)=>({...s.episode.sim.kart,trail:$<HTMLInputElement>("world-trail-visible").checked?s.trail:undefined,label:String(i+1),color:GHOST_COLORS[i%GHOST_COLORS.length]}))});
+  drawSonarHistory($("world-sonar-map") as HTMLCanvasElement,session.sonarMap,sim.kart,session.settings.sonarOn!==false);
+  $("world-memory-status").textContent=session.memory?`${session.memory.count} cells · ${session.memory.taught} taught · ${session.memory.recalled?"recalling":"building visual signatures"}`:"Off";
   $("world-sonar").textContent = !reading ? "—" : !state.sonarOn ? "off" : reading.echo ? `${(reading.range * CM_PER_PIXEL).toFixed(0)} cm` : "no echo";
   if (!perception) episode.render();
   drawEye($("world-eye") as HTMLCanvasElement, lowResolution(episode.frame,episode.camera.width,episode.camera.height,session.settings.resolution??"native"), episode.camera);
@@ -293,8 +315,8 @@ function frame(now: number): void {
     const speed = Number($<HTMLSelectElement>("world-speed").value);
     state.accumulator.world = Math.min(120,state.accumulator.world + dt * 30 * speed);
     let steps = Math.min(40, Math.floor(state.accumulator.world));  const started = performance.now();
-    while (steps-- > 0 && !state.world.done) { state.world.step(); state.accumulator.world -= 1; if (performance.now() - started > 22) break; }
-    if (state.world.done) { state.running.world = false; $("world-run").textContent = "Start"; setStatus("world", state.world.episode.sim.status.crashed ? `stopped: ${state.world.episode.sim.status.crashReason}` : `time up · ${state.world.episode.sim.status.goals} goals`); }
+    while (steps-- > 0 && !state.world.done) { state.world.step();logWorldPing(state.world); state.accumulator.world -= 1; if (performance.now() - started > 22) break; }
+    if (state.world.done) { state.running.world = false; $("world-run").textContent = "Start"; setStatus("world", state.world.episode.sim.status.crashed ? `stopped: ${state.world.episode.sim.status.crashReason}` : state.world.episode.sim.status.goals>=state.world.episode.sim.goalLimit?`Goal reached · ${(state.world.episode.tick/30).toFixed(1)} s`:`time up · ${state.world.episode.sim.status.goals} goals`); }
     paintWorld();
   }
   requestAnimationFrame(frame);
@@ -314,7 +336,7 @@ async function importBrainText(text: string, name: string): Promise<void> {
     let prefer: { controller?: string; eyes?: string } = {};
     if (imported.controller && imported.controller.domain === "world") {
       state.importedWorld = { controller: imported.controller.snapshot, vision: imported.vision ?? null,fitness:imported.controller.meta.fitness??0,generation:imported.controller.meta.generation??0,trainingRecipe:imported.trainingRecipe };
-      const raw=JSON.parse(text);state.robotExtensions={robotLearning:raw.robotLearning,robotMission:raw.robotMission};
+      const raw=JSON.parse(text);state.importedWorld.provenance=Array.isArray(raw.controller?.provenance)?raw.controller.provenance:[];state.robotExtensions={robotLearning:raw.robotLearning,robotMission:raw.robotMission};
       notes.push("This is an open-world controller; it was loaded into the Open world tab.");
     } else if (imported.controller) {
       const meta = imported.controller.meta;
@@ -324,10 +346,13 @@ async function importBrainText(text: string, name: string): Promise<void> {
     if (imported.profile === "robot" && state.profile !== "robot" && state.assets?.robot) { state.profile = "robot"; $<HTMLSelectElement>("profile").value = "robot"; notes.push("This brain was made for the robot sensor head (camera 6.5 cm up and a sonar), so that profile was selected."); }
     if (imported.vision && imported.vision.domain !== "world") { state.importedVision = imported.vision; prefer.eyes = "imported"; }
     if (imported.world && imported.controller?.domain !== 'world') {state.importedWorld = { controller: imported.world.controller.snapshot, vision: imported.world.vision,fitness:imported.world.controller.meta.fitness??0,generation:imported.world.controller.meta.generation??0,trainingRecipe:imported.world.trainingRecipe };state.robotExtensions=null;}
-    if (imported.memory) { if(!imported.trainingRecipe)$<HTMLInputElement>('race-checkpoints').value=String(imported.memory.config.gates);state.memory = MushroomBody.fromJSON(imported.memory); $<HTMLInputElement>("memory-on").checked = true; notes.push("The lap memory in the file was restored: the first lap will already recall the bends."); }
+    if(imported.worldArena){state.arena=imported.worldArena;$<HTMLSelectElement>('world-map-preset').querySelector<HTMLOptionElement>('option[value=imported]')!.disabled=false;$<HTMLSelectElement>('world-map-preset').value='imported';}
+    if(imported.worldTraining){const t=imported.worldTraining;$<HTMLSelectElement>('world-task').value=t.task;$<HTMLInputElement>('world-crash-weight').value=String(t.crashWeight*100);$('world-crash-weight').dispatchEvent(new Event('input'));$<HTMLInputElement>('world-train-ticks').value=String(t.maxTicks);$<HTMLInputElement>('world-memory-on').checked=t.memoryEnabled;$<HTMLInputElement>('world-reverse-coach').checked=t.reverseCoach;}
+    if(imported.worldMemory){state.worldMemory=RoomMemory.fromJSON(imported.worldMemory);$<HTMLInputElement>("world-memory-on").checked=true;$<HTMLSelectElement>("world-memory-count").value=String(state.worldMemory.count);}
+    if (imported.memory) { if(!imported.trainingRecipe)$<HTMLInputElement>('race-checkpoints').value=String(imported.memory.config.gates);state.memory = MushroomBody.fromJSON(imported.memory); $<HTMLInputElement>("memory-count").value=String(state.memory.kenyonCount); $<HTMLInputElement>("memory-on").checked = true; notes.push("The lap memory in the file was restored: the first lap will already recall the bends."); }
     if(imported.controller)state.sourceRecipe=imported.trainingRecipe??null;
     if(imported.experiment)experiment.write(imported.experiment);
-    if(imported.trainingRecipe){const r=imported.trainingRecipe;
+    if(imported.trainingRecipe){const r=imported.trainingRecipe;state.dormantObstacleCount=r.obstacles.count;
       experiment.write({...experiment.applied(),reward:r.reward,multiLap:r.physics.lapTarget>1,laps:r.physics.lapTarget===1?3:r.physics.lapTarget,impactPain:r.physics.impactPain});
       $<HTMLInputElement>('track-walls').checked=r.physics.wallsEnabled;
       $<HTMLInputElement>('race-checkpoints').value=String(r.physics.checkpointCount);$<HTMLInputElement>('race-variation').value=String(r.physics.domainRandomization*100);
@@ -350,7 +375,7 @@ async function importBrainText(text: string, name: string): Promise<void> {
     }else if(imported.vision){showTab('track');}
 }
 
-function worldExportSource(): { controller: BrainSnapshot; vision: VisionModel | null;fitness?:number;generation?:number;trainingRecipe?:TrainingRecipe } | null {
+function worldExportSource(): { controller: BrainSnapshot; vision: VisionModel | null;fitness?:number;generation?:number;trainingRecipe?:TrainingRecipe;provenance?:unknown[] } | null {
   const assets = state.assets; if (!assets) return null;
   if (state.profile === "robot" && assets.robot?.worldController) return { controller: assets.robot.worldController, vision: assets.robot.worldVision };
   return assets.worldController ? { controller: assets.worldController, vision: assets.worldVision } : null;
@@ -358,7 +383,7 @@ function worldExportSource(): { controller: BrainSnapshot; vision: VisionModel |
 
 function visionRecipe():TrainingRecipe {
   const settings=experiment.applied();
-  return validateRecipe({version:1,domain:'race',reward:settings.reward??DEFAULT_REWARD_CONFIG,physics:{wallsEnabled:$<HTMLInputElement>('track-walls').checked,lapTarget:settings.multiLap?settings.laps:1,impactPain:settings.impactPain,checkpointCount:Number($<HTMLInputElement>('race-checkpoints').value),domainRandomization:Number($<HTMLInputElement>('race-variation').value)/100},obstacles:{enabled:Number($<HTMLSelectElement>('track-objects').value)>0,count:Number($<HTMLSelectElement>('track-objects').value),kind:$<HTMLSelectElement>('track-object-kind').value}});
+  return validateRecipe({version:1,domain:'race',reward:settings.reward??DEFAULT_REWARD_CONFIG,physics:{wallsEnabled:$<HTMLInputElement>('track-walls').checked,lapTarget:settings.multiLap?settings.laps:1,impactPain:settings.impactPain,checkpointCount:Number($<HTMLInputElement>('race-checkpoints').value),domainRandomization:Number($<HTMLInputElement>('race-variation').value)/100},obstacles:{enabled:Number($<HTMLSelectElement>('track-objects').value)>0,count:Number($<HTMLSelectElement>('track-objects').value)||state.dormantObstacleCount,kind:$<HTMLSelectElement>('track-object-kind').value}});
 }
 function selectedCheckpoint() {
   const imported=$<HTMLSelectElement>('track-controller').value==='imported'?state.imported:null;
@@ -366,16 +391,17 @@ function selectedCheckpoint() {
 }
 function visionBrainText():string {
   const world=state.importedWorld??worldExportSource();
-  return exportVisionBrain({...(state.activeDomain==='world'?state.robotExtensions??{}:{}),experiment:experiment.applied(),name:'FlyKart vision brain',profile:state.profile,
-    controller:state.activeDomain==='world'&&world?controllerCheckpoint(world.controller,{domain:'world',fitness:world.fitness,generation:world.generation,trainingRecipe:world.trainingRecipe}):selectedCheckpoint(),
+  return exportVisionBrain({...(state.activeDomain==='world'?state.robotExtensions??{}:{}),experiment:experiment.applied(),name:'FlyKart vision brain',profile:state.profile,worldMemory:state.worldMemory?.toJSON()??null,worldArena:state.world?validateArena({format:"flykart-world",version:1,world:state.world.episode.sim.world,start:state.world.initialPose}):state.arena,worldTraining:{version:1,task:$<HTMLSelectElement>('world-task').value as 'forage'|'reverse',crashWeight:Number($<HTMLInputElement>('world-crash-weight').value)/100,maxTicks:boundedInput('world-train-ticks',300,3000,900),memoryEnabled:$<HTMLInputElement>('world-memory-on').checked,reverseCoach:$<HTMLInputElement>('world-reverse-coach').checked},
+    controller:state.activeDomain==='world'&&world?controllerCheckpoint(world.controller,{domain:'world',fitness:world.fitness,generation:world.generation,trainingRecipe:world.trainingRecipe,provenance:world.provenance}):selectedCheckpoint(),
     vision:state.activeDomain==='world'&&world?world.vision:currentVision(),fusion:{fade:state.fade,mode:state.mode,visionTemperature:1},memory:state.activeDomain!=='world'&&$<HTMLInputElement>('memory-on').checked?state.memory.toJSON():null,
-    world:world?{controller:controllerCheckpoint(world.controller,{domain:'world',track:'open world',fitness:world.fitness,generation:world.generation,trainingRecipe:world.trainingRecipe}),vision:world.vision}:null});
+    world:world?{controller:controllerCheckpoint(world.controller,{domain:'world',track:'open world',fitness:world.fitness,generation:world.generation,trainingRecipe:world.trainingRecipe,provenance:world.provenance}),vision:world.vision}:null});
 }
 function exportVision():void{download('flykart-vision-brain.json',visionBrainText());}
 
 /* ------------------------------- boot ------------------------------- */
 
 async function boot(): Promise<void> {
+  mountRoomPanel();
   const { assets, problems } = await loadAssets(); state.assets = assets;
   if (!assets.robust && !assets.v1) throw new Error(`No controller could be loaded (${problems.join("; ")}).`);
   const named = TRACKS.filter((track) => !track.id.startsWith("gen-"));
@@ -391,7 +417,7 @@ async function boot(): Promise<void> {
   $<HTMLInputElement>("fade").addEventListener("input", (event) => setFade(Number((event.target as HTMLInputElement).value)));
   $("preset-seeing").addEventListener("click", () => setFade(0)); $("preset-both").addEventListener("click", () => setFade(0.75)); $("preset-feeling").addEventListener("click", () => { setFade(1); });
   $<HTMLSelectElement>("track-mode").addEventListener("change", (event) => { state.mode = (event.target as HTMLSelectElement).value as DriverMode; if (state.track) state.track.driver.mode = state.mode; updateModeNote(); });
-  for (const id of ["track-select", "track-rivals", "track-objects", "track-object-kind", "race-checkpoints", "race-variation", "track-controller", "track-eyes", "track-walls"]) $(id).addEventListener("change", () => { describeBrain(); if (id === "track-select" || id === "track-controller" || id === "track-eyes") state.memory.forget(); buildTrack({ keepMemory: !(id === "track-select" || id === "track-controller" || id === "track-eyes") }); });
+  for (const id of ["track-select", "track-rivals", "track-objects", "track-object-kind", "race-checkpoints", "race-variation", "track-controller", "track-eyes", "track-walls"]) $(id).addEventListener("change", () => { if(id==="track-objects"&&Number($<HTMLSelectElement>("track-objects").value)>0)state.dormantObstacleCount=Number($<HTMLSelectElement>("track-objects").value);describeBrain(); if (id === "track-select" || id === "track-controller" || id === "track-eyes") state.memory.forget(); buildTrack({ keepMemory: !(id === "track-select" || id === "track-controller" || id === "track-eyes") }); });
   $("track-style").addEventListener("change", () => buildTrack({ keepMemory: true }));
   $("track-restart").addEventListener("click", () => { state.lapsLeft = 0; buildTrack({ keepMemory: true }); setStatus("track", "restarted"); });
   $("track-run").addEventListener("click", () => { if(cameraTraining)return; if (state.track?.done) buildTrack({ keepMemory: true }); state.running.track = !state.running.track; $("track-run").textContent = state.running.track ? "Pause" : "Resume"; setStatus("track", state.running.track ? "driving" : "paused");paintTrack(); });
@@ -403,10 +429,11 @@ async function boot(): Promise<void> {
   $("export-v1-btn").addEventListener("click", () => download("flykart-brain-for-v1.json", exportAsFlyKartV1(selectedCheckpoint())));
 
   $("world-run").addEventListener("click", () => { if(cameraTraining)return; if (!state.world) buildWorld(); if (state.world?.done) buildWorld(); state.running.world = !state.running.world; $("world-run").textContent = state.running.world ? "Pause" : "Resume"; setStatus("world", state.running.world ? "driving" : "paused"); });
-  $("world-new").addEventListener("click", () => { $<HTMLInputElement>("world-seed").value = String(1 + Math.floor(Math.random() * 99999)); buildWorld(); setStatus("world", "new world"); });
+  $("world-new").addEventListener("click", () => {state.arena=null;$<HTMLSelectElement>("world-map-preset").value="procedural"; $<HTMLInputElement>("world-seed").value = String(1 + Math.floor(Math.random() * 99999)); buildWorld(); setStatus("world", "new world"); });
   for (const id of ["world-driver", "world-seed", "world-density", "world-style"]) $(id).addEventListener("change", () => { buildWorld(); setStatus("world", "ready"); });
   $("world-fade").addEventListener("input", () => { if (state.world?.driver) state.world.driver.fusion.fade = Number($<HTMLInputElement>("world-fade").value); });
 
+  mountTrainingTools();
   $("how").innerHTML = HOW_IT_WORKS;
   $("evidence").innerHTML = renderEvidence(assets.results, assets.controllerResults, assets.robotResults);
   experiment=mountExperimentPanel(baseProfile,()=>{state.running.track=false;state.running.world=false;$("track-run").textContent="Start";buildTrack();if(state.world)buildWorld();});
@@ -429,6 +456,8 @@ async function boot(): Promise<void> {
   $('add-sonar-inputs').onclick=()=>{if(cameraTraining)return;if(state.profile!=='robot'){setStatus('track','Select the Robot sensor head first.');return;}const snapshot=widenBrain(currentController());state.imported={...($<HTMLSelectElement>('track-controller').value==='imported'?state.imported:null),name:'Racer + sonar inputs',snapshot,info:'Original weights retained; two sonar rows start at zero. Train camera offspring to learn how to use them.'};refreshBrainSelects({controller:'imported'});buildTrack();};
   explainControls(document.querySelector("main")!);
   installSettingsHistory(document.querySelector('main')!,()=>{state.profile=$<HTMLSelectElement>('profile').value as 'kart'|'robot';state.sonarOn=$<HTMLInputElement>('sonar-on').checked;state.mode=$<HTMLSelectElement>('track-mode').value as DriverMode;setFade(Number($<HTMLInputElement>('fade').value));state.running.track=false;state.running.world=false;buildTrack();if(state.world)buildWorld();},()=>cameraTraining);
+  const trackSection=$("track-select").closest("section")!;document.querySelector("#tab-track aside")!.prepend(trackSection);
+  mountMapPicker($<HTMLSelectElement>("track-select"),()=>TRACKS);
   organizeVision(()=>{if(state.tab==='track')paintTrack();else if(state.tab==='world')paintWorld();});
   document.querySelector('.profile-bar')!.after(document.querySelector('.settings-history')!);
   buildTrack(); paintTrack();
@@ -457,9 +486,9 @@ async function runCameraTraining():Promise<void>{
     if(!Number.isInteger(settings.maxTicks)||settings.maxTicks<300||settings.maxTicks>3000)throw new Error('Training budget must be 300–3000 ticks per lap.');
     const generations=Number($<HTMLInputElement>('camera-generations').value),population=Number($<HTMLInputElement>('camera-population').value);
     if(!Number.isInteger(generations)||generations<1||generations>50||!Number.isInteger(population)||population<2||population>16)throw new Error('Use 1–50 generations and 2–16 candidates.');
-    const controls=Array.from(document.querySelectorAll<HTMLInputElement|HTMLSelectElement|HTMLButtonElement>('#tab-track input,#tab-track select,#tab-track button,.profile-bar input,.profile-bar select')).filter(e=>!['camera-train-stop','copy-sensor-log','clear-sensor-log'].includes(e.id)),disabled=controls.map(e=>e.disabled);
+    const controls=Array.from(document.querySelectorAll<HTMLInputElement|HTMLSelectElement|HTMLButtonElement>('main input,main select,main button')).filter(e=>!['camera-train-stop','copy-sensor-log','clear-sensor-log'].includes(e.id)),disabled=controls.map(e=>e.disabled);
     controls.forEach(e=>e.disabled=true);$<HTMLButtonElement>('camera-train-stop').disabled=false;
-    try{trainedCamera=await trainCameraController(settings,generations,population,()=>cancelTraining,line=>{$('camera-train-status').textContent=line;logSensor(line);});}
+    try{trainedCamera=await trainCameraController(settings,generations,population,()=>cancelTraining,line=>{$('camera-train-status').textContent=line;logSensor(line);},(sessions,generation,seed)=>{paintTrack(sessions[0],sessions);renderGhostScores('camera-ghost-scores',sessions.map((s,i)=>`${i+1} · ${(s.episode.car.totalProgress*100).toFixed(0)}% · ${(s.episode.tick/30).toFixed(1)} s · ${s.episode.car.collisions} contacts`),generation,seed);},Number($<HTMLSelectElement>('camera-train-speed').value));}
     finally{controls.forEach((e,i)=>e.disabled=disabled[i]);$<HTMLButtonElement>('camera-train-stop').disabled=true;}
     $<HTMLButtonElement>('camera-train-adopt').disabled=!trainedCamera;$<HTMLButtonElement>('camera-report').disabled=!trainedCamera;
     $('camera-train-status').textContent=trainedCamera?`Training complete. Held-out parent ${trainedCamera.validation.parent.toFixed(2)}, offspring ${trainedCamera.validation.offspring.toFixed(2)}. Review before adopting.`:'Training cancelled; original controller kept.';
@@ -470,4 +499,75 @@ async function runCameraTraining():Promise<void>{
 function logFreshPing(session:TrackSession):void{
   const episode=session.episode,car=episode.car,reading=episode.sonar();if(!reading||!episode.sonarUnit)return;
   if(loggedPing!==episode.sonarUnit.count){loggedPing=episode.sonarUnit.count;logSensor(`t=${(episode.tick/30).toFixed(3)}s ping=${loggedPing} ${reading.echo?`range=${(reading.range*CM_PER_PIXEL).toFixed(2)}cm strength=${reading.strength.toFixed(3)}`:'NO_ECHO'} speed=${car.speed.toFixed(2)} collisions=${car.collisions} painCost=${car.rewardTotals.collision.toFixed(3)}`);}
+}
+
+
+function worldScene(){
+  const kind=$<HTMLSelectElement>('world-map-preset').value;
+  if(kind==='imported')return state.arena?.world;
+  if(kind==='clear')return {seed:Number($<HTMLInputElement>('world-seed').value),half:460,obstacles:[],patches:[]};
+  return undefined;
+}
+function renderWorldPreviews():void{
+  const strip=$('world-map-previews');strip.replaceChildren();
+  for(const [kind,label] of [['procedural','Meadow'],['clear','Practice'],['woods','Woodland'],...(state.arena?[['imported','Your scene']]:[])]){
+    const b=document.createElement('button');b.className='map-thumbnail';b.setAttribute('aria-pressed',String($<HTMLSelectElement>('world-map-preset').value===kind));
+    const c=document.createElement('canvas');c.width=112;c.height=74;const ctx=c.getContext('2d')!;ctx.fillStyle='#254936';ctx.fillRect(0,0,112,74);
+    const world=kind==='imported'?state.arena!.world:kind==='clear'?{half:460,obstacles:[],patches:[]}:generateWorld(Number($<HTMLInputElement>('world-seed').value),kind==='woods'?1:Number($<HTMLInputElement>('world-density').value));
+    ctx.save();ctx.translate(56,37);ctx.scale(34/world.half,34/world.half);
+    for(const p of world.patches){ctx.fillStyle=p.kind==='water'?'#548fbc':p.kind==='sand'?'#bda874':'#71523e';ctx.beginPath();ctx.arc(p.x,p.y,p.radius,0,Math.PI*2);ctx.fill();}
+    for(const o of world.obstacles){ctx.fillStyle=o.kind==='tree'?'#79a94c':'#bbc1bc';ctx.beginPath();ctx.arc(o.x,o.y,o.radius,0,Math.PI*2);ctx.fill();}ctx.restore();
+    const text=document.createElement('span');text.textContent=label;b.append(c,text);b.onclick=()=>{if(cameraTraining)return;$<HTMLSelectElement>('world-map-preset').value=kind;$('world-map-preset').dispatchEvent(new Event('change',{bubbles:true}));};strip.append(b);
+  }
+}
+function renderGhostScores(id:string,rows:string[],generation:number,seed:number):void{
+  const panel=$(id);panel.replaceChildren();const title=document.createElement('strong');title.textContent=`${generation?'Generation '+generation:'Held-out comparison'} · seed ${seed}`;panel.append(title);
+  rows.forEach((row,i)=>{const p=document.createElement('div');p.textContent=row;p.style.borderLeft=`3px solid ${GHOST_COLORS[i%GHOST_COLORS.length]}`;panel.append(p);});
+}
+function mountTrainingTools():void{
+  $('memory-count').addEventListener('change',()=>buildTrack({keepMemory:true}));
+  const load=document.createElement('button');load.id='load-racer-checkpoint';load.textContent='Load your trained racer · generation 3';load.title='Keeps your exact checkpoint, scores and rewards. Camera adaptation happens in Track; room input meanings need a separate adaptation.';
+  document.querySelector('.profile-bar')!.after(load);load.onclick=()=>{if(cameraTraining)return;void fetch(`${import.meta.env.BASE_URL}checkpoints/flykart-brain-racer.json`).then(r=>{if(!r.ok)throw Error('Checkpoint download failed');return r.text();}).then(text=>{if(cameraTraining)throw Error('Stop training before replacing the brain.');return importBrainText(text,'flykart-brain-racer.json');}).catch(e=>$('brain-info').textContent=(e as Error).message);};
+  $('world-map-preset').addEventListener('change',()=>{if(cameraTraining)return;const kind=$<HTMLSelectElement>('world-map-preset').value;if(kind==='woods')$<HTMLInputElement>('world-density').value='1';else if(kind==='procedural')$<HTMLInputElement>('world-density').value='.6';try{buildWorld();}catch(e){setStatus('world',(e as Error).message);}});
+  $('world-goal-behind').onclick=()=>{if(cameraTraining||!state.world)return;const sim=state.world.episode.sim;try{reverseGoal(sim.world,sim.kart);state.arena=validateArena({format:'flykart-world',version:1,world:sim.world,start:{x:sim.kart.x,y:sim.kart.y,heading:sim.kart.heading}});$<HTMLSelectElement>('world-map-preset').querySelector<HTMLOptionElement>('option[value=imported]')!.disabled=false;$<HTMLSelectElement>('world-map-preset').value='imported';$<HTMLSelectElement>('world-task').value='reverse';buildWorld();setStatus('world','Fixed goal behind the start · ready');}catch(e){setStatus('world',(e as Error).message);}};
+  $('world-task').addEventListener('change',()=>{try{buildWorld();}catch(e){setStatus('world',(e as Error).message);}});
+  $('world-memory-count').addEventListener('change',()=>{state.worldMemory=null;buildWorld();});$('world-memory-on').addEventListener('change',()=>buildWorld());$('world-memory-forget').onclick=()=>{state.worldMemory=state.worldMemory?.fresh()??null;buildWorld();};
+  $('world-export-brain').onclick=exportVision;
+  $('world-copy-logs').onclick=()=>{void navigator.clipboard.writeText(sensorLog.join('\n')).then(()=>$('world-copy-logs').textContent='Copied').catch(()=>{$<HTMLTextAreaElement>('world-sensor-log').select();$('world-copy-logs').textContent='Select logs · Ctrl+C';});};$('world-clear-logs').onclick=()=>{sensorLog.length=0;logSensor('Room console cleared.');};
+  $('world-trail-visible').addEventListener('change',()=>paintWorld());$('world-trail-clear').onclick=()=>{if(state.world)state.world.trail.splice(0,state.world.trail.length,{x:state.world.episode.sim.kart.x,y:state.world.episode.sim.kart.y});paintWorld();};
+  $('world-map-export').onclick=()=>{if(!state.world)return;const sim=state.world.episode.sim;download('flykart-open-world.json',JSON.stringify({format:'flykart-world',version:1,world:sim.world,start:state.world.initialPose},null,2));};
+  attachJsonImport($<HTMLInputElement>('world-map-file'),async text=>{const arena=validateArena(JSON.parse(text));state.arena=arena;$<HTMLSelectElement>('world-map-preset').querySelector<HTMLOptionElement>('option[value=imported]')!.disabled=false;$<HTMLSelectElement>('world-map-preset').value='imported';$<HTMLSelectElement>('world-task').value='forage';state.worldMemory=null;buildWorld();},{title:'Import Open world scene',trigger:$('world-map-import'),busy:()=>cameraTraining,onError:message=>setStatus('world',message)});
+  const weight=$<HTMLInputElement>('world-crash-weight');weight.oninput=()=>{$('world-weight-label').textContent=`${100-Number(weight.value)}% arrival speed · ${weight.value}% fewer contacts`;};
+  $('world-adapt-racer').onclick=()=>{if(cameraTraining)return;const parent=selectedCheckpoint(),worldEyes=state.world?.settings.vision??worldExportSource()?.vision;if(!worldEyes){setStatus('world','Load a world camera network first.');return;}state.importedWorld={controller:racerToRoom(parent.network),vision:worldEyes,generation:parent.generation,fitness:0,trainingRecipe:parent.trainingRecipe,provenance:[{context:'racer-to-room',source:'Explicit input remapping; untrained room offspring',trained:false,parent}]};state.robotExtensions=null;state.worldMemory=null;$<HTMLSelectElement>('world-driver').value='vision';buildWorld();setStatus('world','Room offspring created. Racer parent kept; evolve and test before use.');};
+  $('world-train').onclick=()=>{void runWorldTraining();};$('world-train-stop').onclick=()=>{cancelTraining=true;$('world-training-status').textContent='Cancelling after the current cohort tick…';};
+  $('world-train-report').onclick=()=>{if(trainedWorld)download('flykart-room-training.json',JSON.stringify({...trainedWorld,context:{...trainedWorldContext,roomMemory:undefined},experiment:trainedWorldExperiment,notes:'Frozen eyes; independent ghosts; fresh visual memory; no deployment claim.'},null,2));};
+  $('world-train-adopt').onclick=()=>{
+    if(!trainedWorld||!trainedWorldContext||!trainedWorldExperiment||cameraTraining)return;
+    const c=trainedWorldContext;state.profile=c.profile?.id??'kart';$<HTMLSelectElement>('profile').value=state.profile;state.sonarOn=c.sonarOn!==false;$<HTMLInputElement>('sonar-on').checked=state.sonarOn;experiment.write(trainedWorldExperiment);
+    state.importedWorld={controller:trainedWorld.brain,vision:c.vision,fitness:trainedWorld.score,generation:worldParentGeneration+trainedWorld.generation,trainingRecipe:trainedWorldRecipe,provenance:[...trainedWorldProvenance,{context:"world-camera-ghosts",source:"Camera + enabled sensors + goal compass",trained:true,validation:trainedWorld.validation,crashWeight:trainedWorld.crashWeight,task:trainedWorld.task,coachFrames:trainedWorld.coachFrames}]};state.robotExtensions=null;
+    state.arena=c.world?validateArena({format:'flykart-world',version:1,world:c.world,start:c.start??{x:0,y:0,heading:0}}):null;$<HTMLSelectElement>('world-map-preset').value=state.arena?'imported':'procedural';$<HTMLSelectElement>('world-map-preset').querySelector<HTMLOptionElement>('option[value=imported]')!.disabled=!state.arena;
+    $<HTMLInputElement>('world-seed').value=String(c.seed);$<HTMLInputElement>('world-density').value=String(c.density);$<HTMLInputElement>('world-style').value=String(c.style);$<HTMLSelectElement>('world-driver').value='vision';$<HTMLSelectElement>('world-task').value=c.task??'forage';state.worldMemory=null;buildWorld();setStatus('world','Room offspring installed; parent checkpoint unchanged.');
+  };
+}
+async function runWorldTraining():Promise<void>{
+  if(cameraTraining)return;trainedWorld=null;trainedWorldContext=null;
+  $<HTMLButtonElement>('world-train-adopt').disabled=true;$<HTMLButtonElement>('world-train-report').disabled=true;
+  let restore=()=>{};
+  try{
+    buildWorld();const session=state.world!;
+    const generations=boundedInput('world-generations',1,50,3),population=boundedInput('world-population',2,16,5),maxTicks=boundedInput('world-train-ticks',300,3000,900);
+    trainedWorldExperiment=structuredClone(experiment.applied());trainedWorldContext={...session.settings,start:session.initialPose,maxTicks,sensorOnly:true,kind:'vision',fade:0,roomMemory:undefined};worldParentGeneration=state.importedWorld?.generation??0;trainedWorldRecipe=state.importedWorld?.trainingRecipe?structuredClone(state.importedWorld.trainingRecipe):undefined;trainedWorldProvenance=structuredClone(state.importedWorld?.provenance??[]);
+    const crashWeight=Number($<HTMLInputElement>('world-crash-weight').value)/100;if(!Number.isFinite(crashWeight)||crashWeight<0||crashWeight>1)throw Error('Contact weight must be 0–100%.');
+    state.running.track=state.running.world=false;$('track-run').textContent=$('world-run').textContent='Start';cameraTraining=true;cancelTraining=false;
+    const controls=Array.from(document.querySelectorAll<HTMLInputElement|HTMLSelectElement|HTMLButtonElement>('main input,main select,main button')).filter(e=>!['world-train-stop','copy-sensor-log','clear-sensor-log','world-copy-logs','world-clear-logs'].includes(e.id)),disabled=controls.map(e=>e.disabled);controls.forEach(e=>e.disabled=true);$<HTMLButtonElement>('world-train-stop').disabled=false;restore=()=>{controls.forEach((e,i)=>e.disabled=disabled[i]);$<HTMLButtonElement>('world-train-stop').disabled=true;};
+    trainedWorld=await trainWorldController(trainedWorldContext,generations,population,crashWeight,()=>cancelTraining,line=>{logSensor(line);$('world-training-status').textContent=line;},(sessions,generation,seed)=>{paintWorld(sessions[0],sessions);renderGhostScores('world-ghost-scores',sessions.map((s,i)=>`${i+1} · ${s.episode.sim.status.goals?'ARRIVED':s.done?'stopped':'driving'} · ${(s.episode.tick/30).toFixed(1)} s · ${s.episode.sim.status.collisions} contacts · reverse ${(s.reverseDistance*CM_PER_PIXEL/100).toFixed(2)} m`),generation,seed);},Number($<HTMLSelectElement>('world-train-speed').value),$<HTMLInputElement>('world-reverse-coach').checked);
+    $('world-training-status').textContent=trainedWorld?`Complete. Held-out parent ${trainedWorld.validation.parent.toFixed(2)}, offspring ${trainedWorld.validation.offspring.toFixed(2)}. ${trainedWorld.validation.offspring>trainedWorld.validation.parent?'Improved on this small test.':'No improvement demonstrated.'} Review report before adoption.`:'Cancelled; parent retained.';
+  }catch(e){$('world-training-status').textContent=(e as Error).message;}
+  finally{restore();cameraTraining=false;$<HTMLButtonElement>('world-train-adopt').disabled=!trainedWorld;$<HTMLButtonElement>('world-train-report').disabled=!trainedWorld;}
+}
+
+function logWorldPing(session:WorldSession):void{
+  const unit=session.episode.sonarUnit;if(!unit||loggedWorldPing===unit.count)return;
+  loggedWorldPing=unit.count;const r=unit.reading;
+  logSensor(`room t=${(session.episode.tick/30).toFixed(3)}s ping=${unit.count} ${r.echo?`range=${(r.range*CM_PER_PIXEL).toFixed(2)}cm strength=${r.strength.toFixed(3)}`:'NO_ECHO'} speed=${session.episode.sim.kart.speed.toFixed(2)} contacts=${session.episode.sim.status.collisions}`);
 }

@@ -1,3 +1,4 @@
+import { DrivingTrail } from './driving-trail';
 import {prepareVisual,visualMesh} from './imported-assets';
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
@@ -13,6 +14,10 @@ export class HabitatScene {
   readonly camera = new THREE.PerspectiveCamera(42, 1, .01, 80);
   readonly eye = new THREE.PerspectiveCamera(50, 4 / 3, .008, 20);
   readonly controls: OrbitControls;
+  readonly drivingTrail=new DrivingTrail();
+  private trailGeometry=new THREE.BufferGeometry();
+  private trailMaterial=new THREE.LineBasicMaterial({color:0xd58c37,transparent:true,opacity:.65,depthWrite:false});
+  private trailView=new THREE.LineSegments(this.trailGeometry,this.trailMaterial);
   private objects = new THREE.Group();
   private robot = new THREE.Group();
   private mission = new THREE.Group();
@@ -48,6 +53,7 @@ export class HabitatScene {
     this.scene.add(sun);
     const floor = new THREE.Mesh(new THREE.PlaneGeometry(7, 7), this.floorMaterial); floor.rotation.x = -Math.PI / 2; floor.receiveShadow = true; this.scene.add(floor);
     const grid = new THREE.GridHelper(7, 35, 0x83927c, 0x9caa92); grid.position.y = .001; const gm = grid.material as THREE.Material; gm.transparent = true; gm.opacity = .23; this.scene.add(grid);
+    this.trailGeometry.setAttribute("position",new THREE.BufferAttribute(this.drivingTrail.positions,3).setUsage(THREE.DynamicDrawUsage));this.trailGeometry.setDrawRange(0,0);this.trailView.frustumCulled=false;this.scene.add(this.trailView);
     this.scene.add(this.objects, this.robot, this.mission, this.scentOverlay, this.calibrationView, this.beam, this.selection, this.contactView, this.envelope); this.robot.userData.id="@robot";this.selection.visible = this.contactView.visible = this.envelope.visible = false;
     this.camera.position.set(3.5, 4.8, 5.2);
     this.controls = new OrbitControls(this.camera, canvas); this.controls.target.set(0, .05, 0); this.controls.enableDamping = true; this.controls.maxPolarAngle = Math.PI / 2 - .025; this.controls.minDistance = .25; this.controls.maxDistance = 14;
@@ -149,10 +155,10 @@ export class HabitatScene {
   capture(width: number, height: number, enabled: boolean, noise?: NoiseSource,deliver?:(pixels:Uint8ClampedArray,dropped:boolean)=>{pixels:Uint8ClampedArray;dropped:boolean}): { planar: Float32Array; features: Float32Array; rgb: number[]; dropped: boolean } {
     const image = this.eyeContext.createImageData(160, 120);
     if (enabled) {
-      const beamVisible = this.beam.visible, selectedVisible = this.selection.visible, robotVisible = this.robot.visible, contactsVisible = this.contactView.visible, envelopeVisible = this.envelope.visible, scentVisible=this.scentOverlay.visible,calibrationVisible=this.calibrationView.visible;
-      this.beam.visible = this.selection.visible = this.robot.visible = this.contactView.visible = this.envelope.visible = this.scentOverlay.visible = this.calibrationView.visible = false;
+      const beamVisible = this.beam.visible, selectedVisible = this.selection.visible, robotVisible = this.robot.visible, contactsVisible = this.contactView.visible, envelopeVisible = this.envelope.visible, scentVisible=this.scentOverlay.visible,calibrationVisible=this.calibrationView.visible,trailVisible=this.trailView.visible;
+      this.beam.visible = this.selection.visible = this.robot.visible = this.contactView.visible = this.envelope.visible = this.scentOverlay.visible = this.calibrationView.visible = this.trailView.visible = false;
       try {this.renderer.setRenderTarget(this.target); this.renderer.render(this.scene, this.eye); this.renderer.readRenderTargetPixels(this.target, 0, 0, 160, 120, this.bytes);}
-      finally {this.renderer.setRenderTarget(null);this.beam.visible = beamVisible; this.selection.visible = selectedVisible; this.robot.visible = robotVisible;this.contactView.visible = contactsVisible; this.envelope.visible = envelopeVisible;this.scentOverlay.visible=scentVisible;this.calibrationView.visible=calibrationVisible;}
+      finally {this.renderer.setRenderTarget(null);this.beam.visible = beamVisible; this.selection.visible = selectedVisible; this.robot.visible = robotVisible;this.contactView.visible = contactsVisible; this.envelope.visible = envelopeVisible;this.scentOverlay.visible=scentVisible;this.calibrationView.visible=calibrationVisible;this.trailView.visible=trailVisible;}
       for (let y = 0; y < 120; y++) for (let x = 0; x < 160; x++) {
         const i = (y * 160 + x) * 4, source = ((119 - y) * 160 + x) * 4;
         image.data[i] = Math.round(this.bytes[source] / 255 * 31) / 31 * 255;
@@ -197,8 +203,12 @@ export class HabitatScene {
     const rect=this.canvas.getBoundingClientRect(),ray=new THREE.Raycaster();ray.setFromCamera(new THREE.Vector2((clientX-rect.left)/rect.width*2-1,-(clientY-rect.top)/rect.height*2+1),this.camera);
     const p=ray.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0,1,0),0),new THREE.Vector3());return p&&Math.abs(p.x)<=3.5&&Math.abs(p.z)<=3.5?{x:p.x,z:p.z}:null;
   }
+  showDrivingTrail(show:boolean):void{this.trailView.visible=show;}
+  clearDrivingTrail():void{this.drivingTrail.clear();this.trailGeometry.setDrawRange(0,0);}
+  breakDrivingTrail():void{this.drivingTrail.break();}
+  recordDrivingTrail(pose:Pose):void{if(this.drivingTrail.record(pose)){this.trailGeometry.attributes.position.needsUpdate=true;this.trailGeometry.setDrawRange(0,this.drivingTrail.count*2);}}
   focus(pose: Pose): void { this.controls.target.set(pose.x, .06, pose.z); this.camera.position.set(pose.x - .6, .8, pose.z + .9); }
   overview(): void { this.controls.target.set(0, .05, 0); this.camera.position.set(3.5, 4.8, 5.2); }
   render(): void { this.controls.update(); this.renderer.render(this.scene, this.camera); }
-  dispose(): void { this.resizeObserver.disconnect(); this.controls.dispose(); this.clear(this.objects); this.clear(this.robot); this.clear(this.mission);this.clear(this.scentOverlay);this.clear(this.beam); this.target.dispose(); this.renderer.dispose(); }
+  dispose(): void { this.resizeObserver.disconnect(); this.controls.dispose(); this.clear(this.objects); this.clear(this.robot); this.clear(this.mission);this.clear(this.scentOverlay);this.clear(this.beam); this.trailGeometry.dispose();this.trailMaterial.dispose();this.target.dispose(); this.renderer.dispose(); }
 }

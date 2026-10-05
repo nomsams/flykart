@@ -16,7 +16,7 @@ import { Proprioception } from "../interface";
 import { Random, mulberry32 } from "../rng";
 import { SONAR_USEFUL_RANGE_PX, SensorProfile, SonarSpec } from "../robot";
 import { Sonar, SonarReading, SonarTarget, sonarInputs } from "../sonar";
-import { SECTORS, SECTOR_ANGLES, SECTOR_SPAN, SURFACE_VALUE, WorldSim, clearanceScan, surfaceAt } from "./world";
+import { SECTORS, SECTOR_ANGLES, SECTOR_SPAN, SURFACE_VALUE, WorldSim, WorldDef, clearanceScan, surfaceAt } from "./world";
 import { WorldScene } from "./worldScene";
 
 export const WORLD_CAMERA: CameraConfig = { width: 48, height: 24, hfov: (104 * Math.PI) / 180, mountHeight: 15, pitch: 0.16, mountForward: 8 };
@@ -71,7 +71,7 @@ export function worldExpert(s: ArrayLike<number>): Action {
   return { steer, throttle, brake, reverse: 0 };
 }
 
-export type WorldEpisodeOptions = { seed: number; density?: number; styleStrength?: number; maxTicks?: number; camera?: CameraConfig; headless?: boolean; sonar?: SonarSpec | null; profile?: SensorProfile };
+export type WorldEpisodeOptions = { seed: number; density?: number; styleStrength?: number; maxTicks?: number; camera?: CameraConfig; headless?: boolean; sonar?: SonarSpec | null; profile?: SensorProfile;cameraNoise?:number;cameraBrightness?:number; world?:WorldDef; start?:{x:number;y:number;heading:number}; goal?:{x:number;y:number}; goalLimit?:number };
 
 export class WorldEpisode implements VisionEpisode {
   readonly sim: WorldSim;
@@ -85,10 +85,12 @@ export class WorldEpisode implements VisionEpisode {
   private readonly fixedTargets: SonarTarget[] = [];
 
   constructor(readonly options: WorldEpisodeOptions) {
-    this.sim = new WorldSim(options.seed, { density: options.density, maxTicks: options.maxTicks });
+    this.sim = new WorldSim(options.seed, { density: options.density, maxTicks: options.maxTicks,world:options.world,start:options.start,goal:options.goal,goalLimit:options.goalLimit });
     this.random = mulberry32(options.seed * 31 + 3);
     this.camera = options.profile?.worldCamera ?? options.camera ?? WORLD_CAMERA;
     this.style = (options.styleStrength ?? 0) > 0 ? randomStyle(this.random, options.styleStrength ?? 0) : { ...DEFAULT_STYLE };
+    if(options.cameraNoise!==undefined)this.style.noise=clamp(this.style.noise+options.cameraNoise,0,.2);
+    if(options.cameraBrightness!==undefined)this.style.brightness*=clamp(options.cameraBrightness,.1,2);
     this.scene = options.headless ? null : new WorldScene(this.sim.world, this.style);
     this.frame = new Float32Array(options.headless ? 0 : frameLength(this.camera));
     const sonarSpec = options.sonar ?? options.profile?.sonar ?? null;
@@ -108,7 +110,7 @@ export class WorldEpisode implements VisionEpisode {
   refreshSonar(): void {
     if (!this.sonarUnit) return;
     const { kart } = this.sim;
-    this.sonarUnit.update(0, { x: kart.x, y: kart.y, heading: kart.heading }, this.fixedTargets);
+    this.sonarUnit.update(this.tick, { x: kart.x, y: kart.y, heading: kart.heading }, this.fixedTargets,true);
   }
 
   private ping(): void {
@@ -121,7 +123,7 @@ export class WorldEpisode implements VisionEpisode {
   get tick(): number { return this.sim.status.ticks; }
   mission(): number[] { return this.sim.mission(); }
   lapContext(): null { return null; }
-  summary(): { progress: number; finished: boolean; crashed: boolean } { return { progress: this.sim.status.goals, finished: this.sim.status.timedOut, crashed: this.sim.status.crashed }; }
+  summary(): { progress: number; finished: boolean; crashed: boolean } { return { progress: this.sim.status.goals, finished: this.sim.status.goals>=this.sim.goalLimit, crashed: this.sim.status.crashed }; }
 
   proprioception(): Proprioception {
     const { kart } = this.sim;

@@ -1,3 +1,4 @@
+import { mountMapPicker } from './map-picker';
 import { mountBrainShelf } from './browser-brain';
 import { TrainingRecipe, validateRecipe } from './training-recipe';
 import { StepPacer } from './step-pacer';
@@ -1528,3 +1529,5 @@ try {
 } catch (error) {
   failApplication(error);
 }
+
+mountMapPicker(ui.trackSelect,()=>TRACKS);
