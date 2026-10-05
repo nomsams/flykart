@@ -57,6 +57,25 @@ export function netFromModel(model: VisionModel): VisionCnn {
   return net;
 }
 
+/** Validate imported eye networks before allocating or installing their state. */
+export function validateVisionModel(raw: unknown, expectedDomain?: 'track' | 'world'): VisionModel {
+  const m=raw as VisionModel, s=m?.spec, domain=m?.domain??'track';
+  const integer=(n:number,min:number,max:number)=>Number.isInteger(n)&&n>=min&&n<=max;
+  const count=domain==='world'?10:13;
+  if(!m||m.format!=='flykart-vision-net'||m.version!==1||!['track','world'].includes(domain)||(expectedDomain&&domain!==expectedDomain)||!s||
+    !integer(s.width,8,160)||!integer(s.height,8,120)||![1,2].includes(s.frames)||![3,5].includes(s.extra)||!integer(s.hidden,1,256)||s.outputs!==count*2+3||
+    !Array.isArray(s.channels)||s.channels.length!==3||s.channels.some(n=>!integer(n,1,64))||
+    (s.input!==undefined&&!['rgb','retina'].includes(s.input))||(s.spatial!==undefined&&typeof s.spatial!=='boolean')||
+    !Array.isArray(m.targetScale)||m.targetScale.length!==count||m.targetScale.some(n=>!Number.isFinite(n)||n<=0)||
+    typeof m.params!=='string'||m.params.length>32_000_000||typeof m.trainedOn!=='string')throw new Error('Invalid vision network architecture, domain or scales.');
+  const c=m.camera;
+  if(!c||!integer(c.width,8,160)||!integer(c.height,8,120)||![c.hfov,c.mountHeight,c.mountForward,c.pitch].every(Number.isFinite)||c.hfov<=0||c.hfov>=Math.PI||c.mountHeight<=0)throw new Error('Invalid vision camera geometry.');
+  if(m.varianceScale!==undefined&&(!Array.isArray(m.varianceScale)||m.varianceScale.length!==count||m.varianceScale.some(n=>!Number.isFinite(n)||n<=0)))throw new Error('Invalid vision variance calibration.');
+  const net=netFromModel(m);
+  if(!net.params.every(Number.isFinite))throw new Error('Vision network has non-finite weights.');
+  return m;
+}
+
 export type Perception = {
   /** Estimates in the units of the controller's inputs. */
   mean: Float32Array;

@@ -1,3 +1,4 @@
+import { importFile } from './vision/format';
 export type BrainStage = 'racer' | 'vision' | 'robot';
 type SavedBrain = { stage: BrainStage; savedAt: string; text: string };
 const STORE = 'brains', PREFIX = 'flykart.shared-brain.';
@@ -5,9 +6,10 @@ function database(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open('flykart-browser-brains', 1);
     request.onupgradeneeded = () => request.result.createObjectStore(STORE, { keyPath: 'stage' });
-    request.onsuccess = () => resolve(request.result);
+    let blocked=false;
+    request.onsuccess = () => { if(blocked)request.result.close();else resolve(request.result); };
     request.onerror = () => reject(request.error);
-    request.onblocked = () => reject(new Error('Close other FlyKart tabs to unlock browser storage.'));
+    request.onblocked = () => { blocked=true;reject(new Error('Close other FlyKart tabs to unlock browser storage.')); };
   });
 }
 async function stored(): Promise<SavedBrain[]> {
@@ -21,6 +23,7 @@ export async function saveBrowserBrain(stage: BrainStage, text: string): Promise
   // Parse before replacing a saved checkpoint. Storage writes are atomic.
   const parsed = JSON.parse(text);
   if (!parsed || typeof parsed !== 'object' || !['flykart-brain','flykart-vision-brain'].includes(parsed.format)) throw new Error('Save a complete controller checkpoint.');
+  if(!importFile(text).controller)throw new Error('Save a complete controller checkpoint.');
   const record: SavedBrain = { stage, text, savedAt: new Date().toISOString() };
   try {
     const db = await database();
@@ -36,9 +39,12 @@ export async function loadBrowserBrain(stage?: BrainStage): Promise<SavedBrain> 
   for (const key of ['racer','vision','robot'] as BrainStage[]) {
     try { const raw = localStorage.getItem(PREFIX + key); if (raw) records.push(JSON.parse(raw)); } catch { /* May be blocked in private browsing. */ }
   }
-  // Existing v1 saves remain available without a migration or a new save.
-  try { const text = localStorage.getItem('flykart.best-brain.v1'); if (text && !records.some(r => r.stage === 'racer')) records.push({ stage:'racer', text, savedAt:'' }); } catch { /* optional legacy fallback */ }
-  const record = records.filter(r => r && ['racer','vision','robot'].includes(r.stage) && typeof r.text==='string' && typeof r.savedAt==='string' && (!stage || r.stage === stage)).sort((a,b) => b.savedAt.localeCompare(a.savedAt))[0];
+  // Keep the legacy save as a last resort, including when a new record is corrupt.
+  try { const text = localStorage.getItem('flykart.best-brain.v1'); if (text) records.push({ stage:'racer', text, savedAt:'' }); } catch { /* optional legacy fallback */ }
+  const record = records.filter(r => {
+    if(!r || !['racer','vision','robot'].includes(r.stage) || typeof r.text!=='string' || typeof r.savedAt!=='string' || (stage && r.stage!==stage))return false;
+    try{return Boolean(importFile(r.text).controller);}catch{return false;}
+  }).sort((a,b) => b.savedAt.localeCompare(a.savedAt))[0];
   if (!record) throw new Error('No browser brain saved here yet. Save one on Racer, Vision or 3D first, using the same browser and site address.');
   return record;
 }

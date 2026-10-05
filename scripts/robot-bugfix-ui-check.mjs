@@ -7,8 +7,10 @@ const browser=await chromium.launch({...(process.platform==='win32'?{channel:'ms
 const page=await browser.newPage({viewport:{width:1440,height:1080}}),errors=[];
 page.on('pageerror',e=>errors.push(e.message));
 await page.addInitScript(()=>{
-  const mock={commands:[],controller:null,interval:null,armed:false,camera:true,config:'ESP32CAM:v1:12,13,14,15,-1,-1,2,4:1:1',delayArm:false,release:null,energy:null};
-  const emit=()=>mock.controller?.enqueue(new TextEncoder().encode(`${mock.energy===null?'':`ENERGY ${Math.floor(performance.now())} ${mock.energy} 0\n`}CONFIG ${mock.config}\nFRAME 1 -1.00 ${+mock.armed} 0 0 ${mock.camera?'160 120 38400 '+btoa('\x18\xbf'.repeat(160*120)):'0 0 0'}\n`));
+  const mock={commands:[],controller:null,interval:null,armed:false,camera:true,config:'ESP32CAM:v1:12,13,14,15,-1,-1,2,4:1:1',delayArm:false,release:null,energy:null,energyStamp:0,energyPackets:true};
+  const nextStamp=()=>mock.energyStamp=Math.max(mock.energyStamp+1,Math.floor(performance.now()));
+  mock.publishEnergy=value=>{mock.energy=value;const stamp=nextStamp();mock.controller?.enqueue(new TextEncoder().encode(`ENERGY ${stamp} ${value} 0\n`));return stamp;};
+  const emit=()=>mock.controller?.enqueue(new TextEncoder().encode(`${mock.energy===null||!mock.energyPackets?'':`ENERGY ${nextStamp()} ${mock.energy} 0\n`}CONFIG ${mock.config}\nFRAME 1 -1.00 ${+mock.armed} 0 0 ${mock.camera?'160 120 38400 '+btoa('\x18\xbf'.repeat(160*120)):'0 0 0'}\n`));
   const port={readable:null,writable:null,async open(){
     this.readable=new ReadableStream({start(c){mock.controller=c;},cancel(){mock.controller=null;}});
     this.writable=new WritableStream({async write(bytes){const text=new TextDecoder().decode(bytes).trim();mock.commands.push(text);if(text==='ARM'){if(mock.delayArm)await new Promise(r=>mock.release=r);mock.armed=true;}if(text==='STOP')mock.armed=false;}});
@@ -19,7 +21,15 @@ await page.addInitScript(()=>{
 const ready=()=>page.locator('#status').filter({hasText:'Ready.'}).waitFor({timeout:60000});
 const download=async id=>{const[d]=await Promise.all([page.waitForEvent('download'),page.locator('#'+id).click()]);return JSON.parse(await readFile(await d.path(),'utf8'));};
 const stopReason=reason=>page.locator('#serial-log').filter({hasText:reason}).waitFor();
-const armed=()=>page.locator('#serial-log').filter({hasText:'USB controller armed'}).waitFor();
+const armed=async()=>{
+  try{await page.locator('#serial-log').filter({hasText:'USB controller armed'}).waitFor();}
+  catch(error){console.error('Arming diagnostics:',await page.locator('#status').textContent(),await page.locator('#serial-log').textContent(),await page.evaluate(()=>window.__robotSerial.commands.slice(-12)));throw error;}
+};
+const freshEnergy=async(value)=>{
+  const stamp=await page.evaluate(value=>window.__robotSerial.publishEnergy(value),value);
+  // Displayed percentages survive the stale-data stop; only a new packet proves freshness.
+  await page.waitForFunction(stamp=>document.querySelector('#serial-log').textContent.includes(`ENERGY ${stamp} `),stamp);
+};
 try{
   await page.goto((process.env.ROBOT_LAB_URL??'http://127.0.0.1:5173')+'/robot.html?tools=all',{waitUntil:'domcontentloaded',timeout:60000});await ready();
   const baseline=await download('save-lab');
@@ -39,7 +49,13 @@ try{
   await page.evaluate(()=>window.__robotSerial.config='ESP32CAM:v1:12,13,14,15,-1,-1,2,4:1:1');await page.waitForTimeout(200);await page.locator('#clear-serial').click();await page.locator('#serial-arm').click();await armed();await page.evaluate(()=>window.__robotSerial.armed=false);await stopReason('Device disarmed');
   await page.locator('#serial-disconnect').click();
   await page.locator('.target-hunger>summary').click();await page.locator('#hunger-prepare').click();await page.locator('#task-setup').click();await page.locator('#status').filter({hasText:'Charging-pod task prepared'}).waitFor();await page.locator('#serial-connect').click();await page.locator('#real-sensors').filter({hasText:'Real sonar'}).waitFor();await page.locator('#serial-arm').click();await page.locator('#status').filter({hasText:'fresh measured ENERGY'}).waitFor();
-  await page.evaluate(()=>window.__robotSerial.energy=.12);await page.locator('#real-energy').filter({hasText:'12.0%'}).waitFor();await page.locator('#clear-serial').click();await page.locator('#serial-arm').click();await armed();await page.evaluate(()=>window.__robotSerial.energy=null);await stopReason('Battery/charger telemetry stale');assert.match(await page.locator('#real-neural').textContent(),/disarmed/);
-  await page.evaluate(()=>window.__robotSerial.energy=.12);await page.locator('#real-energy').filter({hasText:'12.0%'}).waitFor();await page.locator('#clear-serial').click();await page.locator('#serial-arm').click();await armed();await page.evaluate(()=>window.__robotSerial.energy=3);await stopReason('Invalid ENERGY telemetry');assert.match(await page.locator('#real-neural').textContent(),/disarmed/);await page.locator('#serial-disconnect').click();assert.deepEqual(errors,[]);
+  await freshEnergy(.12);await page.locator('#real-energy').filter({hasText:'12.0%'}).waitFor();await page.locator('#clear-serial').click();await page.locator('#serial-arm').click();await armed();await page.evaluate(()=>window.__robotSerial.energy=null);await stopReason('Battery/charger telemetry stale');assert.match(await page.locator('#real-neural').textContent(),/disarmed/);
+  // Keep camera frames flowing but withhold periodic ENERGY to force fresh-packet recovery.
+  await page.evaluate(()=>window.__robotSerial.energyPackets=false);
+  await freshEnergy(.12);await page.locator('#real-energy').filter({hasText:'12.0%'}).waitFor();
+  await page.locator('#clear-serial').click();await page.locator('#serial-arm').click();await armed();
+  await page.evaluate(()=>window.__robotSerial.publishEnergy(3));await stopReason('Invalid ENERGY telemetry');
+  assert.match(await page.locator('#real-neural').textContent(),/disarmed/);
+  await page.locator('#serial-disconnect').click();assert.deepEqual(errors,[]);
   console.log('Robot bug regressions passed: atomic restore, bundled brain persistence, applied evaluation settings, ARM/STOP race, camera loss, configuration changes and MCU disarm, measured hunger telemetry required, stale battery data and invalid energy stops.');
 }finally{await browser.close();}

@@ -144,8 +144,8 @@ export class Sonar {
   }
   get count(): number { return this.pings; }
   /** Call once per tick; returns true when a fresh reading was taken. */
-  update(tick: number, pose: SonarPose, targets: readonly SonarTarget[]): boolean {
-    if (tick === this.lastTick || tick % this.spec.cycleTicks !== 0) return false;
+  update(tick: number, pose: SonarPose, targets: readonly SonarTarget[], force=false): boolean {
+    if (!force && (tick === this.lastTick || tick % this.spec.cycleTicks !== 0)) return false;
     this.lastTick = tick;
     this.reading = ping(this.spec, pose, targets, this.random, this.soundScale); this.pings += 1;
     return true;

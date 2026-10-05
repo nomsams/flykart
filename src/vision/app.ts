@@ -36,7 +36,7 @@ const state = {
   imported: null as Imported | null,
   sourceRecipe: null as TrainingRecipe | null,
   importedVision: null as VisionModel | null,
-  importedWorld: null as { controller: BrainSnapshot; vision: VisionModel | null; fitness?:number;generation?:number } | null,
+  importedWorld: null as { controller: BrainSnapshot; vision: VisionModel | null; fitness?:number;generation?:number;trainingRecipe?:TrainingRecipe } | null,
   robotExtensions: null as {robotLearning?:unknown;robotMission?:unknown} | null,
   memory: new MushroomBody({ seed: 11 }),
   track: null as TrackSession | null,
@@ -44,7 +44,7 @@ const state = {
   running: { track: false, world: false },
   lapsLeft: 0, lapNumber: 0, laps: [] as LapRecord[],
   fade: 0, mode: "belief" as DriverMode,
-  tab: "track",
+  tab: "track", activeDomain: "track" as "track" | "world",
   profile: "kart" as "kart" | "robot", sonarOn: true,
   last: 0, accumulator: { track: 0, world: 0 },
 };
@@ -53,6 +53,7 @@ const state = {
 
 function showTab(name: string): void {
   state.tab = name;
+  if (name === "track" || name === "world") state.activeDomain = name;
   for (const id of ["track", "world", "evidence", "how"]) {
     const selected = id === name;
     $(`tab-${id}`).hidden = !selected;
@@ -92,6 +93,7 @@ let experiment:ReturnType<typeof mountExperimentPanel>;
 let cameraTraining=false, cancelTraining=false, trainedCamera:CameraTrainingResult|null=null;
 let trainedExperiment:RacingSettings|null=null;
 let trainedContext:TrackSettings|null=null;
+let trainedParentGeneration=0;
 const sensorLog:string[]=[];let loggedPing=-1;
 function logSensor(line:string):void{sensorLog.push(line);while(sensorLog.length>500)sensorLog.shift();const box=$("sensor-log") as HTMLTextAreaElement;box.value=sensorLog.join("\n");box.scrollTop=box.scrollHeight;}
 const robotAssets = () => state.assets?.robot ?? null;
@@ -118,7 +120,7 @@ function eyesChoices(): { id: string; label: string; model: VisionModel | null }
 
 function fillSelect(select: HTMLSelectElement, items: { id: string; label: string }[], keep?: string): void {
   const before = keep ?? select.value;
-  select.innerHTML = items.map((item) => `<option value="${item.id}">${item.label}</option>`).join("");
+  select.replaceChildren(...items.map(item => new Option(item.label, item.id)));
   if (items.some((item) => item.id === before)) select.value = before;
 }
 
@@ -151,14 +153,22 @@ function describeBrain(): void {
 
 /* ------------------------------- track session ------------------------------- */
 
+function boundedInput(id:string,min:number,max:number,fallback:number):number {
+  const input=$<HTMLInputElement>(id), raw=input.value.trim()?Number(input.value):NaN;
+  const value=Number.isFinite(raw)?Math.max(min,Math.min(max,Math.round(raw))):fallback;
+  input.value=String(value);return value;
+}
 function buildTrack(options: { keepMemory?: boolean } = {}): void {
+  state.running.track=false;$("track-run").textContent="Start";setStatus("track","ready");
+  const gates=boundedInput('race-checkpoints',2,64,8),variation=boundedInput('race-variation',0,35,0)/100;
+  if(state.memory.config.gates!==gates){state.memory=new MushroomBody({...state.memory.config,gates});options.keepMemory=false;}
   const select = $("track-select") as HTMLSelectElement;
   const memoryOn = $<HTMLInputElement>("memory-on").checked;
   if (!options.keepMemory) { state.memory.forget(); state.lapNumber = 0; state.laps = []; renderLapTable(); }
   const settings=experiment.applied();loggedPing=-1;state.accumulator.track=0;
   const profile=sensorProfile(),eyes=currentVision();if(eyes)profile.camera={...profile.camera,width:eyes.spec.width,height:eyes.spec.height};
   state.track = new TrackSession({
-    rewardConfig:settings.reward,objectKind:$<HTMLSelectElement>("track-object-kind").value as RoadObjectKind|"mixed",checkpointCount:Number($<HTMLInputElement>("race-checkpoints").value),physicsVariation:Number($<HTMLInputElement>("race-variation").value)/100,
+    rewardConfig:settings.reward,objectKind:$<HTMLSelectElement>("track-object-kind").value as RoadObjectKind|"mixed",checkpointCount:gates,physicsVariation:variation,
     lapTarget:settings.multiLap?settings.laps:1, impactPain:settings.impactPain, visual:settings.visual, resolution:settings.resolution,cameraNoise:settings.cameraNoise,cameraBrightness:settings.cameraBrightness,
     trackId: select.value, rivals: Number($<HTMLSelectElement>("track-rivals").value), objects: Number($<HTMLSelectElement>("track-objects").value), style: Number($<HTMLInputElement>("track-style").value), profile, sonarOn: state.sonarOn,
     walls: $<HTMLInputElement>("track-walls").checked, controller: currentController(), vision: currentVision(), fade: state.fade, mode: state.mode, memory: memoryOn ? state.memory : null, seed: 7,
@@ -236,6 +246,7 @@ function setProfile(next: "kart" | "robot"): void {
 /* ------------------------------- world session ------------------------------- */
 
 function buildWorld(): void {
+  state.running.world=false;$("world-run").textContent="Start";
   const assets = state.assets!; const kind = $<HTMLSelectElement>("world-driver").value as WorldDriverKind;
   const robotWorld = state.profile === "robot" ? robotAssets() : null;
   const controller = state.importedWorld?.controller ?? robotWorld?.worldController ?? assets.worldController ?? assets.robust!;
@@ -298,12 +309,11 @@ function download(name: string, text: string): void {
 
 async function importBrainText(text: string, name: string): Promise<void> {
     const imported = importFile(text);
-    if(imported.controller?.domain==='track')state.robotExtensions=null;
-    state.running.track=false;state.running.world=false;$("track-run").textContent="Start race";
+    state.running.track=false;state.running.world=false;$("track-run").textContent="Start";$("world-run").textContent="Start";setStatus('world','paused');
     const notes: string[] = [...imported.warnings];
     let prefer: { controller?: string; eyes?: string } = {};
     if (imported.controller && imported.controller.domain === "world") {
-      state.importedWorld = { controller: imported.controller.snapshot, vision: imported.vision ?? null,fitness:imported.controller.meta.fitness??0,generation:imported.controller.meta.generation??0 };
+      state.importedWorld = { controller: imported.controller.snapshot, vision: imported.vision ?? null,fitness:imported.controller.meta.fitness??0,generation:imported.controller.meta.generation??0,trainingRecipe:imported.trainingRecipe };
       const raw=JSON.parse(text);state.robotExtensions={robotLearning:raw.robotLearning,robotMission:raw.robotMission};
       notes.push("This is an open-world controller; it was loaded into the Open world tab.");
     } else if (imported.controller) {
@@ -313,9 +323,9 @@ async function importBrainText(text: string, name: string): Promise<void> {
     }
     if (imported.profile === "robot" && state.profile !== "robot" && state.assets?.robot) { state.profile = "robot"; $<HTMLSelectElement>("profile").value = "robot"; notes.push("This brain was made for the robot sensor head (camera 6.5 cm up and a sonar), so that profile was selected."); }
     if (imported.vision && imported.vision.domain !== "world") { state.importedVision = imported.vision; prefer.eyes = "imported"; }
-    if (imported.world && imported.controller?.domain !== 'world') state.importedWorld = { controller: imported.world.controller.snapshot, vision: imported.world.vision };
-    if (imported.memory) { state.memory = MushroomBody.fromJSON(imported.memory); $<HTMLInputElement>("memory-on").checked = true; notes.push("The lap memory in the file was restored: the first lap will already recall the bends."); }
-    state.sourceRecipe=imported.trainingRecipe??null;
+    if (imported.world && imported.controller?.domain !== 'world') {state.importedWorld = { controller: imported.world.controller.snapshot, vision: imported.world.vision,fitness:imported.world.controller.meta.fitness??0,generation:imported.world.controller.meta.generation??0,trainingRecipe:imported.world.trainingRecipe };state.robotExtensions=null;}
+    if (imported.memory) { if(!imported.trainingRecipe)$<HTMLInputElement>('race-checkpoints').value=String(imported.memory.config.gates);state.memory = MushroomBody.fromJSON(imported.memory); $<HTMLInputElement>("memory-on").checked = true; notes.push("The lap memory in the file was restored: the first lap will already recall the bends."); }
+    if(imported.controller)state.sourceRecipe=imported.trainingRecipe??null;
     if(imported.experiment)experiment.write(imported.experiment);
     if(imported.trainingRecipe){const r=imported.trainingRecipe;
       experiment.write({...experiment.applied(),reward:r.reward,multiLap:r.physics.lapTarget>1,laps:r.physics.lapTarget===1?3:r.physics.lapTarget,impactPain:r.physics.impactPain});
@@ -332,9 +342,15 @@ async function importBrainText(text: string, name: string): Promise<void> {
     $("brain-info").textContent = `${imported.name}: ${notes.join(" ")}`;
     buildTrack({ keepMemory: Boolean(imported.memory) });
     if(imported.controller?.domain==='world'){buildWorld();showTab('world');}
+    else if(imported.controller){showTab('track');}
+    else if(imported.vision?.domain==='world'){
+      const source=state.importedWorld??worldExportSource();
+      if(source)state.importedWorld={...source,vision:imported.vision};
+      buildWorld();showTab('world');
+    }else if(imported.vision){showTab('track');}
 }
 
-function worldExportSource(): { controller: BrainSnapshot; vision: VisionModel | null;fitness?:number;generation?:number } | null {
+function worldExportSource(): { controller: BrainSnapshot; vision: VisionModel | null;fitness?:number;generation?:number;trainingRecipe?:TrainingRecipe } | null {
   const assets = state.assets; if (!assets) return null;
   if (state.profile === "robot" && assets.robot?.worldController) return { controller: assets.robot.worldController, vision: assets.robot.worldVision };
   return assets.worldController ? { controller: assets.worldController, vision: assets.worldVision } : null;
@@ -350,10 +366,10 @@ function selectedCheckpoint() {
 }
 function visionBrainText():string {
   const world=state.importedWorld??worldExportSource();
-  return exportVisionBrain({...(state.tab==='world'?state.robotExtensions??{}:{}),experiment:experiment.applied(),name:'FlyKart vision brain',profile:state.profile,
-    controller:state.tab==='world'&&world?controllerCheckpoint(world.controller,{domain:'world',fitness:world.fitness,generation:world.generation,trainingRecipe:state.sourceRecipe??undefined}):selectedCheckpoint(),
-    vision:state.tab==='world'&&world?world.vision:currentVision(),fusion:{fade:state.fade,mode:state.mode,visionTemperature:1},memory:state.tab!=='world'&&$<HTMLInputElement>('memory-on').checked?state.memory.toJSON():null,
-    world:world?{controller:controllerCheckpoint(world.controller,{domain:'world',track:'open world'}),vision:world.vision}:null});
+  return exportVisionBrain({...(state.activeDomain==='world'?state.robotExtensions??{}:{}),experiment:experiment.applied(),name:'FlyKart vision brain',profile:state.profile,
+    controller:state.activeDomain==='world'&&world?controllerCheckpoint(world.controller,{domain:'world',fitness:world.fitness,generation:world.generation,trainingRecipe:world.trainingRecipe}):selectedCheckpoint(),
+    vision:state.activeDomain==='world'&&world?world.vision:currentVision(),fusion:{fade:state.fade,mode:state.mode,visionTemperature:1},memory:state.activeDomain!=='world'&&$<HTMLInputElement>('memory-on').checked?state.memory.toJSON():null,
+    world:world?{controller:controllerCheckpoint(world.controller,{domain:'world',track:'open world',fitness:world.fitness,generation:world.generation,trainingRecipe:world.trainingRecipe}),vision:world.vision}:null});
 }
 function exportVision():void{download('flykart-vision-brain.json',visionBrainText());}
 
@@ -378,7 +394,7 @@ async function boot(): Promise<void> {
   for (const id of ["track-select", "track-rivals", "track-objects", "track-object-kind", "race-checkpoints", "race-variation", "track-controller", "track-eyes", "track-walls"]) $(id).addEventListener("change", () => { describeBrain(); if (id === "track-select" || id === "track-controller" || id === "track-eyes") state.memory.forget(); buildTrack({ keepMemory: !(id === "track-select" || id === "track-controller" || id === "track-eyes") }); });
   $("track-style").addEventListener("change", () => buildTrack({ keepMemory: true }));
   $("track-restart").addEventListener("click", () => { state.lapsLeft = 0; buildTrack({ keepMemory: true }); setStatus("track", "restarted"); });
-  $("track-run").addEventListener("click", () => { if(cameraTraining)return; state.running.track = !state.running.track; $("track-run").textContent = state.running.track ? "Pause" : "Resume"; if (state.track?.done) buildTrack({ keepMemory: true }); setStatus("track", state.running.track ? "driving" : "paused");paintTrack(); });
+  $("track-run").addEventListener("click", () => { if(cameraTraining)return; if (state.track?.done) buildTrack({ keepMemory: true }); state.running.track = !state.running.track; $("track-run").textContent = state.running.track ? "Pause" : "Resume"; setStatus("track", state.running.track ? "driving" : "paused");paintTrack(); });
   $("track-laps").addEventListener("click", () => { if (!currentVision()) { setStatus("track", "choose eyes first: the memory works through the camera"); return; } $<HTMLInputElement>("memory-on").checked = true; state.lapsLeft = 0;$<HTMLInputElement>("multi-lap").checked=true;$<HTMLSelectElement>("lap-target").value="3";experiment.write(experiment.read());buildTrack(); state.running.track = true; $("track-run").textContent = "Pause"; });
   $("memory-forget").addEventListener("click", () => { state.memory.forget(); state.laps = []; state.lapNumber = 0; renderLapTable(); paintTrack(); });
   $("memory-on").addEventListener("change", () => buildTrack({ keepMemory: true }));
@@ -386,7 +402,7 @@ async function boot(): Promise<void> {
   $("export-vision-btn").addEventListener("click", exportVision);
   $("export-v1-btn").addEventListener("click", () => download("flykart-brain-for-v1.json", exportAsFlyKartV1(selectedCheckpoint())));
 
-  $("world-run").addEventListener("click", () => { if(cameraTraining)return; if (!state.world) buildWorld(); state.running.world = !state.running.world; $("world-run").textContent = state.running.world ? "Pause" : "Resume"; if (state.world?.done) buildWorld(); setStatus("world", state.running.world ? "driving" : "paused"); });
+  $("world-run").addEventListener("click", () => { if(cameraTraining)return; if (!state.world) buildWorld(); if (state.world?.done) buildWorld(); state.running.world = !state.running.world; $("world-run").textContent = state.running.world ? "Pause" : "Resume"; setStatus("world", state.running.world ? "driving" : "paused"); });
   $("world-new").addEventListener("click", () => { $<HTMLInputElement>("world-seed").value = String(1 + Math.floor(Math.random() * 99999)); buildWorld(); setStatus("world", "new world"); });
   for (const id of ["world-driver", "world-seed", "world-density", "world-style"]) $(id).addEventListener("change", () => { buildWorld(); setStatus("world", "ready"); });
   $("world-fade").addEventListener("input", () => { if (state.world?.driver) state.world.driver.fusion.fade = Number($<HTMLInputElement>("world-fade").value); });
@@ -397,11 +413,20 @@ async function boot(): Promise<void> {
   $("copy-sensor-log").onclick=()=>{void navigator.clipboard.writeText(sensorLog.join("\n")).then(()=>$("copy-sensor-log").textContent="Copied").catch(()=>{($('sensor-log') as HTMLTextAreaElement).select();$("copy-sensor-log").textContent="Select logs · Ctrl+C";});};
   $("clear-sensor-log").onclick=()=>{sensorLog.length=0;($('sensor-log') as HTMLTextAreaElement).value='';};
   $("camera-train").onclick=()=>{void runCameraTraining();};$("camera-train-stop").onclick=()=>{cancelTraining=true;$("camera-train-status").textContent='Cancelling after the current tick…';};
-  $("camera-train-adopt").onclick=()=>{if(!trainedCamera||!trainedContext||!trainedExperiment)return;state.profile=trainedContext.profile?.id??'kart';$<HTMLSelectElement>('profile').value=state.profile;state.sonarOn=trainedContext.sonarOn!==false;$<HTMLInputElement>('sonar-on').checked=state.sonarOn;experiment.write(trainedExperiment);state.importedVision=trainedContext.vision;state.imported={name:'Camera-trained offspring',fitness:trainedCamera.score,generation:(state.imported?.generation??0)+trainedCamera.generation,snapshot:trainedCamera.brain,info:'Selected with camera-only inputs. See the training report for held-out scores.'};refreshBrainSelects({controller:'imported',eyes:'imported'});setFade(0);state.mode='belief';$<HTMLSelectElement>('track-mode').value='belief';$<HTMLInputElement>('memory-on').checked=false;buildTrack();};
+  $("camera-train-adopt").onclick=()=>{if(!trainedCamera||!trainedContext||!trainedExperiment)return;state.profile=trainedContext.profile?.id??'kart';$<HTMLSelectElement>('profile').value=state.profile;state.sonarOn=trainedContext.sonarOn!==false;$<HTMLInputElement>('sonar-on').checked=state.sonarOn;experiment.write(trainedExperiment);
+    $<HTMLSelectElement>('track-select').value=trainedContext.trackId;
+    $<HTMLSelectElement>('track-rivals').value=String(trainedContext.rivals);
+    $<HTMLSelectElement>('track-objects').value=String(trainedContext.objects);
+    $<HTMLSelectElement>('track-object-kind').value=trainedContext.objectKind??'mixed';
+    $<HTMLInputElement>('track-style').value=String(trainedContext.style);
+    $<HTMLInputElement>('track-walls').checked=trainedContext.walls;
+    $<HTMLInputElement>('race-checkpoints').value=String(trainedContext.checkpointCount??8);
+    $<HTMLInputElement>('race-variation').value=String((trainedContext.physicsVariation??0)*100);
+    state.importedVision=trainedContext.vision;state.imported={name:'Camera-trained offspring',fitness:trainedCamera.score,generation:trainedParentGeneration+trainedCamera.generation,snapshot:trainedCamera.brain,info:'Selected with camera-only inputs. See the training report for held-out scores.'};refreshBrainSelects({controller:'imported',eyes:'imported'});setFade(0);state.mode='belief';$<HTMLSelectElement>('track-mode').value='belief';$<HTMLInputElement>('memory-on').checked=false;buildTrack();};
   $("camera-report").onclick=()=>{if(trainedCamera)download('flykart-camera-training.json',JSON.stringify({...trainedCamera,experiment:trainedExperiment,context:trainedContext,notes:'Camera weights frozen; sensor-only neural inputs. Small paired validation is not deployment proof.'},null,2));};
   mountBrainShelf($('import-btn').closest('section')??$('import-btn').parentElement!,'vision',visionBrainText,importBrainText,()=>cameraTraining);
   document.querySelector('.profile-bar')!.after(document.querySelector('.browser-brain-shelf')!);
-  $('add-sonar-inputs').onclick=()=>{if(cameraTraining)return;if(state.profile!=='robot'){setStatus('track','Select the Robot sensor head first.');return;}const snapshot=widenBrain(currentController());state.imported={...state.imported,name:'Racer + sonar inputs',snapshot,info:'Original weights retained; two sonar rows start at zero. Train camera offspring to learn how to use them.'};refreshBrainSelects({controller:'imported'});buildTrack();};
+  $('add-sonar-inputs').onclick=()=>{if(cameraTraining)return;if(state.profile!=='robot'){setStatus('track','Select the Robot sensor head first.');return;}const snapshot=widenBrain(currentController());state.imported={...($<HTMLSelectElement>('track-controller').value==='imported'?state.imported:null),name:'Racer + sonar inputs',snapshot,info:'Original weights retained; two sonar rows start at zero. Train camera offspring to learn how to use them.'};refreshBrainSelects({controller:'imported'});buildTrack();};
   explainControls(document.querySelector("main")!);
   installSettingsHistory(document.querySelector('main')!,()=>{state.profile=$<HTMLSelectElement>('profile').value as 'kart'|'robot';state.sonarOn=$<HTMLInputElement>('sonar-on').checked;state.mode=$<HTMLSelectElement>('track-mode').value as DriverMode;setFade(Number($<HTMLInputElement>('fade').value));state.running.track=false;state.running.world=false;buildTrack();if(state.world)buildWorld();},()=>cameraTraining);
   organizeVision(()=>{if(state.tab==='track')paintTrack();else if(state.tab==='world')paintWorld();});
@@ -422,9 +447,11 @@ boot().catch((error) => {
 
 async function runCameraTraining():Promise<void>{
   if(cameraTraining)return;
+  trainedCamera=null;trainedContext=null;trainedExperiment=null;
+  $<HTMLButtonElement>('camera-train-adopt').disabled=true;$<HTMLButtonElement>('camera-report').disabled=true;
   try{
     if(!currentVision())throw new Error('Choose a camera network first.');
-    trainedExperiment=structuredClone(experiment.read());state.running.track=false;state.running.world=false;cameraTraining=true;cancelTraining=false;trainedCamera=null;
+    trainedExperiment=structuredClone(experiment.read());state.running.track=false;state.running.world=false;$("track-run").textContent="Start";$("world-run").textContent="Start";trainedParentGeneration=$<HTMLSelectElement>('track-controller').value==='imported'?(state.imported?.generation??0):0;cameraTraining=true;cancelTraining=false;trainedCamera=null;
     const settings={...state.track!.settings,controller:currentController(),vision:currentVision(),maxTicks:Number($<HTMLInputElement>('camera-train-ticks').value)};
     trainedContext={...settings,memory:null,fade:0,mode:'belief',sensorOnly:true};
     if(!Number.isInteger(settings.maxTicks)||settings.maxTicks<300||settings.maxTicks>3000)throw new Error('Training budget must be 300–3000 ticks per lap.');

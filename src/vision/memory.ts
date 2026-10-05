@@ -309,11 +309,23 @@ export class MushroomBody {
   }
 
   static fromJSON(snapshot: MemorySnapshot): MushroomBody {
-    if (snapshot.format !== "flykart-kenyon-memory" || snapshot.version !== 2) throw new Error("not a FlyKart memory snapshot");
+    if (!snapshot || snapshot.format !== "flykart-kenyon-memory" || snapshot.version !== 2) throw new Error("not a FlyKart memory snapshot");
+    const c=snapshot.config, integer=(n:number,min:number,max:number)=>Number.isInteger(n)&&n>=min&&n<=max;
+    if(!c||!integer(c.kenyonCells,64,64000)||!integer(c.gates,2,64)||!integer(c.maxCount,1,1000000)||!Number.isFinite(c.seed)||
+       !Number.isFinite(c.sparsity)||c.sparsity<=0||c.sparsity>1||!Number.isFinite(c.span)||c.span<=0||
+       !Array.isArray(c.widthRange)||c.widthRange.length!==2||c.widthRange.some(n=>!Number.isFinite(n)||n<=0)||c.widthRange[1]<c.widthRange[0]||
+       !Array.isArray(c.sigma)||c.sigma.length!==4||c.sigma.some(n=>!Number.isFinite(n)||n<=0)||!Number.isFinite(c.singleLapPenalty)||c.singleLapPenalty<0||
+       !integer(snapshot.lap,0,1000000000)||!Array.isArray(snapshot.weights)||snapshot.weights.length!==OUTPUTS||
+       !Array.isArray(snapshot.segment)||snapshot.segment.length!==c.gates||snapshot.segment.some(n=>!Number.isFinite(n)||n<0))throw new Error('Invalid Kenyon memory configuration.');
+    const read=(text:string)=>{if(typeof text!=='string'||text.length>Math.ceil(c.kenyonCells*4/3)*4+4)throw new Error('Invalid Kenyon memory weights.');const a=decodeFloats(text);if(a.length!==c.kenyonCells||!a.every(Number.isFinite))throw new Error('Invalid Kenyon memory weights.');return a;};
+    const weights=snapshot.weights.map(read),count=read(snapshot.count),passes=read(snapshot.passes),lastLap=read(snapshot.lastLap),firstLap=read(snapshot.firstLap);
+    if(count.some(n=>n<0)||passes.some(n=>n<0)||lastLap.some(n=>n < -1)||firstLap.some(n=>n < -1))throw new Error('Invalid Kenyon memory counters.');
+    if(snapshot.stats&&['updates','meanAbsError','lapAbsError','lapUpdates'].some(key=>{const n=snapshot.stats[key as keyof typeof snapshot.stats];return !Number.isFinite(n)||n<0;}))throw new Error('Invalid Kenyon memory statistics.');
     const body = new MushroomBody(snapshot.config);
-    snapshot.weights.forEach((text, m) => { if (m < OUTPUTS) body.weights[m].set(decodeFloats(text)); });
-    body.count.set(decodeFloats(snapshot.count)); body.passes.set(decodeFloats(snapshot.passes)); body.lastLap.set(decodeFloats(snapshot.lastLap)); body.firstLap.set(decodeFloats(snapshot.firstLap));
+    weights.forEach((w,m)=>body.weights[m].set(w));
+    body.count.set(count); body.passes.set(passes); body.lastLap.set(lastLap); body.firstLap.set(firstLap);
     body.segment.set(snapshot.segment); body.lapIndex = snapshot.lap;
+    if(snapshot.stats)Object.assign(body.stats,snapshot.stats);
     return body;
   }
 

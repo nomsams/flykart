@@ -136,8 +136,7 @@ export class TrackEpisode implements VisionEpisode {
 
   /** Take a reading now, whatever the ping cycle says (after objects have been moved by hand). */
   refreshSonar(): void {
-    if(this.sonarUnit)this.sonarUnit.lastTick=-1;
-    if (this.sonarUnit) this.sonarUnit.update(0, { x: this.car.position.x, y: this.car.position.y, heading: this.car.heading }, this.sonarTargets());
+    if (this.sonarUnit) this.sonarUnit.update(this.tick, { x: this.car.position.x, y: this.car.position.y, heading: this.car.heading }, this.sonarTargets(),true);
   }
 
   /** Put the kart somewhere other than the start line (for diverse training data). */
@@ -151,7 +150,8 @@ export class TrackEpisode implements VisionEpisode {
     const near = nearestTrack(car.position, route);
     car.progress = near.progress; car.distanceAlong = near.distanceAlong; car.totalProgress = near.progress; car.netProgress = near.progress; car.bestProgress = near.progress;
     car.progressWindowStart = near.progress; car.rewardWindowProgressStart = near.progress;
-    car.nextCheckpoint = (Math.floor(near.progress * 8) + 1) % 8;
+    const gates=this.physics.checkpointCount??8;
+    car.nextCheckpoint = (Math.floor(near.progress * gates) + 1) % gates;
     // Anything that starts behind or on top of the kart would be an unfair hit; clear the neighbourhood.
     for (const other of [...this.rivals, ...this.roadObjects]) {
       if (Math.hypot(other.position.x - car.position.x, other.position.y - car.position.y) < 60) {
@@ -168,7 +168,7 @@ export class TrackEpisode implements VisionEpisode {
   /** The 17 numbers the simulator hands the original controller. */
   privileged(): number[] {
     if (this.lastSensors && this.lastSensorTick === this.tick) return this.lastSensors;
-    this.lastSensors = sensorValues(this.car, this.cars, this.route); this.lastSensorTick = this.tick;
+    this.lastSensors = sensorValues(this.car, this.cars, this.route, this.physics.checkpointCount); this.lastSensorTick = this.tick;
     return this.lastSensors;
   }
 
@@ -205,7 +205,7 @@ export class TrackEpisode implements VisionEpisode {
 
   /** Advance one tick: rivals decide first so every kart sees the same world. */
   step(action: Action): void {
-    const botActions = this.rivals.map((bot) => heuristicAction(bot, this.cars, this.route));
+    const botActions = this.rivals.map((bot) => heuristicAction(bot, this.cars, this.route, this.physics.checkpointCount));
     stepCar(this.car, action, this.cars, this.route, this.rewardConfig, this.physics);
     this.rivals.forEach((bot, index) => stepCar(bot, botActions[index], this.cars, this.route, this.rewardConfig, { ...this.physics, ruthlessCulling: false }));
     this.tick += 1;
@@ -215,5 +215,5 @@ export class TrackEpisode implements VisionEpisode {
   get seconds(): number { return this.tick * STEP; }
   get progress(): number { return this.car.totalProgress; }
   /** Gate the kart is heading for, as a world point (for overlays). */
-  nextGate(): { x: number; y: number } { const gate = trackCheckpoint(this.car.nextCheckpoint % 8, this.route, 8); return gate.point; }
+  nextGate(): { x: number; y: number } { const n=this.physics.checkpointCount??8;return trackCheckpoint(this.car.nextCheckpoint % n, this.route, n).point; }
 }

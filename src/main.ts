@@ -870,8 +870,9 @@ function downloadSelectedLineage(): void {
 }
 
 async function importBrainText(text: string, name: string): Promise<void> {
-    const parsed = JSON.parse(text) as { format?: unknown; version?: unknown; fitness?: unknown; generation?: unknown; track?: unknown; provenance?: unknown; network?: BrainSnapshot; trainingRecipe?:unknown };
+    const parsed = JSON.parse(text) as { format?: unknown; version?: unknown; fitness?: unknown; generation?: unknown; track?: unknown; provenance?: unknown; network?: BrainSnapshot; trainingRecipe?:unknown; domain?:unknown };
     if (parsed.format !== undefined && parsed.format !== "flykart-brain") throw new Error("this file is not a FlyKart brain checkpoint");
+    if(parsed.domain!==undefined&&parsed.domain!=="track")throw new Error("Open-world brains use different inputs; open this brain in Vision or the 3D habitat.");
     if (!parsed.network) throw new Error("checkpoint is missing its network weights");
     const network = SpikingNetwork.fromJSON(parsed.network);
     if (network.inputCount !== 17) throw new Error("this brain reads a sonar as well; open it in FlyKart Vision, or export it for FlyKart v1 from there");
@@ -1031,7 +1032,7 @@ function manualAction(): ReturnType<typeof heuristicAction> {
 function updateRace(): void {
   if (!running || training) return;
   const actions = new Map<Car, ReturnType<typeof heuristicAction>>();
-  raceCars.forEach((car) => { if (!car.isObstacle) actions.set(car, car === fly && manualMode ? manualAction() : car.isFly && car.network ? car.network.step(sensorValues(car, raceCars, activeTrack)) : heuristicAction(car, raceCars, activeTrack)); });
+  raceCars.forEach((car) => { if (!car.isObstacle) actions.set(car, car === fly && manualMode ? manualAction() : car.isFly && car.network ? car.network.step(sensorValues(car, raceCars, activeTrack, physicsConfig.checkpointCount)) : heuristicAction(car, raceCars, activeTrack, physicsConfig.checkpointCount)); });
   raceCars.forEach((car) => {
     if (car.isObstacle) return;
     const action = actions.get(car) ?? { steer: 0, throttle: 0, brake: 1 };
@@ -1125,7 +1126,7 @@ function trainFiveBrainStep(): void {
     if (!car.network || car.crashed || car.finished || car.timedOut || car.eliminated) return undefined;
     const candidateObstacles = ghostEvolution ? (trainingGhostObstacles[index] ?? []) : trainingObstacles;
     const simulationCars = ghostEvolution ? [car, ...candidateObstacles] : sharedSimulationCars;
-    return car.network.step(sensorValues(car, simulationCars, route));
+    return car.network.step(sensorValues(car, simulationCars, route, visualEpisodePhysics.checkpointCount));
   });
   trainingPopulation.forEach((car, index) => {
     if (!car.network || car.crashed || car.finished || car.timedOut || car.eliminated) return;
@@ -1192,7 +1193,7 @@ function trainFiveBrainStep(): void {
 function trainPopulationStep(): void {
   if (fiveBrainEvolution) { trainFiveBrainStep(); return; }
   const car = trainingPopulation[trainingIndex]; if (!car?.network) return;
-  const cars = [car, ...trainingObstacles]; const previousTimeLimit = car.timeLimit; const action = car.network.step(sensorValues(car, cars, trainingTracks[trainingTrackIndex])); stepCar(car, action, cars, trainingTracks[trainingTrackIndex], rewardConfig, visualEpisodePhysics);
+  const cars = [car, ...trainingObstacles]; const previousTimeLimit = car.timeLimit; const action = car.network.step(sensorValues(car, cars, trainingTracks[trainingTrackIndex], visualEpisodePhysics.checkpointCount)); stepCar(car, action, cars, trainingTracks[trainingTrackIndex], rewardConfig, visualEpisodePhysics);
   if (car.timeLimit > previousTimeLimit) appendEvent(`${car.name} earned adaptive extension ${car.timeExtensions}/${physicsConfig.maxAdaptiveExtensions ?? MAX_ADAPTIVE_EXTENSIONS} · new limit ${car.timeLimit} ticks`);
   const episodeCount = Math.max(1, trainingTracks.length); const totalEpisodes = Math.max(1, trainingPopulationSize * episodeCount * requestedGenerations);
   const completedEpisodes = (trainingGeneration - 1) * trainingPopulationSize * episodeCount + trainingIndex * episodeCount + trainingTrackIndex;

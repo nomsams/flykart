@@ -14,7 +14,7 @@ import { validateRobotConfig } from "./model";
 import "./robot.css";
 import { Action, SpikingNetwork, clamp } from "../core";
 import { controllerCheckpoint, exportVisionBrain, importFile } from "../vision/format";
-import { Perceiver, VisionModel } from "../vision/perception";
+import { Perceiver, VisionModel, validateVisionModel } from "../vision/perception";
 import { worldDomain } from "../vision/world/worldDomain";
 import { sensorsFromEstimates } from "../vision/interface";
 import { Firmware } from "./firmware";
@@ -451,7 +451,6 @@ function robotBrainText():string {
 }
 function installBrain(text: string): void {
   if (hardwarePanel?.busy) throw new Error("Disconnect hardware before replacing the fly.");
-  if (training) endTraining("Brain replaced; training stopped.");
   const imported = importFile(text);
   if (!imported.controller) throw new Error("Import a controller or combined vision brain, not just an eye network.");
   const snapshot = imported.controller.snapshot;
@@ -462,6 +461,8 @@ function installBrain(text: string): void {
   const nextController = SpikingNetwork.fromJSON(snapshot);
   const raw=JSON.parse(text),extension=raw.robotLearning,learned=extension?parseLearning(extension):null;
   const importedMission=raw.robotMission?validateMission(raw.robotMission):null;
+  if(importedMission?.goals.some(goal=>objects.some(object=>object.id===goal.id)))throw new Error("Mission goal ID conflicts with a scene object. Rename the goal or object before importing.");
+  if (training) endTraining("Brain replaced; training stopped.");
   if(!learned?.lifecycle){taskSettings=structuredClone(DEFAULT_TASK);taskBrain=new TaskBrain();taskLineage=[];taskEvidence=[];taskParent=undefined;taskPanel?.sync();}
   raceRecipe=imported.trainingRecipe;
   if(importedMission)mission=importedMission;
@@ -473,13 +474,7 @@ function installBrain(text: string): void {
   message(`Imported ${brainName}. ${imported.warnings.join(" ")}`);if(!loadingBundled)saveLocal();
 }
 function validateEyes(model: VisionModel, domain: string): Perceiver {
-  const spec = model?.spec;
-  const count = domain === "world" ? 10 : 13;
-  if (!spec || spec.width < 8 || spec.width > 160 || spec.height < 8 || spec.height > 120 || !Number.isInteger(spec.width) || !Number.isInteger(spec.height) || ![1, 2].includes(spec.frames) || spec.outputs !== count * 2 + 3 || model.targetScale?.length !== count || !model.targetScale.every(n => Number.isFinite(n) && n > 0) || (model.domain ?? "track") !== domain) throw new Error("Vision network dimensions or domain do not match the controller.");
-  if (!Array.isArray(spec.channels) || spec.channels.length !== 3 || spec.channels.some(n => !Number.isInteger(n) || n < 1 || n > 64) || !Number.isInteger(spec.hidden) || spec.hidden < 1 || spec.hidden > 256 || ![3, 5].includes(spec.extra)) throw new Error("Vision network architecture exceeds the lab limits.");
-  const next = new Perceiver(model);
-  if (!next.net.params.every(Number.isFinite)) throw new Error("Vision network has non-finite weights.");
-  return next;
+  return new Perceiver(validateVisionModel(model,domain as "track"|"world"));
 }
 async function loadBundled(): Promise<void> {
   loadingBundled=true;try{

@@ -816,7 +816,7 @@ export function nearestTrack(position: Vec, trackRef: TrackRef = DEFAULT_TRACK, 
     }, nearest);
 }
 
-export function sensorValues(car: Car, others: Car[], trackRef?: TrackRef): Sensors {
+export function sensorValues(car: Car, others: Car[], trackRef?: TrackRef, checkpointCount=CHECKPOINT_COUNT): Sensors {
   const route = resolveTrack(trackRef ?? car.trackId); const closest = nearestTrack(car.position, route, car.ticks > 0 ? car.distanceAlong : undefined, car.speed < -0.5 ? -1 : 1);
   // At low speed, a shorter lookahead lets the controller commit to a tight
   // corner. At high speed, the horizon grows so it begins braking and turning
@@ -835,7 +835,7 @@ export function sensorValues(car: Car, others: Car[], trackRef?: TrackRef): Sens
   const edgeClearance = clamp(1 - closest.distance / Math.max(1, route.width / 2), -1, 1);
   const forward = { x: Math.cos(car.heading), y: Math.sin(car.heading) };
   const forwardAlignment = dot(forward, closest.tangent);
-  const checkpoint = trackCheckpoint(car.nextCheckpoint, route);
+  const checkpoint = trackCheckpoint(car.nextCheckpoint, route, checkpointCount);
   const checkpointHeading = wrapAngle(Math.atan2(checkpoint.point.y - car.position.y, checkpoint.point.x - car.position.x) - car.heading) / Math.PI;
   const opponentRelativeSpeed = opponent ? (opponent.other.speed - car.speed) / 90 : 0;
   return [clamp(headingError, -1, 1), clamp(curvature, -1, 1), clamp(signedLateral, -1, 1),
@@ -847,8 +847,8 @@ export function sensorValues(car: Car, others: Car[], trackRef?: TrackRef): Sens
     clamp(car.action.steer, -1, 1), clamp(car.action.throttle - car.action.brake, -1, 1), opponent?.other.isObstacle ? 1 : 0];
 }
 
-export function heuristicAction(car: Car, others: Car[], trackRef?: TrackRef): Action {
-  const sensors = sensorValues(car, others, trackRef); const lateral = sensors[2]; const opponentPressure = sensors[5];
+export function heuristicAction(car: Car, others: Car[], trackRef?: TrackRef, checkpointCount=CHECKPOINT_COUNT): Action {
+  const sensors = sensorValues(car, others, trackRef, checkpointCount); const lateral = sensors[2]; const opponentPressure = sensors[5];
   const opponent = nearestOpponent(car, others); const opponentIsAhead = Boolean(opponent && opponent.forward > 0.12);
   const closeTraffic = Boolean(opponent && opponent.distance < CLOSE_PROXIMITY_DISTANCE);
   const avoid = opponentPressure > 0 ? -sensors[6] * opponentPressure * (closeTraffic ? 2.2 : 1.35) : 0;
@@ -1154,8 +1154,8 @@ export function evaluate(network: SpikingNetwork, trackRef: TrackRef = DEFAULT_T
   for (let tick = 0; tick < simulationLimit && !car.crashed && !car.finished && !car.timedOut && !car.eliminated; tick += 1) {
     // Freeze decisions before moving any car. Otherwise the first vehicle in
     // the array gets a different world state from the final vehicle.
-    const carAction = network.step(sensorValues(car, cars, route));
-    const botActions = ghost ? [] : obstacles.map((bot) => heuristicAction(bot, cars, route));
+    const carAction = network.step(sensorValues(car, cars, route, episodePhysics.checkpointCount));
+    const botActions = ghost ? [] : obstacles.map((bot) => heuristicAction(bot, cars, route, episodePhysics.checkpointCount));
     stepCar(car, carAction, cars, route, rewardConfig, episodePhysics);
     if (!ghost) obstacles.forEach((bot, index) => stepCar(bot, botActions[index], cars, route, rewardConfig, { ...episodePhysics, ruthlessCulling: false }));
   }

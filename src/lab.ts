@@ -99,7 +99,7 @@ export function parseBrainFile(text: string, options: { allowSonar?: boolean } =
   let network: SpikingNetwork;
   try { network = SpikingNetwork.fromJSON(source); } catch (error) { throw new Error(error instanceof Error ? error.message : "The network weights could not be read."); }
   if (network.inputCount !== INPUT_COUNT && !options.allowSonar) throw new Error("This brain reads a sonar as well as the 17 usual sensors; open it in FlyKart Vision.");
-  const provenance = Array.isArray(object.provenance) ? (object.provenance as Record<string, unknown>[]) : [];
+  const provenance = Array.isArray(object.provenance) ? (object.provenance.filter(entry=>entry && typeof entry === "object" && !Array.isArray(entry)) as Record<string, unknown>[]) : [];
   const lineage = typeof object.lineage === "object" && object.lineage !== null ? (object.lineage as { name?: unknown; generation?: unknown; parents?: unknown }) : null;
   return {
     snapshot: network.toJSON(),
@@ -112,7 +112,7 @@ export function parseBrainFile(text: string, options: { allowSonar?: boolean } =
       track: typeof object.track === "string" ? object.track : null,
       sources: provenance.map((entry) => (typeof entry.source === "string" ? entry.source : "")).filter(Boolean),
       lineage: lineage && typeof lineage.name === "string" ? { name: lineage.name, generation: finiteOrNull(lineage.generation) ?? 0, parents: Array.isArray(lineage.parents) ? lineage.parents.map(String) : [] } : null,
-      upgradedFromLegacy: source.version === 1 || source.inputCount !== INPUT_COUNT || (Array.isArray(source.outputWeights) && source.outputWeights.length !== HIDDEN_COUNT * READOUT_COUNT),
+      upgradedFromLegacy: source.version === 1 || source.inputCount === 9 || (Array.isArray(source.outputWeights) && source.outputWeights.length !== HIDDEN_COUNT * READOUT_COUNT),
     },
   };
 }

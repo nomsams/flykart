@@ -13,8 +13,8 @@ import { BrainMeta, parseBrainFile } from "../lab";
 import { RacingSettings, validateRacingSettings } from "./racing-settings";
 import { narrowBrain } from "./inputs";
 import type { DriverMode } from "./pipeline";
-import type { MemorySnapshot } from "./memory";
-import type { VisionModel } from "./perception";
+import { MemorySnapshot, MushroomBody } from "./memory";
+import { VisionModel, validateVisionModel } from "./perception";
 import { TrainingRecipe, validateRecipe } from '../training-recipe';
 
 export type ControllerCheckpoint = {
@@ -52,7 +52,7 @@ export type Imported = {
   vision?: VisionModel | null;
   fusion?: FusionSettings;
   memory?: MemorySnapshot | null;
-  world?: { controller: { snapshot: BrainSnapshot; meta: BrainMeta }; vision: VisionModel | null } | null;
+  world?: { controller: { snapshot: BrainSnapshot; meta: BrainMeta }; vision: VisionModel | null;trainingRecipe?:TrainingRecipe } | null;
   experiment?: RacingSettings;
   warnings: string[];
 };
@@ -66,11 +66,19 @@ export function importFile(text: string): Imported {
   const object = asObject(raw);
   if (!object) throw new Error("Expected a JSON object.");
   if (object.format === "flykart-vision-net") {
-    return { kind: "vision-net", name: "vision net", vision: object as unknown as VisionModel, warnings: [] };
+    return { kind: "vision-net", name: "vision net", vision: validateVisionModel(object), warnings: [] };
   }
   if (object.format === "flykart-vision-brain") {
     const file = object as unknown as VisionBrainFile;
+    if(file.version!==1)throw new Error('Unsupported vision brain version.');
+    const domain=file.controller?.domain??'track';
+    if(!['track','world'].includes(domain)||typeof file.name!=='string')throw new Error('Invalid vision brain name or domain.');
     const controller = parseBrainFile(JSON.stringify(file.controller), { allowSonar: true });
+    if(file.vision)validateVisionModel(file.vision,domain);
+    if(file.world?.controller?.domain!==undefined&&file.world.controller.domain!=='world')throw new Error('Invalid secondary world controller domain.');
+    if(file.world?.vision)validateVisionModel(file.world.vision,'world');
+    if(file.memory)MushroomBody.fromJSON(file.memory);
+    if(file.fusion&&(!['belief','action-average','vision-action'].includes(file.fusion.mode)||!Number.isFinite(file.fusion.fade)||file.fusion.fade<0||!Number.isFinite(file.fusion.visionTemperature)||file.fusion.visionTemperature<=0))throw new Error('Invalid vision fusion settings.');
     const warnings: string[] = [];
     if (!file.vision) warnings.push("This file has a controller but no eyes; the bundled camera network will be used.");
     return {
@@ -79,12 +87,13 @@ export function importFile(text: string): Imported {
       controller: { snapshot: controller.snapshot, meta: controller.meta, domain: file.controller.domain ?? "track" },
       vision: file.vision ?? null, fusion: file.fusion, memory: file.memory ?? null,
       experiment: file.experiment === undefined ? undefined : validateRacingSettings(file.experiment),
-      world: file.world ? { controller: parseBrainFile(JSON.stringify(file.world.controller), { allowSonar: true }), vision: file.world.vision } : null,
+      world: file.world ? { controller: parseBrainFile(JSON.stringify(file.world.controller), { allowSonar: true }), vision: file.world.vision,trainingRecipe:file.world.controller.trainingRecipe===undefined?undefined:validateRecipe(file.world.controller.trainingRecipe) } : null,
       warnings,
     };
   }
   // Anything else must be an original FlyKart brain (or a bare network snapshot): parseBrainFile explains if it is not.
   const brain = parseBrainFile(text, { allowSonar: true });
+  if(object.domain!==undefined&&!['track','world'].includes(String(object.domain)))throw new Error('Invalid controller domain.');
   const domain = object.domain === "world" ? "world" : "track";
   const warnings: string[] = [];
   if (brain.meta.upgradedFromLegacy) warnings.push("This is an older FlyKart brain; it was upgraded to the current 17-input format exactly as the original simulator does.");
@@ -105,6 +114,7 @@ export function exportVisionBrain(file: Omit<VisionBrainFile, "format" | "versio
 
 /** The controller alone, in the exact shape the original FlyKart's "Import brain" button reads. */
 export function exportAsFlyKartV1(controller: ControllerCheckpoint): string {
+  if(controller.domain==='world')throw new Error('Room input meanings cannot be exported as a racer. Keep this brain in Vision or the 3D habitat.');
   const { domain: _domain, ...plain } = controller;
   return JSON.stringify({ ...plain, network: narrowBrain(plain.network) }, null, 2);
 }
