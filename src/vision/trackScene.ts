@@ -49,7 +49,9 @@ export class TrackScene implements Scene {
       if (car === self || car.crashed || car.finished || car.timedOut || car.eliminated || car.trackId !== self.trackId) continue;
       if (car.isObstacle && car.obstacleKind === "oil") { this.oil.push({ x: car.position.x, y: car.position.y }); continue; }
       const color = hexToRgb(car.color.length === 7 ? car.color : "#f19a69");
-      if (car.isObstacle && car.obstacleKind === "barrier") this.traffic.push({ x: car.position.x, y: car.position.y, heading: car.heading, width: CAR_COLLISION_DIAMETER * 1.4, length: 7, z0: 0, z1: 9, color, shape: "wall" });
+      if (car.isObstacle && car.obstacleKind === 'wall') this.traffic.push({ x:car.position.x,y:car.position.y,heading:car.heading,width:38,length:8,z0:0,z1:40,color,shape:'wall' });
+      else if (car.isObstacle && car.obstacleKind === 'bush') this.traffic.push({ x:car.position.x,y:car.position.y,heading:car.heading,width:24,length:24,z0:0,z1:28,color,shape:'rock' });
+      else if (car.isObstacle && car.obstacleKind === "barrier") this.traffic.push({ x: car.position.x, y: car.position.y, heading: car.heading, width: CAR_COLLISION_DIAMETER * 1.4, length: 7, z0: 0, z1: 9, color, shape: "wall" });
       else if (car.isObstacle && car.obstacleKind === "cone") this.traffic.push({ x: car.position.x, y: car.position.y, heading: car.heading, width: 9, length: 9, z0: 0, z1: 10, color: [0.97, 0.45, 0.12], shape: "cone" });
       else this.traffic.push({ x: car.position.x, y: car.position.y, heading: car.heading, width: CAR_WIDTH, length: CAR_LENGTH, z0: 0, z1: 9, color, shape: "kart" });
     }

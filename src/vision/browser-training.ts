@@ -1,7 +1,7 @@
 import { BrainSnapshot, SpikingNetwork } from "../core";
 import { TrackSession, TrackSettings } from "./ui/sessions";
 
-export type CameraTrainingResult={brain:BrainSnapshot;score:number;generation:number;validation:{parent:number;offspring:number;seeds:number[]};trainingSeeds:number[]};
+export type CameraTrainingResult={brain:BrainSnapshot;score:number;generation:number;validation:{parent:number;offspring:number;seeds:number[]};trainingSeeds:number[];scoreDefinition:string};
 /** Evolve the controller behind frozen camera weights. Labels only select
  * offspring: VisionDriver.sensorOnly keeps them out of the neural inputs. */
 export async function trainCameraController(settings:TrackSettings,generations:number,population:number,cancelled:()=>boolean,log:(s:string)=>void):Promise<CameraTrainingResult|null>{
@@ -16,7 +16,7 @@ export async function trainCameraController(settings:TrackSettings,generations:n
       while(!session.done){session.step();if(performance.now()>deadline){await new Promise<void>(r=>setTimeout(r,0));if(cancelled())return null;deadline=performance.now()+12;}}
       const c=session.episode.car, target=settings.lapTarget??1;
       // No early-death pace bonus. Completion means all requested laps survived.
-      sum+=c.totalProgress/target*1000+(c.finished?500:0)-c.rewardTotals.collision*5-(c.crashed?300:0)-c.offTrackTicks/Math.max(1,c.ticks)*100+c.score*.01;
+      sum+=settings.rewardConfig?c.score:c.totalProgress/target*1000+(c.finished?500:0)-c.rewardTotals.collision*5-(c.crashed?300:0)-c.offTrackTicks/Math.max(1,c.ticks)*100+c.score*.01;
     }return sum/testSeeds.length;
   };
   let parent=SpikingNetwork.fromJSON(settings.controller),best=-Infinity;
@@ -34,5 +34,5 @@ export async function trainCameraController(settings:TrackSettings,generations:n
   const baseline=await evaluate(settings.controller,heldOut),offspring=await evaluate(parent.toJSON(),heldOut);
   if(baseline===null||offspring===null)return null;
   log(`Held-out paired scores: parent ${baseline.toFixed(2)}, offspring ${offspring.toFixed(2)}. ${offspring>baseline?'Offspring improved on this small test.':'No demonstrated improvement on this small test.'}`);
-  return {brain:parent.toJSON(),score:best,generation:generations,trainingSeeds:seeds,validation:{parent:baseline,offspring,seeds:heldOut}};
+  return {scoreDefinition:settings.rewardConfig?"Sum of transferred racing rewards and penalties (car.score)":"Legacy progress/survival score plus default racing rewards",brain:parent.toJSON(),score:best,generation:generations,trainingSeeds:seeds,validation:{parent:baseline,offspring,seeds:heldOut}};
 }

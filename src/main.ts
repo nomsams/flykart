@@ -1,3 +1,5 @@
+import { mountBrainShelf } from './browser-brain';
+import { TrainingRecipe, validateRecipe } from './training-recipe';
 import { StepPacer } from './step-pacer';
 import { attachJsonImport } from './json-import';
 import "./style.css";
@@ -812,27 +814,30 @@ function persistBestBrain(): void {
   const network = checkpointNetwork(); if (!network) return;
   try {
     if (!bestNetwork) bestNetwork = network.clone(); rememberTrainingContext();
-    localStorage.setItem(MODEL_STORAGE_KEY, JSON.stringify({ fitness: Number.isFinite(bestFitness) ? bestFitness : 0, generation, track: activeTrainingContext, provenance: [...contextProvenance.values()], network: network.toJSON() }));
+    localStorage.setItem(MODEL_STORAGE_KEY, JSON.stringify(checkpointObject()));
   } catch (error) { console.warn("FlyKart could not persist the current brain", error); }
 }
 
-function saveBrain(): void {
-  const network = checkpointNetwork();
-  if (!network) { setRunState("No checkpoint", "Start training before saving a checkpoint.", "paused", "RACE MODE"); appendEvent("save skipped: no controller is available yet"); return; }
-  try {
-    bestNetwork = bestNetwork ?? network.clone(); persistBestBrain();
-    const detail = `checkpoint saved at generation ${generation} with fitness ${Number.isFinite(bestFitness) ? bestFitness.toFixed(1) : "pending"}`;
-    setRunState("Checkpoint saved", detail, "ready", "RACE MODE"); appendEvent(detail);
-  } catch (error) {
-    const detail = error instanceof Error ? error.message : "could not save checkpoint";
-    setRunState("Save error", detail, "error", "RACE MODE"); appendEvent(`save failed: ${detail}`);
-  }
+function racerRecipe(): TrainingRecipe {
+  const p=readPhysicsConfig();readRoadObjectConfig();
+  return validateRecipe({version:1,domain:'race',reward:readRewardConfig(),physics:{wallsEnabled:p.wallsEnabled,lapTarget:p.lapTarget??1,impactPain:p.impactPain??false,checkpointCount:p.checkpointCount??8,domainRandomization:p.domainRandomization??0},obstacles:{enabled:randomObjectsEnabled,count:randomObjectCount,kind:randomObjectKind}});
+}
+function restoreRacerRecipe(recipe: TrainingRecipe): void {
+  const fields=[ui.rewardProgress,ui.rewardDirection,ui.rewardMoving,ui.rewardStanding,ui.rewardWrong,ui.rewardReverse,ui.rewardOffTrack,ui.rewardEdge,ui.rewardProximity,ui.rewardHazard,ui.rewardCenterline,ui.rewardControlChange,ui.rewardControlConflict,ui.rewardSpikeEnergy,ui.rewardCollision,ui.rewardCrash,ui.rewardCheckpoint,ui.rewardFinish];
+  const keys=['progressPerSecond','correctDirectionPerSecond','movementPerSecond','standingStillPerSecond','wrongDirectionPerSecond','reverseProgressPerSecond','offTrackPerSecond','edgePenaltyPerSecond','proximityPenaltyPerSecond','hazardPenaltyPerSecond','centerlinePerSecond','controlChangePerSecond','controlConflictPerSecond','spikeEnergyPerSecond','collision','crash','checkpoint','finish'] as (keyof RewardConfig)[];
+  fields.forEach((input,i)=>input.value=String(recipe.reward[keys[i]]??0));
+  ui.wallsToggle.checked=recipe.physics.wallsEnabled;required<HTMLInputElement>('#multi-lap').checked=recipe.physics.lapTarget>1;
+  required<HTMLSelectElement>('#lap-target').value=String(recipe.physics.lapTarget===1?3:recipe.physics.lapTarget);required<HTMLInputElement>('#impact-pain').checked=recipe.physics.impactPain;
+  ui.checkpointCount.value=String(recipe.physics.checkpointCount);ui.domainRandomization.value=String(recipe.physics.domainRandomization*100);
+  ui.obstacleToggle.checked=recipe.obstacles.enabled;ui.obstacleCount.value=String(recipe.obstacles.count);ui.obstacleKind.value=recipe.obstacles.kind;
+  ui.trainingPreset.value='custom';ui.trainingPresetDetail.textContent='Imported scoring recipe · reward, lap, contact and obstacle settings restored.';
+  readRewardConfig();readPhysicsConfig();readRoadObjectConfig();
 }
 
-function checkpointObject(networkOverride?: SpikingNetwork, fitnessOverride?: number, generationOverride?: number, lineage?: LineageNode): { format: string; version: number; savedAt: string; fitness: number; generation: number; track: TrainingContextKey; provenance: TrainingProvenance[]; network: BrainSnapshot; lineage?: { name: string; generation: number; parents: string[] } } {
+function checkpointObject(networkOverride?: SpikingNetwork, fitnessOverride?: number, generationOverride?: number, lineage?: LineageNode): { format: string; version: number; savedAt: string; fitness: number; generation: number; track: TrainingContextKey; provenance: TrainingProvenance[]; network: BrainSnapshot; trainingRecipe:TrainingRecipe; lineage?: { name: string; generation: number; parents: string[] } } {
   const network = networkOverride ?? checkpointNetwork(); if (!network) throw new Error("start training before exporting a checkpoint");
   const checkpointFitness = fitnessOverride ?? bestFitness; const checkpointGeneration = generationOverride ?? generation;
-  return { format: "flykart-brain", version: CHECKPOINT_VERSION, savedAt: new Date().toISOString(), fitness: Number.isFinite(checkpointFitness) ? checkpointFitness : 0, generation: checkpointGeneration, track: activeTrainingContext, provenance: [...contextProvenance.values()], network: network.toJSON(), ...(lineage ? { lineage: { name: lineage.name, generation: lineage.generation, parents: lineage.parentIds.map((id) => lineageNodeById(id)?.name ?? id) } } : {}) };
+  return { format: "flykart-brain", version: CHECKPOINT_VERSION, savedAt: new Date().toISOString(), fitness: Number.isFinite(checkpointFitness) ? checkpointFitness : 0, generation: checkpointGeneration, track: activeTrainingContext, provenance: [...contextProvenance.values()], network: network.toJSON(), trainingRecipe:racerRecipe(), ...(lineage ? { lineage: { name: lineage.name, generation: lineage.generation, parents: lineage.parentIds.map((id) => lineageNodeById(id)?.name ?? id) } } : {}) };
 }
 
 function exportBrain(): void {
@@ -865,11 +870,13 @@ function downloadSelectedLineage(): void {
 }
 
 async function importBrainText(text: string, name: string): Promise<void> {
-    const parsed = JSON.parse(text) as { format?: unknown; version?: unknown; fitness?: unknown; generation?: unknown; track?: unknown; provenance?: unknown; network?: BrainSnapshot };
+    const parsed = JSON.parse(text) as { format?: unknown; version?: unknown; fitness?: unknown; generation?: unknown; track?: unknown; provenance?: unknown; network?: BrainSnapshot; trainingRecipe?:unknown };
     if (parsed.format !== undefined && parsed.format !== "flykart-brain") throw new Error("this file is not a FlyKart brain checkpoint");
     if (!parsed.network) throw new Error("checkpoint is missing its network weights");
     const network = SpikingNetwork.fromJSON(parsed.network);
     if (network.inputCount !== 17) throw new Error("this brain reads a sonar as well; open it in FlyKart Vision, or export it for FlyKart v1 from there");
+    const recipe=parsed.trainingRecipe===undefined?undefined:validateRecipe(parsed.trainingRecipe);
+    stopAll();if(recipe)restoreRacerRecipe(recipe);
     contextProvenance.clear(); restoreProvenance(parsed.provenance);
     const sourceContext = isTrainingContext(parsed.track) ? parsed.track : "all"; const selectedContext = selectedTrainingContext(); const sourceFitness = typeof parsed.fitness === "number" && Number.isFinite(parsed.fitness) ? parsed.fitness : -Infinity; const sourceGeneration = typeof parsed.generation === "number" && Number.isInteger(parsed.generation) && parsed.generation >= 0 ? parsed.generation : 0;
     const sourceRecord = contextProvenance.get(sourceContext); const sourceProgress = sourceRecord?.bestProgress ?? 0; const sourceFinished = sourceRecord?.finished ?? false;
@@ -879,25 +886,6 @@ async function importBrainText(text: string, name: string): Promise<void> {
     updateBestMetrics(); launchRace();
     const detail = `checkpoint imported from ${name}; generation ${generation} is ready to race`;
     setRunState("Checkpoint imported", detail, "ready", "RACE MODE"); appendEvent(detail);
-}
-
-function loadBrain(): void {
-  try {
-    const raw = localStorage.getItem(MODEL_STORAGE_KEY); if (!raw) { setRunState("No checkpoint", "No saved controller was found in this browser.", "paused", "RACE MODE"); appendEvent("load skipped: no checkpoint found"); return; }
-    const saved = JSON.parse(raw) as { fitness?: unknown; generation?: unknown; track?: unknown; provenance?: unknown; network?: BrainSnapshot }; if (!saved.network) throw new Error("saved checkpoint is incomplete");
-    const network = SpikingNetwork.fromJSON(saved.network); contextProvenance.clear(); restoreProvenance(saved.provenance);
-    const sourceContext = isTrainingContext(saved.track) ? saved.track : "all"; const selectedContext = selectedTrainingContext(); const sourceFitness = typeof saved.fitness === "number" && Number.isFinite(saved.fitness) ? saved.fitness : -Infinity; const sourceGeneration = typeof saved.generation === "number" && Number.isInteger(saved.generation) && saved.generation >= 0 ? saved.generation : 0;
-    const sourceRecord = contextProvenance.get(sourceContext); const sourceProgress = sourceRecord?.bestProgress ?? 0; const sourceFinished = sourceRecord?.finished ?? false;
-    contextNetworks.set(sourceContext, network.clone()); if (Number.isFinite(sourceFitness)) contextFitness.set(sourceContext, sourceFitness); contextGenerations.set(sourceContext, sourceGeneration); contextProvenance.set(sourceContext, { context: sourceContext, trained: true, source: "saved checkpoint", bestFitness: Number.isFinite(sourceFitness) ? sourceFitness : null, bestProgress: sourceProgress, finished: sourceFinished, generation: sourceGeneration });
-    activeTrainingContext = selectedContext; bestNetwork = network; bestFitness = selectedContext === sourceContext ? sourceFitness : -Infinity; generation = selectedContext === sourceContext ? sourceGeneration : 0; freshTrainingContext = selectedContext !== sourceContext; warmStartLabel = contextLabel(sourceContext); bestProgressForContext = selectedContext === sourceContext ? sourceProgress : 0; bestFinishedForContext = selectedContext === sourceContext ? sourceFinished : false; if (freshTrainingContext) contextProvenance.set(selectedContext, { context: selectedContext, trained: false, source: `${contextLabel(sourceContext)} saved brain`, bestFitness: null, bestProgress: 0, finished: false, generation: 0 });
-    updateTrackProvenance();
-    updateBestMetrics(); launchRace();
-    const detail = `checkpoint loaded from generation ${generation}; fly pilot is ready`;
-    setRunState("Checkpoint loaded", detail, "ready", "RACE MODE"); appendEvent(detail);
-  } catch (error) {
-    const detail = error instanceof Error ? error.message : "could not load checkpoint";
-    setRunState("Load error", detail, "error", "RACE MODE"); appendEvent(`load failed: ${detail}`);
-  }
 }
 
 function renderTrack(): void {
@@ -976,6 +964,10 @@ function drawCar(car: Car, alpha = 1): void {
     if (car.obstacleKind === "oil") {
       context.fillStyle = "rgba(130, 117, 200, .72)"; context.beginPath(); context.ellipse(0, 0, 22, 12, 0, 0, TAU); context.fill();
       context.strokeStyle = "#b9adff"; context.lineWidth = 1.5; context.beginPath(); context.arc(-5, 0, 8, 0.2, 2.5); context.stroke();
+    } else if (car.obstacleKind === "wall") {
+      context.fillStyle=car.color;context.fillRect(-4,-19,8,38);context.strokeStyle="#e5eaf2";context.strokeRect(-4,-19,8,38);
+    } else if (car.obstacleKind === "bush") {
+      context.fillStyle=car.color;context.beginPath();context.arc(0,0,12,0,TAU);context.fill();
     } else if (car.obstacleKind === "barrier") {
       context.fillStyle = "#e0a15b"; context.fillRect(-18, -9, 36, 18); context.fillStyle = "#402b20"; for (let index = -12; index < 18; index += 12) context.fillRect(index, -9, 5, 18);
     } else {
@@ -1465,8 +1457,7 @@ ui.evolveFiveButton.addEventListener("click", () => safely(startFiveBrainEvoluti
 ui.headlessButton.addEventListener("click", () => { void runHeadless(); });
 ui.stopButton.addEventListener("click", () => safely(stopAll));
 ui.resetButton.addEventListener("click", () => safely(resetBrain));
-ui.saveButton.addEventListener("click", () => safely(saveBrain));
-ui.loadButton.addEventListener("click", () => safely(loadBrain));
+mountBrainShelf(required<HTMLElement>(".game-card"),"racer",()=>JSON.stringify(checkpointObject()),importBrainText,()=>training,{save:ui.saveButton,load:ui.loadButton});
 ui.exportButton.addEventListener("click", () => safely(exportBrain));
 attachJsonImport(ui.importFile, importBrainText, { title: 'Import racer brain', trigger: ui.importButton, busy: () => training, onError: detail => { setRunState('Import error', detail, 'error', 'RACE MODE'); appendEvent(`import failed: ${detail}`); } });
 ui.copyLogButton.addEventListener("click", () => { void copyAllLog(); });

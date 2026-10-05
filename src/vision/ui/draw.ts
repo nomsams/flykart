@@ -71,7 +71,8 @@ export function drawTrackMap(canvas: HTMLCanvasElement, route: TrackDefinition, 
     if (other === car) continue;
     if (other.isObstacle && other.obstacleKind === "oil") { context.fillStyle = "rgba(80,56,140,.75)"; context.beginPath(); context.ellipse(other.position.x, other.position.y, 28, 20, other.heading, 0, Math.PI * 2); context.fill(); continue; }
     if (other.isObstacle && other.obstacleKind === "cone") { context.fillStyle = "#f08b47"; context.beginPath(); context.arc(other.position.x, other.position.y, 5.5, 0, Math.PI * 2); context.fill(); context.strokeStyle = "#fff"; context.lineWidth = 1.4; context.stroke(); continue; }
-    if (other.isObstacle && other.obstacleKind === "barrier") { carShapes(context, { x: other.position.x, y: other.position.y, heading: other.heading + Math.PI / 2 }, 38, 8, "#e0a15b"); continue; }
+    if (other.isObstacle && other.obstacleKind === 'bush') { context.fillStyle=other.color;context.beginPath();context.arc(other.position.x,other.position.y,12,0,Math.PI*2);context.fill();continue; }
+    if (other.isObstacle && (other.obstacleKind === "barrier" || other.obstacleKind === 'wall')) { carShapes(context, { x: other.position.x, y: other.position.y, heading: other.heading + Math.PI / 2 }, 38, 8, other.color); continue; }
     carShapes(context, { x: other.position.x, y: other.position.y, heading: other.heading }, 24, 14, other.isObstacle ? "#d07c72" : other.color, "rgba(0,0,0,.4)");
   }
   // The camera's view cone.

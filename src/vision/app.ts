@@ -1,3 +1,6 @@
+import { mountBrainShelf } from '../browser-brain';
+import { TrainingRecipe, validateRecipe } from '../training-recipe';
+import { widenBrain } from './inputs';
 import { attachJsonImport } from '../json-import';
 import { organizeVision } from './layout';
 // FlyKart Vision: the page that wires the simulator, camera, fusion and lap memory to the DOM.
@@ -10,7 +13,7 @@ import { CameraTrainingResult, trainCameraController } from "./browser-training"
 import type { RacingSettings } from "./racing-settings";
 import { lowResolution } from "./ensemble";
 import "./vision.css";
-import { BrainSnapshot, TRACKS } from "../core";
+import { BrainSnapshot, TRACKS, RoadObjectKind, DEFAULT_REWARD_CONFIG } from "../core";
 import { MushroomBody } from "./memory";
 import { controllerCheckpoint, exportAsFlyKartV1, exportVisionBrain, importFile } from "./format";
 import type { VisionModel } from "./perception";
@@ -26,13 +29,15 @@ import { CM_PER_PIXEL, KART_PROFILE, MOUNT, ROBOT, ROBOT_PROFILE, SensorProfile 
 
 const $ = <T extends HTMLElement>(id: string): T => { const element = document.getElementById(id); if (!element) throw new Error(`missing element #${id}`); return element as T; };
 
-type Imported = { name: string; snapshot: BrainSnapshot; info: string };
+type Imported = { name: string; snapshot: BrainSnapshot; info: string; fitness?:number; generation?:number };
 
 const state = {
   assets: null as Assets | null,
   imported: null as Imported | null,
+  sourceRecipe: null as TrainingRecipe | null,
   importedVision: null as VisionModel | null,
-  importedWorld: null as { controller: BrainSnapshot; vision: VisionModel | null } | null,
+  importedWorld: null as { controller: BrainSnapshot; vision: VisionModel | null; fitness?:number;generation?:number } | null,
+  robotExtensions: null as {robotLearning?:unknown;robotMission?:unknown} | null,
   memory: new MushroomBody({ seed: 11 }),
   track: null as TrackSession | null,
   world: null as WorldSession | null,
@@ -153,6 +158,7 @@ function buildTrack(options: { keepMemory?: boolean } = {}): void {
   const settings=experiment.applied();loggedPing=-1;state.accumulator.track=0;
   const profile=sensorProfile(),eyes=currentVision();if(eyes)profile.camera={...profile.camera,width:eyes.spec.width,height:eyes.spec.height};
   state.track = new TrackSession({
+    rewardConfig:settings.reward,objectKind:$<HTMLSelectElement>("track-object-kind").value as RoadObjectKind|"mixed",checkpointCount:Number($<HTMLInputElement>("race-checkpoints").value),physicsVariation:Number($<HTMLInputElement>("race-variation").value)/100,
     lapTarget:settings.multiLap?settings.laps:1, impactPain:settings.impactPain, visual:settings.visual, resolution:settings.resolution,cameraNoise:settings.cameraNoise,cameraBrightness:settings.cameraBrightness,
     trackId: select.value, rivals: Number($<HTMLSelectElement>("track-rivals").value), objects: Number($<HTMLSelectElement>("track-objects").value), style: Number($<HTMLInputElement>("track-style").value), profile, sonarOn: state.sonarOn,
     walls: $<HTMLInputElement>("track-walls").checked, controller: currentController(), vision: currentVision(), fade: state.fade, mode: state.mode, memory: memoryOn ? state.memory : null, seed: 7,
@@ -217,11 +223,12 @@ function updateProfileUi(): void {
 }
 
 function setProfile(next: "kart" | "robot"): void {
+  const keepImported=$<HTMLSelectElement>("track-controller").value === "imported";
   state.profile = next; $<HTMLSelectElement>("profile").value = next;
   if(experiment)experiment.write(experiment.applied());
   state.memory.forget(); state.laps = []; state.lapNumber = 0; renderLapTable();
   const hasEyes = next === "robot" ? Boolean(robotAssets()?.vision) : Boolean(state.assets!.vision);
-  refreshBrainSelects({ controller: next === "robot" && robotAssets()?.controller ? "robot" : "robust", eyes: hasEyes ? "bundled" : "none" });
+  refreshBrainSelects({ controller: keepImported ? "imported" : next === "robot" && robotAssets()?.controller ? "robot" : "robust", eyes: hasEyes ? "bundled" : "none" });
   buildTrack();
   if (state.tab === "world") buildWorld(); else state.world = null;
 }
@@ -291,44 +298,64 @@ function download(name: string, text: string): void {
 
 async function importBrainText(text: string, name: string): Promise<void> {
     const imported = importFile(text);
+    if(imported.controller?.domain==='track')state.robotExtensions=null;
+    state.running.track=false;state.running.world=false;$("track-run").textContent="Start race";
     const notes: string[] = [...imported.warnings];
     let prefer: { controller?: string; eyes?: string } = {};
     if (imported.controller && imported.controller.domain === "world") {
-      state.importedWorld = { controller: imported.controller.snapshot, vision: imported.vision ?? null };
+      state.importedWorld = { controller: imported.controller.snapshot, vision: imported.vision ?? null,fitness:imported.controller.meta.fitness??0,generation:imported.controller.meta.generation??0 };
+      const raw=JSON.parse(text);state.robotExtensions={robotLearning:raw.robotLearning,robotMission:raw.robotMission};
       notes.push("This is an open-world controller; it was loaded into the Open world tab.");
-      buildWorld();
     } else if (imported.controller) {
       const meta = imported.controller.meta;
-      state.imported = { name: name.replace(/\.json$/i, ""), snapshot: imported.controller.snapshot, info: `Imported ${imported.kind === "v1-brain" ? "FlyKart v1 brain" : "vision brain"}${meta.generation !== null ? `, generation ${meta.generation}` : ""}${meta.fitness !== null ? `, fitness ${meta.fitness.toFixed(0)}` : ""}. ${imported.warnings.join(" ")}` };
+      state.imported = { name: name.replace(/\.json$/i, ""), snapshot: imported.controller.snapshot, fitness:meta.fitness??0,generation:meta.generation??0, info: `Imported ${imported.kind === "v1-brain" ? "FlyKart v1 brain" : "vision brain"}${meta.generation !== null ? `, generation ${meta.generation}` : ""}${meta.fitness !== null ? `, fitness ${meta.fitness.toFixed(0)}` : ""}. ${imported.warnings.join(" ")}` };
       prefer.controller = "imported";
     }
     if (imported.profile === "robot" && state.profile !== "robot" && state.assets?.robot) { state.profile = "robot"; $<HTMLSelectElement>("profile").value = "robot"; notes.push("This brain was made for the robot sensor head (camera 6.5 cm up and a sonar), so that profile was selected."); }
     if (imported.vision && imported.vision.domain !== "world") { state.importedVision = imported.vision; prefer.eyes = "imported"; }
-    if (imported.world) state.importedWorld = { controller: imported.world.controller.snapshot, vision: imported.world.vision };
+    if (imported.world && imported.controller?.domain !== 'world') state.importedWorld = { controller: imported.world.controller.snapshot, vision: imported.world.vision };
     if (imported.memory) { state.memory = MushroomBody.fromJSON(imported.memory); $<HTMLInputElement>("memory-on").checked = true; notes.push("The lap memory in the file was restored: the first lap will already recall the bends."); }
+    state.sourceRecipe=imported.trainingRecipe??null;
     if(imported.experiment)experiment.write(imported.experiment);
+    if(imported.trainingRecipe){const r=imported.trainingRecipe;
+      experiment.write({...experiment.applied(),reward:r.reward,multiLap:r.physics.lapTarget>1,laps:r.physics.lapTarget===1?3:r.physics.lapTarget,impactPain:r.physics.impactPain});
+      $<HTMLInputElement>('track-walls').checked=r.physics.wallsEnabled;
+      $<HTMLInputElement>('race-checkpoints').value=String(r.physics.checkpointCount);$<HTMLInputElement>('race-variation').value=String(r.physics.domainRandomization*100);
+      const count=r.obstacles.enabled?r.obstacles.count:0, select=$<HTMLSelectElement>('track-objects');
+      if(!Array.from(select.options).some(o=>Number(o.value)===count))select.add(new Option(String(count),String(count)));
+      select.value=String(count);$<HTMLSelectElement>('track-object-kind').value=r.obstacles.kind;
+      notes.push('Racer reward weights, lap target, impact pain, checkpoint count, physics variation and obstacles restored.');
+    }
+
     if (imported.fusion) { state.mode = imported.fusion.mode; $<HTMLSelectElement>("track-mode").value = imported.fusion.mode; const t = imported.fusion.fade <= 0 ? 0 : imported.fusion.fade >= 1e5 ? 1 : Math.min(0.98, 1 + Math.log10(Math.max(0.001, imported.fusion.fade)) / 3); setFade(t); }
     refreshBrainSelects(prefer);
     $("brain-info").textContent = `${imported.name}: ${notes.join(" ")}`;
     buildTrack({ keepMemory: Boolean(imported.memory) });
+    if(imported.controller?.domain==='world'){buildWorld();showTab('world');}
 }
 
-function worldExportSource(): { controller: BrainSnapshot; vision: VisionModel | null } | null {
+function worldExportSource(): { controller: BrainSnapshot; vision: VisionModel | null;fitness?:number;generation?:number } | null {
   const assets = state.assets; if (!assets) return null;
   if (state.profile === "robot" && assets.robot?.worldController) return { controller: assets.robot.worldController, vision: assets.robot.worldVision };
   return assets.worldController ? { controller: assets.worldController, vision: assets.worldVision } : null;
 }
 
-function exportVision(): void {
-  const snapshot = currentController(); const vision = currentVision();
-  const memoryOn = $<HTMLInputElement>("memory-on").checked;
-  download("flykart-vision-brain.json", exportVisionBrain({
-    experiment:experiment.applied(),
-    name: "FlyKart vision brain", profile: state.profile, controller: controllerCheckpoint(snapshot, { track: "all", provenance: [{ context: "vision", trained: Boolean(trainedCamera&&state.imported?.snapshot===trainedCamera.brain&&$<HTMLSelectElement>("track-controller").value==="imported"), source: "exported from FlyKart Vision", experiment:experiment.applied(), validation:trainedCamera&&state.imported?.snapshot===trainedCamera.brain&&$<HTMLSelectElement>("track-controller").value==="imported"?trainedCamera.validation:null }] }), vision,
-    fusion: { fade: state.fade, mode: state.mode, visionTemperature: 1 }, memory: memoryOn ? state.memory.toJSON() : null,
-    world: worldExportSource() ? { controller: controllerCheckpoint(worldExportSource()!.controller, { domain: "world", track: "open world" }), vision: worldExportSource()!.vision } : null,
-  }));
+function visionRecipe():TrainingRecipe {
+  const settings=experiment.applied();
+  return validateRecipe({version:1,domain:'race',reward:settings.reward??DEFAULT_REWARD_CONFIG,physics:{wallsEnabled:$<HTMLInputElement>('track-walls').checked,lapTarget:settings.multiLap?settings.laps:1,impactPain:settings.impactPain,checkpointCount:Number($<HTMLInputElement>('race-checkpoints').value),domainRandomization:Number($<HTMLInputElement>('race-variation').value)/100},obstacles:{enabled:Number($<HTMLSelectElement>('track-objects').value)>0,count:Number($<HTMLSelectElement>('track-objects').value),kind:$<HTMLSelectElement>('track-object-kind').value}});
 }
+function selectedCheckpoint() {
+  const imported=$<HTMLSelectElement>('track-controller').value==='imported'?state.imported:null;
+  return controllerCheckpoint(currentController(),{track:$<HTMLSelectElement>('track-select').value,domain:'track',fitness:imported?.fitness,generation:imported?.generation,trainingRecipe:visionRecipe(),provenance:[{context:'vision',trained:Boolean(trainedCamera&&imported?.snapshot===trainedCamera.brain),source:'FlyKart Vision',experiment:experiment.applied(),validation:trainedCamera&&imported?.snapshot===trainedCamera.brain?trainedCamera.validation:null}]});
+}
+function visionBrainText():string {
+  const world=state.importedWorld??worldExportSource();
+  return exportVisionBrain({...(state.tab==='world'?state.robotExtensions??{}:{}),experiment:experiment.applied(),name:'FlyKart vision brain',profile:state.profile,
+    controller:state.tab==='world'&&world?controllerCheckpoint(world.controller,{domain:'world',fitness:world.fitness,generation:world.generation,trainingRecipe:state.sourceRecipe??undefined}):selectedCheckpoint(),
+    vision:state.tab==='world'&&world?world.vision:currentVision(),fusion:{fade:state.fade,mode:state.mode,visionTemperature:1},memory:state.tab!=='world'&&$<HTMLInputElement>('memory-on').checked?state.memory.toJSON():null,
+    world:world?{controller:controllerCheckpoint(world.controller,{domain:'world',track:'open world'}),vision:world.vision}:null});
+}
+function exportVision():void{download('flykart-vision-brain.json',visionBrainText());}
 
 /* ------------------------------- boot ------------------------------- */
 
@@ -348,16 +375,16 @@ async function boot(): Promise<void> {
   $<HTMLInputElement>("fade").addEventListener("input", (event) => setFade(Number((event.target as HTMLInputElement).value)));
   $("preset-seeing").addEventListener("click", () => setFade(0)); $("preset-both").addEventListener("click", () => setFade(0.75)); $("preset-feeling").addEventListener("click", () => { setFade(1); });
   $<HTMLSelectElement>("track-mode").addEventListener("change", (event) => { state.mode = (event.target as HTMLSelectElement).value as DriverMode; if (state.track) state.track.driver.mode = state.mode; updateModeNote(); });
-  for (const id of ["track-select", "track-rivals", "track-objects", "track-controller", "track-eyes", "track-walls"]) $(id).addEventListener("change", () => { describeBrain(); if (id === "track-select" || id === "track-controller" || id === "track-eyes") state.memory.forget(); buildTrack({ keepMemory: !(id === "track-select" || id === "track-controller" || id === "track-eyes") }); });
+  for (const id of ["track-select", "track-rivals", "track-objects", "track-object-kind", "race-checkpoints", "race-variation", "track-controller", "track-eyes", "track-walls"]) $(id).addEventListener("change", () => { describeBrain(); if (id === "track-select" || id === "track-controller" || id === "track-eyes") state.memory.forget(); buildTrack({ keepMemory: !(id === "track-select" || id === "track-controller" || id === "track-eyes") }); });
   $("track-style").addEventListener("change", () => buildTrack({ keepMemory: true }));
   $("track-restart").addEventListener("click", () => { state.lapsLeft = 0; buildTrack({ keepMemory: true }); setStatus("track", "restarted"); });
   $("track-run").addEventListener("click", () => { if(cameraTraining)return; state.running.track = !state.running.track; $("track-run").textContent = state.running.track ? "Pause" : "Resume"; if (state.track?.done) buildTrack({ keepMemory: true }); setStatus("track", state.running.track ? "driving" : "paused");paintTrack(); });
-  $("track-laps").addEventListener("click", () => { if (!currentVision()) { setStatus("track", "choose eyes first: the memory works through the camera"); return; } $<HTMLInputElement>("memory-on").checked = true; state.lapsLeft = 0;$<HTMLInputElement>("multi-lap").checked=true;$<HTMLSelectElement>("lap-target").value="3";buildTrack(); state.running.track = true; $("track-run").textContent = "Pause"; });
+  $("track-laps").addEventListener("click", () => { if (!currentVision()) { setStatus("track", "choose eyes first: the memory works through the camera"); return; } $<HTMLInputElement>("memory-on").checked = true; state.lapsLeft = 0;$<HTMLInputElement>("multi-lap").checked=true;$<HTMLSelectElement>("lap-target").value="3";experiment.write(experiment.read());buildTrack(); state.running.track = true; $("track-run").textContent = "Pause"; });
   $("memory-forget").addEventListener("click", () => { state.memory.forget(); state.laps = []; state.lapNumber = 0; renderLapTable(); paintTrack(); });
   $("memory-on").addEventListener("change", () => buildTrack({ keepMemory: true }));
   attachJsonImport($<HTMLInputElement>('import-file'), importBrainText, { title: 'Import brain + eyes', trigger: $('import-btn'), busy: () => cameraTraining, onError: message => $('brain-info').textContent = message });
   $("export-vision-btn").addEventListener("click", exportVision);
-  $("export-v1-btn").addEventListener("click", () => download("flykart-brain-for-v1.json", exportAsFlyKartV1(controllerCheckpoint(currentController(), { track: "all" }))));
+  $("export-v1-btn").addEventListener("click", () => download("flykart-brain-for-v1.json", exportAsFlyKartV1(selectedCheckpoint())));
 
   $("world-run").addEventListener("click", () => { if(cameraTraining)return; if (!state.world) buildWorld(); state.running.world = !state.running.world; $("world-run").textContent = state.running.world ? "Pause" : "Resume"; if (state.world?.done) buildWorld(); setStatus("world", state.running.world ? "driving" : "paused"); });
   $("world-new").addEventListener("click", () => { $<HTMLInputElement>("world-seed").value = String(1 + Math.floor(Math.random() * 99999)); buildWorld(); setStatus("world", "new world"); });
@@ -370,8 +397,11 @@ async function boot(): Promise<void> {
   $("copy-sensor-log").onclick=()=>{void navigator.clipboard.writeText(sensorLog.join("\n")).then(()=>$("copy-sensor-log").textContent="Copied").catch(()=>{($('sensor-log') as HTMLTextAreaElement).select();$("copy-sensor-log").textContent="Select logs · Ctrl+C";});};
   $("clear-sensor-log").onclick=()=>{sensorLog.length=0;($('sensor-log') as HTMLTextAreaElement).value='';};
   $("camera-train").onclick=()=>{void runCameraTraining();};$("camera-train-stop").onclick=()=>{cancelTraining=true;$("camera-train-status").textContent='Cancelling after the current tick…';};
-  $("camera-train-adopt").onclick=()=>{if(!trainedCamera||!trainedContext||!trainedExperiment)return;state.profile=trainedContext.profile?.id??'kart';$<HTMLSelectElement>('profile').value=state.profile;state.sonarOn=trainedContext.sonarOn!==false;$<HTMLInputElement>('sonar-on').checked=state.sonarOn;experiment.write(trainedExperiment);state.importedVision=trainedContext.vision;state.imported={name:'Camera-trained offspring',snapshot:trainedCamera.brain,info:'Selected with camera-only inputs. See the training report for held-out scores.'};refreshBrainSelects({controller:'imported',eyes:'imported'});setFade(0);state.mode='belief';$<HTMLSelectElement>('track-mode').value='belief';$<HTMLInputElement>('memory-on').checked=false;buildTrack();};
+  $("camera-train-adopt").onclick=()=>{if(!trainedCamera||!trainedContext||!trainedExperiment)return;state.profile=trainedContext.profile?.id??'kart';$<HTMLSelectElement>('profile').value=state.profile;state.sonarOn=trainedContext.sonarOn!==false;$<HTMLInputElement>('sonar-on').checked=state.sonarOn;experiment.write(trainedExperiment);state.importedVision=trainedContext.vision;state.imported={name:'Camera-trained offspring',fitness:trainedCamera.score,generation:(state.imported?.generation??0)+trainedCamera.generation,snapshot:trainedCamera.brain,info:'Selected with camera-only inputs. See the training report for held-out scores.'};refreshBrainSelects({controller:'imported',eyes:'imported'});setFade(0);state.mode='belief';$<HTMLSelectElement>('track-mode').value='belief';$<HTMLInputElement>('memory-on').checked=false;buildTrack();};
   $("camera-report").onclick=()=>{if(trainedCamera)download('flykart-camera-training.json',JSON.stringify({...trainedCamera,experiment:trainedExperiment,context:trainedContext,notes:'Camera weights frozen; sensor-only neural inputs. Small paired validation is not deployment proof.'},null,2));};
+  mountBrainShelf($('import-btn').closest('section')??$('import-btn').parentElement!,'vision',visionBrainText,importBrainText,()=>cameraTraining);
+  document.querySelector('.profile-bar')!.after(document.querySelector('.browser-brain-shelf')!);
+  $('add-sonar-inputs').onclick=()=>{if(cameraTraining)return;if(state.profile!=='robot'){setStatus('track','Select the Robot sensor head first.');return;}const snapshot=widenBrain(currentController());state.imported={...state.imported,name:'Racer + sonar inputs',snapshot,info:'Original weights retained; two sonar rows start at zero. Train camera offspring to learn how to use them.'};refreshBrainSelects({controller:'imported'});buildTrack();};
   explainControls(document.querySelector("main")!);
   installSettingsHistory(document.querySelector('main')!,()=>{state.profile=$<HTMLSelectElement>('profile').value as 'kart'|'robot';state.sonarOn=$<HTMLInputElement>('sonar-on').checked;state.mode=$<HTMLSelectElement>('track-mode').value as DriverMode;setFade(Number($<HTMLInputElement>('fade').value));state.running.track=false;state.running.world=false;buildTrack();if(state.world)buildWorld();},()=>cameraTraining);
   organizeVision(()=>{if(state.tab==='track')paintTrack();else if(state.tab==='world')paintWorld();});

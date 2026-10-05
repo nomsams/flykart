@@ -1,5 +1,7 @@
 import { DEFAULT_RACING, RacingSettings, boardFov, fitRange, validateRacingSettings } from './racing-settings';
 import { SensorProfile, CM_PER_PIXEL } from './robot';
+import { REWARD_FIELDS } from '../training-recipe';
+import { DEFAULT_REWARD_CONFIG } from '../core';
 
 export function mountExperimentPanel(base:()=>SensorProfile,changed:()=>void):{read:()=>RacingSettings;applied:()=>RacingSettings;write:(s:RacingSettings)=>void;ids:string[]}{
   let applied=structuredClone(DEFAULT_RACING);
@@ -10,6 +12,7 @@ export function mountExperimentPanel(base:()=>SensorProfile,changed:()=>void):{r
     <label>Laps per episode<select id="lap-target"><option>2</option><option selected>3</option><option>5</option></select></label>
     <label class="check-row"><input id="impact-pain" type="checkbox" checked><span>Speed-sensitive collision pain<small>Closing speed at contact sets the training cost. Gentle co-moving bumps still cost a little.</small></span></label>
     <p class="note">Pain is a teaching signal, never a hidden distance input. Near sonar echoes alone do not prove contact; no echo never means zero distance. A future spring bumper needs measured switch telemetry; it is not simulated as a real installed sensor.</p>
+    <details><summary>Rewards & penalties · carried from Racer</summary><p class="note">These weights score live races and every camera-training candidate. Positive rewards select progress; penalty magnitudes subtract cost. They never enter the visual observation vector. Saving a browser brain or exporting JSON carries them to the next page.</p><div class="reward-fields">${REWARD_FIELDS.map(([key,label,max])=>numeric('race-reward-'+key,label,0,max,.01,DEFAULT_REWARD_CONFIG[key]??0)).join('')}</div></details>
     <details><summary>Colour camera & virtual eyes</summary>
     <label>Colour resolution<select id="camera-resolution"><option value="native">Native network resolution (usually 48×24)</option><option value="32x16">32×16 RGB colour</option><option value="16x8">16×8 RGB colour</option></select></label>
     ${numeric('camera-noise','Track camera RGB noise (standard deviation, 0–1 scale)',0,.2,.005,0)}${numeric('camera-brightness','Track camera brightness multiplier',.1,2,.1,1)}
@@ -39,11 +42,12 @@ export function mountExperimentPanel(base:()=>SensorProfile,changed:()=>void):{r
   document.querySelector('#tab-track aside')!.append(panel);
   const input=(id:string)=>document.getElementById(id) as HTMLInputElement;
   const n=(id:string)=>Number(input(id).value),check=(id:string)=>input(id).checked;
-  const read=():RacingSettings=>validateRacingSettings({version:1,multiLap:check('multi-lap'),laps:n('lap-target'),impactPain:check('impact-pain'),resolution:input('camera-resolution').value,cameraNoise:n('camera-noise'),cameraBrightness:n('camera-brightness'),
+  const read=():RacingSettings=>validateRacingSettings({version:1,reward:Object.fromEntries(REWARD_FIELDS.map(([key])=>[key,n('race-reward-'+key)])),multiLap:check('multi-lap'),laps:n('lap-target'),impactPain:check('impact-pain'),resolution:input('camera-resolution').value,cameraNoise:n('camera-noise'),cameraBrightness:n('camera-brightness'),
     visual:{...DEFAULT_RACING.visual,layout:input('eye-layout').value,radius:n('eye-radius'),normalize:check('eye-normalize'),smooth:check('eye-smooth'),temporal:n('eye-temporal')},
     camera:check('camera-calibrated')?{hfov:n('camera-fov'),heightCm:n('camera-height'),forwardCm:n('camera-forward'),pitchDeg:n('camera-pitch')}:null,
     sonar:check('sonar-calibrated')?{heightCm:n('sonar-height'),forwardCm:n('sonar-forward'),yawDeg:n('sonar-yaw'),pitchDeg:n('sonar-pitch'),sigmaDeg:n('sonar-sigma'),scale:n('sonar-scale'),offsetCm:n('sonar-offset')}:null});
   const write=(s:RacingSettings)=>{s=validateRacingSettings(s);applied=structuredClone(s);input('multi-lap').checked=s.multiLap;input('lap-target').value=String(s.laps);input('impact-pain').checked=s.impactPain;input('camera-resolution').value=s.resolution;input('eye-layout').value=s.visual.layout;input('eye-radius').value=String(s.visual.radius);input('eye-normalize').checked=s.visual.normalize;input('eye-smooth').checked=s.visual.smooth;input('eye-temporal').value=String(s.visual.temporal);input('camera-calibrated').checked=!!s.camera;input('sonar-calibrated').checked=!!s.sonar;
+    for (const [key] of REWARD_FIELDS) input('race-reward-'+key).value=String((s.reward??DEFAULT_REWARD_CONFIG)[key]??0);
     input('camera-noise').value=String(s.cameraNoise??0);input('camera-brightness').value=String(s.cameraBrightness??1);
     const p=base(),c=s.camera??{hfov:p.camera.hfov*180/Math.PI,heightCm:p.camera.mountHeight*CM_PER_PIXEL,forwardCm:p.camera.mountForward*CM_PER_PIXEL,pitchDeg:p.camera.pitch*180/Math.PI},sonar=s.sonar??{heightCm:6.5,forwardCm:12.1,yawDeg:0,pitchDeg:0,sigmaDeg:12,scale:1,offsetCm:0};
     for(const [id,value]of Object.entries({'camera-fov':c.hfov,'camera-height':c.heightCm,'camera-forward':c.forwardCm,'camera-pitch':c.pitchDeg,'sonar-height':sonar.heightCm,'sonar-forward':sonar.forwardCm,'sonar-yaw':sonar.yawDeg,'sonar-pitch':sonar.pitchDeg,'sonar-sigma':sonar.sigmaDeg,'sonar-scale':sonar.scale,'sonar-offset':sonar.offsetCm}))input(id).value=String(value);

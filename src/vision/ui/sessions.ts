@@ -1,5 +1,5 @@
 // A running drive: the simulation, the driver and the little bits of history the dashboards plot.
-import { Action, BrainSnapshot, SpikingNetwork, TRACKS, TrackDefinition } from "../../core";
+import { Action, BrainSnapshot, SpikingNetwork, TRACKS, TrackDefinition, RewardConfig, RoadObjectKind } from "../../core";
 import { trackDomain, worldDomain } from "../domains";
 import { TrackEpisode } from "../episode";
 import { ESTIMATE_NAMES } from "../interface";
@@ -20,6 +20,7 @@ export type TrackSettings = {
   profile?: SensorProfile; sonarOn?: boolean;
   lapTarget?: number; impactPain?: boolean; maxTicks?: number; sensorOnly?: boolean; visual?: RacingSettings["visual"]; resolution?: RacingSettings["resolution"];
   cameraNoise?:number; cameraBrightness?:number;
+  rewardConfig?: RewardConfig; objectKind?: RoadObjectKind | 'mixed'; checkpointCount?: number; physicsVariation?: number;
 };
 
 const FAR = ESTIMATE_NAMES.indexOf("curveFar");
@@ -44,7 +45,7 @@ export class TrackSession {
     this.route = TRACKS.find((track) => track.id === settings.trackId) ?? TRACKS[0];
     this.controller = SpikingNetwork.fromJSON(settings.controller);
     this.perceiver = settings.vision ? new Perceiver(settings.vision) : null;
-    this.episode = new TrackEpisode({ track: this.route, rivals: settings.rivals, roadObjects: settings.objects, objectKind: "mixed", seed: settings.seed, styleStrength: settings.style, cameraNoise:settings.cameraNoise,cameraBrightness:settings.cameraBrightness,walls: settings.walls, maxTicks: settings.maxTicks ?? 7000, lapTarget:settings.lapTarget, impactPain:settings.impactPain, headless: false, profile: settings.profile });
+    this.episode = new TrackEpisode({ track: this.route, rivals: settings.rivals, roadObjects: settings.objects, objectKind: settings.objectKind ?? "mixed", rewardConfig:settings.rewardConfig,checkpointCount:settings.checkpointCount,physicsVariation:settings.physicsVariation,seed: settings.seed, styleStrength: settings.style, cameraNoise:settings.cameraNoise,cameraBrightness:settings.cameraBrightness,walls: settings.walls, maxTicks: settings.maxTicks ?? 7000, lapTarget:settings.lapTarget, impactPain:settings.impactPain, headless: false, profile: settings.profile });
     this.episode.car.network = this.controller;
     this.driver = new VisionDriver({
       sensorOnly:settings.sensorOnly, visual:settings.visual, resolution:settings.resolution,

@@ -268,7 +268,7 @@ export function trackDiagnostics(trackRef: TrackRef = DEFAULT_TRACK): TrackDiagn
   };
 }
 
-export type RoadObjectKind = "stalled-car" | "barrier" | "cone" | "oil";
+export type RoadObjectKind = "stalled-car" | "barrier" | "cone" | "oil" | "wall" | "bush";
 
 export type RewardConfig = {
   progressPerSecond: number;
@@ -694,6 +694,10 @@ export function createRoadObstacles(count: number, trackRef: TrackRef = DEFAULT_
     car.position = add(sample.point, scale(normal, lane * LANE_SPACING * 0.92)); car.heading = Math.atan2(sample.tangent.y, sample.tangent.x);
     const nearest = nearestTrack(car.position, route); car.progress = nearest.progress; car.distanceAlong = nearest.distanceAlong; car.bestProgress = nearest.progress;
     car.speed = 0; car.action = { steer: 0, throttle: 0, brake: 1, reverse: 0 }; car.color = objectKind === "barrier" ? "#e0a15b" : objectKind === "cone" ? "#f08b47" : objectKind === "oil" ? "#8275c8" : "#d07c72"; car.name = `${objectKind} ${index + 1}`; car.isObstacle = true; car.obstacleKind = objectKind; car.collisionRadius = objectKind === "barrier" ? CAR_COLLISION_DIAMETER * 0.7 : objectKind === "cone" ? CAR_COLLISION_DIAMETER * 0.34 : objectKind === "oil" ? 0 : CAR_COLLISION_DIAMETER / 2;
+    if (objectKind === 'wall' || objectKind === 'bush') {
+      car.color = objectKind === 'wall' ? '#b4bac4' : '#40905b';
+      car.collisionRadius = objectKind === 'wall' ? 19 : 12;
+    }
     obstacles.push(car);
   }
   return obstacles;
@@ -993,14 +997,30 @@ export function stepCar(car: Car, action: Action, others: Car[], trackRef?: Trac
   };
   others.forEach((other, otherIndex) => {
     if (other === car || other.crashed || other.finished || other.timedOut || other.eliminated || other.trackId !== car.trackId || (other.isObstacle && other.obstacleKind === "oil")) return;
-    const offset = sub(car.position, other.position); const distance = Math.hypot(offset.x, offset.y);
-    const collisionDistance = (car.collisionRadius ?? CAR_COLLISION_DIAMETER / 2) + (other.collisionRadius ?? CAR_COLLISION_DIAMETER / 2);
+    let offset = sub(car.position, other.position); let distance = Math.hypot(offset.x, offset.y);
+    // Tall test walls use their visible oriented rectangle, not its bounding circle.
+    if (other.isObstacle && other.obstacleKind === 'wall') {
+      const c = Math.cos(other.heading), s = Math.sin(other.heading);
+      const x = dot(offset, { x:c, y:s }), y = dot(offset, { x:-s, y:c });
+      let dx = x - clamp(x,-4,4), dy = y - clamp(y,-19,19);
+      if (dx === 0 && dy === 0) {
+        if (4 - Math.abs(x) < 19 - Math.abs(y)) dx = (x < 0 ? -1 : 1) * (Math.abs(x)-4);
+        else dy = (y < 0 ? -1 : 1) * (Math.abs(y)-19);
+        offset = { x:-(c*dx-s*dy), y:-(s*dx+c*dy) }; distance = -Math.hypot(dx,dy);
+      } else { offset = { x:c*dx-s*dy, y:s*dx+c*dy }; distance = Math.hypot(dx,dy); }
+    }
+    const collisionDistance = (car.collisionRadius ?? CAR_COLLISION_DIAMETER / 2) + (other.obstacleKind === 'wall' ? 0 : (other.collisionRadius ?? CAR_COLLISION_DIAMETER / 2));
     if (distance >= collisionDistance) return;
     contact = true;
-    const normal = distance > 0.0001 ? scale(offset, 1 / distance) : scale(updated.tangent, -1);
+    const fixed = other.isObstacle && (other.obstacleKind === 'wall' || other.obstacleKind === 'bush');
+    const normal = Math.hypot(offset.x,offset.y) > 0.0001 ? normalize(offset) : scale(updated.tangent, -1);
     const beforeVelocity = { x: Math.cos(car.heading) * car.speed - Math.cos(other.heading) * other.speed, y: Math.sin(car.heading) * car.speed - Math.sin(other.heading) * other.speed };
     if (car.collisionCooldown <= 0) contactPain += impactSeverity(-dot(beforeVelocity, normal));
-    if (!physicsConfig.softCollisions) {
+    if (!physicsConfig.softCollisions && fixed) {
+      car.position = add(car.position, scale(normal, collisionDistance - distance + .75));
+      if (dot(beforeVelocity,normal) < -115) severeCollision = true;
+      car.speed *= .18;
+    } else if (!physicsConfig.softCollisions) {
       const tangent = updated.tangent; const fallback = { x: -tangent.y, y: tangent.x };
       const direction = distance > 0.0001 ? scale(offset, 1 / distance) : scale(fallback, carIndex < otherIndex ? 1 : -1);
       const separation = (collisionDistance - distance) + 0.75;
@@ -1024,7 +1044,7 @@ export function stepCar(car: Car, action: Action, others: Car[], trackRef?: Trac
     if (car.collisionCooldown <= 0) car.collisions += 1;
     if (other.collisionCooldown <= 0) other.collisions += 1;
     car.collisionCooldown = 6; other.collisionCooldown = Math.max(other.collisionCooldown, 6);
-    if (!physicsConfig.softCollisions) { clampToRoad(car); clampToRoad(other); }
+    if (!physicsConfig.softCollisions) { clampToRoad(car); if (!fixed) clampToRoad(other); }
   });
   if (contact) {
     // Soft contact deliberately leaves the vehicle's velocity untouched. It

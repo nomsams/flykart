@@ -1,0 +1,44 @@
+import { chromium } from '@playwright/test';
+import { readFile, mkdir } from 'node:fs/promises';
+import assert from 'node:assert/strict';
+const browser=await chromium.launch({...(process.platform==='win32'?{channel:'msedge'}:{}),headless:true});
+const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];
+page.on('pageerror',e=>errors.push(e.message));
+const base=process.env.ROBOT_LAB_URL??'http://127.0.0.1:5173';
+const shelf=()=>page.locator('.browser-brain-shelf');
+const save=async()=>{await shelf().locator('[data-brain-save]').click();await shelf().locator('[role=status]').filter({hasText:'Saved'}).waitFor();};
+const load=async(stage)=>{await shelf().getByLabel('Browser brain source').selectOption(stage);await shelf().locator('[data-brain-load]').click();await shelf().locator('[role=status]').filter({hasText:'Loaded'}).waitFor();};
+const download=async(id)=>{if(id==='export-fly')await page.locator('[data-tool="train"]').click();const[d]=await Promise.all([page.waitForEvent('download'),page.locator('#'+id).click()]);return JSON.parse(await readFile(await d.path(),'utf8'));};
+try {
+  await page.goto(base+'/index.html');await page.locator('#boot-screen').waitFor({state:'hidden',timeout:60000});await page.locator('#stop-btn').click();
+  // Old localStorage checkpoints also work without resaving them first.
+  const sample=JSON.parse(await readFile('public/sample-brain.json','utf8'));
+  await page.evaluate(brain=>localStorage.setItem('flykart.best-brain.v1',JSON.stringify(brain)),sample);
+  await load('racer');await page.locator('#stop-btn').click();
+  await page.locator('#reward-collision').fill('23');await page.locator('#reward-finish').fill('420');
+  await page.locator('#multi-lap').check();await page.locator('#lap-target').selectOption('3');
+  await page.locator('#checkpoint-count').fill('12');await page.locator('#obstacle-toggle').check();await page.locator('#obstacle-kind').selectOption('wall');await page.locator('#obstacle-count').fill('6');
+  const racer=await download('export-btn');assert.equal(racer.trainingRecipe.reward.collision,23);await save();
+  await page.goto(base+'/vision.html');await page.locator('#boot-screen').waitFor({state:'hidden',timeout:60000});await load('racer');
+  assert.equal(await page.locator('#race-reward-collision').inputValue(),'23');assert.equal(await page.locator('#race-reward-finish').inputValue(),'420');assert.equal(await page.locator('#track-object-kind').inputValue(),'wall');assert.equal(await page.locator('#track-objects').inputValue(),'6');
+  assert.equal(await page.locator('#multi-lap').isChecked(),true);
+  assert.equal(await page.evaluate(()=>window.flykartVision.track.episode.rewardConfig.collision),23);
+  await page.locator('#profile').selectOption('robot');assert.equal(await page.locator('#track-controller').inputValue(),'imported');
+  await page.locator('#add-sonar-inputs').click();const vision=await download('export-vision-btn');assert.equal(vision.controller.network.inputCount,19);assert.deepEqual(vision.controller.trainingRecipe,racer.trainingRecipe);
+  assert.equal(vision.controller.generation,racer.generation);await save();
+  const plain=await download('export-v1-btn');assert.deepEqual(plain.network,racer.network);assert.deepEqual(plain.trainingRecipe,racer.trainingRecipe);
+  await page.goto(base+'/robot.html');await page.locator('#brain-name').filter({hasText:'Bundled'}).waitFor({timeout:60000});await load('vision');
+  const robot=await download('export-brain');assert.equal(robot.domain,'track');assert.deepEqual(robot.network,vision.controller.network);assert.deepEqual(robot.trainingRecipe,racer.trainingRecipe);
+  assert.equal(await page.locator('#objective-pain').inputValue(),'2.3');assert.equal(await page.locator('#objective-sugar').inputValue(),'14');
+  await page.locator('#journey-transfer').click();await page.locator('#brain-name').filter({hasText:'Room offspring'}).waitFor();
+  await save();const full=await download('export-fly');assert.equal(full.controller.domain,'world');assert.deepEqual(full.robotLearning.lifecycle.parent.brain,vision.controller.network);assert.deepEqual(full.controller.trainingRecipe,racer.trainingRecipe);
+  await page.reload();await page.locator('#brain-name').filter({hasText:'Room offspring'}).waitFor({timeout:60000});assert.deepEqual((await download('export-brain')).trainingRecipe,racer.trainingRecipe);
+  await load('robot');const restored=await download('export-fly');assert.deepEqual(restored.robotMission,full.robotMission);assert.deepEqual(restored.robotLearning.lifecycle.parent,full.robotLearning.lifecycle.parent);
+  await page.goto(base+'/vision.html');await page.locator('#boot-screen').waitFor({state:'hidden',timeout:60000});await load('robot');await save();
+  await page.goto(base+'/robot.html');await page.locator('#brain-name').filter({hasText:'Room offspring'}).waitFor({timeout:60000});await load('vision');
+  const roundtrip=await download('export-fly');assert.deepEqual(roundtrip.robotMission,full.robotMission);assert.deepEqual(roundtrip.robotLearning.lifecycle,full.robotLearning.lifecycle);assert.deepEqual(roundtrip.controller.network,full.controller.network);
+  await load('racer');assert.deepEqual((await download('export-brain')).network,racer.network);
+  await load('robot');await page.setViewportSize({width:390,height:844});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
+  await mkdir('.cache',{recursive:true});await page.screenshot({path:'.cache/robot-transfer-mobile.png',fullPage:true});
+  assert.deepEqual(errors,[]);console.log('PASS browser storage Racer → Vision + sonar → 3D adaptation, exact weights, rewards, parents, reload and mobile layout');
+} catch(e) {console.log('Page errors:',errors);console.log(await page.locator('.browser-brain-shelf [role=status]').allTextContents());throw e;} finally {await browser.close();}

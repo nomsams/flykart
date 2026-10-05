@@ -186,3 +186,10 @@ label:has(> .control-help){flex-wrap:wrap;}
 label > .control-help{flex-basis:100%;}
 .check-row{display:grid;grid-template-columns:16px minmax(0,1fr);align-items:start;}
 .check-row > .control-help{grid-column:1/-1;}
+.browser-brain-shelf { margin: 12px 0; padding: 12px; border: 1px solid #536275; border-radius: 10px; background: #1a2530; color: #e0e8ee; min-width: 0; }
+.browser-brain-shelf summary { cursor: pointer; font-weight: 600; }
+.browser-brain-shelf .toolbar { margin: 10px 0; padding: 0; flex-wrap: wrap; }
+.browser-brain-shelf label { display: flex; gap: 8px; align-items: center; min-width: 0; }
+.browser-brain-shelf select { width: auto; min-width: 140px; max-width: 100%; }
+.browser-brain-shelf small, .browser-brain-shelf p { display: block; line-height: 1.5; overflow-wrap: anywhere; }
+.browser-brain-shelf a { color: #a9d6ff; }

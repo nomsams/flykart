@@ -34,7 +34,7 @@ export type TrackEpisodeOptions = {
   rewardConfig?: RewardConfig;
   /** Road-side walls (the simulator default). Without them, a kart that leaves the road really is lost, which is a much stricter test of perception. */
   walls?: boolean;
-  lapTarget?: number; impactPain?: boolean;
+  lapTarget?: number; impactPain?: boolean; checkpointCount?: number;
   cameraNoise?:number; cameraBrightness?:number;
 };
 
@@ -89,10 +89,10 @@ export class TrackEpisode implements VisionEpisode {
     this.style = options.style ? options.style : (options.styleStrength ?? 0) > 0 ? randomStyle(this.random, options.styleStrength ?? 0) : { ...DEFAULT_STYLE };
     if(options.cameraNoise!==undefined)this.style.noise=clamp(this.style.noise+options.cameraNoise,0,.2);
     if(options.cameraBrightness!==undefined)this.style.brightness*=clamp(options.cameraBrightness,.1,2);
-    this.scene = options.headless ? null : new TrackScene(this.route, this.style, 8, options.profile?.gantry);
+    this.scene = options.headless ? null : new TrackScene(this.route, this.style, options.checkpointCount ?? 8, options.profile?.gantry);
     this.frame = new Float32Array(options.headless ? 0 : frameLength(this.camera));
     this.rewardConfig = options.rewardConfig ?? DEFAULT_REWARD_CONFIG;
-    this.physics = physicsForEpisode({ ...DEFAULT_PHYSICS_CONFIG, adaptiveTimeLimit: false, wallsEnabled: options.walls ?? true, lapTarget: options.lapTarget, impactPain: options.impactPain, domainRandomization: options.physicsVariation ?? 0 }, seed, this.route);
+    this.physics = physicsForEpisode({ ...DEFAULT_PHYSICS_CONFIG, adaptiveTimeLimit: false, wallsEnabled: options.walls ?? true, lapTarget: options.lapTarget, impactPain: options.impactPain, checkpointCount: options.checkpointCount ?? 8, domainRandomization: options.physicsVariation ?? 0 }, seed, this.route);
     this.car = startPosition(0, this.route);
     this.car.timeLimit = (options.maxTicks ?? 4500) * Math.max(1, Math.min(5, Math.floor(options.lapTarget ?? 1)));
     this.car.name = "vision kart"; this.car.color = "#ffd166";
@@ -120,7 +120,9 @@ export class TrackEpisode implements VisionEpisode {
       const kind = other.isObstacle ? other.obstacleKind : "kart";
       if (kind === "oil") continue;
       const { x, y } = other.position;
-      if (kind === "cone") targets.push({ kind: "circle", x, y, radius: 3, z0: 0, z1: 10 });
+      if (kind === 'wall') targets.push({ kind:'box',x,y,heading:other.heading,halfLength:4,halfWidth:19,z0:0,z1:40 });
+      else if (kind === 'bush') targets.push({ kind:'circle',x,y,radius:12,z0:0,z1:28 });
+      else if (kind === "cone") targets.push({ kind: "circle", x, y, radius: 3, z0: 0, z1: 10 });
       else if (kind === "barrier") targets.push({ kind: "box", x, y, heading: other.heading + Math.PI / 2, halfLength: 19, halfWidth: 3.5, z0: 0, z1: 9 });
       else targets.push({ kind: "box", x, y, heading: other.heading, halfLength: 12, halfWidth: 7, z0: 0, z1: 9 });
     }

@@ -15,12 +15,14 @@ import { narrowBrain } from "./inputs";
 import type { DriverMode } from "./pipeline";
 import type { MemorySnapshot } from "./memory";
 import type { VisionModel } from "./perception";
+import { TrainingRecipe, validateRecipe } from '../training-recipe';
 
 export type ControllerCheckpoint = {
   format: "flykart-brain"; version: number; savedAt: string; fitness: number; generation: number; track: string;
   domain?: "track" | "world";
   provenance?: unknown[]; lineage?: unknown;
   network: BrainSnapshot;
+  trainingRecipe?: TrainingRecipe;
 };
 
 export type FusionSettings = { fade: number; mode: DriverMode; visionTemperature: number };
@@ -36,9 +38,13 @@ export type VisionBrainFile = {
   world: { controller: ControllerCheckpoint; vision: VisionModel | null } | null;
   notes?: string;
   experiment?: RacingSettings;
+  /** Habitat extensions are retained by Vision; the habitat validates them on installation. */
+  robotLearning?: unknown;
+  robotMission?: unknown;
 };
 
 export type Imported = {
+  trainingRecipe?: TrainingRecipe;
   kind: "v1-brain" | "vision-brain" | "vision-net";
   name: string;
   profile?: "kart" | "robot";
@@ -69,6 +75,7 @@ export function importFile(text: string): Imported {
     if (!file.vision) warnings.push("This file has a controller but no eyes; the bundled camera network will be used.");
     return {
       kind: "vision-brain", name: file.name ?? "vision brain", profile: file.profile === "robot" ? "robot" : "kart",
+      trainingRecipe: file.controller.trainingRecipe === undefined ? undefined : validateRecipe(file.controller.trainingRecipe),
       controller: { snapshot: controller.snapshot, meta: controller.meta, domain: file.controller.domain ?? "track" },
       vision: file.vision ?? null, fusion: file.fusion, memory: file.memory ?? null,
       experiment: file.experiment === undefined ? undefined : validateRacingSettings(file.experiment),
@@ -83,12 +90,12 @@ export function importFile(text: string): Imported {
   if (brain.meta.upgradedFromLegacy) warnings.push("This is an older FlyKart brain; it was upgraded to the current 17-input format exactly as the original simulator does.");
   if (brain.snapshot.inputCount > 17) warnings.push("This brain also listens to a sonar. Use the robot sensor profile; on the camera-only kart its sonar inputs stay silent.");
   if (domain === "track") warnings.push("This brain was trained on exact simulator numbers. Through a camera it will receive slightly wrong ones, so expect it to drive less smoothly than a brain trained for imperfect eyes.");
-  return { kind: "v1-brain", name: brain.meta.lineage?.name ?? (brain.meta.generation !== null ? `generation ${brain.meta.generation} brain` : "imported brain"), profile: brain.snapshot.inputCount > 17 ? "robot" : "kart", controller: { snapshot: brain.snapshot, meta: brain.meta, domain }, warnings };
+  return { kind: "v1-brain", trainingRecipe: object.trainingRecipe === undefined ? undefined : validateRecipe(object.trainingRecipe), name: brain.meta.lineage?.name ?? (brain.meta.generation !== null ? `generation ${brain.meta.generation} brain` : "imported brain"), profile: brain.snapshot.inputCount > 17 ? "robot" : "kart", controller: { snapshot: brain.snapshot, meta: brain.meta, domain }, warnings };
 }
 
-export function controllerCheckpoint(network: SpikingNetwork | BrainSnapshot, options: { fitness?: number; generation?: number; track?: string; domain?: "track" | "world"; provenance?: unknown[] } = {}): ControllerCheckpoint {
+export function controllerCheckpoint(network: SpikingNetwork | BrainSnapshot, options: { fitness?: number; generation?: number; track?: string; domain?: "track" | "world"; provenance?: unknown[]; trainingRecipe?: TrainingRecipe } = {}): ControllerCheckpoint {
   const snapshot = network instanceof SpikingNetwork ? network.toJSON() : network;
-  return { format: "flykart-brain", version: 2, savedAt: new Date().toISOString(), fitness: options.fitness ?? 0, generation: options.generation ?? 0, track: options.track ?? "all", ...(options.domain ? { domain: options.domain } : {}), provenance: options.provenance ?? [], network: snapshot };
+  return { format: "flykart-brain", version: 2, savedAt: new Date().toISOString(), fitness: options.fitness ?? 0, generation: options.generation ?? 0, track: options.track ?? "all", ...(options.domain ? { domain: options.domain } : {}), ...(options.trainingRecipe ? {trainingRecipe:validateRecipe(options.trainingRecipe)} : {}), provenance: options.provenance ?? [], network: snapshot };
 }
 
 export function exportVisionBrain(file: Omit<VisionBrainFile, "format" | "version" | "savedAt">): string {

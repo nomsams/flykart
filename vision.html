@@ -108,6 +108,7 @@
                 <button id="import-btn" class="quiet" title="Load a FlyKart brain (from the original app or from here)">Import brain…</button>
                 <input id="import-file" type="file" accept="application/json,.json" hidden />
                 <button id="export-vision-btn" class="quiet" title="Download controller, eyes, fusion settings and lap memory in one file">Export vision brain</button>
+                <button id="add-sonar-inputs" class="quiet" title="Select Robot sensor head, then add two zero-weight sonar inputs. Train offspring to learn them.">Add sonar inputs</button>
                 <button id="export-v1-btn" class="quiet" title="Download just the controller in the original FlyKart format">Export for FlyKart v1</button>
               </div>
               <p id="brain-info" class="note"></p>
@@ -139,7 +140,9 @@
               <div class="section-title"><h2>Track</h2></div>
               <label>Track <select id="track-select"></select></label>
               <label>Rival karts <select id="track-rivals"><option value="0">none</option><option value="1">1</option><option value="2">2</option></select></label>
-              <label>Road objects <select id="track-objects"><option value="0">none</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option></select></label>
+              <label>Checkpoints per lap <input id="race-checkpoints" type="number" min="2" max="64" value="8"></label><label>Physics variation · % <input id="race-variation" type="number" min="0" max="35" step="1" value="0"></label>
+              <label>Road objects <select id="track-objects"><option value="0">none</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="6">6</option><option value="12">12</option><option value="64">64</option></select></label>
+              <label>Object type <select id="track-object-kind"><option value="mixed">Mixed hazards</option><option value="stalled-car">Stalled cars</option><option value="barrier">Low barriers</option><option value="cone">Cones</option><option value="oil">Oil patches</option><option value="wall">Tall walls · 44 cm</option><option value="bush">Bushes · 31 cm</option></select><small>Tall objects reach above the camera and sonar. Bush echoes use a rounded solid approximation; real foliage may absorb sound. Roadside recovery walls are a physics aid.</small></label>
               <label>Look of the world <input id="track-style" type="range" min="0" max="1" step="0.1" value="0" /></label>
               <label class="check-row"><input id="track-walls" type="checkbox" checked /> <span>Road-side walls <small>off: leaving the road is for real</small></span></label>
             </section>
