@@ -51,7 +51,14 @@ export function explainControls(root:HTMLElement):void {
     if(!text&&e.id.startsWith('reward-'))text=`Teaching weight for ${e.id.replace('reward-','').replaceAll('-',' ')}. Used to score and select controllers; never fed directly into their neural inputs.`;
     if(!text)continue;
     e.title=text;e.setAttribute('aria-description',text);
-    const label=e.closest('label');if(label&&!label.querySelector('small')){const small=document.createElement('small');small.className='control-help';small.textContent=text;label.append(small);}
+    const label=e.closest('label');if(label&&!label.querySelector('small')){
+      const wrap=document.createElement('span');wrap.className='control-help-wrap';
+      const button=document.createElement('button');button.type='button';button.className='control-help-toggle';button.textContent='Help';
+      const small=document.createElement('small');small.className='control-help';small.id=`${e.id}-help`;small.textContent=text;small.hidden=true;
+      button.setAttribute('aria-controls',small.id);button.setAttribute('aria-expanded','false');e.setAttribute('aria-describedby',small.id);
+      button.addEventListener('click',event=>{event.preventDefault();small.hidden=!small.hidden;button.setAttribute('aria-expanded',String(!small.hidden));});
+      wrap.append(button,small);label.append(wrap);
+    }
     if(e instanceof HTMLSelectElement)for(const option of Array.from(e.options))option.title=`${option.textContent}. ${text}`;
   }
 }

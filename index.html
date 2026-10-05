@@ -55,6 +55,7 @@
             <button id="visual-train-btn" title="Train one controller at a time and watch each candidate">Train visually</button>
             <button id="evolve-five-btn" title="Race the configured population simultaneously and keep the best incumbent">Evolve 5+ brains</button>
             <button id="headless-train-btn" title="Train without drawing every simulation step">Headless train</button>
+            <label class="training-speed-control">Training speed <select id="training-speed" aria-label="Visual training speed"><option value="1">1× · watch closely</option><option value="4">4×</option><option value="8">8×</option><option value="16">16×</option><option value="0" selected>Fast · maximum</option></select></label>
             <button id="stop-btn" class="quiet" title="Pause the current race or training run">Stop</button>
             <button id="reset-btn" class="quiet" title="Forget the current controller and start over">Reset brain</button>
             <button id="save-btn" class="quiet" title="Save the best controller in this browser">Save brain</button>
@@ -63,6 +64,7 @@
             <button id="import-btn" class="quiet" title="Load a JSON checkpoint downloaded earlier">Import brain</button>
             <input id="import-file" type="file" accept="application/json,.json" hidden />
           </div>
+          <p id="training-throughput" class="training-throughput">Visual training runs as fast as available compute allows. Race playback stays at 1×.</p>
           <section class="run-console" aria-label="Live run status">
             <div class="run-console-header">
               <div>

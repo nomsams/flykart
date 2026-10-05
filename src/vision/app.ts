@@ -1,3 +1,5 @@
+import { attachJsonImport } from '../json-import';
+import { organizeVision } from './layout';
 // FlyKart Vision: the page that wires the simulator, camera, fusion and lap memory to the DOM.
 import "../style.css";
 import { explainControls } from "../control-help";
@@ -287,9 +289,8 @@ function download(name: string, text: string): void {
   const link = document.createElement("a"); link.href = url; link.download = name; link.click(); window.setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
-async function importBrain(file: File): Promise<void> {
-  try {
-    const imported = importFile(await file.text());
+async function importBrainText(text: string, name: string): Promise<void> {
+    const imported = importFile(text);
     const notes: string[] = [...imported.warnings];
     let prefer: { controller?: string; eyes?: string } = {};
     if (imported.controller && imported.controller.domain === "world") {
@@ -298,7 +299,7 @@ async function importBrain(file: File): Promise<void> {
       buildWorld();
     } else if (imported.controller) {
       const meta = imported.controller.meta;
-      state.imported = { name: file.name.replace(/\.json$/i, ""), snapshot: imported.controller.snapshot, info: `Imported ${imported.kind === "v1-brain" ? "FlyKart v1 brain" : "vision brain"}${meta.generation !== null ? `, generation ${meta.generation}` : ""}${meta.fitness !== null ? `, fitness ${meta.fitness.toFixed(0)}` : ""}. ${imported.warnings.join(" ")}` };
+      state.imported = { name: name.replace(/\.json$/i, ""), snapshot: imported.controller.snapshot, info: `Imported ${imported.kind === "v1-brain" ? "FlyKart v1 brain" : "vision brain"}${meta.generation !== null ? `, generation ${meta.generation}` : ""}${meta.fitness !== null ? `, fitness ${meta.fitness.toFixed(0)}` : ""}. ${imported.warnings.join(" ")}` };
       prefer.controller = "imported";
     }
     if (imported.profile === "robot" && state.profile !== "robot" && state.assets?.robot) { state.profile = "robot"; $<HTMLSelectElement>("profile").value = "robot"; notes.push("This brain was made for the robot sensor head (camera 6.5 cm up and a sonar), so that profile was selected."); }
@@ -310,9 +311,6 @@ async function importBrain(file: File): Promise<void> {
     refreshBrainSelects(prefer);
     $("brain-info").textContent = `${imported.name}: ${notes.join(" ")}`;
     buildTrack({ keepMemory: Boolean(imported.memory) });
-  } catch (error) {
-    $("brain-info").textContent = error instanceof Error ? error.message : "That file could not be read.";
-  }
 }
 
 function worldExportSource(): { controller: BrainSnapshot; vision: VisionModel | null } | null {
@@ -357,8 +355,7 @@ async function boot(): Promise<void> {
   $("track-laps").addEventListener("click", () => { if (!currentVision()) { setStatus("track", "choose eyes first: the memory works through the camera"); return; } $<HTMLInputElement>("memory-on").checked = true; state.lapsLeft = 0;$<HTMLInputElement>("multi-lap").checked=true;$<HTMLSelectElement>("lap-target").value="3";buildTrack(); state.running.track = true; $("track-run").textContent = "Pause"; });
   $("memory-forget").addEventListener("click", () => { state.memory.forget(); state.laps = []; state.lapNumber = 0; renderLapTable(); paintTrack(); });
   $("memory-on").addEventListener("change", () => buildTrack({ keepMemory: true }));
-  $("import-btn").addEventListener("click", () => $<HTMLInputElement>("import-file").click());
-  $<HTMLInputElement>("import-file").addEventListener("change", (event) => { const file = (event.target as HTMLInputElement).files?.[0]; if (file) void importBrain(file); (event.target as HTMLInputElement).value = ""; });
+  attachJsonImport($<HTMLInputElement>('import-file'), importBrainText, { title: 'Import brain + eyes', trigger: $('import-btn'), busy: () => cameraTraining, onError: message => $('brain-info').textContent = message });
   $("export-vision-btn").addEventListener("click", exportVision);
   $("export-v1-btn").addEventListener("click", () => download("flykart-brain-for-v1.json", exportAsFlyKartV1(controllerCheckpoint(currentController(), { track: "all" }))));
 
@@ -377,6 +374,8 @@ async function boot(): Promise<void> {
   $("camera-report").onclick=()=>{if(trainedCamera)download('flykart-camera-training.json',JSON.stringify({...trainedCamera,experiment:trainedExperiment,context:trainedContext,notes:'Camera weights frozen; sensor-only neural inputs. Small paired validation is not deployment proof.'},null,2));};
   explainControls(document.querySelector("main")!);
   installSettingsHistory(document.querySelector('main')!,()=>{state.profile=$<HTMLSelectElement>('profile').value as 'kart'|'robot';state.sonarOn=$<HTMLInputElement>('sonar-on').checked;state.mode=$<HTMLSelectElement>('track-mode').value as DriverMode;setFade(Number($<HTMLInputElement>('fade').value));state.running.track=false;state.running.world=false;buildTrack();if(state.world)buildWorld();},()=>cameraTraining);
+  organizeVision(()=>{if(state.tab==='track')paintTrack();else if(state.tab==='world')paintWorld();});
+  document.querySelector('.profile-bar')!.after(document.querySelector('.settings-history')!);
   buildTrack(); paintTrack();
   const wanted = location.hash.replace("#", ""); if (["world", "evidence", "how"].includes(wanted)) showTab(wanted);
   if (problems.length) console.warn("FlyKart Vision: bundled files not found:", problems.join(", "));

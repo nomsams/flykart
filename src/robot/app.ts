@@ -1,3 +1,4 @@
+import { attachJsonImport } from '../json-import';
 import {TargetLab} from './target-lab';
 import {RunLibrary} from './run-library';
 import {SensorTiming} from './sensor-timing';
@@ -721,9 +722,10 @@ function wireEvents(): void {
   button("restore-brain", () => { setRunning(false); void loadBundled().then(()=>saveLocal()).catch(error => message(String(error), true)); });
   button("save-lab", () => safe(() => download("robot-habitat.json", JSON.stringify(labData(), null, 2))));
   const file = (id: string, callback: (text: string) => void|Promise<void>, max = 64000000) => el<HTMLInputElement>(id).addEventListener("change", async e => { const input = e.target as HTMLInputElement, upload = input.files?.[0]; if (!upload) return; if (upload.size > max) { message("File exceeds the size limit.", true); input.value = ""; return; } try { const opening="Opening " + upload.name + "…"; message(opening); await callback(await upload.text()); if(el("status").textContent===opening)message("Opened " + upload.name + "."); } catch (error) { message(error instanceof Error ? error.message : String(error), true); } input.value = ""; });
-  file("brain-file", text => { setRunning(false); installBrain(text); });
+  const importBusy=()=>hardwarePanel.busy||!!training||!!researchPanel?.active||!!calibrationPanel?.active||!!taskPanel?.active;
+  attachJsonImport(el<HTMLInputElement>('brain-file'), text => { setRunning(false); installBrain(text); }, { title: 'Import robot brain', busy: importBusy, onError: detail => message(detail, true) });
   file("ino-file", text => { program = "custom"; customDraft = text; el<HTMLTextAreaElement>("sketch").value = text; programInfo(); codeMessage("Sketch opened. Click Apply code to run it."); }, 60000);
-  file("lab-file",text=>restoreLab(JSON.parse(text)));
+  attachJsonImport(el<HTMLInputElement>('lab-file'), text => restoreLab(JSON.parse(text)), { title: 'Import robot lab', busy: importBusy, onError: detail => message(detail, true) });
   const editable = (target: EventTarget | null) => target instanceof HTMLElement && (target.matches("input,textarea,select") || target.isContentEditable);
   window.addEventListener("keydown", e => { if (!editable(e.target) && !el<HTMLDialogElement>("hardware").open && !el<HTMLDialogElement>("pinout").open && ["w", "a", "s", "d", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key)) { if (value("drive-mode") === "manual") e.preventDefault(); keys.add(e.key); } });
   window.addEventListener("keyup", e => keys.delete(e.key)); window.addEventListener("blur", () => { keys.clear(); if (value("drive-mode") === "manual") { hardwarePanel.stop();actualPWM = [0, 0]; physics.left = physics.right = 0; setRunning(false, "manual keyboard focus lost"); } });

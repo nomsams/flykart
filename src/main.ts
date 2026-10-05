@@ -1,3 +1,5 @@
+import { StepPacer } from './step-pacer';
+import { attachJsonImport } from './json-import';
 import "./style.css";
 import { installSettingsHistory } from "./settings-history";
 import { explainControls } from "./control-help";
@@ -10,7 +12,7 @@ const WIDTH = 960;
 const HEIGHT = 600;
 const MODEL_STORAGE_KEY = "flykart.best-brain.v1";
 const CHECKPOINT_VERSION = 2;
-const VISUAL_TRAINING_STEPS_PER_FRAME = 4;
+
 
 const canvas = document.querySelector<HTMLCanvasElement>("#game");
 if (!canvas) throw new Error("Game canvas is missing");
@@ -113,6 +115,9 @@ let trainingSafetyPenalties: number[] = [];
 let trainingTrackIndex = 0;
 let lastCompetitiveCullTick = 0;
 let visualTimer: number | undefined;
+const visualPacer = new StepPacer();
+let visualStarted = 0, visualExecuted = 0, lastVisualTelemetry = 0;
+function refreshVisualTelemetry(): boolean { const now=performance.now(); if(now-lastVisualTelemetry<100)return false;lastVisualTelemetry=now;return true; }
 let trainingSession = 0;
 let trainingPopulationSize = 0;
 let requestedGenerations = 0;
@@ -859,9 +864,8 @@ function downloadSelectedLineage(): void {
   } catch (error) { const detail = error instanceof Error ? error.message : "could not download selected brain"; setRunState("Lineage export error", detail, "error", "LINEAGE"); appendEvent(`lineage export failed: ${detail}`); }
 }
 
-async function importBrain(file: File): Promise<void> {
-  try {
-    const parsed = JSON.parse(await file.text()) as { format?: unknown; version?: unknown; fitness?: unknown; generation?: unknown; track?: unknown; provenance?: unknown; network?: BrainSnapshot };
+async function importBrainText(text: string, name: string): Promise<void> {
+    const parsed = JSON.parse(text) as { format?: unknown; version?: unknown; fitness?: unknown; generation?: unknown; track?: unknown; provenance?: unknown; network?: BrainSnapshot };
     if (parsed.format !== undefined && parsed.format !== "flykart-brain") throw new Error("this file is not a FlyKart brain checkpoint");
     if (!parsed.network) throw new Error("checkpoint is missing its network weights");
     const network = SpikingNetwork.fromJSON(parsed.network);
@@ -873,11 +877,8 @@ async function importBrain(file: File): Promise<void> {
     activeTrainingContext = selectedContext; bestNetwork = network; bestFitness = selectedContext === sourceContext ? sourceFitness : -Infinity; generation = selectedContext === sourceContext ? sourceGeneration : 0; freshTrainingContext = selectedContext !== sourceContext; warmStartLabel = contextLabel(sourceContext); bestProgressForContext = selectedContext === sourceContext ? sourceProgress : 0; bestFinishedForContext = selectedContext === sourceContext ? sourceFinished : false; if (freshTrainingContext) contextProvenance.set(selectedContext, { context: selectedContext, trained: false, source: `${contextLabel(sourceContext)} checkpoint`, bestFitness: null, bestProgress: 0, finished: false, generation: 0 });
     updateTrackProvenance();
     updateBestMetrics(); launchRace();
-    const detail = `checkpoint imported from ${file.name}; generation ${generation} is ready to race`;
+    const detail = `checkpoint imported from ${name}; generation ${generation} is ready to race`;
     setRunState("Checkpoint imported", detail, "ready", "RACE MODE"); appendEvent(detail);
-  } catch (error) {
-    const detail = error instanceof Error ? error.message : "could not import checkpoint"; setRunState("Import error", detail, "error", "RACE MODE"); appendEvent(`import failed: ${detail}`);
-  } finally { ui.importFile.value = ""; }
 }
 
 function loadBrain(): void {
@@ -1164,12 +1165,14 @@ function trainFiveBrainStep(): void {
   const leader = [...trainingPopulation].sort((a, b) => breedingProgressMetric === "rate" ? carLapPace(b) - carLapPace(a) : b.totalProgress - a.totalProgress || b.score - a.score)[0];
   const displayedTimeLimit = Math.max(MAX_TICKS, ...trainingPopulation.map((car) => car.timeLimit));
   const liveFraction = Math.min(1, tick / (MAX_TICKS * (physicsConfig.lapTarget ?? 1)));
-  setProgress((completedEpisodes + liveFraction * trainingPopulationSize) / Math.max(1, requestedGenerations * generationEpisodes), `generation ${trainingGeneration}/${requestedGenerations} · ${trainingPopulationSize} brains racing · ${route.name}`, `visual race · ${tick}/${displayedTimeLimit} ticks · leader checkpoints ${leader?.checkpointsPassed ?? 0}/${physicsConfig.checkpointCount ?? CHECKPOINT_COUNT} · selection uses ${breedingProgressMetric === "rate" ? "progress/lap time" : "novel coverage"} + reward`);
   const finished = trainingPopulation.every((car) => car.crashed || car.finished || car.timedOut || car.eliminated);
-  if (leader) {
-    updateRewardTelemetry(leader);
-    ui.fitness.textContent = leader.score.toFixed(1);
-    ui.progress.textContent = `${Math.round(leader.totalProgress * 100)}%`;
+  if (refreshVisualTelemetry()) {
+    setProgress((completedEpisodes + liveFraction * trainingPopulationSize) / Math.max(1, requestedGenerations * generationEpisodes), `generation ${trainingGeneration}/${requestedGenerations} · ${trainingPopulationSize} brains racing · ${route.name}`, `visual race · ${tick}/${displayedTimeLimit} ticks · leader checkpoints ${leader?.checkpointsPassed ?? 0}/${physicsConfig.checkpointCount ?? CHECKPOINT_COUNT} · selection uses ${breedingProgressMetric === "rate" ? "progress/lap time" : "novel coverage"} + reward`);
+    if (leader) {
+      updateRewardTelemetry(leader);
+      ui.fitness.textContent = leader.score.toFixed(1);
+      ui.progress.textContent = `${Math.round(leader.totalProgress * 100)}%`;
+    }
   }
   if (!finished) return;
   trainingPopulation.forEach((car, index) => { trainingScores[index] += car.score; trainingProgresses[index] += car.totalProgress / (physicsConfig.lapTarget ?? 1); trainingTicks[index] += car.ticks; trainingProgressRates[index] += carLapPace(car); trainingFinishCounts[index] += car.finished ? 1 : 0; trainingEliminationCounts[index] += car.eliminated ? 1 : 0; trainingWorstProgresses[index] = Math.min(trainingWorstProgresses[index], car.totalProgress / (physicsConfig.lapTarget ?? 1)); trainingCheckpointRates[index] += clamp(car.checkpointsPassed / Math.max(1, (physicsConfig.checkpointCount ?? CHECKPOINT_COUNT) * (physicsConfig.lapTarget ?? 1)), 0, 1); trainingSafetyPenalties[index] += carSafetyPenalty(car); });
@@ -1199,12 +1202,14 @@ function trainPopulationStep(): void {
   const car = trainingPopulation[trainingIndex]; if (!car?.network) return;
   const cars = [car, ...trainingObstacles]; const previousTimeLimit = car.timeLimit; const action = car.network.step(sensorValues(car, cars, trainingTracks[trainingTrackIndex])); stepCar(car, action, cars, trainingTracks[trainingTrackIndex], rewardConfig, visualEpisodePhysics);
   if (car.timeLimit > previousTimeLimit) appendEvent(`${car.name} earned adaptive extension ${car.timeExtensions}/${physicsConfig.maxAdaptiveExtensions ?? MAX_ADAPTIVE_EXTENSIONS} · new limit ${car.timeLimit} ticks`);
-  updateRewardTelemetry(car);
   const episodeCount = Math.max(1, trainingTracks.length); const totalEpisodes = Math.max(1, trainingPopulationSize * episodeCount * requestedGenerations);
   const completedEpisodes = (trainingGeneration - 1) * trainingPopulationSize * episodeCount + trainingIndex * episodeCount + trainingTrackIndex;
-  const candidateFraction = Math.min(1, car.ticks / (MAX_TICKS * (physicsConfig.lapTarget ?? 1)));
   const route = trainingTracks[trainingTrackIndex];
-  setProgress((completedEpisodes + candidateFraction) / totalEpisodes, `generation ${trainingGeneration}/${requestedGenerations} · ${car.name} (${trainingIndex + 1}/${trainingPopulationSize}) · ${route.name}`, `visual · tick ${car.ticks}/${car.timeLimit} · checkpoints ${car.checkpointsPassed}/${physicsConfig.checkpointCount ?? CHECKPOINT_COUNT} · direction ${Math.round(clamp((car.forwardAlignment + 1) * 50, 0, 100))}%`);
+  if (refreshVisualTelemetry()) {
+    updateRewardTelemetry(car);
+    const candidateFraction = Math.min(1, car.ticks / (MAX_TICKS * (physicsConfig.lapTarget ?? 1)));
+    setProgress((completedEpisodes + candidateFraction) / totalEpisodes, `generation ${trainingGeneration}/${requestedGenerations} · ${car.name} (${trainingIndex + 1}/${trainingPopulationSize}) · ${route.name}`, `visual · tick ${car.ticks}/${car.timeLimit} · checkpoints ${car.checkpointsPassed}/${physicsConfig.checkpointCount ?? CHECKPOINT_COUNT} · direction ${Math.round(clamp((car.forwardAlignment + 1) * 50, 0, 100))}%`);
+  }
   if (car.crashed || car.finished || car.timedOut || car.eliminated) {
     recordTrainingTrace(car);
     trainingScores[trainingIndex] += car.score;
@@ -1396,7 +1401,7 @@ function startVisualTraining(): void {
   const session = ++trainingSession; clearVisualTimer(); training = true; running = false; visualTraining = true; fiveBrainEvolution = false; manualMode = false; trainingHistory = []; trainingGeneration = 1;
   trainingPopulationSize = readInteger(ui.population, 32, 2, 80); requestedGenerations = readInteger(ui.generations, 100, 1, 10000); trainingTracks = selectedTracks(); rewardConfig = readRewardConfig(); physicsConfig = readPhysicsConfig(); readRoadObjectConfig(); readEvolutionConfig(); activeTrack = trainingTracks[0]; prepareTrainingContext(); trainingWorldSeed = 5000; plateauStreak = 0; plateauReason = "none"; mutationRate = DEFAULT_MUTATION_RATE; mutationAmount = DEFAULT_MUTATION_AMOUNT; previousGenerationProgress = 0; resetEvolutionHistory(); resetLineage(); ensureHeuristicWarmStart(); trainingNetworks = createMutationPopulation(trainingPopulationSize, bestNetwork, trainingWorldSeed, DEFAULT_MUTATION_RATE, DEFAULT_MUTATION_AMOUNT); registerInitialLineagePopulation(trainingNetworks); ensureWorkingCheckpoint(); updateEvolutionTelemetry();
   beginRun("Visual training", `Watching ${trainingPopulationSize} candidates drive across ${requestedGenerations} generations on ${selectedTrackLabel()}${freshTrainingContext ? ` · new route baseline reset · warm-start from ${warmStartLabel}` : ""}${randomObjectsEnabled ? ` with ${trainingObstacleCount()} ${randomObjectKind} objects` : ""}${curriculumEnabled ? " on a progressive hazard curriculum" : ""}. Selection prioritizes completion, checkpoints, worst coverage, and safety; the validation champion is checked every five generations.`, "VISUAL TRAINING");
-  setBusy(true); ui.generation.textContent = "0"; ui.fitness.textContent = "—"; startVisualGeneration(); scheduleVisualBatch(session);
+  setBusy(true); ui.generation.textContent = "0"; ui.fitness.textContent = "—"; startVisualGeneration(); visualStarted=performance.now();visualExecuted=0;lastVisualTelemetry=0;visualPacer.reset(visualStarted);scheduleVisualBatch(session);
 }
 
 function startFiveBrainEvolution(): void {
@@ -1404,15 +1409,24 @@ function startFiveBrainEvolution(): void {
   trainingPopulationSize = readInteger(ui.population, 32, 2, 80); requestedGenerations = readInteger(ui.generations, 100, 1, 10000); trainingTracks = selectedTracks(); rewardConfig = readRewardConfig(); physicsConfig = readPhysicsConfig(); readRoadObjectConfig(); readEvolutionConfig(); activeTrack = trainingTracks[0]; prepareTrainingContext(); trainingWorldSeed = 9000; plateauStreak = 0; plateauReason = "none"; mutationRate = DEFAULT_MUTATION_RATE; mutationAmount = DEFAULT_MUTATION_AMOUNT; previousGenerationProgress = 0; resetEvolutionHistory(); resetLineage(); ensureHeuristicWarmStart(); trainingNetworks = createMutationPopulation(trainingPopulationSize, bestNetwork, trainingWorldSeed, DEFAULT_MUTATION_RATE, DEFAULT_MUTATION_AMOUNT); registerInitialLineagePopulation(trainingNetworks); ensureWorkingCheckpoint(); updateEvolutionTelemetry();
   const mode = ghostEvolution ? "independent candidate worlds (no candidate sensing, collisions, or influence)" : softContactEvolution ? "Ghost contact mode (candidates sense and penalize overlap, but contact is non-blocking)" : "a shared physical track with rigid collision dynamics";
   beginRun("Population evolution", `Racing ${trainingPopulationSize} brains simultaneously in ${mode} for ${requestedGenerations} generations on ${selectedTrackLabel()}${freshTrainingContext ? ` · new route baseline reset · warm-start from ${warmStartLabel}` : ""}${randomObjectsEnabled ? ` with ${randomObjectCount} ${randomObjectKind} objects` : ""}. Selection prioritizes completion, checkpoints, worst coverage, and safety; the validation champion is checked every five generations.`, "POPULATION EVOLUTION");
-  setBusy(true); ui.generation.textContent = "0"; ui.fitness.textContent = "—"; startVisualGeneration(); scheduleVisualBatch(session);
+  setBusy(true); ui.generation.textContent = "0"; ui.fitness.textContent = "—"; startVisualGeneration(); visualStarted=performance.now();visualExecuted=0;lastVisualTelemetry=0;visualPacer.reset(visualStarted);scheduleVisualBatch(session);
 }
 
 function scheduleVisualBatch(session: number): void {
   if (!visualTraining || trainingSession !== session) return;
-  try { for (let index = 0; index < VISUAL_TRAINING_STEPS_PER_FRAME && visualTraining; index += 1) trainPopulationStep(); }
-  catch (error) { if (trainingSession === session) failTraining(error); return; }
-  visualTimer = window.setTimeout(() => scheduleVisualBatch(session), 16);
+  const started=performance.now(), multiplier=Number(required<HTMLSelectElement>('#training-speed').value), budget=visualPacer.budget(started,multiplier);
+  try {
+    for(let i=0;i<budget&&visualTraining&&trainingSession===session;i++){
+      trainPopulationStep();visualPacer.consume();visualExecuted++;
+      if(performance.now()-started>=12)break;
+    }
+    const seconds=(performance.now()-visualStarted)/1000, note=required<HTMLElement>('#training-throughput');
+    note.dataset.ticks=String(visualExecuted);
+    note.textContent=`${multiplier===0?'Fast · maximum':multiplier+'× requested'} · ${(visualExecuted/Math.max(.1,seconds)/30).toFixed(1)}× achieved · ${visualExecuted.toLocaleString()} fixed 30 Hz steps · speed changes pace, not rewards or physics.`;
+  } catch (error) { if (trainingSession === session) failTraining(error); return; }
+  if(visualTraining&&trainingSession===session)visualTimer = window.setTimeout(() => scheduleVisualBatch(session), multiplier===0?0:4);
 }
+required<HTMLSelectElement>('#training-speed').addEventListener('change',()=>{visualPacer.reset(performance.now());appendEvent('Visual training speed: '+required<HTMLSelectElement>('#training-speed').selectedOptions[0].textContent);});
 
 function finishTraining(): void {
   const validation = bestNetwork ? evaluateGeneralist(bestNetwork.clone(), trainingTracks, rewardConfig, physicsConfig, ghostEvolution, trainingObstacleCount(), [420001], randomObjectKind) : undefined;
@@ -1454,8 +1468,7 @@ ui.resetButton.addEventListener("click", () => safely(resetBrain));
 ui.saveButton.addEventListener("click", () => safely(saveBrain));
 ui.loadButton.addEventListener("click", () => safely(loadBrain));
 ui.exportButton.addEventListener("click", () => safely(exportBrain));
-ui.importButton.addEventListener("click", () => ui.importFile.click());
-ui.importFile.addEventListener("change", () => { const file = ui.importFile.files?.[0]; if (file) void importBrain(file); });
+attachJsonImport(ui.importFile, importBrainText, { title: 'Import racer brain', trigger: ui.importButton, busy: () => training, onError: detail => { setRunState('Import error', detail, 'error', 'RACE MODE'); appendEvent(`import failed: ${detail}`); } });
 ui.copyLogButton.addEventListener("click", () => { void copyAllLog(); });
 ui.useLineageButton.addEventListener("click", () => safely(useSelectedLineage));
 ui.downloadLineageButton.addEventListener("click", () => safely(downloadSelectedLineage));
@@ -1496,6 +1509,7 @@ ui.curriculumToggle.addEventListener("change", () => { readEvolutionConfig(); ap
   input.addEventListener("change", () => { rewardConfig = readRewardConfig(); appendEvent("reward settings updated · new weights apply immediately"); });
 });
 window.addEventListener("keydown", (event) => {
+  if (event.target instanceof HTMLElement && (event.target.matches("input,textarea,select") || event.target.isContentEditable || event.target.closest("dialog") || event.key === ' ' && event.target.matches('button'))) return;
   if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", " "].includes(event.key)) event.preventDefault();
   pressedKeys.add(event.key);
 });
