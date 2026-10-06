@@ -1,4 +1,5 @@
 import { RuntimeBudget, PreviewMode } from './runtime-budget';
+import { EyePreview } from './ui/eye-preview';
 import { generateClutter, furniture } from './world/objects';
 import { racerToRoom } from '../robot/task-brain';
 import { generateWorld, WorldSim, GoalPreset, GoalCount } from './world/world';
@@ -78,6 +79,7 @@ function showTab(name: string): void {
   }
   if (name === "world" && !state.world) buildWorld();
   if (state.assets) updateProfileUi();
+  if (experiment) { if (name === 'track') paintTrack(); else if (name === 'world') paintWorld(); }
   history.replaceState(null, "", `#${name}`);
 }
 
@@ -107,6 +109,7 @@ function updateModeNote(): void {
 /* ------------------------------- brains ------------------------------- */
 
 let experiment:ReturnType<typeof mountExperimentPanel>;
+let trackEyePreview:EyePreview,worldEyePreview:EyePreview;
 let previewTrack:TrackSession[]|null=null,previewWorld:WorldSession[]|null=null;
 let cameraTraining=false, cancelTraining=false, trainedCamera:CameraTrainingResult|null=null;
 let trainedExperiment:RacingSettings|null=null;
@@ -230,7 +233,7 @@ function paintTrack(preview?:TrackSession,ghosts:TrackSession[]=[]): void {
   drawTrackMap($("track-map") as HTMLCanvasElement, session.route, car, episode.cars, episode.camera.hfov, { ghosts:ghosts.map((s,i)=>({x:s.episode.car.position.x,y:s.episode.car.position.y,heading:s.episode.car.heading,label:String(i+1),color:GHOST_COLORS[i%GHOST_COLORS.length]})),checkpointCount:session.settings.checkpointCount,sonar: sonarView, nextGate: episode.nextGate(), label: `progress ${(car.totalProgress * 100).toFixed(0)}%   speed ${car.speed.toFixed(0)}   time ${(car.ticks / 30).toFixed(1)} s   gates ${car.checkpointsPassed}` });
   if (!session.perceiver) episode.render();
   drawEye($("track-eye") as HTMLCanvasElement, lowResolution(episode.frame,episode.camera.width,episode.camera.height,session.settings.resolution??"native"), episode.camera);
-  const ensemble=driver.ensemble;if(ensemble){const canvas=$("virtual-eyes") as HTMLCanvasElement,ctx=canvas.getContext('2d')!;ctx.clearRect(0,0,canvas.width,canvas.height);ensemble.frames.forEach((f,i)=>{const thumb=document.createElement('canvas');thumb.width=episode.camera.width;thumb.height=episode.camera.height;const c=thumb.getContext('2d')!,image=c.createImageData(thumb.width,thumb.height),n=thumb.width*thumb.height;for(let p=0;p<n;p++){for(let k=0;k<3;k++)image.data[p*4+k]=Math.round(f[k*n+p]*255);image.data[p*4+3]=255;}c.putImageData(image,0,0);ctx.imageSmoothingEnabled=false;ctx.drawImage(thumb,i*canvas.width/ensemble.frames.length,0,canvas.width/ensemble.frames.length,canvas.height);});$("eye-disagreement").textContent=`${ensemble.frames.length} view(s) · estimate disagreement ${ensemble.disagreement.toFixed(3)} · filtered RGB is the controller's image`;}
+  trackEyePreview.paint(episode.frame,episode.camera,session.settings,driver.ensemble,session.perceiver?undefined:'no eye network selected');
   const truth = episode.truth(session.lastTruth); const perception = driver.perception;
   const rows = estimateRows(trackDomain, truth, perception ? perception.mean : null, perception ? perception.variance : null, driver.fused.mean, perception ? driver.fused.weights : null, driver.memoryCue ? driver.memoryCue.mean : null, Boolean(driver.memoryCue));
   drawEstimates($("track-estimates") as HTMLCanvasElement, rows);
@@ -324,6 +327,7 @@ function paintWorld(preview?:WorldSession,ghosts:WorldSession[]=[]): void {
   $("world-sonar").textContent = !reading ? "—" : !state.sonarOn ? "off" : reading.echo ? `${(reading.range * CM_PER_PIXEL).toFixed(0)} cm` : "no echo";
   if (!perception) episode.render();
   drawEye($("world-eye") as HTMLCanvasElement, lowResolution(episode.frame,episode.camera.width,episode.camera.height,session.settings.resolution??"native"), episode.camera);
+  worldEyePreview.paint(episode.frame,episode.camera,session.settings,driver?.ensemble??null,driver?.options.perceiver&&!driver.options.blind?undefined:`${session.settings.kind} driver does not use camera eyes`);
   const rows = driver ? estimateRows(worldDomain, truth, perception ? perception.mean : null, perception ? perception.variance : null, driver.fused.mean, perception ? driver.fused.weights : null) : estimateRows(worldDomain, truth, null, null, truth, null);
   drawEstimates($("world-estimates") as HTMLCanvasElement, rows, [-1, 1]);
   const activity = session.controller.activity(); drawBrain($("world-brain") as HTMLCanvasElement, activity.spikes, activity.outputs);
@@ -463,6 +467,7 @@ function exportVision():void{try{const text=visionBrainText();importFile(text);d
 
 async function boot(): Promise<void> {
   mountRoomPanel();
+  trackEyePreview=new EyePreview('track');worldEyePreview=new EyePreview('world');
   const { assets, problems } = await loadAssets(); state.assets = assets;
   if (!assets.robust && !assets.v1) throw new Error(`No controller could be loaded (${problems.join("; ")}).`);
   const named = TRACKS.filter((track) => !track.id.startsWith("gen-"));
@@ -627,7 +632,7 @@ function mountTrainingTools():void{
   $('world-goal-preset').addEventListener('change',()=>{if(state.arena)delete state.arena.goals;try{buildWorld();setStatus('world','Goal preset ready');}catch(e){setStatus('world',(e as Error).message);}});
   $('world-goal-shuffle').onclick=()=>{if(cameraTraining)return;if(state.arena)delete state.arena.goals;$<HTMLInputElement>('world-seed').value=String(1+Math.floor(Math.random()*999999));try{buildWorld();setStatus('world','New target positions · map regenerated only for procedural maps');}catch(e){setStatus('world',(e as Error).message);}};
   $('memory-count').addEventListener('change',()=>buildTrack({keepMemory:true}));
-  $('world-eye-layout').addEventListener('change',()=>{if(cameraTraining)return;const next=experiment.applied();next.visual={...next.visual,layout:$<HTMLSelectElement>('world-eye-layout').value as RacingSettings['visual']['layout']};experiment.write(next);state.worldMemory=null;buildWorld();});
+  $('world-eye-layout').addEventListener('change',()=>{if(cameraTraining)return;const next=experiment.applied();next.visual={...next.visual,layout:$<HTMLSelectElement>('world-eye-layout').value as RacingSettings['visual']['layout']};experiment.write(next);state.worldMemory=null;state.running.track=false;buildTrack();buildWorld();});
   $('world-clutter-new').onclick=()=>{if(cameraTraining)return;const picker=$<HTMLSelectElement>('world-map-preset');if(!['room','workshop','bedroom'].includes(picker.value))picker.value='room';$<HTMLInputElement>('world-seed').value=String(1+Math.floor(Math.random()*999999));state.worldMemory=null;buildWorld();setStatus('world','New seeded clutter; selected room type kept.');};
   $('world-sonar-apply').onclick=()=>{if(cameraTraining||!state.world)return;try{const scene=savedScene(),surface=validateSonarSurface($<HTMLSelectElement>('world-sonar-surface').value);scene.world.obstacles.forEach(o=>o.sonarSurface=surface);state.arena=validateArena(scene);const picker=$<HTMLSelectElement>('world-map-preset');picker.querySelector<HTMLOptionElement>('option[value=imported]')!.disabled=false;picker.value='imported';state.worldMemory=null;buildWorld();setStatus('world','Sonar surfaces applied; room and target positions preserved.');}catch(e){setStatus('world',(e as Error).message);}};
   $('world-clearance-apply').onclick=()=>{if(cameraTraining||!state.world)return;try{const cm=Number($<HTMLInputElement>('world-clearance').value);if(!Number.isFinite(cm)||cm<0||cm>26)throw Error('Clearance must be 0–26 cm.');const world=structuredClone(state.world.episode.sim.world);for(const o of world.obstacles)if(furniture(o))o.clearance=Math.min(cm/1.1,o.height-.5);state.arena=validateArena({...savedScene(),world});const picker=$<HTMLSelectElement>('world-map-preset');picker.querySelector<HTMLOptionElement>('option[value=imported]')!.disabled=false;picker.value='imported';state.worldMemory=null;buildWorld();setStatus('world','Furniture clearance applied; layout preserved as Your scene.');}catch(e){setStatus('world',(e as Error).message);}};

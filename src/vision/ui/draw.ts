@@ -22,6 +22,8 @@ const eyeBuffers = new WeakMap<HTMLCanvasElement, HTMLCanvasElement>();
 export function drawEye(canvas: HTMLCanvasElement, frame: Float32Array, config: CameraConfig, overlay?: (context: CanvasRenderingContext2D, scale: number) => void): void {
   let small = eyeBuffers.get(canvas);
   if (!small) { small = document.createElement("canvas"); small.width = config.width; small.height = config.height; eyeBuffers.set(canvas, small); }
+  if (small.width !== config.width) small.width = config.width;
+  if (small.height !== config.height) small.height = config.height;
   const context = canvas.getContext("2d")!; const smallContext = small.getContext("2d")!;
   const image = new ImageData(frameToRgba(frame, config) as unknown as Uint8ClampedArray<ArrayBuffer>, config.width, config.height);
   smallContext.putImageData(image, 0, 0);
