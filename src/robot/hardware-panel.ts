@@ -87,6 +87,7 @@ export class HardwarePanel {
   }
   async calibrationSegment(pwm:[number,number],seconds:number,cancel:()=>boolean,pidEnabled=false,settings:PIDSettings=DEFAULT_PID):Promise<void> {
     const c=this.app.context();bridgeSketch(c.wiring,c.config);
+    if(c.task?.support?.feeding)throw new Error('Live feeding uses a virtual scent sensor and simulated dock. Disable the live feeding cycle before USB arming; a real charger needs measured telemetry and a physical navigation cue.');
     if(!this.serial.connected||this.reportedConfig!==bridgeConfigId(c.wiring,c.config)||!this.chipFrame||performance.now()-this.frameAt>2500)throw new Error('Connect a fresh USB bridge with this pin map before running a floor segment.');
     if(pwm.some(v=>!Number.isFinite(v)||Math.abs(v)>120/255)||!Number.isFinite(seconds)||seconds<=0||seconds>30)throw new Error('Physical calibration limit: PWM 120, segment 30 seconds.');
     this.app.pause();const tune=validatePID(settings),pid=new HeadingPID(tune.kp,tune.ki,tune.kd,tune.limit),target=this.tracker&&performance.now()-this.tracker.at<500?this.tracker.heading:null;await this.beginSession('ARM',false,true,cancel);const started=performance.now();
@@ -120,6 +121,7 @@ export class HardwarePanel {
     this.neuralTimer=setInterval(()=>this.tick(),1000/30);
     this.timer=setInterval(()=>{if(this.taskSettings?.mode==="forage"&&(!this.power||performance.now()/1000-this.power.at>2.5)){this.log("Battery/charger telemetry stale · stopping");this.stop();return;}if(performance.now()-this.frameAt>2500||this.app.context().config.vibration?.enabled&&performance.now()-this.vibrationAt>2500){this.log("Sensor timeout · stopping motors");this.stop();return;}const cap=clamp(Number(this.input("serial-pwm-cap"))||0,0,255);const request=this.requests.map(v=>Math.round(clamp(v,-cap,cap))/255) as [number,number],range=this.realRange(),g=guardMotors(request,range.cm,range.age,this.app.context().config.rpm/60*Math.PI*this.app.context().config.wheelDiameter*Math.max(0,(this.app.context().config.voltage-this.app.context().config.bridgeDrop)/6),this.app.context().config.guard??DEFAULT_GUARD),issued=this.taskSettings?.mode==='forage'&&this.power?.energy===0&&!this.power.charging?[0,0] as [number,number]:g.pwm,token=this.session;void this.serial.send(`M ${Math.round(issued[0]*255)} ${Math.round(issued[1]*255)}`).then(()=>{if(this.armed&&token===this.session){this.issuedPWM=issued;this.motion.issue(issued,performance.now()/1000);this.drawMotion();}}).catch(()=>this.stop());},100);
     this.log(`USB controller armed · ${c.mode} requests / applied editor logic · verified firmware pin map · PWM cap applied`);this.update();
+    if(c.task?.support?.recovery)this.log('Simulation recovery assistance is excluded from hardware inference; the frozen neural controller is running.');
   }
   stop():void {
     this.session++;this.arming=false;this.expectedConfig='';this.requiresCamera=false;

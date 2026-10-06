@@ -93,7 +93,7 @@ export class TrackSession {
 }
 
 export type WorldDriverKind = "vision" | "both" | "feeling" | "expert" | "blind";
-export type WorldSettings = { seed: number; density: number; style: number; kind: WorldDriverKind; fade: number; controller: BrainSnapshot; vision: VisionModel | null; profile?: SensorProfile; sonarOn?: boolean; visual?:RacingSettings["visual"]; resolution?:RacingSettings["resolution"]; cameraNoise?:number;cameraBrightness?:number;maxTicks?:number; goalPreset?:import("../world/world").GoalPreset; task?:"forage"|"reverse"|"explore"; searchWin?:SearchWin; world?:WorldDef; start?:{x:number;y:number;heading:number}; memorySettings?:MemorySettings; roomMemory?:RoomMemory|null; sensorOnly?:boolean };
+export type WorldSettings = { seed: number; density: number; style: number; kind: WorldDriverKind; fade: number; controller: BrainSnapshot; vision: VisionModel | null; profile?: SensorProfile; sonarOn?: boolean; visual?:RacingSettings["visual"]; resolution?:RacingSettings["resolution"]; cameraNoise?:number;cameraBrightness?:number;maxTicks?:number; goalPreset?:import("../world/world").GoalPreset; task?:"forage"|"reverse"|"explore"; searchWin?:SearchWin; world?:WorldDef; start?:{x:number;y:number;heading:number}; memorySettings?:MemorySettings; roomMemory?:RoomMemory|null; sensorOnly?:boolean; practiceForward?:boolean };
 
 export class WorldSession {
   readonly episode: WorldEpisode;
@@ -117,9 +117,10 @@ export class WorldSession {
     this.episode = new WorldEpisode({ seed: settings.seed, density: settings.density, styleStrength: settings.style,cameraNoise:settings.cameraNoise,cameraBrightness:settings.cameraBrightness, camera: WORLD_CAMERA, maxTicks: settings.maxTicks??4200, world:settings.world,start:settings.start,goalPreset:settings.task==='reverse'?'near':explore&&settings.goalPreset==='pair'?'random':settings.goalPreset,hiddenGoalAngle:explore?Math.min(Math.PI-.01,camera.hfov/2+.25):undefined, profile: settings.profile });
     this.initialPose={x:this.episode.sim.kart.x,y:this.episode.sim.kart.y,heading:this.episode.sim.kart.heading};
     if(settings.task==='reverse'||settings.sensorOnly){
-      const goal=settings.task==='reverse'?reverseGoal(this.episode.sim.world,this.episode.sim.kart):{x:this.episode.sim.status.goalX,y:this.episode.sim.status.goalY};
+      let goal=settings.task==='reverse'?reverseGoal(this.episode.sim.world,this.episode.sim.kart):{x:this.episode.sim.status.goalX,y:this.episode.sim.status.goalY};
+      if(settings.practiceForward){try{goal=reverseGoal(this.episode.sim.world,{...this.episode.sim.kart,heading:this.episode.sim.kart.heading+Math.PI});}catch{/* A blocked front corridor retains the ordinary seeded navigation goal. */}}
       // Rebuild a fixed-goal episode so arrival ends the trial rather than moving the flag.
-      this.episode=new WorldEpisode({...this.episode.options,goal,goals:settings.task==='reverse'?[goal]:this.episode.sim.goals,goalLimit:!explore&&settings.task!=='reverse'&&settings.goalPreset==='pair'?2:1});
+      this.episode=new WorldEpisode({...this.episode.options,goal,goals:settings.task==='reverse'||settings.practiceForward?[goal]:this.episode.sim.goals,goalLimit:!explore&&settings.task!=='reverse'&&!settings.practiceForward&&settings.goalPreset==='pair'?2:1});
     }
     this.memory=settings.roomMemory??(settings.memorySettings?new RoomMemory(settings.memorySettings):null);
     this.trail.push({x:this.episode.sim.kart.x,y:this.episode.sim.kart.y});

@@ -11,6 +11,8 @@ export class EnergyState {
   energy:number;charging=false;hold=0;charged=0;cycles=0;private wasSated=false;
   constructor(readonly settings:HungerSettings){this.energy=settings.initial;this.wasSated=this.energy>=settings.sated;}
   get hunger():number{return 1-this.energy;}
+  /** An external test intervention, never credited as learned reward. */
+  injectLow(value=.12):void {if(!Number.isFinite(value)||value<0||value>1)throw Error('Invalid injected energy.');this.energy=value;this.hold=0;this.charging=false;this.wasSated=false;}
   /** Dock contact is a virtual electrical-contact sensor, not a target-position input. */
   step(dt:number,motorEffort:number,dockContact:boolean):number{
     if(!this.settings.enabled)return 0;

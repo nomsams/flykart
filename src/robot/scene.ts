@@ -95,6 +95,11 @@ export class HabitatScene {
     const trail=mission.trail;
     for(let i=1;i<trail.length;i++){const a=trail[i-1],b=trail[i],length=Math.hypot(b.x-a.x,b.z-a.z);if(length<.001)continue;const group=mission.settings.cue==="paint"?this.mission:this.scentOverlay;const mesh=this.mesh(new THREE.BoxGeometry(length,.002,mission.settings.width*.45),0x28c9db,group,(a.x+b.x)/2,.004,(a.z+b.z)/2);mesh.rotation.y=-Math.atan2(b.z-a.z,b.x-a.x);if(mission.settings.cue==="scent"){const material=mesh.material as THREE.MeshStandardMaterial;material.transparent=true;material.opacity=.3;}}
   }
+  showFeedingTrail(trail:{x:number;z:number}[]):void {
+    // Keep all scent overlays outside both the raw and fly cameras.
+    for(const child of [...this.scentOverlay.children])if(child.userData.feeding){this.scentOverlay.remove(child);const m=child as THREE.Mesh;m.geometry.dispose();(m.material as THREE.Material).dispose();}
+    for(let i=1;i<trail.length;i++){const a=trail[i-1],b=trail[i],length=Math.hypot(b.x-a.x,b.z-a.z);if(length<.001)continue;const mesh=this.mesh(new THREE.BoxGeometry(length,.003,.045),0xffb96b,this.scentOverlay,(a.x+b.x)/2,.006,(a.z+b.z)/2);mesh.userData.feeding=true;mesh.rotation.y=-Math.atan2(b.z-a.z,b.x-a.x);const material=mesh.material as THREE.MeshStandardMaterial;material.transparent=true;material.opacity=.45;}
+  }
   showFlyInput(planar:Float32Array,width:number,height:number):void {
     this.tinyCanvas.width=width;this.tinyCanvas.height=height;const image=this.tinyContext.createImageData(width,height),n=width*height;
     for(let i=0;i<n;i++){for(let k=0;k<3;k++)image.data[i*4+k]=planar[k*n+i]*255;image.data[i*4+3]=255;}
