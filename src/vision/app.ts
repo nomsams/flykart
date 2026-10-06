@@ -541,7 +541,7 @@ function renderWorldPreviews():void{
     const world=kind==='imported'?state.arena!.world:kind==='clear'?{half:460,obstacles:[],patches:[]}:['room','workshop','bedroom'].includes(kind)?generateClutter(Number($<HTMLInputElement>('world-seed').value),Number($<HTMLInputElement>('world-density').value),kind as 'room'|'workshop'|'bedroom'):generateWorld(Number($<HTMLInputElement>('world-seed').value),kind==='woods'?1:Number($<HTMLInputElement>('world-density').value));
     ctx.save();ctx.translate(56,37);ctx.scale(34/world.half,34/world.half);
     for(const p of world.patches){ctx.fillStyle=p.kind==='water'?'#548fbc':p.kind==='sand'?'#bda874':'#71523e';ctx.beginPath();ctx.arc(p.x,p.y,p.radius,0,Math.PI*2);ctx.fill();}
-    for(const o of world.obstacles){ctx.fillStyle=o.kind==='tree'?'#79a94c':'#bbc1bc';ctx.beginPath();ctx.arc(o.x,o.y,o.radius,0,Math.PI*2);ctx.fill();}ctx.restore();
+    for(const o of world.obstacles){ctx.fillStyle=furniture(o)?'#c9a279':o.kind==='shoe'?'#cf754d':o.kind==='mat'?'#99705e':o.kind==='cable'?'#d9ce96':o.kind==='tree'?'#79a94c':'#bbc1bc';if(furniture(o))ctx.fillRect(o.x-o.radius,o.y-o.radius*.65,o.radius*2,o.radius*1.3);else{ctx.beginPath();ctx.arc(o.x,o.y,o.radius,0,Math.PI*2);ctx.fill();}}ctx.restore();
     const text=document.createElement('span');text.textContent=label;b.append(c,text);b.onclick=()=>{if(cameraTraining)return;$<HTMLSelectElement>('world-map-preset').value=kind;$('world-map-preset').dispatchEvent(new Event('change',{bubbles:true}));};strip.append(b);
   }
 }
