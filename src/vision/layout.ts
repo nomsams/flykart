@@ -15,7 +15,7 @@ export function organizeVision(repaint:()=>void): void {
   for(const section of Array.from(document.querySelectorAll<HTMLElement>('#tab-track .game-card>.panel,#tab-world .game-card>.panel'))){
     const heading=section.querySelector<HTMLElement>('.panel-title strong')?.textContent;
     if(!heading||section.id==='sonar-panel')continue;
-    const details=document.createElement('details');details.className='vision-inspector';
+    const details=document.createElement('details');details.className='vision-inspector';details.open=heading.startsWith('Scan memory');
     const summary=document.createElement('summary');summary.textContent=heading;details.append(summary);
     section.before(details);details.append(section);groups.push(details);
     // Repaint hidden canvases after disclosure so their responsive drawing size is available.

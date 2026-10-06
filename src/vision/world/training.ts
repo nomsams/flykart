@@ -2,7 +2,7 @@ import { Action, BrainSnapshot, SpikingNetwork, clamp, wrapAngle } from '../../c
 import { runCohort } from '../cohort';
 import { WorldSession, WorldSettings } from '../ui/sessions';
 
-export type GoalResult={arrived:boolean;ticks:number;collisions:number;progress:number;reverseDistance:number;crashed:boolean};
+export type GoalResult={arrived:boolean;ticks:number;collisions:number;progress:number;goals?:number;goalTarget?:number;reverseDistance:number;crashed:boolean};
 /** Arrival dominates partial progress. No time bonus for dying early. */
 export function goalScore(r:GoalResult,limit:number,crashWeight:number):number{
   const weight=Math.max(0,Math.min(1,crashWeight));
@@ -12,7 +12,7 @@ export function goalScore(r:GoalResult,limit:number,crashWeight:number):number{
 }
 export function goalResult(s:WorldSession,initialDistance:number):GoalResult{
   const r=s.episode.sim.status;
-  return{arrived:r.goals>0&&!r.crashed,ticks:r.ticks,collisions:r.collisions,progress:1-r.distanceToGoal/Math.max(1,initialDistance),reverseDistance:s.reverseDistance,crashed:r.crashed};
+  return{arrived:r.goals>=s.episode.sim.goalLimit&&!r.crashed,ticks:r.ticks,collisions:r.collisions,goals:r.goals,goalTarget:s.episode.sim.goalLimit,progress:(r.goals+Math.max(0,1-r.distanceToGoal/Math.max(1,initialDistance)))/s.episode.sim.goalLimit,reverseDistance:s.reverseDistance,crashed:r.crashed};
 }
 export type WorldTrainingResult={brain:BrainSnapshot;score:number;generation:number;crashWeight:number;trainingSeeds:number[];validation:{parent:number;offspring:number;seeds:number[]};trials:GoalResult[];task:string;scoreDefinition:string;coachFrames:number};
 export async function trainWorldController(settings:WorldSettings,generations:number,population:number,crashWeight:number,cancelled:()=>boolean,log:(line:string)=>void,progress:(sessions:WorldSession[],generation:number,seed:number)=>void,speed=0,coach=false):Promise<WorldTrainingResult|null>{
@@ -40,7 +40,7 @@ export async function trainWorldController(settings:WorldSettings,generations:nu
   }
   const validation=await evaluate([settings.controller,parent.toJSON()],heldOut,0);if(!validation)return null;
   log(`Held-out room scores · parent ${validation.scores[0].toFixed(2)} · offspring ${validation.scores[1].toFixed(2)}. ${settings.world?'Same imported layout, new headings/light; geometry generalization not tested.':'Two unseen seeded layouts/headings.'}`);
-  return{coachFrames:primed?.frames??0,brain:parent.toJSON(),score,generation:generations,crashWeight,task:settings.task??'forage',trainingSeeds:seeds,validation:{parent:validation.scores[0],offspring:validation.scores[1],seeds:heldOut},trials:lastTrials,scoreDefinition:'Arrival: 1000 + 1000 × ((1 − crashWeight) × remaining time fraction + crashWeight / (1 + contacts)). Failure: partial progress × 400 − contact cost − 200 if crashed. Fixed goal; fresh visual memory per trial; explicit goal compass; no reward or collision labels in neural inputs.'};
+  return{coachFrames:primed?.frames??0,brain:parent.toJSON(),score,generation:generations,crashWeight,task:settings.task??'forage',trainingSeeds:seeds,validation:{parent:validation.scores[0],offspring:validation.scores[1],seeds:heldOut},trials:lastTrials,scoreDefinition:'Arrival: 1000 + 1000 × ((1 − crashWeight) × remaining time fraction + crashWeight / (1 + contacts)). Failure: partial progress × 400 − contact cost − 200 if crashed. Fixed target set (collect both in two-dot mode); fresh visual memory per trial; explicit goal compass; no reward or collision labels in neural inputs.'};
 }
 
 /** Motor-only imitation. The coach sees exactly the same estimated inputs; no reward labels enter the learner. */

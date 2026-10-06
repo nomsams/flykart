@@ -10,6 +10,7 @@ export class WorldScene implements Scene {
   sprites: Sprite[] = [];
   private readonly fixed: Sprite[] = [];
   private goal: { x: number; y: number } = { x: 0, y: 0 };
+  private goals: {x:number;y:number}[] = [];
   private nearPatches: WorldDef["patches"] = [];
 
   constructor(readonly world: WorldDef, public style: Style) {
@@ -35,11 +36,12 @@ export class WorldScene implements Scene {
   }
 
   setGoal(x: number, y: number): void { this.goal = { x, y }; }
+  setGoals(goals:{x:number;y:number}[]):void { this.goals=goals; }
 
   prepare(pose: Pose): void {
     const range2 = 480 * 480;
     this.sprites = this.fixed.filter((sprite) => (sprite.x - pose.x) ** 2 + (sprite.y - pose.y) ** 2 < range2);
-    this.sprites.push({ x: this.goal.x, y: this.goal.y, heading: 0, width: 14, length: 14, z0: 0, z1: 46, color: [1, 0.2, 0.62], shape: "flag" });
+    for(const goal of this.goals.length?this.goals:[this.goal])this.sprites.push({ x: goal.x, y: goal.y, heading: 0, width: 14, length: 14, z0: 0, z1: 46, color: [1, 0.2, 0.62], shape: "flag" });
     this.nearPatches = this.world.patches.filter((p) => Math.hypot(p.x - pose.x, p.y - pose.y) < p.radius + 380);
   }
 
@@ -56,8 +58,7 @@ export class WorldScene implements Scene {
     else if (kind === "mud") c = scale(style.dirt, 0.62 + 0.14 * hash2(Math.floor(x / 7), Math.floor(y / 7)));
     else { const checker = (Math.floor(x / 26) + Math.floor(y / 26)) % 2 === 0; c = scale(checker ? style.grassA : style.grassB, 0.93 + 0.14 * hash2(Math.floor(x / 5), Math.floor(y / 5))); }
     // A bright ring on the ground marks the goal.
-    const toGoal = Math.hypot(x - this.goal.x, y - this.goal.y);
-    if (toGoal < GOAL_RADIUS && toGoal > GOAL_RADIUS - 4.5) c = [1, 0.84, 0.2];
+    if((this.goals.length?this.goals:[this.goal]).some(g=>{const d=Math.hypot(x-g.x,y-g.y);return d<GOAL_RADIUS&&d>GOAL_RADIUS-4.5;}))c = [1, 0.84, 0.2];
     out[0] = c[0]; out[1] = c[1]; out[2] = c[2];
   }
 }
