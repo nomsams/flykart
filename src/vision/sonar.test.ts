@@ -12,6 +12,13 @@ const kart = (distancePx: number): SonarTarget => ({ kind: "box", x: frontOf + d
 const pole = (distancePx: number, radius = 1.4): SonarTarget => ({ kind: "circle", x: frontOf + distancePx + radius, y: 0, radius, z0: 0, z1: 17 });
 const hear = (targets: SonarTarget[], pose = at) => ping(quiet, pose, targets, mulberry32(1));
 
+it('attenuates soft targets, scatters rough echoes, preserves legacy returns and occlusion',()=>{
+ const t=wall(100),original=hear([t]);expect(hear([{...t,surface:'legacy'}])).toEqual(original);
+ const hard=hear([{...t,surface:'smooth'}]),soft=hear([{...t,surface:'soft'}]);expect(hard.strength).toBeGreaterThan(soft.strength);expect(soft.echo).toBe(false);
+ const angle=wall(80,Math.PI/2+.6);expect(hear([{...angle,surface:'rough'}]).strength).toBeGreaterThan(hear([{...angle,surface:'smooth'}]).strength);
+ expect(hear([{...t,surface:'soft'},wall(160)]).echo).toBe(false);expect(hear([wall(160)]).echo).toBe(true);
+});
+
 describe("the robot's scale", () => {
   it("matches the simulated kart's size and the sensor mount height", () => {
     expect(24 * CM_PER_PIXEL).toBeGreaterThan(ROBOT.lengthCm * 0.9); expect(24 * CM_PER_PIXEL).toBeLessThan(ROBOT.lengthCm * 1.1);

@@ -1,3 +1,4 @@
+import { SONAR_SURFACES,validateSonarSurface } from '../vision/sonar-surfaces';
 import { mountHabitatPicker } from './map-picker';
 import { mountBrainShelf } from '../browser-brain';
 import { TrainingRecipe, roomRewards } from '../training-recipe';
@@ -58,7 +59,7 @@ root.innerHTML = `
 <header><div><p class="eyebrow">FLYKART / EMBODIED INTELLIGENCE</p><h1>Robot habitat<span style="color:var(--accent)">.</span></h1><p class="subtitle">A little fly. A real-sized robot. A world to learn.</p></div>
 <nav aria-label="FlyKart pages"><a href="./index.html">Race lab ↗</a><a href="./vision.html">Vision lab ↗</a><span class="pill">ESP32-CAM · FOUR WHEELS</span></nav></header>
 <main class="shell">
-  <div class="toolbar"><div class="toolbar-group"><button id="run" class="primary">▶ Run simulation</button><button id="step">Step</button><button id="reset" class="quiet">Reset robot</button><label>Habitat <select id="preset"><option value="room">Workshop room</option><option value="garden">Garden</option><option value="empty">Empty floor</option></select></label></div><div class="toolbar-group"><button id="save-lab">Export lab</button><label class="import-label">Import lab<input id="lab-file" class="scene-file" type="file" accept=".json,application/json"></label><button id="advanced">⚙ Components & wiring</button></div></div>
+  <div class="toolbar"><div class="toolbar-group"><button id="run" class="primary">▶ Run simulation</button><button id="step">Step</button><button id="reset" class="quiet">Reset robot</button><label>Habitat <select id="preset"><option value="room">Workshop room</option><option value="garden">Garden</option><option value="empty">Empty floor</option></select></label></div><div class="toolbar-group"><button id="save-scene">Save scene + targets</button><button id="load-scene">Load scene</button><input id="scene-file" class="scene-file" type="file" accept=".json,application/json" hidden><button id="save-lab">Export lab</button><label class="import-label">Import lab<input id="lab-file" class="scene-file" type="file" accept=".json,application/json"></label><button id="advanced">⚙ Components & wiring</button></div></div>
   <section class="experiment"><div class="program-controls"><label>Program <select id="program" aria-label="Controller preset">${PROGRAMS.map(p => `<option value="${p.id}">${p.title}</option>`).join("")}</select></label><details class="program-help"><summary>Preset details</summary><p id="program-note"></p></details></div><div class="experiment-actions"><button id="bench-check">Clear floor & run drive check</button><button id="show-code" class="quiet">Hide code</button><a href="#sensor-console">Sensor console ↓</a></div></section>
   <div class="workspace">
     <section class="world-column" aria-label="Robot world">
@@ -298,8 +299,9 @@ function validateObjects(raw: unknown): WorldObject[] {
   return raw.map(o => {
     if (!o || typeof o.id !== "string" || !o.id || o.id === "@robot" || o.id.length > 100 || ids.has(o.id) || !kinds.includes(o.kind)) throw new Error("Invalid habitat object."); ids.add(o.id);
     if (![o.x, o.z, o.yaw, o.width, o.depth, o.height].every(Number.isFinite) || Math.abs(o.x) > 3.5 || Math.abs(o.z) > 3.5 || Math.abs(o.yaw) > Math.PI * 100 || o.width < .02 || o.width > 6 || o.depth < .02 || o.depth > 6 || o.height < .002 || o.height > 4) throw new Error("Object position or dimensions are out of range.");
+    if(o.sonarSurface!==undefined)validateSonarSurface(o.sonarSurface);
     if(o.visual&&((o.kind==='image'&&o.visual.type!=='image')||(o.kind==='model'&&o.visual.type!=='glb')||!['image','model'].includes(o.kind)))throw new Error('Imported visual does not match the object type.');
-    return { id: o.id, kind: o.kind, x: o.x, z: o.z, yaw: o.yaw, width: o.width, depth: o.depth, height: o.height,...(o.visual?{visual:validateVisual(o.visual)}:{}) };
+    return { id: o.id, kind: o.kind, x: o.x, z: o.z, yaw: o.yaw, width: o.width, depth: o.depth, height: o.height,...(o.sonarSurface?{sonarSurface:o.sonarSurface}:{}),...(o.visual?{visual:validateVisual(o.visual)}:{}) };
   });
 }
 const PHYSICS_FIELDS: [keyof RobotConfig, string, number, number, number][] = [
@@ -380,6 +382,7 @@ function selectObject(id: string | null): void {
   const note = document.createElement("p"); note.className = "object-hint";
   note.textContent = o.kind === "cable" || o.kind === "doormat" ? traversable(o, physics.config) ? `${o.kind === "cable" ? "Drive-over caution: possible cable snag; simulated speed reduced 25%." : "Traversable mat: simulated speed reduced 15%."} Low-profile limit ${Math.min(.012, physics.config.wheelDiameter * .2) * 100} cm. No wheel-climbing or tangling physics.` : "Too tall to drive over in this model; this object blocks the chassis." : ["table", "chair", "bed"].includes(o.kind) ? `Underneath clearance: ${((o.kind === "bed" ? o.height * .32 : (o.kind === "table" ? o.height : o.height * .55) - .045) * 100).toFixed(1)} cm. Chassis envelope: ${((physics.config.mountHeight + .04) * 100).toFixed(1)} cm. Legs still block movement.` : "Contact follows the visible solid shape at chassis height. The selection box shows overall dimensions.";
   editor.append(note);
+  const acoustic=document.createElement("label");acoustic.innerHTML='<span>Sonar surface</span><select id="object-sonar-surface">'+SONAR_SURFACES.map(s=>'<option value="'+s.id+'">'+s.label+'</option>').join('')+'</select><small>Illustrative reflection strength and angle response; no multi-bounce tracing. Old scenes retain the original model. <a href="./docs/sonar-surfaces.html">Model & limits ↗</a></small>';editor.append(acoustic);el<HTMLSelectElement>("object-sonar-surface").value=o.sonarSurface??"legacy";el("object-sonar-surface").addEventListener("change",()=>safe(()=>{const surface=validateSonarSurface(value("object-sonar-surface"));editWorld();o.sonarSurface=surface;worldChanged();selectObject(o.id);}));
   editor.querySelectorAll<HTMLInputElement>("input").forEach(input => input.addEventListener("change", () => safe(() => {
     const property = input.dataset.property as keyof WorldObject; const n = Number(input.value) * (property === "yaw" ? Math.PI / 180 : 1);
     const updated = { ...o, [property]: n }; validateObjects([updated]);pauseForEdit("Object edited"); editWorld(); Object.assign(o, updated); worldChanged(); selectObject(o.id);
@@ -757,9 +760,19 @@ function wireEvents(): void {
   el("memory-enabled").addEventListener("change", () => { hardwarePanel.stop();if(training)endTraining("Memory setting changed; training stopped.");if (!check("memory-enabled")) memory.recalled = false; });
   button("export-brain", () => { if (controller) download("robot-flykart-brain.json", JSON.stringify(controllerCheckpoint(controller, {trainingRecipe:raceRecipe, domain: brainDomain, fitness: brainFitness, generation: brainGeneration }), null, 2)); });
   button("restore-brain", () => { setRunning(false); void loadBundled().then(()=>saveLocal()).catch(error => message(String(error), true)); });
+  const importBusy=()=>loadingBundled||hardwarePanel.busy||!!training||!!researchPanel?.active||!!calibrationPanel?.active||!!taskPanel?.active;
+  button("save-scene",()=>safe(()=>download("robot-scene.json",JSON.stringify({format:"flykart-robot-scene",version:1,objects,floorColour,startPose,currentPose:physics.pose,mission},null,2))));
+  attachJsonImport(el<HTMLInputElement>("scene-file"),async text=>{
+    const data=JSON.parse(text);if(data.format!=="flykart-robot-scene"||data.version!==1)throw Error("Expected a 3D robot scene file.");
+    const nextObjects=validateObjects(data.objects),nextStart=validatePose(data.startPose),nextPose=validatePose(data.currentPose??data.startPose),nextMission=validateMission(data.mission);
+    if(typeof data.floorColour!=="string"||!/^#[0-9a-f]{6}$/i.test(data.floorColour))throw Error("Invalid scene floor colour.");
+    for(const pose of [nextStart,nextPose]){const error=placementError(pose,physics.config,nextObjects);if(error)throw Error(error);}
+    await prepareObjectVisuals(nextObjects);if(importBusy())throw Error("Stop the current job before loading a scene.");
+    editWorld();restoreSceneEdit({objects:nextObjects,floorColour:data.floorColour,startPose:nextStart,robotPose:nextPose,mission:nextMission,journey:journeySnapshot()});physics.left=physics.right=0;physics.blocked=false;physics.contact=null;estimator=new StateEstimator(nextPose,calibration);scene.breakDrivingTrail();scene.updateRobot(nextPose,physics.config,check("beam-visible"),0,0,0);saveLocal();message("Room, poses, target points and trail loaded. Controller and wiring retained. Undo restores the previous scene.");
+  },{title:"Import 3D scene + targets",trigger:el("load-scene"),busy:importBusy,onError:detail=>message(detail,true)});
   button("save-lab", () => safe(() => download("robot-habitat.json", JSON.stringify(labData(), null, 2))));
   const file = (id: string, callback: (text: string) => void|Promise<void>, max = 64000000) => el<HTMLInputElement>(id).addEventListener("change", async e => { const input = e.target as HTMLInputElement, upload = input.files?.[0]; if (!upload) return; if (upload.size > max) { message("File exceeds the size limit.", true); input.value = ""; return; } try { const opening="Opening " + upload.name + "…"; message(opening); await callback(await upload.text()); if(el("status").textContent===opening)message("Opened " + upload.name + "."); } catch (error) { message(error instanceof Error ? error.message : String(error), true); } input.value = ""; });
-  const importBusy=()=>loadingBundled||hardwarePanel.busy||!!training||!!researchPanel?.active||!!calibrationPanel?.active||!!taskPanel?.active;
+
   mountBrainShelf(el('brain-name').closest('section')!,'robot',robotBrainText,text=>{setRunning(false);installBrain(text);},importBusy);
   attachJsonImport(el<HTMLInputElement>('brain-file'), text => { setRunning(false); installBrain(text); }, { title: 'Import robot brain', busy: importBusy, onError: detail => message(detail, true) });
   file("ino-file", text => { program = "custom"; customDraft = text; el<HTMLTextAreaElement>("sketch").value = text; programInfo(); codeMessage("Sketch opened. Click Apply code to run it."); }, 60000);

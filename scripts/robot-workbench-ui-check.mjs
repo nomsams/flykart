@@ -16,13 +16,15 @@ try{
     await page.waitForFunction(()=>document.querySelector('.sensor-rail').getBoundingClientRect().bottom<=innerHeight);
     const bounds=await page.evaluate(()=>{const rect=s=>{const r=document.querySelector(s).getBoundingClientRect();return{top:r.top,bottom:r.bottom,right:r.right,left:r.left,height:r.height};};return{stage:rect('.stage'),rail:rect('.sensor-rail'),canvases:['#camera','#fly-eye','#room-map'].map(rect),width:document.documentElement.scrollWidth};});
     assert.ok(Math.abs(bounds.stage.top-bounds.rail.top)<2);assert.ok(bounds.stage.bottom<=viewport.height);assert.ok(bounds.rail.left>=bounds.stage.right);assert.ok(bounds.width<=viewport.width+1);
-    for(const r of bounds.canvases){assert.ok(r.height>40);assert.ok(r.top>=0&&r.bottom<=viewport.height);}
+    for(const r of bounds.canvases){assert.ok(r.height>90,JSON.stringify({viewport,bounds}));assert.ok(r.top>=0&&r.bottom<=viewport.height);}
     if(viewport.width===1366)await page.screenshot({path:'.cache/robot-monitors-laptop.png'});
     await page.locator('#robot-workbench').evaluate(e=>e.scrollIntoView({block:'start'}));
     const sticky=await page.locator('.sensor-rail').boundingBox();assert.ok(sticky.y>=0&&sticky.y<=16);assert.ok(sticky.y+sticky.height<=viewport.height);
     if(viewport.width===1366)await page.screenshot({path:'.cache/robot-monitors-workbench.png'});
   }
   await page.setViewportSize({width:1440,height:1080});await page.evaluate(()=>scrollTo(0,0));
+  for(const [index,id] of [[0,'camera'],[1,'fly-eye'],[2,'room-map']]){await page.locator(`[data-monitor="${index}"]`).click();assert.equal(await page.locator('.sensor-rail .sensor-card:visible').count(),1);assert.ok((await page.locator('#'+id).boundingBox()).height>450);assert.ok(await page.locator('#'+id).isVisible());}
+  await page.locator('[data-monitor="-1"]').click();assert.equal(await page.locator('.sensor-rail .sensor-card:visible').count(),3);
   assert.equal(await page.locator('.wb-panel:visible').count(),1);assert.ok(await page.locator('#lifecycle-panel').isVisible());
   await page.locator('#workbench-search').fill('PID kp');await page.locator('#workbench-results button').first().click();assert.ok(await page.locator('#calibration-panel').isVisible());assert.equal(await page.locator('#cal-pid-kp').evaluate(e=>e===document.activeElement),true);
   await page.locator('#cal-pid-kp').fill('1.25');await nav('tasks').click();await nav('calibrate').click();assert.equal(await page.locator('#cal-pid-kp').inputValue(),'1.25');

@@ -120,9 +120,9 @@ export class WorldEpisode implements VisionEpisode {
     for(const o of this.sim.world.obstacles){
       if(floorItem(o))continue;
       if(furniture(o)){
-        targets.push({kind:'box',x:o.x,y:o.y,heading:0,halfLength:o.radius,halfWidth:o.radius*.65,z0:clearance(o),z1:o.height});
-        for(const b of legs(o))targets.push({kind:'circle',x:b.x,y:b.y,radius:b.radius,z0:0,z1:clearance(o)});
-      }else targets.push({kind:'circle',x:o.x,y:o.y,radius:o.radius,z0:0,z1:o.height});
+        targets.push({surface:o.sonarSurface,kind:'box',x:o.x,y:o.y,heading:0,halfLength:o.radius,halfWidth:o.radius*.65,z0:clearance(o),z1:o.height});
+        for(const b of legs(o))targets.push({surface:o.sonarSurface,kind:'circle',x:b.x,y:b.y,radius:b.radius,z0:0,z1:clearance(o)});
+      }else targets.push({surface:o.sonarSurface,kind:'circle',x:o.x,y:o.y,radius:o.radius,z0:0,z1:o.height});
     }
     return targets;
   }

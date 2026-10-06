@@ -2,6 +2,7 @@
 // trees, rocks, ponds, a fence around the edge and a sequence of goals to
 // reach. The kart keeps the original FlyKart steering, throttle, brake and
 // reverse dynamics; only the surroundings change.
+import { SonarSurface } from '../sonar-surfaces';
 import { Action, STEP, clamp, wrapAngle } from "../../core";
 import { mulberry32, Random } from "../rng";
 import { OBJECT_KINDS, solids, contact, movable, floorItem, blocked } from './objects';
@@ -17,7 +18,7 @@ export const SECTOR_SPAN = (50 * Math.PI) / 180;
 export const SECTOR_RANGE = 220;
 
 export type Surface = "grass" | "sand" | "mud" | "water";
-export type Obstacle = { x: number; y: number; radius: number; kind: typeof OBJECT_KINDS[number]; height: number; tone: number; clearance?:number };
+export type Obstacle = { x: number; y: number; radius: number; kind: typeof OBJECT_KINDS[number]; height: number; tone: number; clearance?:number;sonarSurface?:SonarSurface };
 export type Patch = { x: number; y: number; radius: number; kind: Exclude<Surface, "grass"> };
 export type WorldDef = { seed: number; half: number; obstacles: Obstacle[]; patches: Patch[] };
 

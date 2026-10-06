@@ -19,6 +19,7 @@ import { narrowBrain } from "./inputs";
 import type { DriverMode } from "./pipeline";
 import { MemorySnapshot, MushroomBody } from "./memory";
 import { VisionModel, validateVisionModel } from "./perception";
+import { validateTrainingMaps } from '../map-curriculum';
 import { TrainingRecipe, validateRecipe } from '../training-recipe';
 
 export type ControllerCheckpoint = {
@@ -39,8 +40,8 @@ export function validateWorldSetup(raw:unknown):WorldSetup{
   if(!s||s.version!==1||!Number.isInteger(s.seed)||s.seed<1||s.seed>999999||!Number.isFinite(s.density)||s.density<0||s.density>1||!Number.isFinite(s.style)||s.style<0||s.style>1||!['vision','both','feeling','expert','blind'].includes(s.driver)||!Number.isFinite(s.fade)||s.fade<0||s.fade>1e6||!['standard','near','far','random','pair'].includes(s.goalPreset)||!['procedural','clear','woods','room','workshop','bedroom','imported'].includes(s.mapPreset)||![512,2048,4096,10000,20000,40000].includes(s.memoryCount)||typeof s.sonarOn!=='boolean'||typeof s.trailVisible!=='boolean')throw Error('Invalid Open world setup.');
   return {...s};
 }
-export type TrackSetup={version:1;trackId:string;rivals:number;style:number;memoryCount:number;memoryEnabled:boolean};
-export function validateTrackSetup(raw:unknown):TrackSetup{const s=raw as TrackSetup;if(!s||s.version!==1||typeof s.trackId!=='string'||s.trackId.length>100||!Number.isInteger(s.rivals)||s.rivals<0||s.rivals>20||!Number.isFinite(s.style)||s.style<0||s.style>1||!Number.isInteger(s.memoryCount)||s.memoryCount<64||s.memoryCount>64000||typeof s.memoryEnabled!=='boolean')throw Error('Invalid Track setup.');return {...s};}
+export type TrackSetup={trainingMaps?:string[];generalist?:boolean;version:1;trackId:string;rivals:number;style:number;memoryCount:number;memoryEnabled:boolean};
+export function validateTrackSetup(raw:unknown):TrackSetup{const s=raw as TrackSetup;if(!s||s.version!==1||typeof s.trackId!=='string'||s.trackId.length>100||!Number.isInteger(s.rivals)||s.rivals<0||s.rivals>20||!Number.isFinite(s.style)||s.style<0||s.style>1||!Number.isInteger(s.memoryCount)||s.memoryCount<64||s.memoryCount>64000||typeof s.memoryEnabled!=='boolean')throw Error('Invalid Track setup.');if(s.generalist!==undefined&&typeof s.generalist!=='boolean')throw Error('Invalid generalist mode.');return {...s,...(s.trainingMaps?{trainingMaps:validateTrainingMaps(s.trainingMaps)}:{})};}
 
 export type VisionBrainFile = {
   format: "flykart-vision-brain"; version: 1; savedAt: string; name: string;

@@ -1,0 +1,41 @@
+import {chromium} from '@playwright/test';
+import {readFile,mkdir} from 'node:fs/promises';
+import assert from 'node:assert/strict';
+const browser=await chromium.launch({...(process.platform==='win32'?{channel:'msedge'}:{}),headless:true});
+const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];
+page.on('pageerror',e=>errors.push(e.message));
+const base=process.env.ROBOT_LAB_URL??'http://127.0.0.1:5173';
+const download=async id=>{const[d]=await Promise.all([page.waitForEvent('download'),page.locator('#'+id).click()]);return JSON.parse(await readFile(await d.path(),'utf8'));};
+const upload=async(id,data)=>page.locator('#'+id).setInputFiles({name:'scene-test.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(data))});
+const selectMaps=async ids=>{
+  for(const id of ids)await page.locator(`input[name=training-map][value="${id}"]`).check();
+  for(const input of await page.locator('input[name=training-map]').all())if(!ids.includes(await input.inputValue()))await input.uncheck();
+};
+try{
+  await page.goto(base+'/index.html');await page.locator('#settings-undo').waitFor();await page.locator('#load-racer-checkpoint').click();await page.locator('#export-btn').waitFor({state:'visible'});
+  assert.ok(await page.evaluate(()=>document.querySelector('.control-panel').firstElementChild.contains(document.querySelector('#track-select'))));
+  await page.locator('.map-curriculum summary').click();await page.locator('[data-set=hard]').click();assert.equal(await page.locator('#track-select').inputValue(),'all');assert.ok(await page.locator('input[name=training-map]:checked').count()>2);
+  await selectMaps(['hairpin','sharp-turn']);await page.locator('#heuristic-warm-start-toggle').uncheck();await page.locator('#population').fill('2');await page.locator('#generations').fill('1');await page.locator('#training-seeds').fill('1');await page.locator('#adaptive-time-toggle').uncheck();await page.locator('#headless-train-btn').click();await page.waitForFunction(()=>document.querySelector('#track-select').disabled===false,{},{timeout:120000});
+  const racer=await download('export-btn');assert.deepEqual(racer.trainingRecipe.trainingMaps,['hairpin','sharp-turn']);assert.equal(racer.track,'all:hairpin,sharp-turn');
+  await page.locator('[data-set=all]').click();await upload('import-file',racer);assert.deepEqual((await download('export-btn')).trainingRecipe.trainingMaps,['hairpin','sharp-turn']);
+  await page.goto(base+'/vision.html');await page.locator('#boot-screen').waitFor({state:'hidden',timeout:60000});
+  assert.ok(await page.evaluate(()=>document.querySelector('#track-select').closest('.compact-map-card').previousElementSibling===document.querySelector('#tab-track .views')));
+  await upload('import-file',racer);await page.waitForFunction(()=>window.flykartVision.imported?.name==='scene-test');await page.locator('.map-curriculum summary').click();assert.equal(await page.locator('#generalist-training').isChecked(),true);assert.equal(await page.locator('input[name=training-map]:checked').count(),2);
+  await page.locator('#camera-generations').fill('1');await page.locator('#camera-population').fill('2');await page.locator('#camera-train-ticks').fill('300');await page.locator('#camera-train').click();await page.locator('#camera-train-status').filter({hasText:'Training complete.'}).waitFor({timeout:180000});const report=await download('camera-report');assert.deepEqual(report.trainingMaps,['hairpin','sharp-turn']);assert.match(await page.locator('#sensor-log').inputValue(),/hairpin.*seed 9001/);assert.match(await page.locator('#sensor-log').inputValue(),/sharp-turn.*seed 12007/);
+  await page.locator('#camera-train-adopt').click();const trained=await download('export-vision-btn');assert.equal(trained.trackSetup.generalist,true);assert.deepEqual(trained.trackSetup.trainingMaps,report.trainingMaps);
+  await selectMaps(['hairpin']);await page.locator('#camera-train').click();await page.locator('#camera-train-status').filter({hasText:'Training complete.'}).waitFor({timeout:180000});assert.deepEqual((await download('camera-report')).trainingMaps,['hairpin']);await page.locator('#camera-train-adopt').click();assert.equal(await page.locator('#generalist-training').isChecked(),true);assert.deepEqual((await download('export-vision-btn')).controller.trainingRecipe.trainingMaps,['hairpin']);
+  await page.locator('#tab-btn-world').click();await page.locator('#profile').selectOption('robot');await page.locator('#world-map-preset').selectOption('room');await page.locator('#world-goal-preset').selectOption('pair');const scene=await download('world-map-export');assert.equal(scene.goals.length,2);
+  await page.locator('#world-goal-shuffle').click();await upload('world-map-file',scene);await page.waitForFunction(()=>window.flykartVision.arena?.goals?.length===2);assert.deepEqual((await download('world-map-export')),scene);assert.deepEqual(await page.evaluate(()=>window.flykartVision.world.settings.goals),scene.goals);
+  await page.evaluate(()=>window.sceneBeforeBadImport=window.flykartVision.world);await upload('world-map-file',{...scene,goals:[{x:9999,y:0}]});await page.locator('#world-map-file-dialog .json-import-error').filter({hasText:'Saved target points'}).waitFor();assert.equal(await page.evaluate(()=>window.flykartVision.world===window.sceneBeforeBadImport),true);await page.locator('#world-map-file-dialog [data-close]').first().click();
+  await page.locator('summary').filter({hasText:'Sonar surfaces'}).click();await page.locator('#world-sonar-surface').selectOption('soft');await page.locator('#world-sonar-apply').click();const soft=await download('world-map-export');assert.deepEqual(soft.goals,scene.goals);assert.ok(soft.world.obstacles.every(o=>o.sonarSurface==='soft'));
+  await page.setViewportSize({width:390,height:844});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
+  await page.goto(base+'/robot.html');await page.locator('#status').filter({hasText:'Ready.'}).waitFor({timeout:60000});await page.setViewportSize({width:1440,height:1000});
+  const before=await download('save-lab');await page.locator('.wb-navigation [data-tool=senses]').click();await page.locator('#add-sugar').click();const three=await download('save-scene');assert.equal(three.mission.goals.length,1);
+  const id=three.objects[0].id;await page.locator('#object-list').selectOption(id);await page.locator('#object-sonar-surface').selectOption('soft');const materialScene=await download('save-scene');assert.equal(materialScene.objects[0].sonarSurface,'soft');
+  await page.locator('#preset').selectOption('empty');await upload('scene-file',materialScene);await page.locator('#status').filter({hasText:'Room, poses, target points and trail loaded'}).waitFor();assert.deepEqual(await download('save-scene'),materialScene);assert.deepEqual((await download('save-lab')).controller.network,before.controller.network);
+  await page.locator('#undo').click();assert.equal((await download('save-scene')).objects.length,0);await page.locator('#redo').click();assert.deepEqual(await download('save-scene'),materialScene);
+  await upload('scene-file',{...materialScene,objects:materialScene.objects.map((o,i)=>i?o:{...o,sonarSurface:'unknown'})});await page.locator('#scene-file-dialog .json-import-error').filter({hasText:'Unknown sonar surface'}).waitFor();await page.locator('#scene-file-dialog [data-close]').first().click();assert.deepEqual(await download('save-scene'),materialScene);
+  for(const index of [0,1,2]){await page.locator(`[data-monitor="${index}"]`).click();assert.equal(await page.locator('.sensor-card:visible').count(),1);}
+  await page.locator('[data-monitor="-1"]').click();await mkdir('.cache',{recursive:true});await page.screenshot({path:'.cache/scene-curriculum-3d.png'});await page.setViewportSize({width:390,height:844});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));assert.deepEqual(errors,[]);
+  console.log('Scene/curriculum passed: actual selected-map evolution in both racers, curriculum checkpoint transfer, exact room/target replay, material assignments, 3D scene undo without changing the brain, large live monitors and mobile layout.');
+}finally{await browser.close();}

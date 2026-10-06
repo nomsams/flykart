@@ -18,10 +18,11 @@
 import { clamp } from "../core";
 import { CM_PER_PIXEL, SonarSpec } from "./robot";
 import { Random, gaussian } from "./rng";
+import { SonarSurface, reflectionGain } from './sonar-surfaces';
 
-export type SonarTarget =
+export type SonarTarget = ({surface?:SonarSurface} & (
   | { kind: "circle"; x: number; y: number; radius: number; z0: number; z1: number }
-  | { kind: "box"; x: number; y: number; heading: number; halfLength: number; halfWidth: number; z0: number; z1: number };
+  | { kind: "box"; x: number; y: number; heading: number; halfLength: number; halfWidth: number; z0: number; z1: number }));
 
 export type SonarPose = { x: number; y: number; heading: number };
 
@@ -49,14 +50,14 @@ function erf(x: number): number {
   return sign * y;
 }
 
-type Hit = { distance: number; roundish: boolean; incidence: number; z0: number; z1: number };
+type Hit = { surface?:SonarSurface; distance: number; roundish: boolean; incidence: number; z0: number; z1: number };
 
 function rayCircle(ox: number, oy: number, dx: number, dy: number, target: Extract<SonarTarget, { kind: "circle" }>): Hit | null {
   const fx = target.x - ox, fy = target.y - oy; const along = fx * dx + fy * dy;
   if (along <= 0) return null;
   const d2 = fx * fx + fy * fy - along * along; const r2 = target.radius * target.radius;
   if (d2 > r2) return null;
-  return { distance: along - Math.sqrt(r2 - d2), roundish: true, incidence: 0, z0: target.z0, z1: target.z1 };
+  return { surface:target.surface,distance: along - Math.sqrt(r2 - d2), roundish: true, incidence: Math.asin(Math.sqrt(clamp(d2/r2,0,1))), z0: target.z0, z1: target.z1 };
 }
 
 function rayBox(ox: number, oy: number, dx: number, dy: number, target: Extract<SonarTarget, { kind: "box" }>): Hit | null {
@@ -75,7 +76,7 @@ function rayBox(ox: number, oy: number, dx: number, dy: number, target: Extract<
   if (tMin <= 0) return null;
   // Angle between the ray (reversed) and the face that was hit.
   const cosIncidence = Math.abs(axis === 1 ? vx : vy);
-  return { distance: tMin, roundish: false, incidence: Math.acos(clamp(cosIncidence, 0, 1)), z0: target.z0, z1: target.z1 };
+  return { surface:target.surface,distance: tMin, roundish: false, incidence: Math.acos(clamp(cosIncidence, 0, 1)), z0: target.z0, z1: target.z1 };
 }
 
 /** One ping. `random` supplies speckle, noise and false echoes; `soundScale` is the run's speed-of-sound error. */
@@ -104,7 +105,7 @@ export function ping(spec: SonarSpec, pose: SonarPose, targets: readonly SonarTa
     const vertical = 0.5 * (erf(a * high) - erf(a * low));
     if (vertical <= 0) continue;
     const horizontal = (Math.exp(-2 * (azimuth / sigma) ** 2) * SLICE) / norm;
-    const slant = best.roundish ? 1 : Math.exp(-((Math.max(0, best.incidence - 0.26) / 0.31) ** 2));
+    const slant = reflectionGain(best.surface,best.incidence,best.roundish);
     const amplitude = horizontal * vertical * slant * Math.min(1.6, (REFERENCE / r) ** 2);
     const bin = Math.floor(r / BIN);
     bins[bin] += amplitude; weighted[bin] += amplitude * r;

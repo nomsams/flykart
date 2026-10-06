@@ -9,7 +9,7 @@ const download=async id=>{const [d]=await Promise.all([page.waitForEvent('downlo
 try{
   await page.goto(base+'/vision.html');await page.locator('#boot-screen').waitFor({state:'hidden',timeout:60000});
   assert.ok(await page.locator('.map-thumbnail').count()>=5);
-  assert.ok(await page.evaluate(()=>document.querySelector('#track-select').getBoundingClientRect().top<document.querySelector('#track-controller').getBoundingClientRect().top));
+  assert.ok(await page.evaluate(()=>{const select=document.querySelector('#track-select'),views=document.querySelector('#tab-track .views');return select.closest('.compact-map-card').previousElementSibling===views;}));
   await page.locator('#memory-count').fill('8000');await page.locator('#memory-count').dispatchEvent('change');await page.locator('#memory-on').check();assert.equal(await page.evaluate(()=>window.flykartVision.memory.kenyonCount),8000);assert.equal((await download('export-vision-btn')).memory.config.kenyonCells,8000);
   await page.locator('#load-racer-checkpoint').click();await page.waitForFunction(()=>window.flykartVision.imported?.name==='flykart-brain-racer');
   const source=JSON.parse(await readFile('assets/flykart-brain-racer.json','utf8')),checkpoint=await download('export-vision-btn');assert.deepEqual(checkpoint.controller.network,source.network);assert.equal(checkpoint.controller.generation,source.generation);assert.deepEqual(checkpoint.controller.trainingRecipe,source.trainingRecipe);

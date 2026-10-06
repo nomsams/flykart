@@ -1,3 +1,4 @@
+import { mountMapCurriculum, curriculumKey, validateTrainingMaps } from './map-curriculum';
 import { mountMapPicker } from './map-picker';
 import { mountBrainShelf } from './browser-brain';
 import { TrainingRecipe, validateRecipe } from './training-recipe';
@@ -142,7 +143,8 @@ let breedingProgressMetric: BreedingProgressMetric = "distance";
 let trainingWorldSeed = 0;
 let trainingSeedCount = 2;
 let heuristicWarmStart = true;
-type TrainingContextKey = TrackDefinition["id"] | "all";
+let curriculum:ReturnType<typeof mountMapCurriculum>|null=null;
+type TrainingContextKey = TrackDefinition["id"] | "all" | `all:${string}`;
 type TrainingProvenance = { context: TrainingContextKey; trained: boolean; source: string; bestFitness: number | null; bestProgress: number; finished: boolean; generation: number };
 let activeTrainingContext: TrainingContextKey = DEFAULT_TRACK.id;
 const contextNetworks = new Map<TrainingContextKey, SpikingNetwork>();
@@ -342,7 +344,7 @@ type TrainingPresetName = "initial" | "progressive" | "master";
 const TRAINING_PRESET_DETAILS: Record<TrainingPresetName, string> = {
   initial: "Initial learning · isolated clean-track laps with no physics randomization or road hazards.",
   progressive: "Progressive · introduces a hazard curriculum and modest physics variation after basic driving is reliable.",
-  master: "Master fine-tune · all tracks, traffic-aware soft contact, mixed hazards, and robust multi-seed evaluation.",
+  master: "Master fine-tune · selected generalist maps, traffic-aware soft contact, mixed hazards, and robust multi-seed evaluation.",
 };
 
 function applyTrainingPreset(name: TrainingPresetName, announce = true): void {
@@ -376,14 +378,15 @@ function markTrainingPresetCustom(): void {
 }
 
 function selectedTrainingContext(): TrainingContextKey {
-  return ui.trackSelect.value === "all" ? "all" : resolveTrack(ui.trackSelect.value as TrackDefinition["id"]).id;
+  return ui.trackSelect.value === "all" ? curriculumKey(curriculum?.read()??TRACKS.map(t=>t.id)) : resolveTrack(ui.trackSelect.value as TrackDefinition["id"]).id;
 }
 
 function contextLabel(context: TrainingContextKey): string {
-  return context === "all" ? "Generalist" : resolveTrack(context).name;
+  return context === "all" ? "Generalist · all maps" : context.startsWith("all:") ? "Generalist · "+context.slice(4).split(",").map(id=>TRACKS.find(t=>t.id===id)?.name??id).join(", ") : resolveTrack(context as TrackDefinition["id"]).name;
 }
 
 function isTrainingContext(value: unknown): value is TrainingContextKey {
+  if(typeof value==="string"&&value.startsWith("all:")){try{return curriculumKey(validateTrainingMaps(value.slice(4).split(",")))===value;}catch{return false;}}
   return value === "all" || (typeof value === "string" && TRACKS.some((route) => route.id === value));
 }
 
@@ -711,17 +714,17 @@ function refreshTrainingObstacles(route: TrackDefinition, seed: number): void {
 }
 
 function selectedTracks(): TrackDefinition[] {
-  if (ui.trackSelect.value === "all") return [...TRACKS];
+  if (ui.trackSelect.value === "all") return TRACKS.filter(t=>(curriculum?.read()??TRACKS.map(t=>t.id)).includes(t.id));
   return [resolveTrack(ui.trackSelect.value as TrackDefinition["id"] )];
 }
 
 function selectedTrackLabel(): string {
-  return ui.trackSelect.value === "all" ? "all track types" : resolveTrack(ui.trackSelect.value as TrackDefinition["id"]).name;
+  return ui.trackSelect.value === "all" ? `${selectedTracks().length} selected maps` : resolveTrack(ui.trackSelect.value as TrackDefinition["id"]).name;
 }
 
 function updateTrackInfo(): void {
   if (ui.trackSelect.value === "all") {
-    ui.trackInfo.textContent = `${TRACKS.length} routes · generalist evaluation · gates are checked in each route's own direction`;
+    ui.trackInfo.textContent = `${selectedTracks().length} selected routes · generalist evaluation · gates are checked in each route's own direction`;
     updateTrackProvenance();
     return;
   }
@@ -783,7 +786,7 @@ function createGridCar(lane: number, distanceAlong: number, color: string, name:
 
 function launchRace(manual = false): void {
   training = false; running = true; visualTraining = false; fiveBrainEvolution = false; ghostEvolution = false; manualMode = manual; trainingPopulation = []; trainingObstacles = []; trainingGhostObstacles = []; trainingHistory = []; raceAccumulator = 0; runStartedAt = performance.now(); flyFinishAnnounced = false; parkedRaceCars = new WeakSet<Car>(); raceFinishOrder = 0;
-  activeTrack = ui.trackSelect.value === "all" ? DEFAULT_TRACK : resolveTrack(ui.trackSelect.value as TrackDefinition["id"]);
+  activeTrack = ui.trackSelect.value === "all" ? selectedTracks()[0] : resolveTrack(ui.trackSelect.value as TrackDefinition["id"]);
   activateStoredContextForRace();
   rewardConfig = readRewardConfig(); physicsConfig = readPhysicsConfig(); readRoadObjectConfig();
   const selectedNode = lineageNodeById(selectedLineageId); const raceNetwork = selectedLineageNetwork ?? bestNetwork;
@@ -821,9 +824,10 @@ function persistBestBrain(): void {
 
 function racerRecipe(): TrainingRecipe {
   const p=readPhysicsConfig();readRoadObjectConfig();
-  return validateRecipe({version:1,domain:'race',reward:readRewardConfig(),physics:{wallsEnabled:p.wallsEnabled,lapTarget:p.lapTarget??1,impactPain:p.impactPain??false,checkpointCount:p.checkpointCount??8,domainRandomization:p.domainRandomization??0},obstacles:{enabled:randomObjectsEnabled,count:randomObjectCount,kind:randomObjectKind}});
+  return validateRecipe({version:1,domain:'race',trainingMaps:ui.trackSelect.value==='all'?curriculum?.read():undefined,reward:readRewardConfig(),physics:{wallsEnabled:p.wallsEnabled,lapTarget:p.lapTarget??1,impactPain:p.impactPain??false,checkpointCount:p.checkpointCount??8,domainRandomization:p.domainRandomization??0},obstacles:{enabled:randomObjectsEnabled,count:randomObjectCount,kind:randomObjectKind}});
 }
 function restoreRacerRecipe(recipe: TrainingRecipe): void {
+  if(recipe.trainingMaps)curriculum?.write(recipe.trainingMaps);
   const fields=[ui.rewardProgress,ui.rewardDirection,ui.rewardMoving,ui.rewardStanding,ui.rewardWrong,ui.rewardReverse,ui.rewardOffTrack,ui.rewardEdge,ui.rewardProximity,ui.rewardHazard,ui.rewardCenterline,ui.rewardControlChange,ui.rewardControlConflict,ui.rewardSpikeEnergy,ui.rewardCollision,ui.rewardCrash,ui.rewardCheckpoint,ui.rewardFinish];
   const keys=['progressPerSecond','correctDirectionPerSecond','movementPerSecond','standingStillPerSecond','wrongDirectionPerSecond','reverseProgressPerSecond','offTrackPerSecond','edgePenaltyPerSecond','proximityPenaltyPerSecond','hazardPenaltyPerSecond','centerlinePerSecond','controlChangePerSecond','controlConflictPerSecond','spikeEnergyPerSecond','collision','crash','checkpoint','finish'] as (keyof RewardConfig)[];
   fields.forEach((input,i)=>input.value=String(recipe.reward[keys[i]]??0));
@@ -879,7 +883,7 @@ async function importBrainText(text: string, name: string, restoreTrack = false)
     if (network.inputCount !== 17) throw new Error("this brain reads a sonar as well; open it in FlyKart Vision, or export it for FlyKart v1 from there");
     const recipe=parsed.trainingRecipe===undefined?undefined:validateRecipe(parsed.trainingRecipe);
     stopAll();if(recipe)restoreRacerRecipe(recipe);
-    if(restoreTrack && isTrainingContext(parsed.track)){ui.trackSelect.value=parsed.track;updateTrackInfo();}
+    if(restoreTrack && isTrainingContext(parsed.track)){ui.trackSelect.value=parsed.track.startsWith("all:")?"all":parsed.track;if(parsed.track.startsWith("all:"))curriculum?.write(parsed.track.slice(4).split(","));updateTrackInfo();}
     contextProvenance.clear(); restoreProvenance(parsed.provenance);
     const sourceContext = isTrainingContext(parsed.track) ? parsed.track : "all"; const selectedContext = selectedTrainingContext(); const sourceFitness = typeof parsed.fitness === "number" && Number.isFinite(parsed.fitness) ? parsed.fitness : -Infinity; const sourceGeneration = typeof parsed.generation === "number" && Number.isInteger(parsed.generation) && parsed.generation >= 0 ? parsed.generation : 0;
     const sourceRecord = contextProvenance.get(sourceContext); const sourceProgress = sourceRecord?.bestProgress ?? 0; const sourceFinished = sourceRecord?.finished ?? false;
@@ -1531,4 +1535,7 @@ try {
   failApplication(error);
 }
 
+const mapCard=document.createElement("section");mapCard.className="panel-section compact-map-card";
+mapCard.append(ui.trackSelect.closest("label")!,ui.trackInfo,ui.trackProvenance);document.querySelector(".control-panel")!.prepend(mapCard);
 mountMapPicker(ui.trackSelect,()=>TRACKS);
+curriculum=mountMapCurriculum(ui.trackSelect,mapCard,()=>{if(training)return;markTrainingPresetCustom();ui.trackSelect.dispatchEvent(new Event("change",{bubbles:true}));});

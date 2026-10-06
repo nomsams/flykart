@@ -1,4 +1,5 @@
 import {GuardSettings,validateGuard} from './collision-guard';
+import { SonarSurface } from '../vision/sonar-surfaces';
 import { ObjectVisual } from './imported-assets';
 import { DEFAULT_VIBRATION, VibrationSettings, validateVibration } from "./vibration";
 import { clamp } from "../core";
@@ -23,8 +24,8 @@ export const ROOM_TYPES = [
   { id: "maze", label: "Wall maze", floor: "#929e99" }, { id: "clutter", label: "Clutter challenge", floor: "#b8a58e" },
   { id: "garden", label: "Garden", floor: "#b7bea7" }, { id: "empty", label: "Empty floor", floor: "#b7bea7" },
 ];
-export type WorldObject = { id: string; kind: ObjectKind; x: number; z: number; yaw: number; width: number; depth: number; height: number; visual?:ObjectVisual };
-export type Solid = { x: number; z: number; yaw: number; width: number; depth: number; bottom: number; top: number; soft?: boolean };
+export type WorldObject = { id: string; kind: ObjectKind; x: number; z: number; yaw: number; width: number; depth: number; height: number; visual?:ObjectVisual;sonarSurface?:SonarSurface };
+export type Solid = { x: number; z: number; yaw: number; width: number; depth: number; bottom: number; top: number; soft?: boolean;sonarSurface?:SonarSurface };
 export type RobotConfig = {
   guard?:GuardSettings;
   vibration?: VibrationSettings;
@@ -78,7 +79,7 @@ export function makeObject(kind: ObjectKind, x = 0, z = 0): WorldObject {
 /** Furniture is decomposed into real-height solids, shared by collision and sonar. */
 export function solidsFor(o: WorldObject): Solid[] {
   const part = (x: number, z: number, width: number, depth: number, bottom: number, top: number): Solid => ({
-    x: o.x + x * Math.cos(o.yaw) - z * Math.sin(o.yaw), z: o.z + x * Math.sin(o.yaw) + z * Math.cos(o.yaw), yaw: o.yaw, width, depth, bottom, top,
+    sonarSurface:o.sonarSurface,x: o.x + x * Math.cos(o.yaw) - z * Math.sin(o.yaw), z: o.z + x * Math.sin(o.yaw) + z * Math.cos(o.yaw), yaw: o.yaw, width, depth, bottom, top,
   });
   if (o.visual?.type==='glb'&&o.visual.boxes?.length)return o.visual.boxes.map(b=>part(b.x*o.width,b.z*o.depth,b.width*o.width,b.depth*o.depth,(b.y-b.height/2)*o.height,(b.y+b.height/2)*o.height));
   if (o.kind === "pod")return [part(0,0,o.width,o.depth,.03,o.height)];
@@ -172,7 +173,7 @@ export class RobotSonar {
       const spread = Math.tan(c.sonarBeam * Math.PI / 360) * Math.min(4, far);
       return s.bottom <= c.mountHeight + spread && s.top >= c.mountHeight - spread;
     });
-    const targets: SonarTarget[] = reachable.map(s => ({ kind: "box" as const, x: s.x * PX_PER_METRE, y: s.z * PX_PER_METRE, heading: s.yaw,
+    const targets: SonarTarget[] = reachable.map(s => ({ surface:s.sonarSurface,kind: "box" as const, x: s.x * PX_PER_METRE, y: s.z * PX_PER_METRE, heading: s.yaw,
       halfLength: s.width * PX_PER_METRE / 2, halfWidth: s.depth * PX_PER_METRE / 2, z0: s.bottom * PX_PER_METRE, z1: s.top * PX_PER_METRE }));
     this.reading = ping({ ...HC_SR04, lobeSigmaDeg: c.sonarBeam * .8, mountHeight: c.mountHeight * PX_PER_METRE, mountForward: c.length * .48 * PX_PER_METRE },
       { x: pose.x * PX_PER_METRE, y: pose.z * PX_PER_METRE, heading: pose.heading }, targets, this.random);

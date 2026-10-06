@@ -1,3 +1,4 @@
+import { validateTrainingMaps } from './map-curriculum';
 import { DEFAULT_REWARD_CONFIG, RewardConfig, RoadObjectKind } from './core';
 
 // Portable scoring contract. Rewards remain external labels, never controller inputs.
@@ -12,7 +13,7 @@ export const REWARD_FIELDS: [keyof RewardConfig, string, number][] = [
   ['collision','Collision',100], ['crash','Crash',200], ['checkpoint','Checkpoint',1000], ['finish','Finish',1000],
 ];
 export type TrainingRecipe = {
-  version: 1; domain: 'race'; reward: RewardConfig;
+  version: 1; domain: 'race'; reward: RewardConfig; trainingMaps?:string[];
   physics: { wallsEnabled: boolean; lapTarget: number; impactPain: boolean; checkpointCount: number; domainRandomization: number };
   obstacles: { enabled: boolean; count: number; kind: RoadObjectKind | 'mixed' };
 };
@@ -34,7 +35,7 @@ export function validateRecipe(raw: unknown): TrainingRecipe {
       !Number.isFinite(p.domainRandomization) || p.domainRandomization < 0 || p.domainRandomization > .35 ||
       typeof o.enabled !== 'boolean' || !Number.isInteger(o.count) || o.count < 0 || o.count > 64 ||
       !['mixed','stalled-car','barrier','cone','oil','wall','bush'].includes(o.kind)) throw new Error('Invalid racing training recipe.');
-  return { version: 1, domain: 'race', reward: validateRewards(r.reward), physics: { ...p }, obstacles: { ...o } };
+  return { version: 1, domain: 'race', ...(r.trainingMaps?{trainingMaps:validateTrainingMaps(r.trainingMaps)}:{}), reward: validateRewards(r.reward), physics: { ...p }, obstacles: { ...o } };
 }
 /** Default race units map to default habitat units; the exact original remains in the checkpoint. */
 export function roomRewards(recipe: TrainingRecipe): { pain: number; sugar: number; trailReward: number } {
