@@ -1,9 +1,10 @@
+import type { CohortBudget } from '../runtime-budget';
 import { Action, BrainSnapshot, SpikingNetwork, clamp, wrapAngle } from '../../core';
 import { worldExpert } from './worldDomain';
 import { runCohort } from '../cohort';
 import { WorldSession, WorldSettings } from '../ui/sessions';
 
-export type GoalResult={arrived:boolean;ticks:number;collisions:number;pain?:number;progress:number;goals?:number;goalTarget?:number;reverseDistance:number;crashed:boolean;found?:boolean;firstSightTick?:number|null;visualViews?:number;objective?:"sight"|"reach";won?:boolean};
+export type GoalResult={arrived:boolean;ticks:number;collisions:number;pain?:number;stallPain?:number;progress:number;goals?:number;goalTarget?:number;reverseDistance:number;crashed:boolean;found?:boolean;firstSightTick?:number|null;visualViews?:number;objective?:"sight"|"reach";won?:boolean};
 /** Arrival dominates partial progress. No time bonus for dying early. */
 export function goalScore(r:GoalResult,limit:number,crashWeight:number):number{
   const weight=Math.max(0,Math.min(1,crashWeight));
@@ -17,7 +18,7 @@ export function discoveryScore(r:GoalResult,limit:number):number {
 }
 export function goalResult(s:WorldSession,initialDistance:number):GoalResult{
   const r=s.episode.sim.status;
-  return{...(s.discovery?{found:s.found,firstSightTick:s.discovery.firstSightTick,visualViews:s.discovery.visualViews,objective:s.settings.searchWin??'sight',won:s.won}:{}),arrived:r.goals>=s.episode.sim.goalLimit&&!r.crashed,ticks:r.ticks,collisions:r.collisions,pain:r.pain,goals:r.goals,goalTarget:s.episode.sim.goalLimit,progress:s.discovery?0:(r.goals+Math.max(0,1-r.distanceToGoal/Math.max(1,initialDistance)))/s.episode.sim.goalLimit,reverseDistance:s.reverseDistance,crashed:r.crashed};
+  return{...(s.discovery?{found:s.found,firstSightTick:s.discovery.firstSightTick,visualViews:s.discovery.visualViews,objective:s.settings.searchWin??'sight',won:s.won}:{}),arrived:r.goals>=s.episode.sim.goalLimit&&!r.crashed,ticks:r.ticks,collisions:r.collisions,pain:r.pain,stallPain:s.stallPain,goals:r.goals,goalTarget:s.episode.sim.goalLimit,progress:s.discovery?0:(r.goals+Math.max(0,1-r.distanceToGoal/Math.max(1,initialDistance)))/s.episode.sim.goalLimit,reverseDistance:s.reverseDistance,crashed:r.crashed};
 }
 export type RetentionResult={parent:number;offspring:number;parentTrials:GoalResult[];offspringTrials:GoalResult[];passed:boolean};
 /** Preserve arrival count; allow at most 20 points per trial of score regression. */
@@ -25,7 +26,7 @@ export function retainsForward(parent:GoalResult[],child:GoalResult[],limit:numb
   return child.filter(t=>t.arrived&&!t.crashed).length>=parent.filter(t=>t.arrived&&!t.crashed).length&&child.reduce((s,t)=>s+goalScore(t,limit,weight),0)>=parent.reduce((s,t)=>s+goalScore(t,limit,weight),0)-20*parent.length;
 }
 export type WorldTrainingResult={brain:BrainSnapshot;score:number;generation:number;crashWeight:number;trainingSeeds:number[];validation:{parent:number;offspring:number;seeds:number[];parentTrials:GoalResult[];offspringTrials:GoalResult[]};retention?:RetentionResult;trials:GoalResult[];task:string;scoreDefinition:string;coachFrames:number};
-export async function trainWorldController(settings:WorldSettings,generations:number,population:number,crashWeight:number,cancelled:()=>boolean,log:(line:string)=>void,progress:(sessions:WorldSession[],generation:number,seed:number)=>void,speed=0,coach=false,retain=true):Promise<WorldTrainingResult|null>{
+export async function trainWorldController(settings:WorldSettings,generations:number,population:number,crashWeight:number,cancelled:()=>boolean,log:(line:string)=>void,progress:(sessions:WorldSession[],generation:number,seed:number)=>void,speed=0,coach=false,retain=true,budget?:()=>CohortBudget):Promise<WorldTrainingResult|null>{
   if(!settings.vision)throw Error('Open world training requires a world camera network.');
   const seeds=[settings.seed,settings.seed+103],heldOut=[settings.seed+9001,settings.seed+12007],limit=settings.maxTicks??900;
   // The imported layout is retained; held-out seeds change heading and lighting, not its geometry.
@@ -35,14 +36,14 @@ export async function trainWorldController(settings:WorldSettings,generations:nu
       const start=settings.start?{...settings.start,heading:settings.start.heading+(seed-settings.seed)*.173}:undefined;
       const sessions=brains.map(controller=>new WorldSession({...settings,start,controller,seed,kind:'vision',fade:0,sensorOnly:true,roomMemory:undefined,...(forward?{task:'forage' as const,practiceForward:true,goalPreset:'near' as const}:{})}));
       const distances=sessions.map(s=>s.episode.sim.status.distanceToGoal);
-      if(!await runCohort(sessions,cancelled,s=>progress(s,generation,seed),speed))return null;
-      sessions.forEach((s,i)=>{const r=goalResult(s,distances[i]);trials[i].push(r);scores[i]+=(settings.task==='explore'?discoveryScore(r,limit):goalScore(r,limit,crashWeight))/testSeeds.length;});
+      if(!await runCohort(sessions,cancelled,s=>progress(s,generation,seed),speed,budget))return null;
+      sessions.forEach((s,i)=>{const r=goalResult(s,distances[i]);trials[i].push(r);scores[i]+=(settings.task==='explore'?discoveryScore(r,limit)-s.stallPain*12:goalScore(r,limit,crashWeight))/testSeeds.length;});
     }return{scores,trials};
   };
   if(settings.task==='explore')log(`Explore & find · ${(settings.searchWin??'sight')==='sight'?'first confirmed sighting':'see then reach'} wins · processed RGB colour detector, no compass or pheromone · same seed for every ghost.`);
   let parent=SpikingNetwork.fromJSON(settings.controller),score=-Infinity,lastTrials:GoalResult[]=[];
   const protect=retain&&settings.task==='reverse';
-  const primed=coach&&settings.task!=='explore'?await primeReverseReadout(settings,cancelled,protect):null;
+  const primed=coach&&settings.task!=='explore'?await primeReverseReadout(settings,cancelled,protect,budget):null;
   if(cancelled())return null;if(primed)log(`${protect?'Mixed forward / reverse rehearsal':settings.task==='reverse'?'Reverse specialist demonstration':'Forward navigation rehearsal'}: ${primed.frames} camera + goal-compass frames taught one child’s motor readout. Parent unchanged.`);
   for(let g=0;g<generations;g++){
     const candidates=Array.from({length:population},(_,i)=>i===0?parent.clone():g===0&&primed?(i===1?SpikingNetwork.fromJSON(primed.brain):SpikingNetwork.fromJSON(primed.brain).mutate(.18,.28,71001+i)):parent.mutate(.18,.28,71001+g*101+i));
@@ -66,7 +67,7 @@ export function reverseCoach(inputs:ArrayLike<number>):Action{
   const error=wrapAngle(inputs[0]*Math.PI+Math.PI);
   return {steer:-clamp(error/.45,-1,1),throttle:0,brake:inputs[11]>.03?1:0,reverse:inputs[11]>.03?0:.8};
 }
-async function primeReverseReadout(settings:WorldSettings,cancelled:()=>boolean,mixed:boolean):Promise<{brain:BrainSnapshot;frames:number}|null>{
+async function primeReverseReadout(settings:WorldSettings,cancelled:()=>boolean,mixed:boolean,budget?:()=>CohortBudget):Promise<{brain:BrainSnapshot;frames:number}|null>{
   const student=SpikingNetwork.fromJSON(settings.controller),rows:{input:number[];action:Action}[][]=[];
   for(const seed of [settings.seed,settings.seed+103])for(const forward of settings.task==='reverse'?(mixed?[true,false]:[false]):[true]){
     const session=new WorldSession({...settings,seed,kind:'vision',sensorOnly:true,fade:0,roomMemory:undefined,maxTicks:300,...(forward?{task:'forage',practiceForward:true,goalPreset:'near'}:{})});
@@ -75,13 +76,13 @@ async function primeReverseReadout(settings:WorldSettings,cancelled:()=>boolean,
       if(cancelled())return null;
       const frame=session.driver!.act(session.episode),teacher=forward?worldExpert(frame.sensors):reverseCoach(frame.sensors);
       demo.push({input:[...frame.sensors],action:teacher});session.episode.step(teacher);
-      if(demo.length%12===0)await new Promise<void>(r=>setTimeout(r,0));
+      if(demo.length%12===0)await new Promise<void>(r=>setTimeout(r,budget?.().idleMs??0));
     }rows.push(demo);
   }
   // Rehearse complete trajectories with independent recurrent state. Rear and
   // forward examples stay balanced; finish each epoch on a forward trajectory.
   let frames=0;student.reset();
   const ordered=mixed?[rows[1],rows[0],rows[3],rows[2]]:rows;
-  for(let epoch=0;epoch<3;epoch++)for(const demo of ordered){student.reset();for(const row of demo){if(cancelled())return null;student.trainActionReadout(row.input,row.action,.012/(epoch+1));frames++;}await new Promise<void>(r=>setTimeout(r,0));}
+  for(let epoch=0;epoch<3;epoch++)for(const demo of ordered){student.reset();for(const row of demo){if(cancelled())return null;student.trainActionReadout(row.input,row.action,.012/(epoch+1));frames++;}await new Promise<void>(r=>setTimeout(r,budget?.().idleMs??0));}
   return{brain:student.toJSON(),frames};
 }

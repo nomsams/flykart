@@ -58,10 +58,10 @@ export function mountBrainShelf(host: HTMLElement, stage: BrainStage, exportText
   project.className = 'toolbar row';
   const loadProject = document.createElement('button');
   loadProject.type = 'button'; loadProject.id = 'load-racer-checkpoint';
-  loadProject.textContent = `Load project racer · generation ${projectGeneration}`;
+  loadProject.textContent = `Load repository brain · generation ${projectGeneration}`;
   loadProject.title = 'Load assets/flykart-brain-racer.json with its exact weights, rewards and race setup. Available again after any import.';
   const description = document.createElement('small');
-  description.textContent = 'assets/flykart-brain-racer.json · your trained Racer v1 checkpoint';
+  description.textContent = 'GitHub repository checkpoint: assets/flykart-brain-racer.json · your trained Racer v1 brain, bundled with this site. Separate from browser saves and the original demo brain.';
   project.append(loadProject, description); shelf.querySelector('summary')!.after(project);
   if (existing) {
     host.querySelector(':scope > .toolbar')?.after(shelf);

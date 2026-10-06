@@ -98,7 +98,7 @@ export function drawTrackMap(canvas: HTMLCanvasElement, route: TrackDefinition, 
   if (extras.label) { context.fillStyle = COLORS.text; context.font = "600 12px system-ui, sans-serif"; context.fillText(extras.label, 14, H - 14); }
 }
 
-export function drawWorldMap(canvas: HTMLCanvasElement, world: WorldDef, kart: WorldKart, goal: { x: number; y: number }, scan: { truth: ArrayLike<number>; seen: ArrayLike<number> | null; sigma: ArrayLike<number> | null }, label: string, sonar: SonarView | null = null,extras:{trail?:{x:number;y:number}[];ghosts?:MapGhost[];goals?:{x:number;y:number}[]}={}): void {
+export function drawWorldMap(canvas: HTMLCanvasElement, world: WorldDef, kart: WorldKart, goal: { x: number; y: number }, scan: { truth: ArrayLike<number>; seen: ArrayLike<number> | null; sigma: ArrayLike<number> | null }, label: string, sonar: SonarView | null = null,extras:{trail?:{x:number;y:number}[];ghosts?:MapGhost[];goals?:{x:number;y:number}[];goalRadius?:number}={}): void {
   const context = fit(canvas); const W = Number(canvas.dataset.w), H = Number(canvas.dataset.h);
   context.clearRect(0, 0, W, H); context.fillStyle = "#0b1117"; context.fillRect(0, 0, W, H);
   const scale = Math.min(W, H) / (world.half * 2 + 36); context.save(); context.translate(W / 2, H / 2); context.scale(scale, scale);
@@ -118,7 +118,7 @@ export function drawWorldMap(canvas: HTMLCanvasElement, world: WorldDef, kart: W
       if(o.kind==='cable'){context.strokeStyle='#ded596';context.lineWidth=2;for(let x=-o.radius;x<=o.radius;x++)context.lineTo(o.x+x,o.y+Math.sin(x/5)*2);context.stroke();}else{context.arc(o.x,o.y,o.radius,0,Math.PI*2);context.fill();}
     }
   }
-  for(const [i,g] of (extras.goals?.length?extras.goals:[goal]).entries()){context.strokeStyle=i===0?"#ffd23f":"#aab7ff";context.lineWidth=3;context.beginPath();context.arc(g.x,g.y,22,0,Math.PI*2);context.stroke();context.fillStyle="#ff3f9f";context.beginPath();context.arc(g.x,g.y,6,0,Math.PI*2);context.fill();context.fillStyle="#fff";context.font="bold 16px system-ui";context.fillText(String(i+1),g.x+25,g.y+6);}
+  for(const [i,g] of (extras.goals?.length?extras.goals:[goal]).entries()){context.strokeStyle=i===0?"#ffd23f":"#aab7ff";context.lineWidth=3;context.beginPath();context.arc(g.x,g.y,extras.goalRadius??24,0,Math.PI*2);context.stroke();context.fillStyle="#ff3f9f";context.beginPath();context.arc(g.x,g.y,6,0,Math.PI*2);context.fill();context.fillStyle="#fff";context.font="bold 16px system-ui";context.fillText(String(i+1),g.x+25,g.y+6);}
   // Clearance sectors: white = truth, blue = what the camera believes.
   const range = 220; const step = (SECTOR_ANGLES[1] - SECTOR_ANGLES[0]);
   for (let k = 0; k < SECTORS; k += 1) {

@@ -12,6 +12,17 @@ export const KART_RADIUS = 8;
 export const GOAL_RADIUS = 24;
 export type GoalPreset = 'standard' | 'near' | 'far' | 'random' | 'pair';
 export type GoalPoint = { x: number; y: number };
+export function validateGoalRadius(value:unknown):number {
+  if(value===undefined)return GOAL_RADIUS;
+  if(typeof value!=='number'||!Number.isFinite(value)||value<4||value>GOAL_RADIUS)throw Error('Arrival radius must fit inside the yellow area (4.4–26.4 cm).');
+  return value;
+}
+export type GoalCount = number | 'random';
+export function validateGoalCount(value:unknown):GoalCount|undefined {
+  if(value===undefined)return undefined;
+  if(value==='random'||typeof value==='number'&&Number.isInteger(value)&&value>=1&&value<=6)return value;
+  throw Error('Target count must be 1–6 or random.');
+}
 export const SECTORS = 9;
 /** The camera and the clearance sectors look this far to each side of the heading. */
 export const SECTOR_SPAN = (50 * Math.PI) / 180;
@@ -112,7 +123,7 @@ export type WorldKart = {
   action: Action; yaw: number;
 };
 
-export type WorldStatus = { goals: number; collisions: number; pain:number; crashed: boolean; crashReason?: string; ticks: number; score: number; distanceToGoal: number; goalX: number; goalY: number; timedOut: boolean };
+export type WorldStatus = { goals: number; collisions: number; pain:number; crashed: boolean; crashReason?: string; stopReason?:string; ticks: number; score: number; distanceToGoal: number; goalX: number; goalY: number; timedOut: boolean };
 
 /** One run in an open world. Pure simulation: no camera, no network. */
 export class WorldSim {
@@ -126,40 +137,52 @@ export class WorldSim {
   readonly goalPreset: GoalPreset;
   readonly goals: GoalPoint[] = [];
   readonly hiddenGoalAngle: number;
+  readonly targetCount:number;
+  readonly goalRadius:number;
   surface: Surface = "grass";
 
-  constructor(seed: number, options: { density?: number; maxTicks?: number; world?:WorldDef; start?:{x:number;y:number;heading:number}; goal?:GoalPoint; goals?:GoalPoint[]; goalPreset?:GoalPreset; goalLimit?:number; hiddenGoalAngle?:number } = {}) {
+  constructor(seed: number, options: { density?: number; maxTicks?: number; world?:WorldDef; start?:{x:number;y:number;heading:number}; goal?:GoalPoint; goals?:GoalPoint[]; goalPreset?:GoalPreset; goalCount?:GoalCount; goalRadius?:number; goalLimit?:number; hiddenGoalAngle?:number } = {}) {
     this.world = options.world ? structuredClone(options.world) : generateWorld(seed, options.density ?? 0.6);
-    this.goalLimit=options.goalLimit??Infinity;
     this.goalPreset=options.goalPreset??'standard';
+    this.goalRadius=validateGoalRadius(options.goalRadius);
     this.hiddenGoalAngle=options.hiddenGoalAngle??0;
     if(!Number.isFinite(this.hiddenGoalAngle)||this.hiddenGoalAngle<0||this.hiddenGoalAngle>=Math.PI)throw Error('Invalid hidden goal angle.');
     this.random = mulberry32(seed * 977 + 5);
+    const count=validateGoalCount(options.goalCount);
+    this.targetCount=count==='random'?1+Math.floor(this.random()*6):count??(this.goalPreset==='pair'?2:1);
+    this.goalLimit=options.goalLimit??(count!==undefined?options.goals?.length??this.targetCount:Infinity);
     this.maxTicks = options.maxTicks ?? 2400;
     this.kart.heading = (this.random() * 2 - 1) * Math.PI;
     this.status = { goals: 0, collisions: 0, pain:0, crashed: false, ticks: 0, score: 0, distanceToGoal: 0, goalX: 0, goalY: 0, timedOut: false };
     if(options.start)Object.assign(this.kart,options.start);
-    if(options.goals?.length || options.goal){this.goals.push(...structuredClone(options.goals??[options.goal!]));this.selectGoal();}else this.nextGoal();
+    if(options.goals?.length || options.goal){this.goals.push(...structuredClone(options.goals??[options.goal!]));this.selectGoal();}else if(!this.nextGoal())throw Error('No clear targets at this distance or count. Choose fewer dots, a nearer goal preset or a clearer map.');
   }
 
-  get done(): boolean { return this.status.crashed || this.status.timedOut || this.status.goals>=this.goalLimit; }
+  get done(): boolean { return this.status.crashed || this.status.timedOut || Boolean(this.status.stopReason) || this.status.goals>=this.goalLimit; }
 
-  private nextGoal(): void {
+  private nextGoal(): boolean {
     const { world, kart } = this;
     this.goals.length=0;
     const [near,far]=this.goalPreset==='near'?[Math.min(90,world.half*.3),Math.min(170,world.half*.9)]:this.goalPreset==='far'?[world.half*.7,world.half*1.35]:this.goalPreset==='random'?[60,world.half*1.7]:this.goalPreset==='pair'?[Math.min(160,world.half*.4),world.half*1.2]:[Math.min(170,world.half*.4),Math.min(390,world.half*1.2)];
     for (let attempt = 0; attempt < 480; attempt += 1) {
-      const angle = this.random() * Math.PI * 2, distance = near + this.random() * (far-near);
+      let angle = this.random() * Math.PI * 2, distance = near + this.random() * (far-near);
+      // Random placement samples the whole usable floor, rather than an annulus
+      // around the robot. The seed still makes comparisons between ghosts fair.
+      if(this.goalPreset==='random'){
+        const x=(this.random()*2-1)*(world.half-32),y=(this.random()*2-1)*(world.half-32);
+        angle=Math.atan2(y-kart.y,x-kart.x);distance=Math.hypot(x-kart.x,y-kart.y);
+        if(distance<Math.min(60,world.half*.3))continue;
+      }
       if(this.hiddenGoalAngle&&Math.abs(wrapAngle(angle-kart.heading))<this.hiddenGoalAngle)continue;
       const x = kart.x + Math.cos(angle) * distance, y = kart.y + Math.sin(angle) * distance;
-      if (Math.abs(x) > world.half - 50 || Math.abs(y) > world.half - 50) continue;
+      if (Math.abs(x) > world.half - (this.goalPreset==='random'?32:50) || Math.abs(y) > world.half - (this.goalPreset==='random'?32:50)) continue;
       if (blocked(world,x,y,26)) continue;
       if (world.patches.some((p) => Math.hypot(p.x - x, p.y - y) < p.radius + 18 && p.kind === "water")) continue;
-      if(this.goals.some(g=>Math.hypot(g.x-x,g.y-y)<90))continue;
+      if(this.goals.some(g=>Math.hypot(g.x-x,g.y-y)<Math.min(90,world.half*.45)))continue;
       this.goals.push({x,y});
-      if(this.goals.length===(this.goalPreset==='pair'?2:1)){this.selectGoal();return;}
+      if(this.goals.length===this.targetCount){this.selectGoal();return true;}
     }
-    throw Error('No clear targets at this distance. Choose a nearer goal preset or a clearer map.');
+    this.goals.length=0;return false;
   }
 
   private selectGoal():void {
@@ -222,8 +245,8 @@ export class WorldSim {
     if (surfaceAt(world, kart.x, kart.y) === "water") { status.crashed = true; status.crashReason = "drove into a pond"; status.score -= 60; kart.speed = 0; }
     const distance = Math.hypot(status.goalX - kart.x, status.goalY - kart.y);
     status.distanceToGoal = distance; status.score += (before - distance) * 0.05 - 0.002;
-    const reached=this.goals.findIndex(g=>Math.hypot(g.x-kart.x,g.y-kart.y)<GOAL_RADIUS);
-    if (reached>=0&&!status.crashed) { status.goals += 1; status.score += 100; this.goals.splice(reached,1); if(status.goals<this.goalLimit){if(this.goals.length)this.selectGoal();else this.nextGoal();} }
+    const reached=this.goals.findIndex(g=>Math.hypot(g.x-kart.x,g.y-kart.y)<this.goalRadius);
+    if (reached>=0&&!status.crashed) { status.goals += 1; status.score += 100; this.goals.splice(reached,1); if(status.goals<this.goalLimit){if(this.goals.length)this.selectGoal();else if(!this.nextGoal())status.stopReason='Target collected; no clear next target fits this preset. Choose fewer or nearer dots, or shuffle targets.';} }
     kart.action = { steer: action.steer, throttle: action.throttle, brake: action.brake, reverse: action.reverse ?? 0 };
     if (status.ticks >= this.maxTicks) status.timedOut = true;
   }

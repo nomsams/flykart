@@ -1,3 +1,4 @@
+import { VisualStall, StallSettings } from './stall';
 import { RoomMemory } from '../robot/memory';
 import { visualFeatures } from '../robot/vision-workbench';
 // The whole nervous system for one tick:
@@ -24,6 +25,7 @@ import { assembleInputs } from "./inputs";
 export type DriverMode = "belief" | "action-average" | "vision-action";
 
 export type DriverOptions = {
+  stall?:StallSettings;
   /** Deployment rehearsal: require pixels and exclude privileged cues, goal coordinates and pose-indexed lap memory. */
   sensorOnly?: boolean;
   /** Explicit goal compass/localization cue; rewards and collision labels remain excluded. */
@@ -62,6 +64,8 @@ export type DriverFrame = {
 export class VisionDriver {
   readonly options: DriverOptions;
   readonly ensemble: VisionEnsemble | null;
+  readonly stall:VisualStall|null;
+  private lastCommand:Action={steer:0,throttle:0,brake:0,reverse:0};
   readonly domain: Domain;
   fusion: FusionConfig;
   mode: DriverMode;
@@ -82,6 +86,7 @@ export class VisionDriver {
     if(options.pixelMission&&(!options.sensorOnly||!options.perceiver||options.blind||(options.mode??'belief')!=='belief'))throw new Error('Pixel missions require sensor-only camera belief driving.');
     if(options.sensorOnly&&(!options.perceiver||options.mode==='action-average'))throw new Error('Sensor-only driving requires a camera and forbids privileged action averaging.');
     this.options = options;
+    this.stall=options.perceiver&&options.stall?.enabled?new VisualStall(options.perceiver.model.spec.width,options.perceiver.model.spec.height,options.stall):null;
     this.ensemble = options.perceiver && options.visual ? new VisionEnsemble(options.perceiver, options.visual, options.resolution ?? "native") : null;
     this.domain = options.domain ?? trackDomain;
     const n = this.domain.estimateCount;
@@ -96,7 +101,7 @@ export class VisionDriver {
   /** Begin a new drive. The lap memory, if any, is kept: that is the point of it. */
   reset(): void {
     this.options.controller.reset(); this.options.feelingController?.reset(); this.options.perceiver?.reset();
-    this.ensemble?.reset();
+    this.ensemble?.reset();this.stall?.reset();this.lastCommand={steer:0,throttle:0,brake:0,reverse:0};
     this.options.pixelMission?.reset();
     this.perception = null; this.memoryCue = null; this.lastGates = 0; this.sinceGate = 0; this.started = false;
     this.options.memory?.beginLap();
@@ -118,6 +123,7 @@ export class VisionDriver {
       this.started = true; seen = true;
       this.memoryCue=null;
       const pixels=episode.render();
+      this.stall?.observe(pixels,episode.tick,this.lastCommand,this.options.sonarOff?null:episode.sonar());
       this.perception = (this.ensemble ?? perceiver).see(pixels, this.options.sonarOff && body.sonarCloseness !== undefined ? { ...body, sonarCloseness: 0, sonarStrength: 0 } : body);
       this.options.pixelMission?.observe(this.ensemble?.frames[0]??pixels,episode.tick);
       const cues: (Cue | null)[] = [visionCue(this.perception.mean, this.perception.variance, this.fusion, this.visionScratch), this.mode === "belief"&&!this.options.sensorOnly&&this.fusion.fade>0 ? privilegedCue(episode.truth(), this.fusion, this.feelingScratch) : null];
@@ -155,6 +161,7 @@ export class VisionDriver {
         action = { steer: feeling.steer * w + action.steer * (1 - w), throttle: feeling.throttle * w + action.throttle * (1 - w), brake: feeling.brake * w + action.brake * (1 - w), reverse: (feeling.reverse ?? 0) * w + (action.reverse ?? 0) * (1 - w) };
       }
     }
+    this.lastCommand={...action};
     return { action, sensors: this.sensors, seen, perception: this.perception, fused: this.fused, weights: this.fused.weights };
   }
 }

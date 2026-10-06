@@ -1,3 +1,4 @@
+import { StallSettings, validateStall } from './stall';
 import { SensorProfile, CM_PER_PIXEL } from "./robot";
 import { DEFAULT_VISION, validateVisionSettings, VisionSettings } from "../robot/vision-workbench";
 import { RewardConfig } from '../core';
@@ -8,6 +9,7 @@ export type RacingSettings = {
   visual: VisionSettings; resolution: "native" | "32x16" | "16x8";
   cameraNoise?:number; cameraBrightness?:number;
   reward?: RewardConfig;
+  stall?:StallSettings;
   camera: { hfov: number; heightCm: number; forwardCm: number; pitchDeg: number } | null;
   sonar: { heightCm: number; forwardCm: number; yawDeg: number; pitchDeg: number; sigmaDeg: number; scale: number; offsetCm: number } | null;
 };
@@ -23,7 +25,7 @@ export function validateRacingSettings(value: unknown): RacingSettings {
   };
   fields(s.camera, { hfov:[40,140], heightCm:[2,100], forwardCm:[-26,26], pitchDeg:[-30,60] });
   fields(s.sonar, { heightCm:[2,100], forwardCm:[-26,26], yawDeg:[-90,90], pitchDeg:[-30,30], sigmaDeg:[4,24], scale:[.5,1.5], offsetCm:[-30,30] });
-  return { version:1, multiLap:s.multiLap, laps:s.laps, impactPain:s.impactPain, ...(s.reward ? {reward:validateRewards(s.reward)} : {}), resolution:s.resolution, cameraNoise:s.cameraNoise??0,cameraBrightness:s.cameraBrightness??1,visual:validateVisionSettings(s.visual), camera:s.camera ? {...s.camera}:null, sonar:s.sonar ? {...s.sonar}:null };
+  return { ...(s.stall!==undefined?{stall:validateStall(s.stall)}:{}), version:1, multiLap:s.multiLap, laps:s.laps, impactPain:s.impactPain, ...(s.reward ? {reward:validateRewards(s.reward)} : {}), resolution:s.resolution, cameraNoise:s.cameraNoise??0,cameraBrightness:s.cameraBrightness??1,visual:validateVisionSettings(s.visual), camera:s.camera ? {...s.camera}:null, sonar:s.sonar ? {...s.sonar}:null };
 }
 export function calibratedProfile(base: SensorProfile, settings: RacingSettings): SensorProfile {
   const c = settings.camera, s = settings.sonar;

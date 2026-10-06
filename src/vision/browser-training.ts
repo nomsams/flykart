@@ -1,3 +1,4 @@
+import type { CohortBudget } from './runtime-budget';
 import { BrainSnapshot, SpikingNetwork,TRACKS } from "../core";
 import { TrackSession, TrackSettings } from "./ui/sessions";
 import { runCohort } from './cohort';
@@ -5,7 +6,7 @@ import { validateTrainingMaps } from '../map-curriculum';
 
 export type CameraTrainingResult={brain:BrainSnapshot;score:number;generation:number;validation:{parent:number;offspring:number;seeds:number[]};trainingSeeds:number[];trainingMaps:string[];scoreDefinition:string};
 /** Evolve a cohort behind frozen eyes, using the same seeds for every ghost. */
-export async function trainCameraController(settings:TrackSettings,generations:number,population:number,cancelled:()=>boolean,log:(s:string)=>void,progress:(sessions:TrackSession[],generation:number,seed:number)=>void=()=>{},speed=0,trainingMaps:string[]=[settings.trackId]):Promise<CameraTrainingResult|null>{
+export async function trainCameraController(settings:TrackSettings,generations:number,population:number,cancelled:()=>boolean,log:(s:string)=>void,progress:(sessions:TrackSession[],generation:number,seed:number)=>void=()=>{},speed=0,trainingMaps:string[]=[settings.trackId],budget?:()=>CohortBudget):Promise<CameraTrainingResult|null>{
   if(!settings.vision)throw new Error('Choose a camera network before training.');
   const limit=Math.min(3000,settings.maxTicks??1500),seeds=[101,307],heldOut=[9001,12007];
   const maps=trainingMaps.length===1&&trainingMaps[0]===settings.trackId&&TRACKS.some(t=>t.id===settings.trackId)?[settings.trackId]:validateTrainingMaps(trainingMaps);
@@ -14,7 +15,7 @@ export async function trainCameraController(settings:TrackSettings,generations:n
     for(const trackId of maps)for(const seed of testSeeds){
       log(`${generation?'Training':'Held-out validation'} · ${trackId} · seed ${seed}`);
       const sessions=brains.map(controller=>new TrackSession({...settings,trackId,controller,seed,mode:'belief',fade:0,memory:null,sensorOnly:true,maxTicks:limit}));
-      if(!await runCohort(sessions,cancelled,s=>progress(s,generation,seed),speed))return null;
+      if(!await runCohort(sessions,cancelled,s=>progress(s,generation,seed),speed,budget))return null;
       sessions.forEach((session,i)=>{const c=session.episode.car,target=settings.lapTarget??1;
         scores[i]+=(settings.rewardConfig?c.score:c.totalProgress/target*1000+(c.finished?500:0)-c.rewardTotals.collision*5-(c.crashed?300:0)-c.offTrackTicks/Math.max(1,c.ticks)*100+c.score*.01)/(testSeeds.length*maps.length);
       });
