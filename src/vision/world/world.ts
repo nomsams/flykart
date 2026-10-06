@@ -109,12 +109,15 @@ export class WorldSim {
   readonly goalLimit: number;
   readonly goalPreset: GoalPreset;
   readonly goals: GoalPoint[] = [];
+  readonly hiddenGoalAngle: number;
   surface: Surface = "grass";
 
-  constructor(seed: number, options: { density?: number; maxTicks?: number; world?:WorldDef; start?:{x:number;y:number;heading:number}; goal?:GoalPoint; goals?:GoalPoint[]; goalPreset?:GoalPreset; goalLimit?:number } = {}) {
+  constructor(seed: number, options: { density?: number; maxTicks?: number; world?:WorldDef; start?:{x:number;y:number;heading:number}; goal?:GoalPoint; goals?:GoalPoint[]; goalPreset?:GoalPreset; goalLimit?:number; hiddenGoalAngle?:number } = {}) {
     this.world = options.world ? structuredClone(options.world) : generateWorld(seed, options.density ?? 0.6);
     this.goalLimit=options.goalLimit??Infinity;
     this.goalPreset=options.goalPreset??'standard';
+    this.hiddenGoalAngle=options.hiddenGoalAngle??0;
+    if(!Number.isFinite(this.hiddenGoalAngle)||this.hiddenGoalAngle<0||this.hiddenGoalAngle>=Math.PI)throw Error('Invalid hidden goal angle.');
     this.random = mulberry32(seed * 977 + 5);
     this.maxTicks = options.maxTicks ?? 2400;
     this.kart.heading = (this.random() * 2 - 1) * Math.PI;
@@ -131,6 +134,7 @@ export class WorldSim {
     const [near,far]=this.goalPreset==='near'?[Math.min(90,world.half*.3),Math.min(170,world.half*.9)]:this.goalPreset==='far'?[world.half*.7,world.half*1.35]:this.goalPreset==='random'?[60,world.half*1.7]:this.goalPreset==='pair'?[Math.min(160,world.half*.4),world.half*1.2]:[Math.min(170,world.half*.4),Math.min(390,world.half*1.2)];
     for (let attempt = 0; attempt < 480; attempt += 1) {
       const angle = this.random() * Math.PI * 2, distance = near + this.random() * (far-near);
+      if(this.hiddenGoalAngle&&Math.abs(wrapAngle(angle-kart.heading))<this.hiddenGoalAngle)continue;
       const x = kart.x + Math.cos(angle) * distance, y = kart.y + Math.sin(angle) * distance;
       if (Math.abs(x) > world.half - 50 || Math.abs(y) > world.half - 50) continue;
       if (world.obstacles.some((o) => Math.hypot(o.x - x, o.y - y) < o.radius + 26)) continue;

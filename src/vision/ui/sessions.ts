@@ -1,6 +1,7 @@
 import { RoomMemory, MemorySettings } from '../../robot/memory';
 import { WorldDef } from '../world/world';
 import { reverseGoal } from '../world/arena';
+import { FlagDiscovery, SearchWin } from '../world/discovery';
 import { SonarHistory } from '../sonar-history';
 // A running drive: the simulation, the driver and the little bits of history the dashboards plot.
 import { Action, BrainSnapshot, SpikingNetwork, TRACKS, TrackDefinition, RewardConfig, RoadObjectKind } from "../../core";
@@ -92,7 +93,7 @@ export class TrackSession {
 }
 
 export type WorldDriverKind = "vision" | "both" | "feeling" | "expert" | "blind";
-export type WorldSettings = { seed: number; density: number; style: number; kind: WorldDriverKind; fade: number; controller: BrainSnapshot; vision: VisionModel | null; profile?: SensorProfile; sonarOn?: boolean; visual?:RacingSettings["visual"]; resolution?:RacingSettings["resolution"]; cameraNoise?:number;cameraBrightness?:number;maxTicks?:number; goalPreset?:import("../world/world").GoalPreset; task?:"forage"|"reverse"; world?:WorldDef; start?:{x:number;y:number;heading:number}; memorySettings?:MemorySettings; roomMemory?:RoomMemory|null; sensorOnly?:boolean };
+export type WorldSettings = { seed: number; density: number; style: number; kind: WorldDriverKind; fade: number; controller: BrainSnapshot; vision: VisionModel | null; profile?: SensorProfile; sonarOn?: boolean; visual?:RacingSettings["visual"]; resolution?:RacingSettings["resolution"]; cameraNoise?:number;cameraBrightness?:number;maxTicks?:number; goalPreset?:import("../world/world").GoalPreset; task?:"forage"|"reverse"|"explore"; searchWin?:SearchWin; world?:WorldDef; start?:{x:number;y:number;heading:number}; memorySettings?:MemorySettings; roomMemory?:RoomMemory|null; sensorOnly?:boolean };
 
 export class WorldSession {
   readonly episode: WorldEpisode;
@@ -103,17 +104,22 @@ export class WorldSession {
   readonly sonarMap=new SonarHistory();
   readonly memory:RoomMemory|null;
   readonly initialPose:{x:number;y:number;heading:number};
+  readonly discovery:FlagDiscovery|null;
   reverseDistance=0;
   lastAction: Action = { steer: 0, throttle: 0, brake: 0, reverse: 0 };
 
   constructor(readonly settings: WorldSettings) {
+    const explore=settings.task==='explore';
+    if(explore){settings={...settings,kind:'vision',fade:0,sensorOnly:true};this.settings=settings;if(!settings.vision)throw Error('Exploration requires a world camera network.');}
+    const camera=settings.profile?.worldCamera??WORLD_CAMERA;
+    this.discovery=explore?new FlagDiscovery(settings.vision!.spec.width,settings.vision!.spec.height,camera.hfov):null;
     this.controller = SpikingNetwork.fromJSON(settings.controller);
-    this.episode = new WorldEpisode({ seed: settings.seed, density: settings.density, styleStrength: settings.style,cameraNoise:settings.cameraNoise,cameraBrightness:settings.cameraBrightness, camera: WORLD_CAMERA, maxTicks: settings.maxTicks??4200, world:settings.world,start:settings.start,goalPreset:settings.task==='reverse'?'near':settings.goalPreset, profile: settings.profile });
+    this.episode = new WorldEpisode({ seed: settings.seed, density: settings.density, styleStrength: settings.style,cameraNoise:settings.cameraNoise,cameraBrightness:settings.cameraBrightness, camera: WORLD_CAMERA, maxTicks: settings.maxTicks??4200, world:settings.world,start:settings.start,goalPreset:settings.task==='reverse'?'near':explore&&settings.goalPreset==='pair'?'random':settings.goalPreset,hiddenGoalAngle:explore?Math.min(Math.PI-.01,camera.hfov/2+.25):undefined, profile: settings.profile });
     this.initialPose={x:this.episode.sim.kart.x,y:this.episode.sim.kart.y,heading:this.episode.sim.kart.heading};
     if(settings.task==='reverse'||settings.sensorOnly){
       const goal=settings.task==='reverse'?reverseGoal(this.episode.sim.world,this.episode.sim.kart):{x:this.episode.sim.status.goalX,y:this.episode.sim.status.goalY};
       // Rebuild a fixed-goal episode so arrival ends the trial rather than moving the flag.
-      this.episode=new WorldEpisode({...this.episode.options,goal,goals:settings.task==='reverse'?[goal]:this.episode.sim.goals,goalLimit:settings.task!=='reverse'&&settings.goalPreset==='pair'?2:1});
+      this.episode=new WorldEpisode({...this.episode.options,goal,goals:settings.task==='reverse'?[goal]:this.episode.sim.goals,goalLimit:!explore&&settings.task!=='reverse'&&settings.goalPreset==='pair'?2:1});
     }
     this.memory=settings.roomMemory??(settings.memorySettings?new RoomMemory(settings.memorySettings):null);
     this.trail.push({x:this.episode.sim.kart.x,y:this.episode.sim.kart.y});
@@ -121,7 +127,7 @@ export class WorldSession {
     const needsEyes = settings.kind === "vision" || settings.kind === "both";
     const perceiver = needsEyes && settings.vision ? new Perceiver(settings.vision) : null;
     this.driver = settings.kind === "expert" ? null : new VisionDriver({
-      sensorOnly:settings.sensorOnly,missionCue:true,roomMemory:this.memory,perceiver, visual:settings.visual, resolution:settings.resolution, controller: this.controller, domain: worldDomain, blind: settings.kind === "blind", mode: "belief", sonarOff: settings.sonarOn === false,
+      sensorOnly:settings.sensorOnly,missionCue:!explore,pixelMission:this.discovery??undefined,roomMemory:this.memory,perceiver, visual:settings.visual, resolution:settings.resolution, controller: this.controller, domain: worldDomain, blind: settings.kind === "blind", mode: "belief", sonarOff: settings.sonarOn === false,
       fusion: { fade: settings.kind === "both" ? settings.fade : 0 },
     });
     this.driver?.reset();
@@ -129,13 +135,18 @@ export class WorldSession {
     this.episode.render();
   }
 
-  get done(): boolean { return this.episode.done; }
+  get found():boolean {return this.discovery?.firstSightTick!=null;}
+  get won():boolean {return this.discovery?this.found&&((this.settings.searchWin??'sight')==='sight'||this.episode.sim.status.goals>=this.episode.sim.goalLimit)&&!this.episode.sim.status.crashed:this.episode.sim.status.goals>=this.episode.sim.goalLimit&&!this.episode.sim.status.crashed;}
+  get done(): boolean { return this.episode.done || Boolean(this.discovery&&this.found&&(this.settings.searchWin??'sight')==='sight'); }
 
   step(): void {
+    if(this.done)return;
     const before={x:this.episode.sim.kart.x,y:this.episode.sim.kart.y};
     if (this.driver) {
       const frame = this.driver.act(this.episode);
-      this.lastAction = frame.action; this.episode.step(frame.action);
+      this.lastAction = frame.action;
+      if(this.discovery&&this.found&&(this.settings.searchWin??'sight')==='sight')return;
+      this.episode.step(frame.action);
     } else {
       const sensors = worldDomain.sensors(this.episode.truth(this.lastTruth), this.episode.mission(), this.episode.proprioception());
       this.lastAction = worldExpert(sensors); this.episode.step(this.lastAction);
