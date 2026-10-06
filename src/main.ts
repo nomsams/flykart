@@ -870,7 +870,7 @@ function downloadSelectedLineage(): void {
   } catch (error) { const detail = error instanceof Error ? error.message : "could not download selected brain"; setRunState("Lineage export error", detail, "error", "LINEAGE"); appendEvent(`lineage export failed: ${detail}`); }
 }
 
-async function importBrainText(text: string, name: string): Promise<void> {
+async function importBrainText(text: string, name: string, restoreTrack = false): Promise<void> {
     const parsed = JSON.parse(text) as { format?: unknown; version?: unknown; fitness?: unknown; generation?: unknown; track?: unknown; provenance?: unknown; network?: BrainSnapshot; trainingRecipe?:unknown; domain?:unknown };
     if (parsed.format !== undefined && parsed.format !== "flykart-brain") throw new Error("this file is not a FlyKart brain checkpoint");
     if(parsed.domain!==undefined&&parsed.domain!=="track")throw new Error("Open-world brains use different inputs; open this brain in Vision or the 3D habitat.");
@@ -879,6 +879,7 @@ async function importBrainText(text: string, name: string): Promise<void> {
     if (network.inputCount !== 17) throw new Error("this brain reads a sonar as well; open it in FlyKart Vision, or export it for FlyKart v1 from there");
     const recipe=parsed.trainingRecipe===undefined?undefined:validateRecipe(parsed.trainingRecipe);
     stopAll();if(recipe)restoreRacerRecipe(recipe);
+    if(restoreTrack && isTrainingContext(parsed.track)){ui.trackSelect.value=parsed.track;updateTrackInfo();}
     contextProvenance.clear(); restoreProvenance(parsed.provenance);
     const sourceContext = isTrainingContext(parsed.track) ? parsed.track : "all"; const selectedContext = selectedTrainingContext(); const sourceFitness = typeof parsed.fitness === "number" && Number.isFinite(parsed.fitness) ? parsed.fitness : -Infinity; const sourceGeneration = typeof parsed.generation === "number" && Number.isInteger(parsed.generation) && parsed.generation >= 0 ? parsed.generation : 0;
     const sourceRecord = contextProvenance.get(sourceContext); const sourceProgress = sourceRecord?.bestProgress ?? 0; const sourceFinished = sourceRecord?.finished ?? false;
@@ -1459,7 +1460,7 @@ ui.evolveFiveButton.addEventListener("click", () => safely(startFiveBrainEvoluti
 ui.headlessButton.addEventListener("click", () => { void runHeadless(); });
 ui.stopButton.addEventListener("click", () => safely(stopAll));
 ui.resetButton.addEventListener("click", () => safely(resetBrain));
-mountBrainShelf(required<HTMLElement>(".game-card"),"racer",()=>JSON.stringify(checkpointObject()),importBrainText,()=>training,{save:ui.saveButton,load:ui.loadButton});
+mountBrainShelf(required<HTMLElement>(".game-card"),"racer",()=>JSON.stringify(checkpointObject()),importBrainText,()=>training,{save:ui.saveButton,load:ui.loadButton},async(text,name)=>{await importBrainText(text,name,true);stopAll();});
 ui.exportButton.addEventListener("click", () => safely(exportBrain));
 attachJsonImport(ui.importFile, importBrainText, { title: 'Import racer brain', trigger: ui.importButton, busy: () => training, onError: detail => { setRunState('Import error', detail, 'error', 'RACE MODE'); appendEvent(`import failed: ${detail}`); } });
 ui.copyLogButton.addEventListener("click", () => { void copyAllLog(); });

@@ -20,6 +20,7 @@ import { SONAR_USEFUL_RANGE_PX, SensorProfile, SonarSpec } from "../robot";
 import { Sonar, SonarReading, SonarTarget, sonarInputs } from "../sonar";
 import { SECTORS, SECTOR_ANGLES, SECTOR_SPAN, SURFACE_VALUE, WorldSim, WorldDef, GoalPreset, GoalPoint, clearanceScan, surfaceAt } from "./world";
 import { WorldScene } from "./worldScene";
+import { furniture, clearance, legs, floorItem } from './objects';
 
 export const WORLD_CAMERA: CameraConfig = { width: 48, height: 24, hfov: (104 * Math.PI) / 180, mountHeight: 15, pitch: 0.16, mountForward: 8 };
 
@@ -99,7 +100,6 @@ export class WorldEpisode implements VisionEpisode {
     this.sonarUnit = sonarSpec ? new Sonar(sonarSpec, mulberry32(options.seed * 104729 + 11)) : null;
     const { world } = this.sim;
     // Trunks and rocks are solid; ponds, sand and mud lie flat and cannot be heard. The fence is a low wall all round.
-    for (const o of world.obstacles) this.fixedTargets.push({ kind: "circle", x: o.x, y: o.y, radius: o.radius, z0: 0, z1: o.height });
     const h = world.half;
     this.fixedTargets.push({ kind: "box", x: 0, y: -h, heading: 0, halfLength: h, halfWidth: 1.5, z0: 0, z1: 11 }, { kind: "box", x: 0, y: h, heading: 0, halfLength: h, halfWidth: 1.5, z0: 0, z1: 11 },
       { kind: "box", x: -h, y: 0, heading: Math.PI / 2, halfLength: h, halfWidth: 1.5, z0: 0, z1: 11 }, { kind: "box", x: h, y: 0, heading: Math.PI / 2, halfLength: h, halfWidth: 1.5, z0: 0, z1: 11 });
@@ -112,13 +112,25 @@ export class WorldEpisode implements VisionEpisode {
   refreshSonar(): void {
     if (!this.sonarUnit) return;
     const { kart } = this.sim;
-    this.sonarUnit.update(this.tick, { x: kart.x, y: kart.y, heading: kart.heading }, this.fixedTargets,true);
+    this.sonarUnit.update(this.tick, { x: kart.x, y: kart.y, heading: kart.heading }, this.targets(),true);
+  }
+
+  private targets():SonarTarget[]{
+    const targets=[...this.fixedTargets];
+    for(const o of this.sim.world.obstacles){
+      if(floorItem(o))continue;
+      if(furniture(o)){
+        targets.push({kind:'box',x:o.x,y:o.y,heading:0,halfLength:o.radius,halfWidth:o.radius*.65,z0:clearance(o),z1:o.height});
+        for(const b of legs(o))targets.push({kind:'circle',x:b.x,y:b.y,radius:b.radius,z0:0,z1:clearance(o)});
+      }else targets.push({kind:'circle',x:o.x,y:o.y,radius:o.radius,z0:0,z1:o.height});
+    }
+    return targets;
   }
 
   private ping(): void {
     if (!this.sonarUnit) return;
     const { kart } = this.sim;
-    this.sonarUnit.update(this.sim.status.ticks, { x: kart.x, y: kart.y, heading: kart.heading }, this.fixedTargets);
+    this.sonarUnit.update(this.sim.status.ticks, { x: kart.x, y: kart.y, heading: kart.heading }, this.targets());
   }
 
   get done(): boolean { return this.sim.done; }

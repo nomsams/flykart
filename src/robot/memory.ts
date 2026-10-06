@@ -1,7 +1,7 @@
 import { mulberry32 } from "../vision/rng";
 import { Pose } from "./model";
 
-export const MEMORY_SIZES = [512, 2048, 4096, 10000, 20000] as const;
+export const MEMORY_SIZES = [512, 2048, 4096, 10000, 20000, 40000] as const;
 export type MemorySettings = { count: number; sparsity: number; rareWeighting: boolean };
 export const DEFAULT_MEMORY: MemorySettings = { count: 4096, sparsity: .01, rareWeighting: true };
 export function validateMemorySettings(raw: unknown): MemorySettings {

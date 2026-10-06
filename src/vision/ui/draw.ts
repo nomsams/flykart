@@ -3,6 +3,7 @@ import { Car, TrackDefinition, trackCheckpoint } from "../../core";
 import { CameraConfig, frameToRgba } from "../camera";
 import type { Domain } from "../domain";
 import { SECTORS, SECTOR_ANGLES, WorldDef, WorldKart } from "../world/world";
+import { furniture, legs, floorItem, movable } from '../world/objects';
 
 export const COLORS = { truth: "#f2f6fc", camera: "#72b8ff", fused: "#7cf0b6", memory: "#c4a2ff", feeling: "#f3c96b", grid: "#243245", text: "#9fb0c6", dim: "#5d6b80", bad: "#ff8c8c" };
 
@@ -107,7 +108,16 @@ export function drawWorldMap(canvas: HTMLCanvasElement, world: WorldDef, kart: W
     context.beginPath(); context.arc(patch.x, patch.y, patch.radius, 0, Math.PI * 2); context.fill();
   }
   context.strokeStyle = "#e8eef8"; context.lineWidth = 3; context.strokeRect(-world.half, -world.half, world.half * 2, world.half * 2);
-  for (const o of world.obstacles) { context.fillStyle = o.kind === "tree" ? "#2f8f4a" : "#8a8f98"; context.beginPath(); context.arc(o.x, o.y, o.radius, 0, Math.PI * 2); context.fill(); }
+  for (const o of world.obstacles) {
+    if(furniture(o)){
+      context.fillStyle=o.kind==='bed'?'#5679b044':'#af804844';context.fillRect(o.x-o.radius,o.y-o.radius*.65,o.radius*2,o.radius*1.3);
+      context.strokeStyle=o.kind==='bed'?'#7ca4df':'#d3ae7e';context.strokeRect(o.x-o.radius,o.y-o.radius*.65,o.radius*2,o.radius*1.3);
+      for(const b of legs(o)){context.fillStyle='#35281d';context.beginPath();context.arc(b.x,b.y,b.radius,0,Math.PI*2);context.fill();}
+    }else {
+      context.fillStyle=floorItem(o)?'#aa755c':movable(o)?'#dc744b':o.kind==='tree'?'#2f8f4a':'#8a8f98';context.beginPath();
+      if(o.kind==='cable'){context.strokeStyle='#ded596';context.lineWidth=2;for(let x=-o.radius;x<=o.radius;x++)context.lineTo(o.x+x,o.y+Math.sin(x/5)*2);context.stroke();}else{context.arc(o.x,o.y,o.radius,0,Math.PI*2);context.fill();}
+    }
+  }
   for(const [i,g] of (extras.goals?.length?extras.goals:[goal]).entries()){context.strokeStyle=i===0?"#ffd23f":"#aab7ff";context.lineWidth=3;context.beginPath();context.arc(g.x,g.y,22,0,Math.PI*2);context.stroke();context.fillStyle="#ff3f9f";context.beginPath();context.arc(g.x,g.y,6,0,Math.PI*2);context.fill();context.fillStyle="#fff";context.font="bold 16px system-ui";context.fillText(String(i+1),g.x+25,g.y+6);}
   // Clearance sectors: white = truth, blue = what the camera believes.
   const range = 220; const step = (SECTOR_ANGLES[1] - SECTOR_ANGLES[0]);

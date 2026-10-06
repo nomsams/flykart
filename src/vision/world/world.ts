@@ -4,6 +4,7 @@
 // reverse dynamics; only the surroundings change.
 import { Action, STEP, clamp, wrapAngle } from "../../core";
 import { mulberry32, Random } from "../rng";
+import { OBJECT_KINDS, solids, contact, movable, floorItem, blocked } from './objects';
 
 export const WORLD_HALF = 460;
 export const KART_RADIUS = 8;
@@ -16,7 +17,7 @@ export const SECTOR_SPAN = (50 * Math.PI) / 180;
 export const SECTOR_RANGE = 220;
 
 export type Surface = "grass" | "sand" | "mud" | "water";
-export type Obstacle = { x: number; y: number; radius: number; kind: "tree" | "rock"; height: number; tone: number };
+export type Obstacle = { x: number; y: number; radius: number; kind: typeof OBJECT_KINDS[number]; height: number; tone: number; clearance?:number };
 export type Patch = { x: number; y: number; radius: number; kind: Exclude<Surface, "grass"> };
 export type WorldDef = { seed: number; half: number; obstacles: Obstacle[]; patches: Patch[] };
 
@@ -69,7 +70,21 @@ export function castRay(world: WorldDef, x: number, y: number, angle: number, ma
     const reach = along - Math.sqrt(r2 - d2);
     if (reach > 0 && reach < best) best = reach; else if (reach <= 0 && along > 0 && fx * fx + fy * fy < r2) best = 0;
   };
-  for (const o of world.obstacles) circle(o.x, o.y, o.radius + KART_RADIUS);
+  for (const o of world.obstacles) for(const b of solids(o)) {
+    if(b.halfLength===undefined)circle(b.x,b.y,b.radius+KART_RADIUS);
+    else {
+      // Minkowski sum: two rectangular strips plus the four rounded corners.
+      const box=(hx:number,hy:number)=>{
+        let lo=0,hi=best;
+        for(const [at,dir,size] of [[x-b.x,dx,hx],[y-b.y,dy,hy]]){
+          if(Math.abs(dir)<1e-9){if(Math.abs(at)>size)return;}else{const a=(-size-at)/dir,c=(size-at)/dir;lo=Math.max(lo,Math.min(a,c));hi=Math.min(hi,Math.max(a,c));}
+        }
+        if(lo<=hi)best=Math.min(best,lo);
+      };
+      box(b.halfLength+KART_RADIUS,b.halfWidth!);box(b.halfLength,b.halfWidth!+KART_RADIUS);
+      for(const sx of [-1,1])for(const sy of [-1,1])circle(b.x+sx*b.halfLength,b.y+sy*b.halfWidth!,KART_RADIUS);
+    }
+  }
   for (const p of world.patches) if (p.kind === "water") circle(p.x, p.y, p.radius + 2);
   const limit = world.half - KART_RADIUS;
   if (dx > 1e-9) best = Math.min(best, Math.max(0, (limit - x) / dx)); else if (dx < -1e-9) best = Math.min(best, Math.max(0, (-limit - x) / dx));
@@ -96,7 +111,7 @@ export type WorldKart = {
   action: Action; yaw: number;
 };
 
-export type WorldStatus = { goals: number; collisions: number; crashed: boolean; crashReason?: string; ticks: number; score: number; distanceToGoal: number; goalX: number; goalY: number; timedOut: boolean };
+export type WorldStatus = { goals: number; collisions: number; pain:number; crashed: boolean; crashReason?: string; ticks: number; score: number; distanceToGoal: number; goalX: number; goalY: number; timedOut: boolean };
 
 /** One run in an open world. Pure simulation: no camera, no network. */
 export class WorldSim {
@@ -121,7 +136,7 @@ export class WorldSim {
     this.random = mulberry32(seed * 977 + 5);
     this.maxTicks = options.maxTicks ?? 2400;
     this.kart.heading = (this.random() * 2 - 1) * Math.PI;
-    this.status = { goals: 0, collisions: 0, crashed: false, ticks: 0, score: 0, distanceToGoal: 0, goalX: 0, goalY: 0, timedOut: false };
+    this.status = { goals: 0, collisions: 0, pain:0, crashed: false, ticks: 0, score: 0, distanceToGoal: 0, goalX: 0, goalY: 0, timedOut: false };
     if(options.start)Object.assign(this.kart,options.start);
     if(options.goals?.length || options.goal){this.goals.push(...structuredClone(options.goals??[options.goal!]));this.selectGoal();}else this.nextGoal();
   }
@@ -137,7 +152,7 @@ export class WorldSim {
       if(this.hiddenGoalAngle&&Math.abs(wrapAngle(angle-kart.heading))<this.hiddenGoalAngle)continue;
       const x = kart.x + Math.cos(angle) * distance, y = kart.y + Math.sin(angle) * distance;
       if (Math.abs(x) > world.half - 50 || Math.abs(y) > world.half - 50) continue;
-      if (world.obstacles.some((o) => Math.hypot(o.x - x, o.y - y) < o.radius + 26)) continue;
+      if (blocked(world,x,y,26)) continue;
       if (world.patches.some((p) => Math.hypot(p.x - x, p.y - y) < p.radius + 18 && p.kind === "water")) continue;
       if(this.goals.some(g=>Math.hypot(g.x-x,g.y-y)<90))continue;
       this.goals.push({x,y});
@@ -176,21 +191,32 @@ export class WorldSim {
     if (kart.speed > 0) acceleration -= brake * 75; else if (kart.speed < 0) acceleration += brake * 75;
     kart.speed = clamp(kart.speed + acceleration * STEP, -48, 90);
     if (surface === "mud") kart.speed *= 0.955; else if (surface === "sand") kart.speed *= 0.988;
+    if(world.obstacles.some(o=>floorItem(o)&&Math.hypot(kart.x-o.x,kart.y-o.y)<o.radius))kart.speed*=.97;
     const before = status.distanceToGoal;
     kart.x += Math.cos(kart.heading) * kart.speed * STEP; kart.y += Math.sin(kart.heading) * kart.speed * STEP;
     status.ticks += 1; this.cooldown = Math.max(0, this.cooldown - 1);
-    let hit = false;
+    let hit = false, contactPain=0;
+    const impactSpeed=Math.abs(kart.speed);
     for (const o of world.obstacles) {
-      const dx = kart.x - o.x, dy = kart.y - o.y; const d = Math.hypot(dx, dy), reach = o.radius + KART_RADIUS;
-      if (d < reach) { const nx=d>1e-6?dx/d:Math.cos(kart.heading+Math.PI),ny=d>1e-6?dy/d:Math.sin(kart.heading+Math.PI); kart.x += nx*(reach-d+.5); kart.y += ny*(reach-d+.5); hit = true; }
+      for(const b of solids(o)){
+        const c=contact(b,kart.x,kart.y,KART_RADIUS);if(!c)continue;
+        const push=movable(o)?Math.min(c.depth,impactSpeed*STEP*.65):0;
+        const ox=o.x-c.nx*push,oy=o.y-c.ny*push;
+        const canPush=push>0&&!blocked(world,ox,oy,o.radius,o)&&surfaceAt(world,ox,oy)!=='water';
+        if(canPush){o.x=ox;o.y=oy;}
+        const depth=c.depth-(canPush?push:0)+.5;
+        kart.x+=c.nx*depth;kart.y+=c.ny*depth;hit=true;
+        const closing=Math.max(0,-kart.speed*(Math.cos(kart.heading)*c.nx+Math.sin(kart.heading)*c.ny));
+        contactPain=Math.max(contactPain,(movable(o)?(canPush?.2:.45):1)*(.05+.95*(closing/90)**2));
+      }
     }
     const limit = world.half - KART_RADIUS;
-    if (Math.abs(kart.x) > limit) { kart.x = Math.sign(kart.x) * limit; hit = true; }
-    if (Math.abs(kart.y) > limit) { kart.y = Math.sign(kart.y) * limit; hit = true; }
+    if (Math.abs(kart.x) > limit) { kart.x = Math.sign(kart.x) * limit; hit = true;contactPain=Math.max(contactPain,.05+.95*(kart.speed*Math.cos(kart.heading)/90)**2); }
+    if (Math.abs(kart.y) > limit) { kart.y = Math.sign(kart.y) * limit; hit = true;contactPain=Math.max(contactPain,.05+.95*(kart.speed*Math.sin(kart.heading)/90)**2); }
     if (hit) {
       kart.speed *= 0.3;
-      if (this.cooldown === 0) { status.collisions += 1; status.score -= 12; this.cooldown = 8; }
-      if (status.collisions >= 8) { status.crashed = true; status.crashReason = "too many collisions"; }
+      if (this.cooldown === 0) { status.collisions += 1;status.pain+=contactPain; status.score -= 12*contactPain; this.cooldown = 8; }
+      if (status.pain >= 8) { status.crashed = true; status.crashReason = "accumulated impact pain"; }
     }
     if (surfaceAt(world, kart.x, kart.y) === "water") { status.crashed = true; status.crashReason = "drove into a pond"; status.score -= 60; kart.speed = 0; }
     const distance = Math.hypot(status.goalX - kart.x, status.goalY - kart.y);

@@ -16,7 +16,7 @@ export function mountExperimentPanel(base:()=>SensorProfile,changed:()=>void):{r
     <details><summary>Colour camera & virtual eyes</summary>
     <label>Colour resolution<select id="camera-resolution"><option value="native">Native network resolution (usually 48×24)</option><option value="32x16">32×16 RGB colour</option><option value="16x8">16×8 RGB colour</option></select></label>
     ${numeric('camera-noise','Track camera RGB noise (standard deviation, 0–1 scale)',0,.2,.005,0)}${numeric('camera-brightness','Track camera brightness multiplier',.1,2,.1,1)}
-    <label>Virtual eye views<select id="eye-layout"><option value="single">One view · baseline</option><option value="circle3">Three shifted views</option><option value="circle5">Five shifted views</option><option value="scales3">Three zoom scales</option></select></label>
+    <label>Virtual eye views<select id="eye-layout"><option value="single">One view · baseline</option><option value="circle3">Three shifted views</option><option value="circle5">Five shifted views</option><option value="circle9">Nine shifted views · more compute</option><option value="scales3">Three zoom scales</option></select></label>
     ${numeric('eye-radius','View shift (fraction of image)',0,.2,.01,.08)}
     <label class="check-row"><input id="eye-normalize" type="checkbox"><span>Contrast normalization<small>Can help dim scenes; can distort trained colour cues.</small></span></label>
     <label class="check-row"><input id="eye-smooth" type="checkbox"><span>3×3 spatial smoothing<small>Reduces grain but removes small objects.</small></span></label>

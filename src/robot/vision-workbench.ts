@@ -3,12 +3,12 @@ import { Perceiver, VisionModel } from "../vision/perception";
 import type { Proprioception } from "../vision/interface";
 import { worldDomain } from "../vision/world/worldDomain";
 
-export type VisionSettings = { normalize: boolean; smooth: boolean; temporal: number; layout: "single" | "circle3" | "circle5" | "scales3"; radius: number; vote?:'confidence'|'mean'|'median';memberWeights?:number[] };
+export type VisionSettings = { normalize: boolean; smooth: boolean; temporal: number; layout: "single" | "circle3" | "circle5" | "circle9" | "scales3"; radius: number; vote?:'confidence'|'mean'|'median';memberWeights?:number[] };
 export const DEFAULT_VISION: VisionSettings = {normalize:false,smooth:false,temporal:1,layout:"single",radius:.08};
 export function validateVisionSettings(raw:unknown):VisionSettings {
   const s=raw as VisionSettings;
-  if(!s||typeof s.normalize!=="boolean"||typeof s.smooth!=="boolean"||![1,4,16].includes(s.temporal)||!["single","circle3","circle5","scales3"].includes(s.layout)||!Number.isFinite(s.radius)||s.radius<0||s.radius>.2)throw new Error("Invalid visual processing settings.");
-  if(s.vote!==undefined&&!['confidence','mean','median'].includes(s.vote)||s.memberWeights!==undefined&&(!Array.isArray(s.memberWeights)||s.memberWeights.length!==5||s.memberWeights.some(v=>!Number.isFinite(v)||v<0||v>10)||!s.memberWeights.slice(0,viewPatches(s).length).some(v=>v>0)))throw new Error('Invalid swarm vote/weights.');
+  if(!s||typeof s.normalize!=="boolean"||typeof s.smooth!=="boolean"||![1,4,16].includes(s.temporal)||!["single","circle3","circle5","circle9","scales3"].includes(s.layout)||!Number.isFinite(s.radius)||s.radius<0||s.radius>.2)throw new Error("Invalid visual processing settings.");
+  if(s.vote!==undefined&&!['confidence','mean','median'].includes(s.vote)||s.memberWeights!==undefined&&(!Array.isArray(s.memberWeights)||![5,9].includes(s.memberWeights.length)||s.memberWeights.some(v=>!Number.isFinite(v)||v<0||v>10)||!s.memberWeights.slice(0,viewPatches(s).length).some(v=>v>0)))throw new Error('Invalid swarm vote/weights.');
   return {...s};
 }
 export type ViewPatch={x:number;y:number;scale:number};
@@ -16,7 +16,7 @@ export function viewPatches(s:VisionSettings):ViewPatch[] {
   const center={x:0,y:0,scale:1};
   if(s.layout==="single")return [center];
   if(s.layout==="scales3")return [center,{x:0,y:0,scale:.86},{x:0,y:0,scale:.72}];
-  const n=s.layout==="circle3"?2:4;
+  const n=s.layout==="circle3"?2:s.layout==="circle9"?8:4;
   return [center,...Array.from({length:n},(_,i)=>({x:Math.cos(i/n*Math.PI*2)*s.radius,y:Math.sin(i/n*Math.PI*2)*s.radius,scale:1-2*s.radius}))];
 }
 export function visualFeatures(frame:Float32Array,w:number,h:number):Float32Array {

@@ -1,3 +1,4 @@
+import { generateClutter, furniture } from './world/objects';
 import { racerToRoom } from '../robot/task-brain';
 import { generateWorld, WorldSim, GoalPreset } from './world/world';
 import { RoomMemory } from '../robot/memory';
@@ -181,7 +182,7 @@ function buildTrack(options: { keepMemory?: boolean } = {}): void {
   const select = $("track-select") as HTMLSelectElement;
   const memoryOn = $<HTMLInputElement>("memory-on").checked;
   if (!options.keepMemory) { state.memory.forget(); state.lapNumber = 0; state.laps = []; renderLapTable(); }
-  const settings=experiment.applied();loggedPing=-1;state.accumulator.track=0;
+  const settings=experiment.applied();if(document.getElementById('world-eye-layout'))$<HTMLSelectElement>('world-eye-layout').value=settings.visual.layout;loggedPing=-1;state.accumulator.track=0;
   const profile=sensorProfile(),eyes=currentVision();if(eyes)profile.camera={...profile.camera,width:eyes.spec.width,height:eyes.spec.height};
   state.track = new TrackSession({
     rewardConfig:settings.reward,objectKind:$<HTMLSelectElement>("track-object-kind").value as RoadObjectKind|"mixed",checkpointCount:gates,physicsVariation:variation,
@@ -270,7 +271,7 @@ function syncWorldTaskUi():void {
   $<HTMLSelectElement>('world-goal-preset').querySelector<HTMLOptionElement>('option[value=pair]')!.textContent=explore?'One random hidden flag · search':'Two dots · collect both, either order';
   if(explore){$<HTMLSelectElement>('world-driver').value='vision';$<HTMLInputElement>('world-fade').value='0';}
   $('world-task-note').textContent=explore?'Search starts with one pink flag outside the camera view. The brain sees processed colour pixels through obstacle eyes and a fixed pink-colour detector, enabled sonar and body feedback. Target slots are image bearing and apparent size; both are zero while unseen. No goal compass, true range, hidden-distance reward or pheromone trail. First confirmed sighting wins by default; optionally require arrival too. The map and scan history are observer diagnostics, never neural inputs. Existing compass brains need evolution for these new cue meanings.':'Compass exercises give direction and distance even when the flag is hidden; there is no pheromone trail. Camera estimates, enabled sonar and body feedback also reach the controller. Reverse practice ends on arrival. Ghosts have independent physics and common seeds. Rewards and contact labels select offspring only. A real robot needs a physical goal source.';
-  if(explore)$('world-weight-label').textContent='Fastest successful find wins · contacts are a tiny tie-break';
+  if(explore)$('world-weight-label').textContent='Fastest successful find wins · impact pain is a tiny tie-break';
   else $('world-crash-weight').dispatchEvent(new Event('input'));
 }
 
@@ -280,7 +281,7 @@ function buildWorld(): void {
   const robotWorld = state.profile === "robot" ? robotAssets() : null;
   const controller = state.importedWorld?.controller ?? robotWorld?.worldController ?? assets.worldController ?? assets.robust!;
   const vision = state.importedWorld ? state.importedWorld.vision : (state.profile === "robot" ? robotWorld?.worldVision ?? null : assets.worldVision);
-  const settings=experiment.applied();state.accumulator.world=0;loggedWorldPing=-1;loggedWorldSight=null;
+  const settings=experiment.applied();if(document.getElementById('world-eye-layout'))$<HTMLSelectElement>('world-eye-layout').value=settings.visual.layout;state.accumulator.world=0;loggedWorldPing=-1;loggedWorldSight=null;
   if(state.worldMemory&&state.worldMemory.count!==Number($<HTMLSelectElement>("world-memory-count").value))state.worldMemory=null;
   const profile=sensorProfile();if(vision)profile.worldCamera={...profile.worldCamera,width:vision.spec.width,height:vision.spec.height};
   state.world = new WorldSession({ cameraNoise:settings.cameraNoise,cameraBrightness:settings.cameraBrightness,visual:settings.visual,resolution:settings.resolution, profile, sonarOn: state.sonarOn, roomMemory:$<HTMLInputElement>("world-memory-on").checked?state.worldMemory:null,memorySettings:$<HTMLInputElement>("world-memory-on").checked?{count:Number($<HTMLSelectElement>("world-memory-count").value),sparsity:.01,rareWeighting:true}:undefined,goalPreset:$<HTMLSelectElement>("world-goal-preset").value as GoalPreset,task:$<HTMLSelectElement>("world-task").value as "forage"|"reverse"|"explore",searchWin:$<HTMLSelectElement>("world-search-win").value as "sight"|"reach",world:worldScene(),start:$<HTMLSelectElement>("world-map-preset").value==="imported"?state.arena?.start:undefined,seed: boundedInput("world-seed",1,999999,7), density: Number($<HTMLInputElement>("world-density").value), style: Number($<HTMLInputElement>("world-style").value), kind, sensorOnly:kind==="vision",fade: Number($<HTMLInputElement>("world-fade").value), controller, vision });
@@ -310,7 +311,7 @@ function paintWorld(preview?:WorldSession,ghosts:WorldSession[]=[]): void {
   const rows = driver ? estimateRows(worldDomain, truth, perception ? perception.mean : null, perception ? perception.variance : null, driver.fused.mean, perception ? driver.fused.weights : null) : estimateRows(worldDomain, truth, null, null, truth, null);
   drawEstimates($("world-estimates") as HTMLCanvasElement, rows, [-1, 1]);
   const activity = session.controller.activity(); drawBrain($("world-brain") as HTMLCanvasElement, activity.spikes, activity.outputs);
-  $("world-goals").textContent = String(sim.status.goals); $("world-collisions").textContent = String(sim.status.collisions); $("world-time").textContent = `${(sim.status.ticks / 30).toFixed(0)} s`;
+  $("world-goals").textContent = String(sim.status.goals); $("world-collisions").textContent = `${sim.status.collisions} · pain ${sim.status.pain.toFixed(2)}`; $("world-time").textContent = `${(sim.status.ticks / 30).toFixed(0)} s`;
 }
 
 /* ------------------------------- main loop ------------------------------- */
@@ -405,7 +406,7 @@ function worldExportSource(): { controller: BrainSnapshot; vision: VisionModel |
 }
 
 function visionRecipe():TrainingRecipe {
-  const settings=experiment.applied();
+  const settings=experiment.applied();if(document.getElementById('world-eye-layout'))$<HTMLSelectElement>('world-eye-layout').value=settings.visual.layout;
   return validateRecipe({version:1,domain:'race',reward:settings.reward??DEFAULT_REWARD_CONFIG,physics:{wallsEnabled:$<HTMLInputElement>('track-walls').checked,lapTarget:settings.multiLap?settings.laps:1,impactPain:settings.impactPain,checkpointCount:Number($<HTMLInputElement>('race-checkpoints').value),domainRandomization:Number($<HTMLInputElement>('race-variation').value)/100},obstacles:{enabled:Number($<HTMLSelectElement>('track-objects').value)>0,count:Number($<HTMLSelectElement>('track-objects').value)||state.dormantObstacleCount,kind:$<HTMLSelectElement>('track-object-kind').value}});
 }
 function selectedCheckpoint() {
@@ -528,15 +529,16 @@ function logFreshPing(session:TrackSession):void{
 function worldScene(){
   const kind=$<HTMLSelectElement>('world-map-preset').value;
   if(kind==='imported')return state.arena?.world;
+  if(['room','workshop','bedroom'].includes(kind))return generateClutter(Number($<HTMLInputElement>('world-seed').value),Number($<HTMLInputElement>('world-density').value),kind as 'room'|'workshop'|'bedroom');
   if(kind==='clear')return {seed:Number($<HTMLInputElement>('world-seed').value),half:460,obstacles:[],patches:[]};
   return undefined;
 }
 function renderWorldPreviews():void{
   const strip=$('world-map-previews');strip.replaceChildren();
-  for(const [kind,label] of [['procedural','Meadow'],['clear','Practice'],['woods','Woodland'],...(state.arena?[['imported','Your scene']]:[])]){
+  for(const [kind,label] of [['procedural','Meadow'],['clear','Practice'],['woods','Woodland'],['room','Living room'],['workshop','Workshop'],['bedroom','Bedroom'],...(state.arena?[['imported','Your scene']]:[])]){
     const b=document.createElement('button');b.className='map-thumbnail';b.setAttribute('aria-pressed',String($<HTMLSelectElement>('world-map-preset').value===kind));
     const c=document.createElement('canvas');c.width=112;c.height=74;const ctx=c.getContext('2d')!;ctx.fillStyle='#254936';ctx.fillRect(0,0,112,74);
-    const world=kind==='imported'?state.arena!.world:kind==='clear'?{half:460,obstacles:[],patches:[]}:generateWorld(Number($<HTMLInputElement>('world-seed').value),kind==='woods'?1:Number($<HTMLInputElement>('world-density').value));
+    const world=kind==='imported'?state.arena!.world:kind==='clear'?{half:460,obstacles:[],patches:[]}:['room','workshop','bedroom'].includes(kind)?generateClutter(Number($<HTMLInputElement>('world-seed').value),Number($<HTMLInputElement>('world-density').value),kind as 'room'|'workshop'|'bedroom'):generateWorld(Number($<HTMLInputElement>('world-seed').value),kind==='woods'?1:Number($<HTMLInputElement>('world-density').value));
     ctx.save();ctx.translate(56,37);ctx.scale(34/world.half,34/world.half);
     for(const p of world.patches){ctx.fillStyle=p.kind==='water'?'#548fbc':p.kind==='sand'?'#bda874':'#71523e';ctx.beginPath();ctx.arc(p.x,p.y,p.radius,0,Math.PI*2);ctx.fill();}
     for(const o of world.obstacles){ctx.fillStyle=o.kind==='tree'?'#79a94c':'#bbc1bc';ctx.beginPath();ctx.arc(o.x,o.y,o.radius,0,Math.PI*2);ctx.fill();}ctx.restore();
@@ -581,8 +583,9 @@ function mountTrainingTools():void{
   $('world-goal-preset').addEventListener('change',()=>{try{buildWorld();setStatus('world','Goal preset ready');}catch(e){setStatus('world',(e as Error).message);}});
   $('world-goal-shuffle').onclick=()=>{if(cameraTraining)return;$<HTMLInputElement>('world-seed').value=String(1+Math.floor(Math.random()*999999));try{buildWorld();setStatus('world','New target positions · map regenerated only for procedural maps');}catch(e){setStatus('world',(e as Error).message);}};
   $('memory-count').addEventListener('change',()=>buildTrack({keepMemory:true}));
-  const load=document.createElement('button');load.id='load-racer-checkpoint';load.textContent='Load your trained racer · generation 3';load.title='Keeps your exact checkpoint, scores and rewards. Camera adaptation happens in Track; room input meanings need a separate adaptation.';
-  document.querySelector('.profile-bar')!.after(load);load.onclick=()=>{if(cameraTraining)return;void fetch(`${import.meta.env.BASE_URL}checkpoints/flykart-brain-racer.json`).then(r=>{if(!r.ok)throw Error('Checkpoint download failed');return r.text();}).then(text=>{if(cameraTraining)throw Error('Stop training before replacing the brain.');return importBrainText(text,'flykart-brain-racer.json');}).catch(e=>$('brain-info').textContent=(e as Error).message);};
+  $('world-eye-layout').addEventListener('change',()=>{if(cameraTraining)return;const next=experiment.applied();next.visual={...next.visual,layout:$<HTMLSelectElement>('world-eye-layout').value as RacingSettings['visual']['layout']};experiment.write(next);state.worldMemory=null;buildWorld();});
+  $('world-clutter-new').onclick=()=>{if(cameraTraining)return;const picker=$<HTMLSelectElement>('world-map-preset');if(!['room','workshop','bedroom'].includes(picker.value))picker.value='room';$<HTMLInputElement>('world-seed').value=String(1+Math.floor(Math.random()*999999));state.worldMemory=null;buildWorld();setStatus('world','New seeded clutter; selected room type kept.');};
+  $('world-clearance-apply').onclick=()=>{if(cameraTraining||!state.world)return;try{const cm=Number($<HTMLInputElement>('world-clearance').value);if(!Number.isFinite(cm)||cm<0||cm>26)throw Error('Clearance must be 0–26 cm.');const world=structuredClone(state.world.episode.sim.world);for(const o of world.obstacles)if(furniture(o))o.clearance=Math.min(cm/1.1,o.height-.5);state.arena=validateArena({format:'flykart-world',version:1,world,start:state.world.initialPose});const picker=$<HTMLSelectElement>('world-map-preset');picker.querySelector<HTMLOptionElement>('option[value=imported]')!.disabled=false;picker.value='imported';state.worldMemory=null;buildWorld();setStatus('world','Furniture clearance applied; layout preserved as Your scene.');}catch(e){setStatus('world',(e as Error).message);}};
   $('world-map-preset').addEventListener('change',()=>{if(cameraTraining)return;const kind=$<HTMLSelectElement>('world-map-preset').value;if(kind==='woods')$<HTMLInputElement>('world-density').value='1';else if(kind==='procedural')$<HTMLInputElement>('world-density').value='.6';try{buildWorld();}catch(e){setStatus('world',(e as Error).message);}});
   $('world-goal-behind').onclick=()=>{if(cameraTraining||!state.world)return;const sim=state.world.episode.sim;try{reverseGoal(sim.world,sim.kart);state.arena=validateArena({format:'flykart-world',version:1,world:sim.world,start:{x:sim.kart.x,y:sim.kart.y,heading:sim.kart.heading}});$<HTMLSelectElement>('world-map-preset').querySelector<HTMLOptionElement>('option[value=imported]')!.disabled=false;$<HTMLSelectElement>('world-map-preset').value='imported';$<HTMLSelectElement>('world-task').value='reverse';buildWorld();setStatus('world','Fixed goal behind the start · ready');}catch(e){setStatus('world',(e as Error).message);}};
   $('world-search-win').addEventListener('change',()=>{try{buildWorld();}catch(e){setStatus('world',(e as Error).message);}});
@@ -593,7 +596,7 @@ function mountTrainingTools():void{
   $('world-trail-visible').addEventListener('change',()=>paintWorld());$('world-trail-clear').onclick=()=>{if(state.world)state.world.trail.splice(0,state.world.trail.length,{x:state.world.episode.sim.kart.x,y:state.world.episode.sim.kart.y});paintWorld();};
   $('world-map-export').onclick=()=>{if(!state.world)return;const sim=state.world.episode.sim;download('flykart-open-world.json',JSON.stringify({format:'flykart-world',version:1,world:sim.world,start:state.world.initialPose},null,2));};
   attachJsonImport($<HTMLInputElement>('world-map-file'),async text=>{const arena=validateArena(JSON.parse(text));state.arena=arena;$<HTMLSelectElement>('world-map-preset').querySelector<HTMLOptionElement>('option[value=imported]')!.disabled=false;$<HTMLSelectElement>('world-map-preset').value='imported';$<HTMLSelectElement>('world-task').value='forage';state.worldMemory=null;buildWorld();},{title:'Import Open world scene',trigger:$('world-map-import'),busy:()=>cameraTraining,onError:message=>setStatus('world',message)});
-  const weight=$<HTMLInputElement>('world-crash-weight');weight.oninput=()=>{$('world-weight-label').textContent=`${100-Number(weight.value)}% arrival speed · ${weight.value}% fewer contacts`;};
+  const weight=$<HTMLInputElement>('world-crash-weight');weight.oninput=()=>{$('world-weight-label').textContent=`${100-Number(weight.value)}% arrival speed · ${weight.value}% less impact pain`;};
   $('world-adapt-racer').onclick=()=>{if(cameraTraining)return;const parent=selectedCheckpoint(),worldEyes=state.world?.settings.vision??worldExportSource()?.vision;if(!worldEyes){setStatus('world','Load a world camera network first.');return;}state.importedWorld={controller:racerToRoom(parent.network),vision:worldEyes,generation:parent.generation,fitness:0,trainingRecipe:parent.trainingRecipe,provenance:[{context:'racer-to-room',source:'Explicit input remapping; untrained room offspring',trained:false,parent}]};state.robotExtensions=null;state.worldMemory=null;$<HTMLSelectElement>('world-driver').value='vision';buildWorld();setStatus('world','Room offspring created. Racer parent kept; evolve and test before use.');};
   $('world-train').onclick=()=>{void runWorldTraining();};$('world-train-stop').onclick=()=>{cancelTraining=true;$('world-training-status').textContent='Cancelling after the current cohort tick…';};
   $('world-train-report').onclick=()=>{if(trainedWorld)download('flykart-room-training.json',JSON.stringify({...trainedWorld,context:{...trainedWorldContext,roomMemory:undefined},experiment:trainedWorldExperiment,notes:'Frozen eyes; independent ghosts; fresh visual memory; no deployment claim.'},null,2));};
@@ -617,7 +620,7 @@ async function runWorldTraining():Promise<void>{
     const crashWeight=Number($<HTMLInputElement>('world-crash-weight').value)/100;if(!Number.isFinite(crashWeight)||crashWeight<0||crashWeight>1)throw Error('Contact weight must be 0–100%.');
     state.running.track=state.running.world=false;$('track-run').textContent=$('world-run').textContent='Start';cameraTraining=true;cancelTraining=false;
     const controls=Array.from(document.querySelectorAll<HTMLInputElement|HTMLSelectElement|HTMLButtonElement>('main input,main select,main button')).filter(e=>!['world-train-stop','copy-sensor-log','clear-sensor-log','world-copy-logs','world-clear-logs'].includes(e.id)),disabled=controls.map(e=>e.disabled);controls.forEach(e=>e.disabled=true);$<HTMLButtonElement>('world-train-stop').disabled=false;restore=()=>{controls.forEach((e,i)=>e.disabled=disabled[i]);$<HTMLButtonElement>('world-train-stop').disabled=true;};
-    trainedWorld=await trainWorldController(trainedWorldContext,generations,population,crashWeight,()=>cancelTraining,line=>{logSensor(line);$('world-training-status').textContent=line;},(sessions,generation,seed)=>{paintWorld(sessions[0],sessions);renderGhostScores('world-ghost-scores',sessions.map((s,i)=>s.discovery?`${i+1} · ${s.won?'FOUND / WIN':s.done?(s.found?'seen, no arrival':'not found'):'searching'} · first sight ${s.discovery.firstSightTick===null?'—':(s.discovery.firstSightTick/30).toFixed(2)+' s'} · ${(s.episode.tick/30).toFixed(1)} s · ${s.episode.sim.status.collisions} contacts · ${s.discovery.visualViews} views`:`${i+1} · ${s.episode.sim.status.goals>=s.episode.sim.goalLimit?'ARRIVED':s.done?'stopped':'driving'} · targets ${s.episode.sim.status.goals}/${s.episode.sim.goalLimit} · ${(s.episode.tick/30).toFixed(1)} s · ${s.episode.sim.status.collisions} contacts · reverse ${(s.reverseDistance*CM_PER_PIXEL/100).toFixed(2)} m`),generation,seed);},Number($<HTMLSelectElement>('world-train-speed').value),$<HTMLInputElement>('world-reverse-coach').checked,$<HTMLInputElement>('world-retain-forward').checked);
+    trainedWorld=await trainWorldController(trainedWorldContext,generations,population,crashWeight,()=>cancelTraining,line=>{logSensor(line);$('world-training-status').textContent=line;},(sessions,generation,seed)=>{paintWorld(sessions[0],sessions);renderGhostScores('world-ghost-scores',sessions.map((s,i)=>s.discovery?`${i+1} · ${s.won?'FOUND / WIN':s.done?(s.found?'seen, no arrival':'not found'):'searching'} · first sight ${s.discovery.firstSightTick===null?'—':(s.discovery.firstSightTick/30).toFixed(2)+' s'} · ${(s.episode.tick/30).toFixed(1)} s · ${s.episode.sim.status.collisions} contacts · pain ${s.episode.sim.status.pain.toFixed(2)} · ${s.discovery.visualViews} views`:`${i+1} · ${s.episode.sim.status.goals>=s.episode.sim.goalLimit?'ARRIVED':s.done?'stopped':'driving'} · targets ${s.episode.sim.status.goals}/${s.episode.sim.goalLimit} · ${(s.episode.tick/30).toFixed(1)} s · ${s.episode.sim.status.collisions} contacts · pain ${s.episode.sim.status.pain.toFixed(2)} · reverse ${(s.reverseDistance*CM_PER_PIXEL/100).toFixed(2)} m`),generation,seed);},Number($<HTMLSelectElement>('world-train-speed').value),$<HTMLInputElement>('world-reverse-coach').checked,$<HTMLInputElement>('world-retain-forward').checked);
     if(trainedWorld){
       const v=trainedWorld.validation,search=trainedWorld.task==='explore';
       const parentWins=v.parentTrials.filter(t=>t.won).length,childWins=v.offspringTrials.filter(t=>t.won).length;
@@ -631,5 +634,5 @@ function logWorldPing(session:WorldSession):void{
   const first=session.discovery?.firstSightTick;if(first!==null&&first!==undefined&&first!==loggedWorldSight){loggedWorldSight=first;logSensor(`room discovery firstSight=${(first/30).toFixed(3)}s source=processed-RGB confirmed=2-frames compass=off objective=${session.settings.searchWin??'sight'}`);}
   const unit=session.episode.sonarUnit;if(!unit||loggedWorldPing===unit.count)return;
   loggedWorldPing=unit.count;const r=unit.reading;
-  logSensor(`room t=${(session.episode.tick/30).toFixed(3)}s ping=${unit.count} ${r.echo?`range=${(r.range*CM_PER_PIXEL).toFixed(2)}cm strength=${r.strength.toFixed(3)}`:'NO_ECHO'} speed=${session.episode.sim.kart.speed.toFixed(2)} contacts=${session.episode.sim.status.collisions}`);
+  logSensor(`room t=${(session.episode.tick/30).toFixed(3)}s ping=${unit.count} ${r.echo?`range=${(r.range*CM_PER_PIXEL).toFixed(2)}cm strength=${r.strength.toFixed(3)}`:'NO_ECHO'} speed=${session.episode.sim.kart.speed.toFixed(2)} contacts=${session.episode.sim.status.collisions} pain=${session.episode.sim.status.pain.toFixed(3)}`);
 }

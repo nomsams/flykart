@@ -3,21 +3,21 @@ import { worldExpert } from './worldDomain';
 import { runCohort } from '../cohort';
 import { WorldSession, WorldSettings } from '../ui/sessions';
 
-export type GoalResult={arrived:boolean;ticks:number;collisions:number;progress:number;goals?:number;goalTarget?:number;reverseDistance:number;crashed:boolean;found?:boolean;firstSightTick?:number|null;visualViews?:number;objective?:"sight"|"reach";won?:boolean};
+export type GoalResult={arrived:boolean;ticks:number;collisions:number;pain?:number;progress:number;goals?:number;goalTarget?:number;reverseDistance:number;crashed:boolean;found?:boolean;firstSightTick?:number|null;visualViews?:number;objective?:"sight"|"reach";won?:boolean};
 /** Arrival dominates partial progress. No time bonus for dying early. */
 export function goalScore(r:GoalResult,limit:number,crashWeight:number):number{
   const weight=Math.max(0,Math.min(1,crashWeight));
-  const safety=1/(1+Math.max(0,r.collisions));
+  const safety=1/(1+Math.max(0,r.pain??r.collisions));
   if(r.arrived&&!r.crashed)return 1000+1000*((1-weight)*Math.max(0,1-r.ticks/limit)+weight*safety);
   return Math.max(0,Math.min(1,r.progress))*400-400*weight*(1-safety)-(r.crashed?200:0);
 }
 /** Successful searches outrank every failure; finding sooner determines the winner. No hidden-distance bonus. */
 export function discoveryScore(r:GoalResult,limit:number):number {
-  return r.won&&!r.crashed?10000+1000*Math.max(0,1-(r.objective==='reach'?r.ticks:r.firstSightTick??r.ticks)/limit)-Math.min(8,r.collisions)*.001:Math.min(64,r.visualViews??0)*.02-(r.crashed?2:0);
+  return r.won&&!r.crashed?10000+1000*Math.max(0,1-(r.objective==='reach'?r.ticks:r.firstSightTick??r.ticks)/limit)-Math.min(8,r.pain??r.collisions)*.001:Math.min(64,r.visualViews??0)*.02-(r.crashed?2:0);
 }
 export function goalResult(s:WorldSession,initialDistance:number):GoalResult{
   const r=s.episode.sim.status;
-  return{...(s.discovery?{found:s.found,firstSightTick:s.discovery.firstSightTick,visualViews:s.discovery.visualViews,objective:s.settings.searchWin??'sight',won:s.won}:{}),arrived:r.goals>=s.episode.sim.goalLimit&&!r.crashed,ticks:r.ticks,collisions:r.collisions,goals:r.goals,goalTarget:s.episode.sim.goalLimit,progress:s.discovery?0:(r.goals+Math.max(0,1-r.distanceToGoal/Math.max(1,initialDistance)))/s.episode.sim.goalLimit,reverseDistance:s.reverseDistance,crashed:r.crashed};
+  return{...(s.discovery?{found:s.found,firstSightTick:s.discovery.firstSightTick,visualViews:s.discovery.visualViews,objective:s.settings.searchWin??'sight',won:s.won}:{}),arrived:r.goals>=s.episode.sim.goalLimit&&!r.crashed,ticks:r.ticks,collisions:r.collisions,pain:r.pain,goals:r.goals,goalTarget:s.episode.sim.goalLimit,progress:s.discovery?0:(r.goals+Math.max(0,1-r.distanceToGoal/Math.max(1,initialDistance)))/s.episode.sim.goalLimit,reverseDistance:s.reverseDistance,crashed:r.crashed};
 }
 export type RetentionResult={parent:number;offspring:number;parentTrials:GoalResult[];offspringTrials:GoalResult[];passed:boolean};
 /** Preserve arrival count; allow at most 20 points per trial of score regression. */
@@ -58,7 +58,7 @@ export async function trainWorldController(settings:WorldSettings,generations:nu
   const retention=check?{parent:check.scores[0],offspring:check.scores[1],parentTrials:check.trials[0],offspringTrials:check.trials[1],passed:retainsForward(check.trials[0],check.trials[1],limit,crashWeight)}:undefined;
   if(retention)log(`Held-out forward retention ${retention.passed?'PASS':'FAIL · adoption blocked'} · parent ${retention.parent.toFixed(2)}, offspring ${retention.offspring.toFixed(2)}.`);
   log(`Held-out room scores · parent ${validation.scores[0].toFixed(2)} · offspring ${validation.scores[1].toFixed(2)}. ${settings.world?'Same imported layout, new headings/light; geometry generalization not tested.':'Two unseen seeded layouts/headings.'}`);
-  return{retention,coachFrames:primed?.frames??0,brain:parent.toJSON(),score,generation:generations,crashWeight,task:settings.task??'forage',trainingSeeds:seeds,validation:{parent:validation.scores[0],offspring:validation.scores[1],seeds:heldOut,parentTrials:validation.trials[0],offspringTrials:validation.trials[1]},trials:lastTrials,scoreDefinition:settings.task==='explore'?'Search success: 10000 + 1000 × remaining time fraction at first confirmed visual sighting (or arrival after sighting), minus 0.001 × contacts as a tie-break. Failure: at most 1.28 points for distinct coarse RGB views, minus 2 on fatal crash. No distance/progress reward, goal compass, pheromone or hidden target position in inputs. Two consecutive fresh processed-camera frames confirm a pink colour component; not a learned target head. Neural mission slots: pixel bearing / pi and apparent size, zero when unseen. Fresh independent memory; common training seeds and held-out trials.':'Arrival: 1000 + 1000 × ((1 − crashWeight) × remaining time fraction + crashWeight / (1 + contacts)). Failure: partial progress × 400 − contact cost − 200 if crashed. Fixed target set (collect both in two-dot mode); fresh visual memory per trial; explicit goal compass; no reward or collision labels in neural inputs.'};
+  return{retention,coachFrames:primed?.frames??0,brain:parent.toJSON(),score,generation:generations,crashWeight,task:settings.task??'forage',trainingSeeds:seeds,validation:{parent:validation.scores[0],offspring:validation.scores[1],seeds:heldOut,parentTrials:validation.trials[0],offspringTrials:validation.trials[1]},trials:lastTrials,scoreDefinition:settings.task==='explore'?'Search success: 10000 + 1000 × remaining time fraction at first confirmed visual sighting (or arrival after sighting), minus 0.001 × impact pain as a tie-break. Failure: at most 1.28 points for distinct coarse RGB views, minus 2 on fatal crash. No distance/progress reward, goal compass, pheromone or hidden target position in inputs. Two consecutive fresh processed-camera frames confirm a pink colour component; not a learned target head. Neural mission slots: pixel bearing / pi and apparent size, zero when unseen. Fresh independent memory; common training seeds and held-out trials.':'Arrival: 1000 + 1000 × ((1 − crashWeight) × remaining time fraction + crashWeight / (1 + impact pain)). Failure: partial progress × 400 − contact cost − 200 if crashed. Fixed target set (collect both in two-dot mode); fresh visual memory per trial; explicit goal compass; no reward or collision labels in neural inputs.'};
 }
 
 /** Motor-only imitation. The coach sees exactly the same estimated inputs; no reward labels enter the learner. */

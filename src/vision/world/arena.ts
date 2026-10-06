@@ -1,4 +1,5 @@
 import { WorldDef, KART_RADIUS, surfaceAt } from './world';
+import { OBJECT_KINDS, blocked, furniture, clearance } from './objects';
 
 export type ArenaFile={format:'flykart-world';version:1;world:WorldDef;start:{x:number;y:number;heading:number}};
 export function validateArena(raw:unknown):ArenaFile{
@@ -8,12 +9,12 @@ export function validateArena(raw:unknown):ArenaFile{
   const w=a.world;
   if(!finite(w.seed)||!finite(w.half)||w.half<100||w.half>1000||!Array.isArray(w.obstacles)||w.obstacles.length>500||!Array.isArray(w.patches)||w.patches.length>500)throw Error('Invalid world size or item count.');
   const circle=(o:{x:number;y:number;radius:number})=>finite(o.x)&&finite(o.y)&&finite(o.radius)&&o.radius>0&&o.radius<=w.half&&Math.abs(o.x)<=w.half&&Math.abs(o.y)<=w.half;
-  if(w.obstacles.some(o=>!o||!circle(o)||!['tree','rock'].includes(o.kind)||!finite(o.height)||o.height<=0||o.height>200||!finite(o.tone))||w.patches.some(p=>!p||!circle(p)||!['water','mud','sand'].includes(p.kind)))throw Error('Invalid world objects.');
+  if(w.obstacles.some(o=>!o||!circle(o)||!OBJECT_KINDS.includes(o.kind)||!finite(o.height)||o.height<=0||o.height>200||!finite(o.tone)||(o.clearance!==undefined&&(!furniture(o)||!finite(o.clearance)||o.clearance<0||o.clearance>=o.height))||(furniture(o)&&(clearance(o)>=o.height||o.radius<10)))||w.patches.some(p=>!p||!circle(p)||!['water','mud','sand'].includes(p.kind)))throw Error('Invalid world objects.');
   if(!finite(a.start.x)||!finite(a.start.y)||!finite(a.start.heading)||!clearPoint(w,a.start.x,a.start.y))throw Error('Start pose must be on clear ground inside the fence.');
   return structuredClone(a);
 }
 export function clearPoint(w:WorldDef,x:number,y:number,padding=KART_RADIUS+2):boolean{
-  return Math.abs(x)<w.half-padding&&Math.abs(y)<w.half-padding&&surfaceAt(w,x,y)!=='water'&&!w.obstacles.some(o=>Math.hypot(o.x-x,o.y-y)<o.radius+padding);
+  return Math.abs(x)<w.half-padding&&Math.abs(y)<w.half-padding&&surfaceAt(w,x,y)!=='water'&&!blocked(w,x,y,padding);
 }
 /** Find a clear, short corridor behind the start; never delete obstacles. */
 export function reverseGoal(w:WorldDef,start:{x:number;y:number;heading:number},distance=100):{x:number;y:number}{

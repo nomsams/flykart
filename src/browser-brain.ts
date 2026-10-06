@@ -1,4 +1,6 @@
 import { importFile } from './vision/format';
+import projectRacer from '../assets/flykart-brain-racer.json?raw';
+const projectGeneration: number = JSON.parse(projectRacer).generation;
 export type BrainStage = 'racer' | 'vision' | 'robot';
 type SavedBrain = { stage: BrainStage; savedAt: string; text: string };
 const STORE = 'brains', PREFIX = 'flykart.shared-brain.';
@@ -48,10 +50,19 @@ export async function loadBrowserBrain(stage?: BrainStage): Promise<SavedBrain> 
   if (!record) throw new Error('No browser brain saved here yet. Save one on Racer, Vision or 3D first, using the same browser and site address.');
   return record;
 }
-export function mountBrainShelf(host: HTMLElement, stage: BrainStage, exportText: () => string, importText: (text: string, name: string) => void | Promise<void>, busy: () => boolean, existing?: {save: HTMLButtonElement; load: HTMLButtonElement}): void {
+export function mountBrainShelf(host: HTMLElement, stage: BrainStage, exportText: () => string, importText: (text: string, name: string) => void | Promise<void>, busy: () => boolean, existing?: {save: HTMLButtonElement; load: HTMLButtonElement}, importProject = importText): void {
   const shelf = document.createElement('details'); shelf.className = 'browser-brain-shelf'; shelf.open = true;
   shelf.innerHTML = `<summary>Browser brains · Racer → Vision → 3D</summary><div class="toolbar row"><label>Load from<select aria-label="Browser brain source"><option value="">Most recent save</option><option value="racer">Racer v1</option><option value="vision">Vision v2</option><option value="robot">3D habitat</option></select></label><button type="button" data-brain-save>Save browser brain</button><button type="button" data-brain-load>Load browser brain</button></div><small>One checkpoint per stage, including rewards and eyes. Same browser + site address. Export JSON for other devices. <a href="./index.html">Racer</a> → <a href="./vision.html">Vision</a> → <a href="./robot.html">3D</a></small><p role="status" class="note"></p>`;
   host.append(shelf);
+  const project = document.createElement('div');
+  project.className = 'toolbar row';
+  const loadProject = document.createElement('button');
+  loadProject.type = 'button'; loadProject.id = 'load-racer-checkpoint';
+  loadProject.textContent = `Load project racer · generation ${projectGeneration}`;
+  loadProject.title = 'Load assets/flykart-brain-racer.json with its exact weights, rewards and race setup. Available again after any import.';
+  const description = document.createElement('small');
+  description.textContent = 'assets/flykart-brain-racer.json · your trained Racer v1 checkpoint';
+  project.append(loadProject, description); shelf.querySelector('summary')!.after(project);
   if (existing) {
     host.querySelector(':scope > .toolbar')?.after(shelf);
     for (const [key, button] of Object.entries(existing)) { const placeholder=shelf.querySelector(`[data-brain-${key}]`)!;button.textContent=`${key === 'save' ? 'Save' : 'Load'} browser brain`;button.setAttribute(`data-brain-${key}`,'');placeholder.replaceWith(button); }
@@ -63,6 +74,10 @@ export function mountBrainShelf(host: HTMLElement, stage: BrainStage, exportText
     try { status.textContent = await action(); } catch(e) { status.textContent = (e as Error).message; }
     finally { buttons.forEach(b => b.disabled = false); }
   };
+  loadProject.onclick = () => void operate(async () => {
+    await importProject(projectRacer, 'flykart-brain-racer.json');
+    return `Loaded assets/flykart-brain-racer.json · generation ${projectGeneration}. Exact racer checkpoint retained.${stage === 'racer' ? ' Press Start race to run it.' : stage === 'vision' ? ' Train camera offspring in Track; use Adapt racer to room for Open world.' : ' Use Tasks → Adapt racer to room before room training.'}`;
+  });
   shelf.querySelector<HTMLButtonElement>('[data-brain-save]')!.onclick = () => void operate(async () => { await saveBrowserBrain(stage, exportText()); return `Saved ${stage} brain here. Open the next page and choose “Load browser brain”. Other stage saves are kept.`; });
   shelf.querySelector<HTMLButtonElement>('[data-brain-load]')!.onclick = () => void operate(async () => { const choice = shelf.querySelector('select')!.value as BrainStage; const record = await loadBrowserBrain(choice || undefined); if(busy())throw new Error('A job started while loading. Stop it, then load the brain again.');await importText(record.text, `${record.stage} browser checkpoint`); return `Loaded ${record.stage} brain${record.savedAt ? ' · ' + new Date(record.savedAt).toLocaleString() : ''}.`; });
 }
