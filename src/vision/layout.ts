@@ -21,7 +21,10 @@ export function organizeVision(repaint:()=>void): void {
   experiments.classList.add('vision-experiments');workspace.after(experiments);
   const training=document.getElementById('camera-train')!.closest('details')!;
   training.id='camera-controller-training';training.classList.add('camera-controller-training');
-  document.getElementById('track-controller')!.closest('section')!.before(training);
+  training.querySelector('summary')!.after(Object.assign(document.createElement('p'),{className:'note',textContent:'Racer camera training · runs on the selected racetrack. For room navigation, use Evolve room ghosts directly below.'}));
+  const stack=document.createElement('div');stack.id='vision-training-stack';
+  stack.append(training,document.getElementById('world-controller-training')!);
+  document.getElementById('track-controller')!.closest('section')!.before(stack);
   const shortcuts=document.createElement('div');shortcuts.className='vision-shortcuts';
   shortcuts.innerHTML='<span>RACE LAB</span><a href="#camera-controller-training">Train with camera</a><a href="#sensor-log">Sensor console</a><button type="button" id="vision-diagnostics">Show diagnostics</button>';
   track.querySelector('.toolbar')!.after(shortcuts);
@@ -65,4 +68,11 @@ function compactControls():void{
   const storage=document.createElement('div');storage.className='brain-storage-controls';
   storage.append(...Array.from(shelf.querySelectorAll(':scope > .toolbar')));
   shelf.querySelector('summary')!.after(storage);
+}
+
+/** Keep both training modules together above the active domain's brain/exercise controls. */
+export function positionTraining(domain:'track'|'world'):void {
+  const stack=document.getElementById('vision-training-stack');if(!stack)return;
+  const anchor=domain==='track'?document.getElementById('track-controller')!.closest('section')!:document.getElementById('world-training-tools')!;
+  anchor.before(stack);
 }

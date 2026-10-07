@@ -118,4 +118,23 @@ describe('Discovery fitness and portable settings',()=>{
     expect(trained!.task).toBe('explore');expect(trained!.coachFrames).toBe(0);expect(trained!.scoreDefinition).toContain('No distance/progress reward');expect(trained!.trials).toHaveLength(2);expect(trained!.trials.every(t=>t.firstSightTick===null&&t.progress===0)).toBe(true);
     expect(logs.some(l=>l.includes('no compass or pheromone'))).toBe(true);expect(contexts.every(s=>s[0]!==s[1]&&s[0].discovery!==s[1].discovery)).toBe(true);expect(settings.controller).toEqual(original);
   });
+  it('evolves beyond imported saved dots with fair fresh cohorts and bounded failure retries',async()=>{
+    const imported={...settings,goals:[{x:300,y:0},{x:-300,y:0}],maxTicks:1};
+    const original=structuredClone(imported),seen=new Map<string,{x:number;y:number}[]>();
+    const trained=await trainWorldController(imported,4,2,.2,()=>false,()=>{},(sessions,generation,seed)=>{
+      if(sessions[0].episode.tick!==0)return;
+      expect(sessions[0].episode.sim.world).toEqual(field);
+      expect(sessions[0].episode.sim.world).not.toBe(sessions[1].episode.sim.world);
+      const targets=structuredClone(sessions[0].episode.sim.goals);
+      expect(sessions[1].episode.sim.goals).toEqual(targets);
+      expect(targets).toHaveLength(1);expect(imported.goals).not.toContainEqual(targets[0]);
+      seen.set(`${generation}:${seed}`,targets);
+    },0,false,true,undefined,{seed:123,failureRetries:1});
+    const trials=trained!.targetTrials.filter(t=>t.phase==='training');
+    expect(trials.filter(t=>t.retry===0)).toHaveLength(8);
+    expect(new Set(trials.filter(t=>t.retry===0).map(t=>JSON.stringify(t.targets))).size).toBe(8);
+    for(const t of trials){expect(trials.filter(other=>other.seed===t.seed).length).toBeLessThanOrEqual(2);expect(seen.get(`${t.generation}:${t.seed}`)).toEqual(t.targets);}
+    expect(trained!.validation.seeds.every(s=>!trained!.trainingSeeds.includes(s))).toBe(true);
+    expect(imported).toEqual(original);
+  });
 });
