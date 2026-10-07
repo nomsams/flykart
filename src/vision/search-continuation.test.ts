@@ -46,6 +46,31 @@ it('starts a new sight-only search without falsely counting arrival or carrying 
   expect(s.continueSearch()).toBe(true);expect(s.searchesCompleted).toBe(1);expect(s.episode.sim.status.goals).toBe(0);expect(s.won).toBe(false);
 });
 
+it('uses one visual flag from a saved two-dot scene and continues beyond both saved locations',()=>{
+  const saved=[{x:130,y:0},{x:-130,y:0}],s=new WorldSession({...settings,goals:saved,goalCount:2,start:{x:0,y:0,heading:0}});
+  expect(s.episode.sim.goals).toEqual([saved[0]]);expect(s.episode.sim.goalLimit).toBe(1);
+  expect(saved).toHaveLength(2);
+  s.controller.step=()=>({steer:0,throttle:0,brake:0});
+  for(let n=0;n<4&&!s.found;n++)s.step();expect(s.found).toBe(true);
+  s.episode.sim.kart.x=120;s.step();expect(s.won).toBe(true);
+  expect(s.continueSearch()).toBe(true);expect(s.episode.sim.goals).toHaveLength(1);
+  expect(saved).not.toContainEqual(s.episode.sim.goals[0]);expect(s.done).toBe(false);
+});
+
+it('continues ordinary navigation with fresh batches and rerolls random target count',()=>{
+  const s=new WorldSession({...settings,task:'forage',kind:'expert',vision:null,sensorOnly:true,goalPreset:'random',goalCount:'random',maxTicks:1000});
+  const episode=s.episode,counts=new Set<number>(),positions=new Set<string>();
+  for(let round=0;round<20;round++){
+    const sim=s.episode.sim,batch=structuredClone(sim.goals);counts.add(batch.length);
+    for(const g of batch){expect(positions.has(`${g.x},${g.y}`)).toBe(false);positions.add(`${g.x},${g.y}`);}
+    while(!s.done){Object.assign(sim.kart,sim.goals[0],{speed:0});s.step();}
+    expect(s.won).toBe(true);const before=sim.status.goals;
+    expect(s.continueSearch()).toBe(true);expect(s.episode).toBe(episode);expect(s.done).toBe(false);
+    expect(sim.goalLimit).toBe(before+sim.goals.length);expect(s.searchesCompleted).toBe(round+1);
+  }
+  expect(counts.size).toBeGreaterThan(2);expect(positions.size).toBeGreaterThan(30);
+});
+
 it('removes collected flags and rings instead of drawing a stale fallback target',()=>{
   const scene=new WorldScene(field,{...DEFAULT_STYLE});scene.setGoal(100,0);scene.prepare({x:0,y:0,heading:0});
   expect(scene.sprites.filter(s=>s.shape==='flag')).toHaveLength(1);

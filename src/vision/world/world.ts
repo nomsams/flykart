@@ -142,7 +142,9 @@ export class WorldSim {
   readonly goalPreset: GoalPreset;
   readonly goals: GoalPoint[] = [];
   readonly hiddenGoalAngle: number;
-  readonly targetCount:number;
+  private targetBatchCount:number;
+  get targetCount():number { return this.targetBatchCount; }
+  private readonly goalCount:GoalCount|undefined;
   readonly goalRadius:number;
   surface: Surface = "grass";
 
@@ -154,7 +156,8 @@ export class WorldSim {
     if(!Number.isFinite(this.hiddenGoalAngle)||this.hiddenGoalAngle<0||this.hiddenGoalAngle>=Math.PI)throw Error('Invalid hidden goal angle.');
     this.random = mulberry32(seed * 977 + 5);
     const count=validateGoalCount(options.goalCount);
-    this.targetCount=count==='random'?1+Math.floor(this.random()*6):count??(this.goalPreset==='pair'?2:1);
+    this.goalCount=count;
+    this.targetBatchCount=count==='random'?1+Math.floor(this.random()*6):count??(this.goalPreset==='pair'?2:1);
     this.goalTarget=options.goalLimit??(count!==undefined?options.goals?.length??this.targetCount:Infinity);
     this.maxTicks = options.maxTicks ?? 2400;
     this.deadline=this.maxTicks;
@@ -175,11 +178,12 @@ export class WorldSim {
 
   get done(): boolean { return this.status.crashed || this.status.timedOut || Boolean(this.status.stopReason) || this.status.goals>=this.goalLimit; }
 
-  /** Live visual-search continuation; training never calls this method. */
+  /** Live target continuation; training never calls this method. */
   renewSearchTarget():boolean {
     if(this.status.crashed||this.status.timedOut||this.status.stopReason)return false;
     this.goals.forEach(g=>this.rememberGoal(g));
-    this.goalTarget=this.status.goals+1;
+    if(this.goalCount==='random')this.targetBatchCount=1+Math.floor(this.random()*6);
+    this.goalTarget=this.status.goals+this.targetCount;
     if(!this.nextGoal(false)){this.status.stopReason='Search complete; no clear new target fits this preset. Choose nearer dots or a clearer map.';return false;}
     this.deadline=this.status.ticks+this.maxTicks;
     return true;

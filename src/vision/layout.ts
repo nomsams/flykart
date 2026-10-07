@@ -8,7 +8,9 @@ export function organizeVision(repaint:()=>void): void {
     settings.append(panel.querySelector('.scan-tools')!);
     // Keep the scan ahead of its controls and explanation, including on mobile.
     for(const note of Array.from(panel.querySelectorAll<HTMLElement>(':scope > p.note:not([role=status])')))settings.append(note);
-    canvas.after(settings);
+    // Status and enable controls also belong beneath the map, not ahead of it.
+    panel.querySelector('.panel-title')!.after(canvas);
+    canvas.after(document.getElementById(domain+'-scan-status')!,document.getElementById(domain+'-scan-enable')!,settings);
     settings.addEventListener('toggle',()=>{if(settings.open)repaint();});
   }
   const sonar=document.getElementById('sonar-panel')!,camera=document.getElementById('track-eye')!.closest('.view-box')!;

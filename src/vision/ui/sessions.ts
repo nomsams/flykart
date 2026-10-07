@@ -118,16 +118,19 @@ export class WorldSession {
   constructor(readonly settings: WorldSettings) {
     const explore=settings.task==='explore';
     if(explore){settings={...settings,kind:'vision',fade:0,sensorOnly:true};this.settings=settings;if(!settings.vision)throw Error('Exploration requires a world camera network.');}
+    // Saved compass scenes may contain multiple dots. Visual search must retain
+    // just its first saved flag and finish one search before generating another.
+    const goals=explore?settings.goals?.slice(0,1):settings.goals;
     const camera=settings.profile?.worldCamera??WORLD_CAMERA;
     this.discovery=explore?new FlagDiscovery(settings.vision!.spec.width,settings.vision!.spec.height,camera.hfov):null;
     this.controller = SpikingNetwork.fromJSON(settings.controller);
-    this.episode = new WorldEpisode({ seed: settings.seed, density: settings.density, styleStrength: settings.style,cameraNoise:settings.cameraNoise,cameraBrightness:settings.cameraBrightness, camera: WORLD_CAMERA, maxTicks: settings.maxTicks??4200, world:settings.world,start:settings.start,goals:settings.goals,goalCount:explore?1:settings.task==='reverse'?1:settings.goalCount,goalRadius:settings.goalRadius,goalLimit:settings.goals?.length,goalPreset:settings.task==='reverse'?'near':explore&&settings.goalPreset==='pair'?'random':settings.goalPreset,hiddenGoalAngle:explore?Math.min(Math.PI-.01,camera.hfov/2+.25):undefined, scanSonar:settings.scanSonar??HC_SR04, profile: settings.profile });
+    this.episode = new WorldEpisode({ seed: settings.seed, density: settings.density, styleStrength: settings.style,cameraNoise:settings.cameraNoise,cameraBrightness:settings.cameraBrightness, camera: WORLD_CAMERA, maxTicks: settings.maxTicks??4200, world:settings.world,start:settings.start,goals,goalCount:explore?1:settings.task==='reverse'?1:settings.goalCount,goalRadius:settings.goalRadius,goalLimit:goals?.length,goalPreset:settings.task==='reverse'?'near':explore&&settings.goalPreset==='pair'?'random':settings.goalPreset,hiddenGoalAngle:explore?Math.min(Math.PI-.01,camera.hfov/2+.25):undefined, scanSonar:settings.scanSonar??HC_SR04, profile: settings.profile });
     this.initialPose={x:this.episode.sim.kart.x,y:this.episode.sim.kart.y,heading:this.episode.sim.kart.heading};
-    if(settings.task==='reverse'||settings.sensorOnly){
-      let goal=settings.goals?.[0]??(settings.task==='reverse'?reverseGoal(this.episode.sim.world,this.episode.sim.kart):{x:this.episode.sim.status.goalX,y:this.episode.sim.status.goalY});
+    if(settings.task==='reverse'||settings.task==='forage'||settings.sensorOnly){
+      let goal=goals?.[0]??(settings.task==='reverse'?reverseGoal(this.episode.sim.world,this.episode.sim.kart):{x:this.episode.sim.status.goalX,y:this.episode.sim.status.goalY});
       if(settings.practiceForward){try{goal=reverseGoal(this.episode.sim.world,{...this.episode.sim.kart,heading:this.episode.sim.kart.heading+Math.PI});}catch{/* A blocked front corridor retains the ordinary seeded navigation goal. */}}
       // Rebuild a fixed-goal episode so arrival ends the trial rather than moving the flag.
-      this.episode=new WorldEpisode({...this.episode.options,goal,goals:settings.practiceForward?[goal]:settings.goals??(settings.task==='reverse'?[goal]:this.episode.sim.goals),goalLimit:settings.practiceForward?1:settings.goals?.length??(settings.goalCount!==undefined?this.episode.sim.targetCount:(!explore&&settings.task!=='reverse'&&!settings.practiceForward&&settings.goalPreset==='pair'?2:1))});
+      this.episode=new WorldEpisode({...this.episode.options,goal,goals:settings.practiceForward?[goal]:goals??(settings.task==='reverse'?[goal]:this.episode.sim.goals),goalLimit:explore||settings.practiceForward?1:goals?.length??(settings.goalCount!==undefined?this.episode.sim.targetCount:(!explore&&settings.task!=='reverse'&&!settings.practiceForward&&settings.goalPreset==='pair'?2:1))});
     }
     this.memory=settings.roomMemory??(settings.memorySettings?new RoomMemory(settings.memorySettings):null);
     this.trail.push({x:this.episode.sim.kart.x,y:this.episode.sim.kart.y});
@@ -149,10 +152,10 @@ export class WorldSession {
 
   /** Keep the robot, neural state, memory and sensor histories; reset only target tracking. */
   continueSearch():boolean {
-    if(!this.discovery||!this.won||!this.episode.sim.renewSearchTarget())return false;
+    if(this.settings.task==='reverse'||!this.won||!this.episode.sim.renewSearchTarget())return false;
     this.searchesCompleted++;
     this.searchStartTick=this.episode.tick;
-    this.discovery.reset();
+    this.discovery?.reset();
     return true;
   }
 

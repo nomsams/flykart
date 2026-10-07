@@ -18,6 +18,9 @@ const scanOrder=async domain=>{
   assert.equal(await page.locator('#'+domain+'-scan-settings').evaluate(e=>e.open),false);
   const map=await page.locator('#'+domain+'-sonar-map').boundingBox(),settings=await page.locator('#'+domain+'-scan-settings summary').boundingBox();
   assert.ok(map.height>80);assert.ok(map.y+map.height<=settings.y+1,'Scan must precede its settings');
+  const status=await page.locator('#'+domain+'-scan-status').boundingBox();
+  assert.ok(map.y+map.height<=status.y+1,'Scan must also precede status and enable controls');
+  assert.equal(await page.locator('#'+domain+'-sonar-map').evaluate(c=>c.previousElementSibling.classList.contains('panel-title')),true);
   await page.locator('#'+domain+'-scan-settings summary').click();
   const before=await page.locator('#'+domain+'-sonar-map').evaluate(c=>c.toDataURL());
   await page.locator('#'+domain+'-scan-view').selectOption('top');

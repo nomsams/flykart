@@ -287,7 +287,8 @@ function syncWorldTaskUi():void {
   $<HTMLSelectElement>('world-driver').disabled=explore;$<HTMLInputElement>('world-fade').disabled=explore;
   $<HTMLInputElement>('world-crash-weight').disabled=false;$<HTMLInputElement>('world-reverse-coach').disabled=explore;
   $('world-search-win-row').hidden=!explore;
-  $('world-repeat-search-row').hidden=!explore;
+  $('world-repeat-search-row').hidden=$<HTMLSelectElement>('world-task').value==='reverse';
+  $('world-repeat-search-label').textContent=explore?'Keep exploring · new flag after success':'Keep navigating · new dots after collection';
   $('world-require-arrival-row').hidden=!explore;$<HTMLInputElement>('world-require-arrival').checked=$<HTMLSelectElement>('world-search-win').value==='reach';
   $<HTMLSelectElement>('world-goal-count').disabled=explore||$<HTMLSelectElement>('world-task').value==='reverse';
   $<HTMLSelectElement>('world-goal-preset').querySelector<HTMLOptionElement>('option[value=pair]')!.textContent=explore?'One random hidden flag · search':'Two dots · collect both, either order';
@@ -321,6 +322,7 @@ function buildWorld(): void {
 function paintWorld(preview?:WorldSession,ghosts:WorldSession[]=[]): void {
   const session = preview??state.world; if (!session) return;
   const episode = session.episode; const sim = episode.sim; const driver = session.driver;
+  $('world-caption').textContent=`world ${session.settings.seed} · target round ${session.searchesCompleted+1} · ${sim.goals.length} active ${sim.goals.length===1?'flag':'flags'}`;
   const truth = episode.truth(session.lastTruth); const perception = driver?.perception ?? null;
   const resolution=session.settings.resolution??'native';
   $('world-camera-size').textContent=`${resolution==='native'?episode.camera.width+'×'+episode.camera.height:resolution.replace('x','×')} RGB · ${Math.round(episode.camera.hfov*180/Math.PI)}° FOV · 15 Hz`;
@@ -378,6 +380,17 @@ function mountRuntimeControls():void {
 
 /* ------------------------------- main loop ------------------------------- */
 
+function continueWorldTargets():boolean {
+  const completed=state.world;
+  if(!completed?.done||!completed.won||completed.settings.task==='reverse'||!$<HTMLInputElement>('world-repeat-search').checked)return false;
+  const round=completed.searchesCompleted+1;
+  if(!completed.continueSearch())return false;
+  loggedWorldSight=null;
+  logSensor(`${completed.discovery?'Search':'Target round'} ${round} complete · objective=${completed.discovery?completed.settings.searchWin??'sight':'reach'} · tick=${completed.episode.tick}; ${completed.episode.sim.goals.length} fresh targets generated`);
+  setStatus('world',`${round} rounds completed · new targets generated`);
+  return true;
+}
+
 function frame(now: number): void {
   const dt = Math.min(0.1, (now - (state.last || now)) / 1000); state.last = now;
   try {
@@ -394,7 +407,7 @@ function frame(now: number): void {
     state.accumulator.world = Math.min(120,state.accumulator.world + dt * 30 * speed);
     let steps = Math.min(40, Math.floor(state.accumulator.world));  const started = performance.now();
     while (steps-- > 0 && !state.world.done) { state.world.step();logWorldPing(state.world); state.accumulator.world -= 1; if (performance.now() - started > (runtimeBudget.mode==='full'?22:runtimeBudget.cohort.workMs)) break; }
-    if(state.world.discovery&&state.world.done&&state.world.won&&$<HTMLInputElement>('world-repeat-search').checked){const completed=state.world;logSensor(`Search ${completed.searchesCompleted+1} complete · objective=${completed.settings.searchWin??'sight'} · tick=${completed.episode.tick}; next random target requested`);if(completed.continueSearch()){loggedWorldSight=null;setStatus('world',`${completed.searchesCompleted} searches completed · new target generated`);}}
+    continueWorldTargets();
     if (state.world.done) { state.running.world = false; $("world-run").textContent = "Start"; setStatus("world", state.world.episode.sim.status.stopReason ?? (state.world.episode.sim.status.crashed ? `stopped: ${state.world.episode.sim.status.crashReason}` : state.world.discovery?`${state.world.won?'Search won':'Search ended without a win'} · first sight ${state.world.discovery.firstSightTick===null?'not found':(state.world.discovery.firstSightTick/30).toFixed(2)+' s'} · ${(state.world.episode.tick/30).toFixed(1)} s`:state.world.episode.sim.status.goals>=state.world.episode.sim.goalLimit?`Goal reached · ${(state.world.episode.tick/30).toFixed(1)} s`:`time up · ${state.world.episode.sim.status.goals} goals`)); }
     if(runtimeBudget.shouldPaint(now)||(state.world.done&&runtimeBudget.mode!=='headless'))paintWorld();
   }
@@ -518,7 +531,7 @@ async function boot(): Promise<void> {
   $("export-vision-btn").addEventListener("click", exportVision);
   $("export-v1-btn").addEventListener("click", () => download("flykart-brain-for-v1.json", exportAsFlyKartV1(selectedCheckpoint())));
 
-  $("world-run").addEventListener("click", () => { if(cameraTraining)return; if (!state.world) buildWorld(); if (state.world?.done) buildWorld(); state.running.world = !state.running.world; $("world-run").textContent = state.running.world ? "Pause" : "Resume"; setStatus("world", state.running.world ? "driving" : "paused"); });
+  $("world-run").addEventListener("click", () => { if(cameraTraining)return; if (!state.world) buildWorld(); if (state.world?.done&&!continueWorldTargets()) buildWorld(); state.running.world = !state.running.world; $("world-run").textContent = state.running.world ? "Pause" : "Resume"; setStatus("world", state.running.world ? "driving" : "paused"); });
   $("world-new").addEventListener("click", () => {state.arena=null;$<HTMLSelectElement>("world-map-preset").value="procedural"; $<HTMLInputElement>("world-seed").value = String(1 + Math.floor(Math.random() * 99999)); buildWorld(); setStatus("world", "new world"); });
   for (const id of ["world-driver", "world-seed", "world-density", "world-style"]) $(id).addEventListener("change", () => { buildWorld(); setStatus("world", "ready"); });
   $("world-fade").addEventListener("input", () => { if (state.world?.driver) state.world.driver.fusion.fade = Number($<HTMLInputElement>("world-fade").value); });
