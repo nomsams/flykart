@@ -9,7 +9,7 @@ const load=async(brain,name='brain.json')=>{await page.locator('#import-file').s
 const idle=()=>page.locator('#import-file-dialog').waitFor({state:'hidden'});
 const change=async(id,value)=>page.locator('#'+id).evaluate((el,v)=>{el.value=String(v);el.dispatchEvent(new Event('change',{bubbles:true}));},value);
 const reveal=async(id)=>page.locator('#'+id).evaluate(el=>{for(let p=el.parentElement;p;p=p.parentElement)if(p.tagName==='DETAILS')p.open=true;});
-const save=async()=>{await page.locator('[data-brain-save]').click();await page.locator('.browser-brain-shelf [role=status]').filter({hasText:'Saved'}).waitFor();return page.evaluate(async()=>new Promise((resolve,reject)=>{const r=indexedDB.open('flykart-browser-brains',1);r.onerror=()=>reject(r.error);r.onsuccess=()=>{const db=r.result,q=db.transaction('brains').objectStore('brains').get('vision');q.onsuccess=()=>{db.close();resolve(JSON.parse(q.result.text));};};}));};
+const save=async()=>{const shelf=page.locator('.browser-brain-shelf');if(!await shelf.evaluate(e=>e.open))await shelf.locator('summary').first().click();await page.locator('[data-brain-save]').click();await page.locator('.browser-brain-shelf [role=status]').filter({hasText:'Saved'}).waitFor();return page.evaluate(async()=>new Promise((resolve,reject)=>{const r=indexedDB.open('flykart-browser-brains',1);r.onerror=()=>reject(r.error);r.onsuccess=()=>{const db=r.result,q=db.transaction('brains').objectStore('brains').get('vision');q.onsuccess=()=>{db.close();resolve(JSON.parse(q.result.text));};};}));};
 try{
   const racer=JSON.parse(await readFile('public/sample-brain.json','utf8'));racer.generation=7;
   await page.goto(base+'/vision.html');await page.locator('#boot-screen').waitFor({state:'hidden',timeout:60000});

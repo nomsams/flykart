@@ -121,7 +121,14 @@ let trainedWorld:WorldTrainingResult|null=null,trainedWorldContext:WorldSettings
 let trainedWorldExperiment:RacingSettings|null=null,worldParentGeneration=0;
 let trainedWorldRecipe:TrainingRecipe|undefined,trainedWorldProvenance:unknown[]=[];
 const sensorLog:string[]=[];let loggedPing=-1,loggedWorldPing=-1,loggedWorldSight:number|null=null;
-function logSensor(line:string):void{sensorLog.push(line);while(sensorLog.length>500)sensorLog.shift();for(const id of ["sensor-log","world-sensor-log"]){const box=document.getElementById(id) as HTMLTextAreaElement|null;if(box){box.value=sensorLog.join("\n");box.scrollTop=box.scrollHeight;}}}
+function syncSensorLogs():void{for(const id of ["sensor-log","world-sensor-log"]){const box=document.getElementById(id) as HTMLTextAreaElement|null;if(box){box.value=sensorLog.join("\n");box.scrollTop=box.scrollHeight;}}}
+function logSensor(line:string):void{sensorLog.push(line);while(sensorLog.length>500)sensorLog.shift();syncSensorLogs();}
+function clearSensorLogs():void{sensorLog.length=0;syncSensorLogs();for(const id of ['copy-sensor-log','world-copy-logs'])$(id).textContent='Copy logs';}
+async function copySensorLogs(domain:'track'|'world'):Promise<void>{
+  const button=$(domain==='track'?'copy-sensor-log':'world-copy-logs'),box=$<HTMLTextAreaElement>(domain==='track'?'sensor-log':'world-sensor-log');
+  try{if(!navigator.clipboard?.writeText)throw Error('Clipboard unavailable');await navigator.clipboard.writeText(sensorLog.join('\n'));button.textContent='Copied';}
+  catch{for(let p=box.parentElement;p;p=p.parentElement)if(p instanceof HTMLDetailsElement)p.open=true;box.focus();box.select();button.textContent='Select logs · Ctrl+C';}
+}
 const robotAssets = () => state.assets?.robot ?? null;
 const baseProfile = ():SensorProfile => state.profile === "robot" ? ROBOT_PROFILE : KART_PROFILE;
 const sensorProfile = (): SensorProfile => experiment ? calibratedProfile(baseProfile(),experiment.applied()) : baseProfile();
@@ -315,6 +322,9 @@ function paintWorld(preview?:WorldSession,ghosts:WorldSession[]=[]): void {
   const session = preview??state.world; if (!session) return;
   const episode = session.episode; const sim = episode.sim; const driver = session.driver;
   const truth = episode.truth(session.lastTruth); const perception = driver?.perception ?? null;
+  const resolution=session.settings.resolution??'native';
+  $('world-camera-size').textContent=`${resolution==='native'?episode.camera.width+'×'+episode.camera.height:resolution.replace('x','×')} RGB · ${Math.round(episode.camera.hfov*180/Math.PI)}° FOV · 15 Hz`;
+  $('world-estimates-note').textContent=`Rows compare camera clearance estimates with diagnostic truth across nine slices of the current field of view. ${session.discovery?'Visual search gets target bearing and apparent size from processed RGB; unseen targets give zero cues. No goal compass or true target range.':'The goal compass supplies direction and distance, including while the flag is hidden.'} Body feedback supplies speed and previous commands; enabled physical sonar supplies its echo. The diagnostic truth and scan map do not enter camera-only neural inputs.`;
   updateStallStatus(session);
   const reading = episode.scanSonarUnit?.reading??null;
   const spec=episode.scanSonarUnit?.spec;
@@ -517,8 +527,8 @@ async function boot(): Promise<void> {
   $("how").innerHTML = HOW_IT_WORKS;
   $("evidence").innerHTML = renderEvidence(assets.results, assets.controllerResults, assets.robotResults);
   experiment=mountExperimentPanel(baseProfile,()=>{state.running.track=false;state.running.world=false;$("track-run").textContent="Start";buildTrack();if(state.world)buildWorld();});
-  $("copy-sensor-log").onclick=()=>{void navigator.clipboard.writeText(sensorLog.join("\n")).then(()=>$("copy-sensor-log").textContent="Copied").catch(()=>{($('sensor-log') as HTMLTextAreaElement).select();$("copy-sensor-log").textContent="Select logs · Ctrl+C";});};
-  $("clear-sensor-log").onclick=()=>{sensorLog.length=0;($('sensor-log') as HTMLTextAreaElement).value='';};
+  $("copy-sensor-log").onclick=()=>{void copySensorLogs('track');};
+  $("clear-sensor-log").onclick=clearSensorLogs;
   $("camera-train").onclick=()=>{void runCameraTraining();};$("camera-train-stop").onclick=()=>{cancelTraining=true;$("camera-train-status").textContent='Cancelling after the current tick…';};
   $("camera-train-adopt").onclick=()=>{if(!trainedCamera||!trainedContext||!trainedExperiment)return;state.profile=trainedContext.profile?.id??'kart';$<HTMLSelectElement>('profile').value=state.profile;state.sonarOn=trainedContext.sonarOn!==false;$<HTMLInputElement>('sonar-on').checked=state.sonarOn;experiment.write(trainedExperiment);
     $<HTMLSelectElement>('track-select').value=trainedContext.trackId;if(trainedMapChoice)trackCurriculum?.write(trainedMapChoice.maps,trainedMapChoice.enabled);
@@ -664,7 +674,7 @@ function mountTrainingTools():void{
   $('world-task').addEventListener('change',()=>{if(state.arena)delete state.arena.goals;try{buildWorld();}catch(e){setStatus('world',(e as Error).message);}});
   $('world-memory-count').addEventListener('change',()=>{state.worldMemory=null;buildWorld();});$('world-memory-on').addEventListener('change',()=>buildWorld());$('world-memory-forget').onclick=()=>{state.worldMemory=state.worldMemory?.fresh()??null;buildWorld();};
   $('world-export-brain').onclick=exportVision;
-  $('world-copy-logs').onclick=()=>{void navigator.clipboard.writeText(sensorLog.join('\n')).then(()=>$('world-copy-logs').textContent='Copied').catch(()=>{$<HTMLTextAreaElement>('world-sensor-log').select();$('world-copy-logs').textContent='Select logs · Ctrl+C';});};$('world-clear-logs').onclick=()=>{sensorLog.length=0;logSensor('Room console cleared.');};
+  $('world-copy-logs').onclick=()=>{void copySensorLogs('world');};$('world-clear-logs').onclick=clearSensorLogs;
   $('world-trail-visible').addEventListener('change',()=>paintWorld());$('world-trail-clear').onclick=()=>{if(state.world)state.world.trail.splice(0,state.world.trail.length,{x:state.world.episode.sim.kart.x,y:state.world.episode.sim.kart.y});paintWorld();};
   $('world-map-export').onclick=()=>{if(!state.world)return;download('flykart-open-world.json',JSON.stringify(savedScene(),null,2));};
   attachJsonImport($<HTMLInputElement>('world-map-file'),async text=>{const arena=validateArena(JSON.parse(text)),task=arena.exercise?.task??'forage',eyes=(state.importedWorld??worldExportSource())?.vision;

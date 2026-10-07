@@ -114,3 +114,55 @@ label > .control-help { flex-basis:100%; }
 .vision-runtime{display:flex;flex-wrap:wrap;align-items:center;gap:10px 18px;padding:10px 14px;border:1px solid #354f60;border-radius:10px;margin-top:12px;background:#12232e}.vision-runtime label{display:flex;align-items:center;gap:8px;margin:0;font-size:12px}.vision-runtime select{width:auto;max-width:100%;min-width:0}.vision-runtime p{flex-basis:100%;margin:0;font-size:11px;color:#a8bfcc}.vision-runtime button{font-size:12px}#world-sonar-map,#track-sonar-map{display:block;width:100%;height:auto;min-height:140px}#world-scan-status,#track-scan-status{padding:8px 10px;border-left:3px solid #66b5cb;background:#132c38}#world-scan-enable,#track-scan-enable{margin:6px 0 10px}#world-scan-enable[hidden],#track-scan-enable[hidden]{display:none}
 
 .world-scan-monitor{margin-top:12px;padding:12px;min-width:0}.world-scan-monitor .panel-title{font-size:12px}.world-scan-monitor .note{font-size:11px;line-height:1.5}.world-scan-monitor .scan-tools{gap:7px}.world-scan-monitor #world-sonar-map{display:block;width:100%;height:auto;min-height:0;border-radius:8px}.world-scan-monitor>button{font-size:11px;max-width:100%}
+
+/* Keep the cameras near the top; explanations remain one disclosure away. */
+body.vision .app-shell{padding-top:12px}
+body.vision .hero{margin-bottom:10px;gap:12px}
+body.vision h1{font-size:clamp(1.65rem,2.6vw,2.25rem)}
+body.vision .eyebrow{margin-bottom:5px;font-size:10px}
+body.vision .lede{margin-top:5px;font-size:12px}
+.vision-control-deck{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.5fr);gap:6px 8px;margin-bottom:8px;align-items:start}
+.vision-control-deck>*{min-width:0;max-width:100%;margin:0!important;box-sizing:border-box}
+.vision-control-deck button,.vision-control-deck select{font-size:11px;padding:6px 8px;min-height:32px}
+.vision-control-deck .profile-bar{grid-column:1;grid-row:1;padding:8px 10px}
+.vision-control-deck .profile-row{gap:6px 10px}
+.vision-control-deck .profile-row label.inline{font-size:11px;gap:6px}
+.vision-control-deck .profile-row .check-row{font-size:11px;margin:0}
+.vision-control-deck .profile-row .check-row small{font-size:10px}
+.vision-control-deck .vision-runtime{grid-column:1;grid-row:2;padding:7px 10px;gap:5px 8px}
+.vision-control-deck .vision-runtime label{font-size:11px;flex:1;min-width:0;flex-wrap:wrap}
+.vision-control-deck .vision-runtime select{flex:1;min-width:120px;width:170px}
+.vision-control-deck .vision-runtime>.compact-control-help{flex-basis:auto}
+.vision-control-deck .settings-history{grid-column:1;grid-row:3;padding:0;gap:5px}
+.vision-control-deck .settings-history small{font-size:10px}
+.vision-control-deck .brain-file-bar{grid-column:2;grid-row:1/4;gap:7px;padding:9px 11px}
+.vision-control-deck .brain-file-bar>div:first-child{flex-basis:100%}
+.vision-control-deck .brain-file-bar .button-row{justify-content:flex-start;align-items:center;gap:5px}
+.vision-control-deck .brain-file-bar .button-row>label{font-size:10px;gap:3px}
+.vision-control-deck .brain-file-bar [data-repository-choice]{width:220px}
+.vision-control-deck .brain-file-bar p{font-size:10px;line-height:1.45}
+.vision-control-deck .browser-brain-shelf{grid-column:1/-1;padding:8px 10px}
+.vision-control-deck .browser-brain-shelf>summary{font-size:11px}
+.vision-control-deck .brain-storage-controls{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:5px 12px;margin-top:5px}
+.vision-control-deck .browser-brain-shelf .toolbar{margin:0;gap:5px;align-items:end;font-size:11px}
+.vision-control-deck .browser-brain-shelf label{gap:4px;flex:1;flex-wrap:nowrap;font-size:10px}
+.vision-control-deck .browser-brain-shelf select{min-width:0;width:auto;max-width:260px;flex:1}
+.vision-control-deck #load-racer-checkpoint{margin:0;min-width:160px}
+.vision-control-deck .browser-brain-shelf .note:empty{display:none}
+.compact-control-help{flex-basis:100%;min-width:0;font-size:10px;color:#9cb5c9}
+.compact-control-help>summary{cursor:pointer;padding:3px 0;color:#9fc9ea}
+.compact-control-help p,.compact-control-help small{margin:4px 0 0!important;font-size:11px!important;line-height:1.45}
+.vision .tabs{margin-bottom:8px;padding:3px;gap:3px}
+.vision .tab{font-size:12px;padding:7px 12px}
+#sonar-panel{margin:10px 0 0;padding:10px;min-width:0}
+#sonar-panel .kicker{font-size:9px;margin-bottom:2px}
+#sonar-panel .panel-title{gap:6px;flex-wrap:wrap}
+#sonar-panel .panel-title strong{font-size:12px}
+#sonar-panel #track-sonar-map{min-height:0}
+.scan-settings{margin:7px 0 0;padding:7px 9px;border:1px solid #33495b;border-radius:8px;background:#111e2a;min-width:0}
+.scan-settings>summary{cursor:pointer;color:#b9d9ff;font-size:11px;font-weight:650}
+.scan-settings .scan-tools{margin:8px 0 0;gap:6px 9px}
+.scan-settings p{font-size:11px;line-height:1.5}
+.scan-settings~canvas{margin-top:8px}
+@media(max-width:920px){.vision-control-deck{grid-template-columns:minmax(0,1fr)}.vision-control-deck .profile-bar,.vision-control-deck .vision-runtime,.vision-control-deck .settings-history,.vision-control-deck .brain-file-bar{grid-column:1;grid-row:auto}.vision-control-deck .brain-storage-controls{grid-template-columns:minmax(0,1fr)}.vision-control-deck .profile-row label.inline{flex-basis:auto}.vision-control-deck .profile-row .check-row{flex-basis:auto}}
+@media(max-width:620px){body.vision .hero{gap:7px}body.vision .hero-links{gap:5px}.vision-control-deck button,.vision-control-deck select{min-height:36px}.vision-control-deck .brain-file-bar .button-row button{flex:1 1 140px}.vision-control-deck .settings-history small{flex-basis:100%}.vision-control-deck .vision-runtime select{min-width:0;max-width:100%}.vision-control-deck .brain-storage-controls label{flex-basis:100%}.vision-control-deck .brain-storage-controls select{max-width:none}.vision-control-deck #load-racer-checkpoint{flex-basis:100%}}

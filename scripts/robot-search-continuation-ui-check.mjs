@@ -53,6 +53,7 @@ try{
   const removed=await page.evaluate(()=>{const s=window.flykartVision.world;s.episode.render();return{goals:s.episode.sim.goals.length,flags:s.episode.scene.sprites.filter(s=>s.shape==='flag').length};});assert.deepEqual(removed,{goals:0,flags:0});
   const saved=await download('brain-export-always');assert.equal(saved.worldSetup.repeatSearch,false);
   // Repository selection is independent of the browser-saved brain source.
+  if(!await page.locator('.browser-brain-shelf').evaluate(e=>e.open))await page.locator('.browser-brain-shelf>summary').click();
   await page.locator('[data-brain-save]').click();await page.locator('.browser-brain-shelf [role=status]').filter({hasText:'Saved vision brain'}).waitFor();
   await page.locator('#repository-brain-select').selectOption('racer');assert.equal(await page.locator('#brain-project-choice').inputValue(),'racer');await page.locator('#brain-load-project').click();await page.waitForFunction(()=>window.flykartVision.imported?.name==='flykart-brain-racer');
   await page.locator('[aria-label="Browser brain source"]').selectOption('vision');await page.locator('[data-brain-load]').click();await page.locator('.browser-brain-shelf [role=status]').filter({hasText:'Loaded vision brain'}).waitFor();

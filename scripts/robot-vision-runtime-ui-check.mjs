@@ -29,6 +29,7 @@ try{
   assert.match(await page.locator('#world-scan-status').innerText(),/Diagnostic HC-SR04.*echoes/);
   assert.equal(await page.evaluate(()=>window.flykartVision.world.episode.sonar()),null);
   assert.equal(await page.evaluate(()=>window.flykartVision.world.episode.proprioception().sonarCloseness),undefined);
+  await page.locator('#world-scan-settings>summary').click();
   const diagnosticMap=await download('world-scan-export');assert.ok(diagnosticMap.cells.some(([,v])=>v<0));assert.ok(diagnosticMap.cells.some(([,v])=>v>0));
   const colours=await page.locator('#world-sonar-map').evaluate(c=>{const data=c.getContext('2d').getImageData(0,0,c.width,c.height).data;let green=0,yellow=0;for(let i=0;i<data.length;i+=4){if(data[i+1]>data[i]*1.2&&data[i+1]>data[i+2]*1.2)green++;if(data[i]>100&&data[i+1]>70&&data[i+2]<data[i+1]*.75)yellow++;}return{green,yellow};});
   assert.ok(colours.green>5&&colours.yellow>5,'Scanned approaches and echoes must produce coloured pixels');

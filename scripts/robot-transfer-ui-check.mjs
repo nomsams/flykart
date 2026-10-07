@@ -6,13 +6,14 @@ const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];
 page.on('pageerror',e=>errors.push(e.message));
 const base=process.env.ROBOT_LAB_URL??'http://127.0.0.1:5173';
 const shelf=()=>page.locator('.browser-brain-shelf');
-const save=async()=>{await shelf().locator('[data-brain-save]').click();await shelf().locator('[role=status]').filter({hasText:'Saved'}).waitFor();};
-const load=async(stage)=>{await shelf().getByLabel('Browser brain source').selectOption(stage);await shelf().locator('[data-brain-load]').click();await shelf().locator('[role=status]').filter({hasText:'Loaded'}).waitFor();};
+const openShelf=async()=>{if(!await shelf().evaluate(e=>e.open))await shelf().locator('summary').first().click();};
+const save=async()=>{await openShelf();await shelf().locator('[data-brain-save]').click();await shelf().locator('[role=status]').filter({hasText:'Saved'}).waitFor();};
+const load=async(stage)=>{await openShelf();await shelf().getByLabel('Browser brain source').selectOption(stage);await shelf().locator('[data-brain-load]').click();await shelf().locator('[role=status]').filter({hasText:'Loaded'}).waitFor();};
 const download=async(id)=>{if(id==='export-fly')await page.locator('[data-tool="train"]').click();const[d]=await Promise.all([page.waitForEvent('download'),page.locator('#'+id).click()]);return JSON.parse(await readFile(await d.path(),'utf8'));};
 try {
   await page.goto(base+'/index.html');await page.locator('#boot-screen').waitFor({state:'hidden',timeout:60000});await page.locator('#stop-btn').click();
   const projectBrain=JSON.parse(await readFile('assets/flykart-brain-racer.json','utf8'));
-  const projectLoad=async()=>{await page.locator('#load-racer-checkpoint').click();await shelf().locator('[role=status]').filter({hasText:'Loaded assets/'}).waitFor();};
+  const projectLoad=async()=>{await openShelf();await page.locator('#load-racer-checkpoint').click();await shelf().locator('[role=status]').filter({hasText:'Loaded assets/'}).waitFor();};
   await projectLoad();assert.equal(await page.locator('#stop-btn').isDisabled(),true);
   const exactRacer=await download('export-btn');assert.deepEqual(exactRacer.network,projectBrain.network);assert.equal(exactRacer.generation,projectBrain.generation);assert.equal(exactRacer.fitness,projectBrain.fitness);
   // Old localStorage checkpoints also work without resaving them first.

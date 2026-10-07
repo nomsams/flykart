@@ -164,7 +164,7 @@
                 <div class="canvas-wrap square"><canvas id="world-map" width="620" height="620" aria-label="Top-down view of the open world"></canvas></div>
               </div>
               <div class="view-box">
-                <div class="view-title"><span>What the kart sees</span><span class="muted">104° field of view</span></div>
+                <div class="view-title"><span>What the kart sees</span><span id="world-camera-size" class="muted">48×24 RGB · 104° FOV · 15 Hz</span></div>
                 <div class="canvas-wrap"><canvas id="world-eye" width="480" height="240" aria-label="The camera image in the open world"></canvas></div>
                 <div class="eye-note">The pink flag is the goal. Furniture legs and fixed objects block movement; high tops leave room underneath. Shoes can move; floor hazards slow the wheels. Blue ponds end the run.</div>
               </div>
@@ -178,7 +178,7 @@
             <section class="panel" aria-labelledby="world-estimates-title">
               <div class="panel-title"><div><span class="kicker">SENSES</span><strong id="world-estimates-title">Nine clearance sectors and the ground ahead</strong></div><span class="muted legend"><i class="dot truth"></i>truth <i class="dot camera"></i>camera ±2σ <i class="dot fused"></i>used</span></div>
               <canvas id="world-estimates" width="760" height="260" aria-label="Clearance estimates in the open world"></canvas>
-              <p class="note">The camera estimates how blocked each 11° slice of the view is. A compass supplies the direction of the goal, and the body supplies speed and its own last commands.</p>
+              <p id="world-estimates-note" class="note">Camera clearance estimates are compared with diagnostic truth. Goal inputs depend on the selected exercise.</p>
             </section>
           </div>
           <aside class="control-panel">

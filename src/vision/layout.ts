@@ -1,5 +1,19 @@
 /** Reorganize the existing controls and canvases; their listeners and state stay intact. */
 export function organizeVision(repaint:()=>void): void {
+  compactControls();
+  for(const domain of ['track','world'] as const){
+    const canvas=document.getElementById(domain+'-sonar-map')!,panel=canvas.closest('section')!;
+    const settings=document.createElement('details');settings.className='scan-settings';settings.id=domain+'-scan-settings';
+    settings.innerHTML='<summary>Scan settings & legend</summary>';
+    settings.append(panel.querySelector('.scan-tools')!);
+    // Keep the scan ahead of its controls and explanation, including on mobile.
+    for(const note of Array.from(panel.querySelectorAll<HTMLElement>(':scope > p.note:not([role=status])')))settings.append(note);
+    canvas.after(settings);
+    settings.addEventListener('toggle',()=>{if(settings.open)repaint();});
+  }
+  const sonar=document.getElementById('sonar-panel')!,camera=document.getElementById('track-eye')!.closest('.view-box')!;
+  const eyeSettings=camera.querySelector('.eye-preview');
+  if(eyeSettings)eyeSettings.before(sonar);else camera.append(sonar);
   const track=document.querySelector<HTMLElement>('#tab-track')!, workspace=track.querySelector('.workspace')!;
   const experiments=document.querySelector<HTMLElement>('#camera-experiment')!;
   experiments.classList.add('vision-experiments');workspace.after(experiments);
@@ -25,4 +39,25 @@ export function organizeVision(repaint:()=>void): void {
     const open=groups.some(d=>!d.open);groups.forEach(d=>d.open=open);
     (event.currentTarget as HTMLButtonElement).textContent=open?'Hide diagnostics':'Show diagnostics';
   });
+}
+
+function compactControls():void{
+  const deck=document.createElement('section');deck.className='vision-control-deck';deck.setAttribute('aria-label','Simulator controls');
+  document.querySelector('.hero')!.after(deck);
+  for(const selector of ['.profile-bar','.vision-runtime','.settings-history','.brain-file-bar','.browser-brain-shelf'])deck.append(document.querySelector(selector)!);
+  const disclosure=(host:Element,label:string,nodes:Element[])=>{
+    const details=document.createElement('details');details.className='compact-control-help';
+    const summary=document.createElement('summary');summary.textContent=label;details.append(summary,...nodes);host.append(details);
+  };
+  const profile=deck.querySelector('.profile-bar')!;
+  disclosure(profile,'Sensor details',[document.getElementById('profile-note')!,...Array.from(profile.querySelectorAll('.control-help-wrap'))]);
+  disclosure(deck.querySelector('.vision-runtime')!,'Performance details',[document.getElementById('vision-runtime-note')!]);
+  const shelf=deck.querySelector('.browser-brain-shelf')!;
+  (shelf as HTMLDetailsElement).open=false;
+  const notes=Array.from(shelf.querySelectorAll(':scope > small,:scope > .toolbar > small'));
+  disclosure(shelf,'About browser & repository checkpoints',notes);
+  // Details has an anonymous content box in some browsers; grid a real child.
+  const storage=document.createElement('div');storage.className='brain-storage-controls';
+  storage.append(...Array.from(shelf.querySelectorAll(':scope > .toolbar')));
+  shelf.querySelector('summary')!.after(storage);
 }
