@@ -19,8 +19,11 @@ export function organizeVision(repaint:()=>void): void {
   const track=document.querySelector<HTMLElement>('#tab-track')!, workspace=track.querySelector('.workspace')!;
   const experiments=document.querySelector<HTMLElement>('#camera-experiment')!;
   experiments.classList.add('vision-experiments');workspace.after(experiments);
+  const training=document.getElementById('camera-train')!.closest('details')!;
+  training.id='camera-controller-training';training.classList.add('camera-controller-training');
+  document.getElementById('track-controller')!.closest('section')!.before(training);
   const shortcuts=document.createElement('div');shortcuts.className='vision-shortcuts';
-  shortcuts.innerHTML='<span>RACE LAB</span><a href="#camera-experiment">Train with camera</a><a href="#sensor-log">Sensor console</a><button type="button" id="vision-diagnostics">Show diagnostics</button>';
+  shortcuts.innerHTML='<span>RACE LAB</span><a href="#camera-controller-training">Train with camera</a><a href="#sensor-log">Sensor console</a><button type="button" id="vision-diagnostics">Show diagnostics</button>';
   track.querySelector('.toolbar')!.after(shortcuts);
   shortcuts.querySelectorAll<HTMLAnchorElement>('a').forEach(link=>link.addEventListener('click',event=>{
     const target=document.querySelector<HTMLElement>(link.getAttribute('href')!);if(!target)return;
