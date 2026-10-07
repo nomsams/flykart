@@ -70,9 +70,9 @@ function compactControls():void{
   shelf.querySelector('summary')!.after(storage);
 }
 
-/** Keep both training modules together above the active domain's brain/exercise controls. */
+/** Keep camera training and ghost evolution above the active domain's Brain or World module. */
 export function positionTraining(domain:'track'|'world'):void {
   const stack=document.getElementById('vision-training-stack');if(!stack)return;
-  const anchor=domain==='track'?document.getElementById('track-controller')!.closest('section')!:document.getElementById('world-training-tools')!;
+  const anchor=domain==='track'?document.getElementById('track-controller')!.closest('section')!:document.getElementById('world-seed')!.closest('section')!;
   anchor.before(stack);
 }
