@@ -5,12 +5,24 @@ const browser=await chromium.launch({...(process.platform==='win32'?{channel:'ms
 const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];
 page.on('pageerror',error=>errors.push(error.message));
 const base=process.env.ROBOT_LAB_URL??'http://127.0.0.1:5173';
-const load=async(brain,name='brain.json')=>{await page.locator('#import-file').setInputFiles({name,mimeType:'application/json',buffer:Buffer.from(JSON.stringify(brain))});};
+const load=async(brain,name='brain.json')=>{
+  await page.locator('#import-file').setInputFiles({name,mimeType:'application/json',buffer:Buffer.from(JSON.stringify(brain))});
+  // Direct file selection can start with an already-hidden dialog. Wait for the
+  // importer to finish reading/applying and reset the input, not dialog visibility.
+  await page.waitForFunction(()=>document.querySelector('#import-file').value==='');
+};
 const idle=()=>page.locator('#import-file-dialog').waitFor({state:'hidden'});
 const change=async(id,value)=>page.locator('#'+id).evaluate((el,v)=>{el.value=String(v);el.dispatchEvent(new Event('change',{bubbles:true}));},value);
 const reveal=async(id)=>page.locator('#'+id).evaluate(el=>{for(let p=el.parentElement;p;p=p.parentElement)if(p.tagName==='DETAILS')p.open=true;});
 const save=async()=>{const shelf=page.locator('.browser-brain-shelf');if(!await shelf.evaluate(e=>e.open))await shelf.locator('summary').first().click();await page.locator('[data-brain-save]').click();await page.locator('.browser-brain-shelf [role=status]').filter({hasText:'Saved'}).waitFor();return page.evaluate(async()=>new Promise((resolve,reject)=>{const r=indexedDB.open('flykart-browser-brains',1);r.onerror=()=>reject(r.error);r.onsuccess=()=>{const db=r.result,q=db.transaction('brains').objectStore('brains').get('vision');q.onsuccess=()=>{db.close();resolve(JSON.parse(q.result.text));};};}));};
 try{
+  await page.addInitScript(()=>{
+    const read=File.prototype.text;
+    File.prototype.text=async function(){
+      if(this.name==='delayed-racer.json')await new Promise(resolve=>setTimeout(resolve,350));
+      return read.call(this);
+    };
+  });
   const racer=JSON.parse(await readFile('public/sample-brain.json','utf8'));racer.generation=7;
   await page.goto(base+'/vision.html');await page.locator('#boot-screen').waitFor({state:'hidden',timeout:60000});
   await load(racer,'literal </option><option value="fake"> & brain.json');await idle();
@@ -36,7 +48,7 @@ try{
   const worldEye=JSON.parse(await readFile('public/vision/robot/world-vision-net.json','utf8'));worldEye.trainedOn='world-eye import regression';
   await load(worldEye);await idle();assert.equal(await page.evaluate(()=>window.flykartVision.world.settings.vision.trainedOn),worldEye.trainedOn);
   await page.locator('#world-run').click();racer.trainingRecipe={...recipe,reward:{...recipe.reward,collision:3}};
-  await load(racer);await idle();assert.equal(await page.evaluate(()=>window.flykartVision.tab),'track');assert.equal((await save()).controller.domain,'track');
+  await load(racer,'delayed-racer.json');await idle();assert.equal(await page.evaluate(()=>window.flykartVision.tab),'track');assert.equal((await save()).controller.domain,'track');
   assert.equal(await page.locator('#world-run').textContent(),'Start');assert.equal(await page.evaluate(()=>window.flykartVision.running.world),false);
   await page.locator('#tab-btn-world').click();const retained=await save();assert.equal(retained.controller.trainingRecipe.reward.collision,24);assert.deepEqual(retained.robotMission,world.robotMission);
   await page.locator('#tab-btn-track').click();
