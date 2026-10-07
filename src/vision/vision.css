@@ -36,6 +36,7 @@ label.inline { display: inline-flex; gap: 6px; margin: 0; }
 #camera-experiment summary { cursor:pointer; color:#b9d9ff; font-weight:650; margin-bottom:10px; }
 #camera-experiment textarea { width:100%; box-sizing:border-box; resize:vertical; background:#09131e; color:#d5e4f7; border:1px solid #3c4d65; border-radius:6px; font:12px/1.5 monospace; }
 .eye-preview{margin-top:10px;padding:10px;border:1px solid #334258;border-radius:9px;background:#111b28}.eye-preview>summary{cursor:pointer;color:#b9d9ff;font-size:12px;font-weight:650}.eye-preview-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,120px),1fr));gap:8px}.eye-preview-grid figure{min-width:0;margin:0;padding:6px;border:1px solid #2e4355;border-radius:6px;background:#09131e}.eye-preview-grid canvas{display:block;width:100%;height:auto;image-rendering:pixelated}.eye-preview-grid figcaption{margin-top:5px;font-size:10px;line-height:1.4;color:#a8bdd0}.eye-preview .note{font-size:11px;line-height:1.5}
+.eye-preview pre{white-space:pre-wrap;overflow-wrap:anywhere;font:11px/1.6 monospace;color:#aecde3}.brain-file-bar .button-row>label{font-size:11px;display:grid;gap:4px}.brain-file-bar [data-repository-choice]{font-size:12px;width:260px}
 .settings-history { flex-wrap:wrap; margin:10px 0; }
 .settings-history small { color:#9aa9bd; }
 .legend { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; font-size: .66rem; }

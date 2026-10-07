@@ -34,11 +34,12 @@ export type RoomTrainingSettings={version:1;task:"forage"|"reverse"|"explore";se
 export function validateRoomTraining(raw:unknown):RoomTrainingSettings{const s=raw as RoomTrainingSettings;if(!s||s.version!==1||!["forage","reverse","explore"].includes(s.task)||!Number.isFinite(s.crashWeight)||s.crashWeight<0||s.crashWeight>1||!Number.isInteger(s.maxTicks)||s.maxTicks<300||s.maxTicks>3000||typeof s.memoryEnabled!=="boolean"||typeof s.reverseCoach!=="boolean"||(s.retainForward!==undefined&&typeof s.retainForward!=="boolean")||(s.searchWin!==undefined&&!["sight","reach"].includes(s.searchWin)))throw Error("Invalid room training settings.");return {...s};}
 
 export type FusionSettings = { fade: number; mode: DriverMode; visionTemperature: number };
-export type WorldSetup={version:1;seed:number;density:number;style:number;driver:'vision'|'both'|'feeling'|'expert'|'blind';fade:number;goalPreset:GoalPreset;goalCount?:GoalCount;goalRadius?:number;mapPreset:'procedural'|'clear'|'woods'|'room'|'workshop'|'bedroom'|'imported';memoryCount:number;sonarOn:boolean;trailVisible:boolean};
+export type WorldSetup={version:1;seed:number;density:number;style:number;driver:'vision'|'both'|'feeling'|'expert'|'blind';fade:number;goalPreset:GoalPreset;goalCount?:GoalCount;goalRadius?:number;repeatSearch?:boolean;mapPreset:'procedural'|'clear'|'woods'|'room'|'workshop'|'bedroom'|'imported';memoryCount:number;sonarOn:boolean;trailVisible:boolean};
 export function validateWorldSetup(raw:unknown):WorldSetup{
   const s=raw as WorldSetup;
   if(!s||s.version!==1||!Number.isInteger(s.seed)||s.seed<1||s.seed>999999||!Number.isFinite(s.density)||s.density<0||s.density>1||!Number.isFinite(s.style)||s.style<0||s.style>1||!['vision','both','feeling','expert','blind'].includes(s.driver)||!Number.isFinite(s.fade)||s.fade<0||s.fade>1e6||!['standard','near','far','random','pair'].includes(s.goalPreset)||!['procedural','clear','woods','room','workshop','bedroom','imported'].includes(s.mapPreset)||![512,2048,4096,10000,20000,40000].includes(s.memoryCount)||typeof s.sonarOn!=='boolean'||typeof s.trailVisible!=='boolean')throw Error('Invalid Open world setup.');
   validateGoalCount(s.goalCount);validateGoalRadius(s.goalRadius);
+  if(s.repeatSearch!==undefined&&typeof s.repeatSearch!=='boolean')throw Error('Invalid live search continuation setting.');
   return {...s};
 }
 export type TrackSetup={trainingMaps?:string[];generalist?:boolean;version:1;trackId:string;rivals:number;style:number;memoryCount:number;memoryEnabled:boolean};

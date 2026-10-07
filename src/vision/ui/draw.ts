@@ -120,7 +120,7 @@ export function drawWorldMap(canvas: HTMLCanvasElement, world: WorldDef, kart: W
       if(o.kind==='cable'){context.strokeStyle='#ded596';context.lineWidth=2;for(let x=-o.radius;x<=o.radius;x++)context.lineTo(o.x+x,o.y+Math.sin(x/5)*2);context.stroke();}else{context.arc(o.x,o.y,o.radius,0,Math.PI*2);context.fill();}
     }
   }
-  for(const [i,g] of (extras.goals?.length?extras.goals:[goal]).entries()){context.strokeStyle=i===0?"#ffd23f":"#aab7ff";context.lineWidth=3;context.beginPath();context.arc(g.x,g.y,extras.goalRadius??24,0,Math.PI*2);context.stroke();context.fillStyle="#ff3f9f";context.beginPath();context.arc(g.x,g.y,6,0,Math.PI*2);context.fill();context.fillStyle="#fff";context.font="bold 16px system-ui";context.fillText(String(i+1),g.x+25,g.y+6);}
+  for(const [i,g] of (extras.goals??[goal]).entries()){context.strokeStyle=i===0?"#ffd23f":"#aab7ff";context.lineWidth=3;context.beginPath();context.arc(g.x,g.y,extras.goalRadius??24,0,Math.PI*2);context.stroke();context.fillStyle="#ff3f9f";context.beginPath();context.arc(g.x,g.y,6,0,Math.PI*2);context.fill();context.fillStyle="#fff";context.font="bold 16px system-ui";context.fillText(String(i+1),g.x+25,g.y+6);}
   // Clearance sectors: white = truth, blue = what the camera believes.
   const range = 220; const step = (SECTOR_ANGLES[1] - SECTOR_ANGLES[0]);
   for (let k = 0; k < SECTORS; k += 1) {

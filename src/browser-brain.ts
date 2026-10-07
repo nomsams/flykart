@@ -1,6 +1,5 @@
 import { importFile } from './vision/format';
-import projectRacer from '../assets/flykart-brain-racer.json?raw';
-const projectGeneration: number = JSON.parse(projectRacer).generation;
+import { REPOSITORY_BRAINS, repositorySelector } from './repository-brains';
 export type BrainStage = 'racer' | 'vision' | 'robot';
 type SavedBrain = { stage: BrainStage; savedAt: string; text: string };
 const STORE = 'brains', PREFIX = 'flykart.shared-brain.';
@@ -58,11 +57,11 @@ export function mountBrainShelf(host: HTMLElement, stage: BrainStage, exportText
   project.className = 'toolbar row';
   const loadProject = document.createElement('button');
   loadProject.type = 'button'; loadProject.id = 'load-racer-checkpoint';
-  loadProject.textContent = `Load repository brain · generation ${projectGeneration}`;
-  loadProject.title = 'Load assets/flykart-brain-racer.json with its exact weights, rewards and race setup. Available again after any import.';
   const description = document.createElement('small');
-  description.textContent = 'GitHub repository checkpoint: assets/flykart-brain-racer.json · your trained Racer v1 brain, bundled with this site. Separate from browser saves and the original demo brain.';
-  project.append(loadProject, description); shelf.querySelector('summary')!.after(project);
+  const choiceLabel=repositorySelector('repository-brain-select',stage==='racer'),choice=choiceLabel.querySelector('select')!;
+  const describe=()=>{const brain=REPOSITORY_BRAINS.find(b=>b.id===choice.value)!;loadProject.textContent='Load repository brain · '+(brain.id==='racer'?brain.label.replace('Racer v1 · ',''):'visual explorer');loadProject.title=`Load assets/${brain.file} exactly as saved. Available again after any import.`;description.textContent=`GitHub repository checkpoint: assets/${brain.file}. ${brain.id==='racer'?'Trained Racer v1 parent.':'Saved Open world controller, camera network and setup; training provenance comes from the file.'} Bundled with this site; separate from browser saves and uploaded files.`;};
+  choice.addEventListener('change',describe);choice.addEventListener('repositorychange',describe);describe();
+  project.append(choiceLabel,loadProject,description); shelf.querySelector('summary')!.after(project);
   if (existing) {
     host.querySelector(':scope > .toolbar')?.after(shelf);
     for (const [key, button] of Object.entries(existing)) { const placeholder=shelf.querySelector(`[data-brain-${key}]`)!;button.textContent=`${key === 'save' ? 'Save' : 'Load'} browser brain`;button.setAttribute(`data-brain-${key}`,'');placeholder.replaceWith(button); }
@@ -75,9 +74,12 @@ export function mountBrainShelf(host: HTMLElement, stage: BrainStage, exportText
     finally { buttons.forEach(b => b.disabled = false); }
   };
   loadProject.onclick = () => void operate(async () => {
-    await importProject(projectRacer, 'flykart-brain-racer.json');
-    return `Loaded assets/flykart-brain-racer.json · generation ${projectGeneration}. Exact racer checkpoint retained.${stage === 'racer' ? ' Press Start race to run it.' : stage === 'vision' ? ' Train camera offspring in Track; use Adapt racer to room for Open world.' : ' Use Tasks → Adapt racer to room before room training.'}`;
+    const brain=REPOSITORY_BRAINS.find(b=>b.id===choice.value)!;
+    const text=await brain.load();
+    if(busy())throw Error('A job started while loading. Stop it, then load the checkpoint again.');
+    await importProject(text,brain.file);
+    return `Loaded assets/${brain.file}. Exact saved weights and settings retained.${brain.id==='visual'?' Open world uses the saved visual-search objective. 3D transfer needs validation of its target input meanings.':stage === 'racer' ? ' Press Start race to run it.' : stage === 'vision' ? ' Train camera offspring in Track; use Adapt racer to room for Open world.' : ' Use Tasks → Adapt racer to room before room training.'}`;
   });
   shelf.querySelector<HTMLButtonElement>('[data-brain-save]')!.onclick = () => void operate(async () => { await saveBrowserBrain(stage, exportText()); return `Saved ${stage} brain here. Open the next page and choose “Load browser brain”. Other stage saves are kept.`; });
-  shelf.querySelector<HTMLButtonElement>('[data-brain-load]')!.onclick = () => void operate(async () => { const choice = shelf.querySelector('select')!.value as BrainStage; const record = await loadBrowserBrain(choice || undefined); if(busy())throw new Error('A job started while loading. Stop it, then load the brain again.');await importText(record.text, `${record.stage} browser checkpoint`); return `Loaded ${record.stage} brain${record.savedAt ? ' · ' + new Date(record.savedAt).toLocaleString() : ''}.`; });
+  shelf.querySelector<HTMLButtonElement>('[data-brain-load]')!.onclick = () => void operate(async () => { const source = shelf.querySelector<HTMLSelectElement>('select[aria-label="Browser brain source"]')!.value as BrainStage; const record = await loadBrowserBrain(source || undefined); if(busy())throw new Error('A job started while loading. Stop it, then load the brain again.');await importText(record.text, `${record.stage} browser checkpoint`); return `Loaded ${record.stage} brain${record.savedAt ? ' · ' + new Date(record.savedAt).toLocaleString() : ''}.`; });
 }

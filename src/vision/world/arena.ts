@@ -2,7 +2,7 @@ import { validateSonarSurface } from '../sonar-surfaces';
 import { WorldDef, KART_RADIUS, surfaceAt, GoalCount, validateGoalCount, validateGoalRadius } from './world';
 import { OBJECT_KINDS, blocked, furniture, clearance } from './objects';
 
-export type ArenaFile={format:'flykart-world';version:1;world:WorldDef;start:{x:number;y:number;heading:number};goals?:{x:number;y:number}[];exercise?:{task:'forage'|'reverse'|'explore';searchWin:'sight'|'reach';goalPreset:'standard'|'near'|'far'|'random'|'pair';goalCount?:GoalCount;goalRadius?:number}};
+export type ArenaFile={format:'flykart-world';version:1;world:WorldDef;start:{x:number;y:number;heading:number};goals?:{x:number;y:number}[];exercise?:{task:'forage'|'reverse'|'explore';searchWin:'sight'|'reach';goalPreset:'standard'|'near'|'far'|'random'|'pair';goalCount?:GoalCount;goalRadius?:number;repeatSearch?:boolean}};
 export function validateArena(raw:unknown):ArenaFile{
   const a=raw as ArenaFile;
   const finite=(v:unknown)=>typeof v==='number'&&Number.isFinite(v);
@@ -15,6 +15,7 @@ export function validateArena(raw:unknown):ArenaFile{
   if(a.goals!==undefined&&(!Array.isArray(a.goals)||!a.goals.length||a.goals.length>30||a.goals.some(g=>!g||!finite(g.x)||!finite(g.y)||!clearPoint(w,g.x,g.y))))throw Error('Saved target points must be on clear ground inside the fence.');
   if(a.exercise&&(!['forage','reverse','explore'].includes(a.exercise.task)||!['sight','reach'].includes(a.exercise.searchWin)||!['standard','near','far','random','pair'].includes(a.exercise.goalPreset)))throw Error('Invalid scene exercise.');
   if(a.exercise){validateGoalCount(a.exercise.goalCount);validateGoalRadius(a.exercise.goalRadius);}
+  if(a.exercise?.repeatSearch!==undefined&&typeof a.exercise.repeatSearch!=='boolean')throw Error('Invalid live search continuation setting.');
   w.obstacles.forEach(o=>{if(o.sonarSurface!==undefined)validateSonarSurface(o.sonarSurface);});
   return structuredClone(a);
 }

@@ -133,7 +133,10 @@ export class WorldSim {
   private readonly random: Random;
   private cooldown = 0;
   readonly maxTicks: number;
-  readonly goalLimit: number;
+  private goalTarget: number;
+  get goalLimit():number { return this.goalTarget; }
+  private deadline: number;
+  private readonly recentGoals:GoalPoint[]=[];
   readonly goalPreset: GoalPreset;
   readonly goals: GoalPoint[] = [];
   readonly hiddenGoalAngle: number;
@@ -150,8 +153,9 @@ export class WorldSim {
     this.random = mulberry32(seed * 977 + 5);
     const count=validateGoalCount(options.goalCount);
     this.targetCount=count==='random'?1+Math.floor(this.random()*6):count??(this.goalPreset==='pair'?2:1);
-    this.goalLimit=options.goalLimit??(count!==undefined?options.goals?.length??this.targetCount:Infinity);
+    this.goalTarget=options.goalLimit??(count!==undefined?options.goals?.length??this.targetCount:Infinity);
     this.maxTicks = options.maxTicks ?? 2400;
+    this.deadline=this.maxTicks;
     this.kart.heading = (this.random() * 2 - 1) * Math.PI;
     this.status = { goals: 0, collisions: 0, pain:0, crashed: false, ticks: 0, score: 0, distanceToGoal: 0, goalX: 0, goalY: 0, timedOut: false };
     if(options.start)Object.assign(this.kart,options.start);
@@ -160,7 +164,18 @@ export class WorldSim {
 
   get done(): boolean { return this.status.crashed || this.status.timedOut || Boolean(this.status.stopReason) || this.status.goals>=this.goalLimit; }
 
-  private nextGoal(): boolean {
+  /** Live visual-search continuation; training never calls this method. */
+  renewSearchTarget():boolean {
+    if(this.status.crashed||this.status.timedOut||this.status.stopReason)return false;
+    this.goals.forEach(g=>this.rememberGoal(g));
+    this.goalTarget=this.status.goals+1;
+    if(!this.nextGoal(false)){this.status.stopReason='Search complete; no clear new target fits this preset. Choose nearer dots or a clearer map.';return false;}
+    this.deadline=this.status.ticks+this.maxTicks;
+    return true;
+  }
+  private rememberGoal(g:GoalPoint):void { this.recentGoals.push({...g});if(this.recentGoals.length>8)this.recentGoals.shift(); }
+
+  private nextGoal(requireHidden=true): boolean {
     const { world, kart } = this;
     this.goals.length=0;
     const [near,far]=this.goalPreset==='near'?[Math.min(90,world.half*.3),Math.min(170,world.half*.9)]:this.goalPreset==='far'?[world.half*.7,world.half*1.35]:this.goalPreset==='random'?[60,world.half*1.7]:this.goalPreset==='pair'?[Math.min(160,world.half*.4),world.half*1.2]:[Math.min(170,world.half*.4),Math.min(390,world.half*1.2)];
@@ -173,12 +188,13 @@ export class WorldSim {
         angle=Math.atan2(y-kart.y,x-kart.x);distance=Math.hypot(x-kart.x,y-kart.y);
         if(distance<Math.min(60,world.half*.3))continue;
       }
-      if(this.hiddenGoalAngle&&Math.abs(wrapAngle(angle-kart.heading))<this.hiddenGoalAngle)continue;
+      if(requireHidden&&this.hiddenGoalAngle&&Math.abs(wrapAngle(angle-kart.heading))<this.hiddenGoalAngle)continue;
       const x = kart.x + Math.cos(angle) * distance, y = kart.y + Math.sin(angle) * distance;
       if (Math.abs(x) > world.half - (this.goalPreset==='random'?32:50) || Math.abs(y) > world.half - (this.goalPreset==='random'?32:50)) continue;
       if (blocked(world,x,y,26)) continue;
       if (world.patches.some((p) => Math.hypot(p.x - x, p.y - y) < p.radius + 18 && p.kind === "water")) continue;
       if(this.goals.some(g=>Math.hypot(g.x-x,g.y-y)<Math.min(90,world.half*.45)))continue;
+      if(this.recentGoals.some(g=>Math.hypot(g.x-x,g.y-y)<Math.min(90,world.half*.3)))continue;
       this.goals.push({x,y});
       if(this.goals.length===this.targetCount){this.selectGoal();return true;}
     }
@@ -246,8 +262,8 @@ export class WorldSim {
     const distance = Math.hypot(status.goalX - kart.x, status.goalY - kart.y);
     status.distanceToGoal = distance; status.score += (before - distance) * 0.05 - 0.002;
     const reached=this.goals.findIndex(g=>Math.hypot(g.x-kart.x,g.y-kart.y)<this.goalRadius);
-    if (reached>=0&&!status.crashed) { status.goals += 1; status.score += 100; this.goals.splice(reached,1); if(status.goals<this.goalLimit){if(this.goals.length)this.selectGoal();else if(!this.nextGoal())status.stopReason='Target collected; no clear next target fits this preset. Choose fewer or nearer dots, or shuffle targets.';} }
+    if (reached>=0&&!status.crashed) { status.goals += 1; status.score += 100; this.rememberGoal(this.goals[reached]);this.goals.splice(reached,1); if(status.goals<this.goalLimit){if(this.goals.length)this.selectGoal();else if(!this.nextGoal())status.stopReason='Target collected; no clear next target fits this preset. Choose fewer or nearer dots, or shuffle targets.';} }
     kart.action = { steer: action.steer, throttle: action.throttle, brake: action.brake, reverse: action.reverse ?? 0 };
-    if (status.ticks >= this.maxTicks) status.timedOut = true;
+    if (status.ticks >= this.deadline) status.timedOut = true;
   }
 }

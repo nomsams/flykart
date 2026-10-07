@@ -110,6 +110,8 @@ export class WorldSession {
   readonly memory:RoomMemory|null;
   readonly initialPose:{x:number;y:number;heading:number};
   readonly discovery:FlagDiscovery|null;
+  searchesCompleted=0;
+  searchStartTick=0;
   reverseDistance=0;
   lastAction: Action = { steer: 0, throttle: 0, brake: 0, reverse: 0 };
 
@@ -144,6 +146,15 @@ export class WorldSession {
   get found():boolean {return this.discovery?.firstSightTick!=null;}
   get won():boolean {return this.discovery?this.found&&((this.settings.searchWin??'sight')==='sight'||this.episode.sim.status.goals>=this.episode.sim.goalLimit)&&!this.episode.sim.status.crashed:this.episode.sim.status.goals>=this.episode.sim.goalLimit&&!this.episode.sim.status.crashed;}
   get done(): boolean { return this.episode.done || Boolean(this.discovery&&this.found&&(this.settings.searchWin??'sight')==='sight'); }
+
+  /** Keep the robot, neural state, memory and sensor histories; reset only target tracking. */
+  continueSearch():boolean {
+    if(!this.discovery||!this.won||!this.episode.sim.renewSearchTarget())return false;
+    this.searchesCompleted++;
+    this.searchStartTick=this.episode.tick;
+    this.discovery.reset();
+    return true;
+  }
 
   step(): void {
     if(this.done)return;

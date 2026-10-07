@@ -12,7 +12,7 @@ export class WorldScene implements Scene {
   goalRadius=GOAL_RADIUS;
   private readonly fixed: Sprite[] = [];
   private goal: { x: number; y: number } = { x: 0, y: 0 };
-  private goals: {x:number;y:number}[] = [];
+  private goals: {x:number;y:number}[] | null = null;
   private nearPatches: WorldDef["patches"] = [];
   private nearbyFloor:WorldDef["obstacles"]=[];
 
@@ -56,7 +56,7 @@ export class WorldScene implements Scene {
   prepare(pose: Pose): void {
     const range2 = 480 * 480;
     this.sprites = [...this.fixed,...this.objectSprites()].filter((sprite) => (sprite.x - pose.x) ** 2 + (sprite.y - pose.y) ** 2 < range2);
-    for(const goal of this.goals.length?this.goals:[this.goal])this.sprites.push({ x: goal.x, y: goal.y, heading: 0, width: 14, length: 14, z0: 0, z1: 46, color: [1, 0.2, 0.62], shape: "flag" });
+    for(const goal of this.goals??[this.goal])this.sprites.push({ x: goal.x, y: goal.y, heading: 0, width: 14, length: 14, z0: 0, z1: 46, color: [1, 0.2, 0.62], shape: "flag" });
     this.nearbyFloor=this.world.obstacles.filter(o=>floorItem(o)&&Math.hypot(o.x-pose.x,o.y-pose.y)<o.radius+380);
     this.nearPatches = this.world.patches.filter((p) => Math.hypot(p.x - pose.x, p.y - pose.y) < p.radius + 380);
   }
@@ -75,7 +75,7 @@ export class WorldScene implements Scene {
     else { const checker = (Math.floor(x / 26) + Math.floor(y / 26)) % 2 === 0; c = scale(checker ? style.grassA : style.grassB, 0.93 + 0.14 * hash2(Math.floor(x / 5), Math.floor(y / 5))); }
     for(const o of this.nearbyFloor)if(Math.hypot(x-o.x,y-o.y)<o.radius){if(o.kind==='mat')c=[.58,.32,.23];else if(Math.abs(y-o.y-Math.sin((x-o.x)/5)*2)<1.5)c=[.08,.08,.09];}
     // A bright ring on the ground marks the goal.
-    if((this.goals.length?this.goals:[this.goal]).some(g=>{const d=Math.hypot(x-g.x,y-g.y);return d<this.goalRadius&&d>this.goalRadius-4.5;}))c = [1, 0.84, 0.2];
+    if((this.goals??[this.goal]).some(g=>{const d=Math.hypot(x-g.x,y-g.y);return d<this.goalRadius&&d>this.goalRadius-4.5;}))c = [1, 0.84, 0.2];
     out[0] = c[0]; out[1] = c[1]; out[2] = c[2];
   }
 }
