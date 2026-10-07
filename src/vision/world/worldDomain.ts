@@ -18,7 +18,7 @@ import { Proprioception } from "../interface";
 import { Random, mulberry32 } from "../rng";
 import { SONAR_USEFUL_RANGE_PX, SensorProfile, SonarSpec } from "../robot";
 import { Sonar, SonarReading, SonarTarget, sonarInputs } from "../sonar";
-import { SECTORS, SECTOR_ANGLES, SECTOR_SPAN, SURFACE_VALUE, WorldSim, WorldDef, GoalPreset, GoalPoint, GoalCount, clearanceScan, surfaceAt } from "./world";
+import { FENCE_HALF_THICKNESS, SECTORS, SECTOR_ANGLES, SECTOR_SPAN, SURFACE_VALUE, WorldSim, WorldDef, GoalPreset, GoalPoint, GoalCount, clearanceScan, surfaceAt } from "./world";
 import { WorldScene } from "./worldScene";
 import { furniture, clearance, legs, floorItem } from './objects';
 
@@ -104,8 +104,8 @@ export class WorldEpisode implements VisionEpisode {
     const { world } = this.sim;
     // Trunks and rocks are solid; ponds, sand and mud lie flat and cannot be heard. The fence is a low wall all round.
     const h = world.half;
-    this.fixedTargets.push({ kind: "box", x: 0, y: -h, heading: 0, halfLength: h, halfWidth: 1.5, z0: 0, z1: 11 }, { kind: "box", x: 0, y: h, heading: 0, halfLength: h, halfWidth: 1.5, z0: 0, z1: 11 },
-      { kind: "box", x: -h, y: 0, heading: Math.PI / 2, halfLength: h, halfWidth: 1.5, z0: 0, z1: 11 }, { kind: "box", x: h, y: 0, heading: Math.PI / 2, halfLength: h, halfWidth: 1.5, z0: 0, z1: 11 });
+    this.fixedTargets.push({ kind: "box", x: 0, y: -h, heading: 0, halfLength: h, halfWidth: FENCE_HALF_THICKNESS, z0: 0, z1: 11 }, { kind: "box", x: 0, y: h, heading: 0, halfLength: h, halfWidth: FENCE_HALF_THICKNESS, z0: 0, z1: 11 },
+      { kind: "box", x: -h, y: 0, heading: Math.PI / 2, halfLength: h, halfWidth: FENCE_HALF_THICKNESS, z0: 0, z1: 11 }, { kind: "box", x: h, y: 0, heading: Math.PI / 2, halfLength: h, halfWidth: FENCE_HALF_THICKNESS, z0: 0, z1: 11 });
     this.ping();
   }
 

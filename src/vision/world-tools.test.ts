@@ -68,3 +68,20 @@ it('round-trips both domain brains, room settings, scan memory and legacy files'
   const invalid=JSON.parse(file);invalid.worldSetup.memoryCount=-1;expect(()=>importFile(JSON.stringify(invalid))).toThrow(/Invalid Open world/);
   expect(importFile(JSON.stringify(track)).kind).toBe('v1-brain');
 });
+
+it('keeps the full rotated chassis and default sonar mount inside the room fence, including old saved contact poses',()=>{
+  for(const heading of [0,Math.PI/4,Math.PI/2,3*Math.PI/4,Math.PI,5*Math.PI/4,3*Math.PI/2,7*Math.PI/4]){
+    const sim=new WorldSim(7,{world:{...field,half:150},start:{x:0,y:0,heading},goals:[{x:-100*Math.cos(heading),y:-100*Math.sin(heading)}],maxTicks:900});
+    for(let i=0;i<350&&!sim.done;i++){
+      sim.step({steer:0,throttle:1,brake:0});
+      const k=sim.kart,c=Math.abs(Math.cos(k.heading)),s=Math.abs(Math.sin(k.heading));
+      expect(Math.abs(k.x)+12*c+7*s).toBeLessThanOrEqual(148.50001);
+      expect(Math.abs(k.y)+12*s+7*c).toBeLessThanOrEqual(148.50001);
+      expect(Math.abs(k.x+HC_SR04.mountForward*Math.cos(k.heading))).toBeLessThan(148.5);
+      expect(Math.abs(k.y+HC_SR04.mountForward*Math.sin(k.heading))).toBeLessThan(148.5);
+    }
+    expect(sim.status.collisions).toBeGreaterThan(0);
+  }
+  const old=new WorldSim(7,{world:{...field,half:150},start:{x:142,y:0,heading:0},goals:[{x:-80,y:0}]});
+  expect(old.kart.x+12).toBeLessThanOrEqual(148.5);
+});

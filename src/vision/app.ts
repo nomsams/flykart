@@ -352,7 +352,7 @@ function updateScanStatus(domain:'track'|'world',session:TrackSession|WorldSessi
   const map=session.sonarMap,unit=session instanceof WorldSession?session.episode.scanSonarUnit:session.episode.sonarUnit;
   const diagnostic=session instanceof WorldSession&&!session.episode.sonarUnit;
   const echoes=map.samples.filter(p=>p.echo).length;
-  $(domain+'-scan-status').textContent=!unit?'No sonar is fitted to the camera-only head. Enable the robot head below to start scanning.':!state.sonarOn?'Sonar ignored; scan recording paused. Enable it below.':`${diagnostic?'Diagnostic HC-SR04 · camera-only brain unchanged · ':''}${map.samples.length} remembered pings · ${echoes} echoes · ${map.cells.size} cells · ${state.running[domain]||cameraTraining?'scanning at 15 Hz simulation time':'paused; press Start to scan'}${echoes===0?' · No returns yet: dark ground is unknown, not empty space.':''}`;
+  $(domain+'-scan-status').textContent=!unit?'No sonar is fitted to the camera-only head. Enable the robot head below to start scanning.':!state.sonarOn?'Sonar ignored; scan recording paused. Enable it below.':`${diagnostic?'Diagnostic HC-SR04 · camera-only brain unchanged · ':''}${map.samples.length} remembered pings · ${echoes} echoes · ${map.cells.size} cells · ${state.running[domain]||cameraTraining?'scanning at 15 Hz simulation time':'paused; press Start to scan'}${echoes===0?' · No returns yet: dark ground is unknown; below 2 cm or at glancing angles the sensor may miss a wall.':''}`;
   $(domain+'-scan-enable').hidden=Boolean(unit)&&state.sonarOn&&!diagnostic;
   $(domain+'-scan-enable').textContent=diagnostic&&state.sonarOn?'Use Robot head · feed sonar to brain':'Enable camera + HC-SR04 sonar';
 }

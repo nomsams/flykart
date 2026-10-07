@@ -688,7 +688,7 @@ function telemetry(): void {
   }
   setText("range", !physics.config.sonarEnabled ? "Off" : sonar.reading.echo ? (sonar.metres * 100).toFixed(1) : "—");
   setText("range-unit", sonar.reading.echo && physics.config.sonarEnabled ? "cm" : "no echo");
-  setText("echo-note", sonar.reading.echo ? `ECHO pulse ≈ ${Math.round(sonar.pulseMicroseconds)} µs · ${(simTime - sonar.lastTime < .001 ? "fresh" : "held")} sample` : "No return: out of range, weak, angled or below the beam.");
+  setText("echo-note", sonar.reading.echo ? `ECHO pulse ≈ ${Math.round(sonar.pulseMicroseconds)} µs · ${(simTime - sonar.lastTime < .001 ? "fresh" : "held")} sample` : "No return: distance unknown; below 2 cm, out of range, weak, angled or below the beam. Memory retains earlier wall returns.");
   setText("speed", (physics.speed * 100).toFixed(1)); setText("hits", String(physics.collisions)); setText("left-pwm", String(Math.round(actualPWM[0] * 255))); setText("right-pwm", String(Math.round(actualPWM[1] * 255)));
   const errors = wiringIssues(wiring).errors;
   setText("motion-state", errors.length ? "Motor inhibit · check wiring" : physics.blocked ? `Contact · ${physics.contact?.part ?? "solid"} · motion blocked` : running ? `Running · ${simTime.toFixed(1)} s` : `Paused · ${simTime.toFixed(1)} s`);

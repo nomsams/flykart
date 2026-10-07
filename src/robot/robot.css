@@ -99,3 +99,8 @@ header{padding-top:12px;padding-bottom:12px;gap:12px}header h1{font-size:23px}he
 @media(min-width:721px) and (max-width:1100px){.sensor-rail .sensor-card{padding:6px}.sensor-rail .sensor-title{margin-bottom:3px}.sensor-rail .monitor-help{margin-top:2px}}
 .sensor-rail .sensor-card canvas#room-map{max-height:none;aspect-ratio:auto}
 @media(max-width:720px){.workspace>.sensor-rail .map-card canvas#room-map{max-height:170px}.workspace>.sensor-rail.monitor-focused .map-card canvas#room-map{max-height:260px}}
+
+/* Native selects and wide fallback fonts must not expand the mobile sidebar track. */
+.workspace>.sidebar,.workspace>.sidebar>.card{min-width:0;max-width:100%}
+.workspace>.sidebar select{min-width:0;max-width:100%}
+@media(max-width:720px){.workspace>.sidebar{grid-template-columns:minmax(0,1fr)}}

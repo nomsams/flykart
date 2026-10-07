@@ -35,6 +35,20 @@ try{
   await page.locator('#world-scan-enable').click();assert.equal(await page.locator('#profile').inputValue(),'robot');
   assert.equal(await page.evaluate(()=>window.flykartVision.world.episode.scanSonarUnit===window.flykartVision.world.episode.sonarUnit),true);
   await page.locator('#world-driver').selectOption('expert');await scene(arena);
+  // Approach, contact and retreat using the real episode/sonar/map pipeline.
+  await page.locator('#world-driver').selectOption('vision');
+  await scene({...arena,start:{x:118,y:0,heading:0},world:{...arena.world,obstacles:[]}});
+  await page.evaluate(()=>{const s=window.flykartVision.world;s.controller.step=()=>({steer:0,throttle:1,brake:0,reverse:0});});
+  await page.locator('#world-speed').selectOption('4');await page.locator('#world-run').click();
+  await page.waitForFunction(()=>window.flykartVision.world.episode.tick>=65);await page.locator('#world-run').click();
+  const contact=await page.evaluate(()=>{const s=window.flykartVision.world,e=s.episode,k=e.sim.kart;return{x:k.x,origin:k.x+e.sonarUnit.spec.mountForward,face:e.sim.world.half-1.5,collisions:e.sim.status.collisions,echo:e.sonar().echo,cells:[...s.sonarMap.cells]};});
+  assert.ok(contact.collisions>0);assert.ok(contact.origin<contact.face,'Transducer must remain on the room side of the wall');assert.equal(contact.echo,false,'Contact lies inside the 2 cm blind zone');
+  assert.ok(contact.cells.some(([,v])=>v>0),'Earlier echo evidence must remain');assert.ok(!contact.cells.some(([key,v])=>v<0&&Number(key.split(',')[0])*8>=contact.face),'No free space may be carved beyond the wall');
+  await page.evaluate(()=>{window.flykartVision.world.controller.step=()=>({steer:0,throttle:0,brake:0,reverse:1});});
+  const retreatTick=await page.evaluate(()=>window.flykartVision.world.episode.tick);await page.locator('#world-run').click();
+  await page.waitForFunction(t=>window.flykartVision.world.episode.tick>=t+45,retreatTick);await page.locator('#world-run').click();
+  assert.ok(await page.evaluate(x=>window.flykartVision.world.episode.sim.kart.x<x,contact.x));assert.equal(await page.evaluate(()=>window.flykartVision.world.episode.sonar().echo),true);
+  await page.locator('#world-driver').selectOption('expert');await scene(arena);
   await mkdir('.cache',{recursive:true});await page.locator('#world-sonar-map').scrollIntoViewIfNeeded();await page.screenshot({path:'.cache/vision-runtime-scan-desktop.png'});
   const before=await page.locator('#world-sonar-map').evaluate(c=>c.toDataURL());
   await page.locator('#vision-render-mode').selectOption('headless');await page.locator('#world-run').click();

@@ -29,6 +29,16 @@ describe("the robot's scale", () => {
 });
 
 describe("HC-SR04 model", () => {
+  it('does not see through a wall in the blind zone or around an embedded transducer',()=>{
+    expect(hear([wall(100)]).echo).toBe(true);
+    for(const near of [.5/CM_PER_PIXEL,0,-1])expect(hear([wall(near),wall(100)]).echo,`near wall ${near} px`).toBe(false);
+    const inside:SonarTarget={kind:'circle',x:frontOf-.5,y:0,radius:2,z0:0,z1:60};
+    expect(hear([inside,wall(100)]).echo).toBe(false);
+    // A target behind the transducer still cannot block an unobstructed front echo.
+    expect(hear([wall(-15),wall(100)]).echo).toBe(true);
+    expect(hear([{...wall(.5/CM_PER_PIXEL),z0:36,z1:42},wall(100)]).echo).toBe(true);
+    expect(hear([{...wall(.5/CM_PER_PIXEL),z1:.4},wall(100)]).echo).toBe(true);
+  });
   it("reads a flat wall squarely ahead accurately from the shortest to the longest range", () => {
     for (const cm of [10, 50, 150, 300, 380]) {
       const reading = hear([wall(cm / CM_PER_PIXEL)]);

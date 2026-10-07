@@ -249,3 +249,12 @@ describe("sparse visual Kenyon room memory", () => {
     expect(() => RoomMemory.fromJSON({ ...memory.toJSON(), counts: [1] })).toThrow(/Invalid room memory/);
   });
 });
+
+it('keeps remembered 3D wall returns intact through repeated missing echoes at contact',()=>{
+  const memory=new RoomMemory({count:512,sparsity:.01,rareWeighting:false});
+  const pose={x:0,z:0,heading:0};
+  for(let i=0;i<3;i++)memory.mapPing(pose,.125,1,true);
+  const before=[...memory.map];expect(before.some(([,v])=>v>0)).toBe(true);
+  for(let i=0;i<30;i++)memory.mapPing(pose,.125,4,false);
+  expect([...memory.map]).toEqual(before);
+});

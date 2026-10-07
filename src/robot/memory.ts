@@ -65,7 +65,10 @@ export class RoomMemory {
   }
   /** Sonar hits remain uncertain. This map uses command odometry, not ground truth. */
   mapPing(pose: Pose, mountForward: number, distance: number, echo: boolean): void {
-    const max=echo?distance:4,startX=pose.x+Math.cos(pose.heading)*mountForward,startZ=pose.z+Math.sin(pose.heading)*mountForward;
+    // A timeout, blind-zone miss or specular reflection proves no free space.
+    // Keep earlier wall evidence; a missing echo must never carve a 4 m opening.
+    if(!echo)return;
+    const max=distance,startX=pose.x+Math.cos(pose.heading)*mountForward,startZ=pose.z+Math.sin(pose.heading)*mountForward;
     for(let r=.04;r<max-.06;r+=.07){const key=[Math.floor((startX+Math.cos(pose.heading)*r)/.1),Math.floor((startZ+Math.sin(pose.heading)*r)/.1)].join(",");this.map.set(key,Math.max(-5,(this.map.get(key)??0)-.25));}
     if(echo){const key=[Math.floor((startX+Math.cos(pose.heading)*distance)/.1),Math.floor((startZ+Math.sin(pose.heading)*distance)/.1)].join(",");this.map.set(key,Math.min(5,(this.map.get(key)??0)+.8));}
     if(this.map.size>12000)this.map.delete(this.map.keys().next().value!);

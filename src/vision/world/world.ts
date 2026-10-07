@@ -9,6 +9,8 @@ import { OBJECT_KINDS, solids, contact, movable, floorItem, blocked } from './ob
 
 export const WORLD_HALF = 460;
 export const KART_RADIUS = 8;
+/** The visible 24 × 14 px chassis; the perimeter wall's inner face is 1.5 px in. */
+export const KART_HALF_LENGTH=12,KART_HALF_WIDTH=7,FENCE_HALF_THICKNESS=1.5;
 export const GOAL_RADIUS = 24;
 export type GoalPreset = 'standard' | 'near' | 'far' | 'random' | 'pair';
 export type GoalPoint = { x: number; y: number };
@@ -159,7 +161,16 @@ export class WorldSim {
     this.kart.heading = (this.random() * 2 - 1) * Math.PI;
     this.status = { goals: 0, collisions: 0, pain:0, crashed: false, ticks: 0, score: 0, distanceToGoal: 0, goalX: 0, goalY: 0, timedOut: false };
     if(options.start)Object.assign(this.kart,options.start);
+    // Retain legacy scene imports, but settle old radius-only contact poses so
+    // their front-mounted sonar never starts on the far side of the fence.
+    const limits=this.fenceLimits();
+    this.kart.x=clamp(this.kart.x,-limits.x,limits.x);this.kart.y=clamp(this.kart.y,-limits.y,limits.y);
     if(options.goals?.length || options.goal){this.goals.push(...structuredClone(options.goals??[options.goal!]));this.selectGoal();}else if(!this.nextGoal())throw Error('No clear targets at this distance or count. Choose fewer dots, a nearer goal preset or a clearer map.');
+  }
+
+  private fenceLimits():{x:number;y:number}{
+    const c=Math.abs(Math.cos(this.kart.heading)),s=Math.abs(Math.sin(this.kart.heading)),face=this.world.half-FENCE_HALF_THICKNESS;
+    return{x:face-KART_HALF_LENGTH*c-KART_HALF_WIDTH*s,y:face-KART_HALF_LENGTH*s-KART_HALF_WIDTH*c};
   }
 
   get done(): boolean { return this.status.crashed || this.status.timedOut || Boolean(this.status.stopReason) || this.status.goals>=this.goalLimit; }
@@ -250,9 +261,9 @@ export class WorldSim {
         contactPain=Math.max(contactPain,(movable(o)?(canPush?.2:.45):1)*(.05+.95*(closing/90)**2));
       }
     }
-    const limit = world.half - KART_RADIUS;
-    if (Math.abs(kart.x) > limit) { kart.x = Math.sign(kart.x) * limit; hit = true;contactPain=Math.max(contactPain,.05+.95*(kart.speed*Math.cos(kart.heading)/90)**2); }
-    if (Math.abs(kart.y) > limit) { kart.y = Math.sign(kart.y) * limit; hit = true;contactPain=Math.max(contactPain,.05+.95*(kart.speed*Math.sin(kart.heading)/90)**2); }
+    const limit=this.fenceLimits();
+    if (Math.abs(kart.x) > limit.x) { kart.x = Math.sign(kart.x) * limit.x; hit = true;contactPain=Math.max(contactPain,.05+.95*(kart.speed*Math.cos(kart.heading)/90)**2); }
+    if (Math.abs(kart.y) > limit.y) { kart.y = Math.sign(kart.y) * limit.y; hit = true;contactPain=Math.max(contactPain,.05+.95*(kart.speed*Math.sin(kart.heading)/90)**2); }
     if (hit) {
       kart.speed *= 0.3;
       if (this.cooldown === 0) { status.collisions += 1;status.pain+=contactPain; status.score -= 12*contactPain; this.cooldown = 8; }

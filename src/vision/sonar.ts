@@ -54,6 +54,7 @@ type Hit = { surface?:SonarSurface; distance: number; roundish: boolean; inciden
 
 function rayCircle(ox: number, oy: number, dx: number, dy: number, target: Extract<SonarTarget, { kind: "circle" }>): Hit | null {
   const fx = target.x - ox, fy = target.y - oy; const along = fx * dx + fy * dy;
+  if (fx*fx+fy*fy<=target.radius*target.radius) return {surface:target.surface,distance:0,roundish:true,incidence:0,z0:target.z0,z1:target.z1};
   if (along <= 0) return null;
   const d2 = fx * fx + fy * fy - along * along; const r2 = target.radius * target.radius;
   if (d2 > r2) return null;
@@ -73,7 +74,8 @@ function rayBox(ox: number, oy: number, dx: number, dy: number, target: Extract<
     tMax = Math.min(tMax, t2);
     if (tMin > tMax) return null;
   }
-  if (tMin <= 0) return null;
+  if (tMax < 0) return null;
+  if (tMin <= 0) return {surface:target.surface,distance:0,roundish:false,incidence:0,z0:target.z0,z1:target.z1};
   // Angle between the ray (reversed) and the face that was hit.
   const cosIncidence = Math.abs(axis === 1 ? vx : vy);
   return { surface:target.surface,distance: tMin, roundish: false, incidence: Math.acos(clamp(cosIncidence, 0, 1)), z0: target.z0, z1: target.z1 };
@@ -94,9 +96,19 @@ export function ping(spec: SonarSpec, pose: SonarPose, targets: readonly SonarTa
     let best: Hit | null = null;
     for (const target of near) {
       const hit = target.kind === "circle" ? rayCircle(ox, oy, dx, dy, target) : rayBox(ox, oy, dx, dy, target);
-      if (hit && hit.distance > minPx && hit.distance < maxPx && (!best || hit.distance < best.distance)) best = hit;
+      if(!hit||hit.distance<0||hit.distance>=maxPx||hit.z1<FLOOR_LEVEL)continue;
+      if(hit.distance<=minPx){
+        // A blind-zone obstacle can still block a farther reflector. Ignore only
+        // near geometry outside the vertical beam (e.g. a tabletop above it).
+        const a=Math.sqrt(2)/sigma,pitch=(spec.pitchDeg??0)*Math.PI/180;
+        const vertical=.5*(erf(a*(Math.atan2(hit.z1-spec.mountHeight,Math.max(1e-9,hit.distance))+pitch))-erf(a*(Math.atan2(hit.z0-spec.mountHeight,Math.max(1e-9,hit.distance))+pitch)));
+        if(vertical<=0)continue;
+      }
+      if(!best||hit.distance<best.distance)best=hit;
     }
-    if (!best || best.z1 < FLOOR_LEVEL) continue;
+    // Below 2 cm the module cannot measure range. Do not trace through that
+    // obstacle and report a false distant opening instead.
+    if (!best || best.distance <= minPx) continue;
     const r = best.distance;
     // How much of the beam's vertical lobe the target fills at this range.
     const a = Math.sqrt(2) / sigma;
