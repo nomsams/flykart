@@ -30,7 +30,7 @@ import { DEFAULT_NOISE, NOISE_PRESETS, NoiseSource, SensorNoise, validateNoise }
 import { SensorConsole, EventKind } from "./telemetry";
 import { SketchEditor } from "./editor";
 import { WiringDiagram } from "./wiring-diagram";
-import { reconnect, rewritePins } from "./rewiring";
+import { reconnect, rewritePins, connectVibration } from "./rewiring";
 import { copyText } from "./serial";
 import { HardwarePanel } from "./hardware-panel";
 import { TrainingOptions, TrainingRun } from "./training";
@@ -68,13 +68,13 @@ root.innerHTML = `
       <div class="sensors">
         <div class="card sensor-card"><div class="sensor-title">01 / CAMERA <span>160 × 120 · RGB565</span></div><canvas id="camera" class="camera-feed" width="160" height="120" aria-label="Low resolution ESP32 camera view"></canvas><small>OV2640-style colour capture at <span id="camera-rate">10</span> Hz. Lens height <span id="camera-height">6.5</span> cm.</small></div>
         <div class="card sensor-card"><div class="sensor-title">02 / FLY VISION <span id="retina-size">48 × 24</span></div><canvas id="fly-eye" class="fly-feed" width="288" height="144" aria-label="Actual camera pixels sent to the fly vision network"></canvas><div class="input-bars" id="input-bars"></div><small id="perception-note">Colour image → estimates → spiking brain. Loading eyes…</small><div class="neural-labels"><span>LEFT</span><span>INPUT ACTIVITY</span><span>RIGHT</span></div></div>
-        <div class="card sensor-card map-card"><div><div class="sensor-title">03 / ROOM MEMORY <span>512 KENYON CELLS</span></div><canvas id="room-map" width="240" height="180" aria-label="Sensor-derived room map and estimated robot position"></canvas></div><div><small>Estimated map from sonar + wheel commands. Amber: uncertain echoes. Green: traversed rays. Position drifts.</small><div class="memory-row"><span id="memory-count">0 cells learned</span><span id="memory-recall">No recall yet</span></div></div></div>
+        <div class="card sensor-card map-card"><div><div class="sensor-title">03 / ROOM MEMORY <span>512 KENYON CELLS</span></div><canvas id="room-map" width="240" height="180" aria-label="Sonar observations and simulated robot position"></canvas></div><div><label class="map-pose-control">Map pose <select id="map-pose-source"><option value="simulated">Simulated motion · follows contact</option><option value="estimated">Command estimate · can drift</option></select></label><small id="map-pose-note">Sonar observations aligned to simulated motion. Amber: uncertain echoes. Green: scanned approach. Dark: unknown, not a doorway. Diagnostic only; no map or true pose reaches the fly.</small><div class="memory-row"><span id="memory-count">0 cells learned</span><span id="memory-recall">No recall yet</span></div></div></div>
       </div>
     </section>
     <aside class="sidebar">
       <section class="card"><div class="card-head"><h2>The fly's brain</h2><span>17 / 19 → 48 → 4</span></div><p id="brain-name" class="brain-name">Loading bundled world brain…</p><select id="drive-mode" class="drive-mode" aria-label="Robot control mode"><option value="fly">Fly controls the robot</option><option value="manual">Manual · WASD / arrow keys</option><option value="sketch">Sketch only · brain requests zero</option></select><div class="row"><label class="import-label">Import brain<input id="brain-file" class="scene-file" type="file" accept=".json,application/json"></label><button id="export-brain">Export brain</button></div><div id="spikes" class="spikes"></div><div class="neural-labels"><span>48 SPIKING NEURONS</span><span id="adapter">WORLD INPUTS</span></div><label class="check"><input id="memory-enabled" type="checkbox" checked> Kenyon visual memory + sonar map</label><div class="row"><button id="forget">Forget room</button><button id="restore-brain" class="quiet">Bundled brain</button></div><p id="brain-note" class="warning-label">Eyes trained in the old renderer; transfer to 3D is experimental.</p></section>
       <section class="card"><div class="card-head"><h2>HC-SR04 sonar</h2><span><span class="legend-dot"></span>FRONT BEAM</span></div><div class="sonar-readout"><strong id="range">—</strong><span id="range-unit">cm</span></div><p class="muted" style="font-size:11px" id="echo-note">No return is an unknown distance.</p><label class="check"><input id="beam-visible" type="checkbox" checked> Show approximate acoustic cone</label><div class="metrics"><div class="metric"><strong id="speed">0</strong><span>cm/s · actual motion</span></div><div class="metric"><strong id="hits">0</strong><span>contacts</span></div><div class="metric"><strong id="left-pwm">0</strong><span>left PWM</span></div><div class="metric"><strong id="right-pwm">0</strong><span>right PWM</span></div></div></section>
-      <section class="card"><div class="card-head"><h2>SW-420 vibration</h2><span>DIGITAL SWITCH</span></div><p id="vibration-status">Disabled · optional sensor</p><button id="vibration-shake">Inject a test shake</button><small>Brief vibration pulses can indicate impact, motor chatter or a cable crossing. Event hold makes short pulses readable; this switch cannot measure crash force.</small></section>
+      <section class="card"><div class="card-head"><h2>SW-420 vibration</h2><span>DIGITAL SWITCH</span></div><p id="vibration-status">Disabled · optional sensor</p><button id="vibration-connect" class="primary">Connect SW-420 · one click</button><p id="vibration-connect-note" class="warning-label"></p><button id="vibration-shake">Inject a test shake</button><small>Brief vibration pulses can indicate impact, motor chatter or a cable crossing. Event hold makes short pulses readable; this switch cannot measure crash force.</small></section>
       <section class="card"><div class="card-head"><h2>Object inspector</h2><span>METRES</span></div><select id="object-list" class="select-object" aria-label="Selected world object"><option value="">Select an object…</option></select><div id="object-editor"><p class="inspector-empty">Click an object in the habitat to move, rotate or resize it. Tables and chairs have legs and real underside clearance.</p></div></section>
     </aside>
   </div>
@@ -544,7 +544,7 @@ function tick(): void {
   if (sonar.update(simTime, physics.pose, objects, physics.config, noise)) {
     sensorTiming.sample('Sim sonar',simTime,0,sonar.reading.echo&&physics.config.sonarEnabled);
     log("sonar", sonar.reading.echo ? `${(sonar.metres * 100).toFixed(1)} cm · ECHO ${Math.round(sonar.pulseMicroseconds)} µs` : "No echo · distance unknown", { cm: sonar.reading.echo ? sonar.metres * 100 : null, echoUs: sonar.pulseMicroseconds });
-    if (check("memory-enabled") && physics.config.sonarEnabled) memory.mapPing(estimator.pose, physics.config.length * .48, sonar.metres, sonar.reading.echo);
+    if (check("memory-enabled") && physics.config.sonarEnabled) memory.mapPing(diagnosticMapPose(), physics.config.length * .48, sonar.metres, sonar.reading.echo);
   }
   if (simTime - captureTime >= 1 / physics.config.cameraHz - 1e-8) capture();
   supportTick(dt);
@@ -651,20 +651,34 @@ function initializeTraining(): void {
   button("export-fly",()=>{if(controller)download('robot-fly-with-eyes.json',robotBrainText());});
 }
 
+function diagnosticMapPose():Pose {
+  if(memory.legacyMapReference){
+    memory.map.clear();memory.mapPoseSource='simulated';memory.legacyMapReference=false;
+    log('system','Legacy command scan history reset for simulated-motion view; learned visual memory retained.');
+  }
+  return memory.mapPoseSource==='estimated'?estimator.pose:physics.pose;
+}
 function renderMap(): void {
+  const p=diagnosticMapPose();
+  el<HTMLSelectElement>('map-pose-source').value=memory.mapPoseSource;
+  const estimated=memory.mapPoseSource==='estimated';
+  setText('map-pose-note',estimated?'Sonar observations aligned to command estimates. Wheel commands keep predicting motion during contact; this view can drift. Dark cells are unknown, not doorways. Excluded from fly inputs.':'Sonar observations aligned to simulated motion. Amber: uncertain echoes. Green: scanned approach. Dark: unknown, not a doorway. Diagnostic only; no map or true pose reaches the fly.');
   const canvas = el<HTMLCanvasElement>("room-map"), ctx = canvas.getContext("2d")!;
   ctx.fillStyle = "#142228"; ctx.fillRect(0, 0, canvas.width, canvas.height);
   const scale = 23, originX = canvas.width / 2, originY = canvas.height / 2;
   ctx.strokeStyle = "#26383d"; ctx.lineWidth = 1;
   for (let i = -4; i <= 4; i++) { ctx.beginPath(); ctx.moveTo(originX + i * scale, 0); ctx.lineTo(originX + i * scale, canvas.height); ctx.moveTo(0, originY + i * scale); ctx.lineTo(canvas.width, originY + i * scale); ctx.stroke(); }
   for (const [key, occupancy] of memory.map) { const [x, z] = key.split(",").map(Number); ctx.fillStyle = occupancy > 0 ? `rgba(233,186,115,${Math.min(.9, occupancy / 3 + .2)})` : "#466c5d"; ctx.fillRect(originX + x * .1 * scale, originY + z * .1 * scale, 3, 3); }
-  const p = estimator.pose; ctx.save(); ctx.translate(originX + p.x * scale, originY + p.z * scale); ctx.rotate(p.heading); ctx.fillStyle = "#d4e7de"; ctx.beginPath(); ctx.moveTo(7, 0); ctx.lineTo(-4, -4); ctx.lineTo(-4, 4); ctx.closePath(); ctx.fill(); ctx.restore();
-  ctx.fillStyle = "#8fa6a7"; ctx.font = "9px system-ui"; ctx.fillText("ESTIMATED POSE / 1 m GRID", 9, 14);
+  canvas.dataset.pose=JSON.stringify(p);canvas.dataset.poseSource=memory.mapPoseSource; ctx.save(); ctx.translate(originX + p.x * scale, originY + p.z * scale); ctx.rotate(p.heading); ctx.fillStyle = "#d4e7de"; ctx.beginPath(); ctx.moveTo(7, 0); ctx.lineTo(-4, -4); ctx.lineTo(-4, 4); ctx.closePath(); ctx.fill(); ctx.restore();
+  ctx.fillStyle = "#8fa6a7"; ctx.font = "9px system-ui"; ctx.fillText(memory.mapPoseSource==="estimated"?"COMMAND ESTIMATE / 1 m GRID":"SIMULATED MOTION / 1 m GRID", 9, 14);
 }
 function telemetry(): void {
   lowerWorkbench?.refresh();
   targetLab?.update(guardReason);
   if(document.getElementById('timing-rows')){const reports=[...sensorTiming.report(simTime),...hardwarePanel.timingReport()];el('timing-rows').replaceChildren(...reports.map(r=>{const tr=document.createElement('tr');for(const value of [r.channel,r.hz.toFixed(1)+' Hz',r.ageMs.toFixed(0)+' ms',r.p95GapMs.toFixed(0)+' ms',r.missing+'/'+r.samples])tr.append(Object.assign(document.createElement('td'),{textContent:String(value)}));return tr;}));setText('timing-cost',`Sim camera + perception: ${captureCost.toFixed(1)} ms / delivered frame. Ages and gaps use separate simulation and host clocks; no assumed device/host clock synchronization.`);}
+  const installed=!!physics.config.vibration?.enabled&&(wiring.vibration??-1)>=0;
+  setText('vibration-connect',installed?'Disconnect SW-420':'Connect SW-420 · one click');
+  setText('vibration-connect-note',installed?`Simulation connected · DO → ${wiring.board==='uno'?'pin':'GPIO'} ${wiring.vibration}. ${wiring.board==='esp32-cam'&&wiring.vibration===33&&!physics.config.vibration?.gpio33Access?'Physical build: GPIO33 requires the status-LED pad and isolated LED; confirm access in Components & wiring before firmware export.':'VCC and common ground are included in the wiring diagram.'}`:'One click installs the simulated module, selects a free pin and updates the sketch.');
   const vr=vibration.reading;setText("vibration-status",vr.valid?`DO ${vr.level} · ${vr.active?"Vibration event held":"Quiet"} · ${vr.count} events${(wiring.vibration??-1)<0?" · virtual DO (unwired)":""}`:"Disabled · optional sensor");
   if (training) renderTraining();
   if (el<HTMLDialogElement>("pinout").open) pinoutDiagram.live(firmware.pins, sonar.pulseMicroseconds);
@@ -709,6 +723,25 @@ function telemetry(): void {
 function wireEvents(): void {
   el("step").after(Object.assign(document.createElement("select"), { id: "step-size", innerHTML: '<option value="1">1 tick</option><option value="30">1 second</option><option value="150">5 seconds</option>', ariaLabel: "Step duration" }));
   el("reset").after(Object.assign(document.createElement("select"), { id: "sim-rate", innerHTML: '<option value="1">1× speed</option><option value="2">2× speed</option><option value="4">4× speed</option>', ariaLabel: "Simulation speed" }));
+  el('map-pose-source').addEventListener('change',()=>{
+    memory.map.clear();memory.mapPoseSource=value('map-pose-source') as 'simulated'|'estimated';
+    const estimated=value('map-pose-source')==='estimated';
+    setText('map-pose-note',estimated?'Sonar observations aligned to command estimates. Wheel commands keep predicting motion during contact; this view can drift. Dark cells are unknown, not doorways. Excluded from fly inputs.':'Sonar observations aligned to simulated motion. Amber: uncertain echoes. Green: scanned approach. Dark: unknown, not a doorway. Diagnostic only; no map or true pose reaches the fly.');
+    el('room-map').setAttribute('aria-label',estimated?'Sonar observations and estimated robot position':'Sonar observations and simulated robot position');
+    renderMap();log('system','Sonar map reference changed; scan cells cleared, visual memory retained.');
+  });
+  button('vibration-connect',()=>safe(()=>{
+    const connected=!!physics.config.vibration?.enabled&&(wiring.vibration??-1)>=0;
+    const next=connected?{wiring:{...wiring,vibration:-1},config:{...physics.config,vibration:{...validateVibration(physics.config.vibration),enabled:false}}}:connectVibration(wiring,physics.config);
+    const rewritten=rewritePins(value('sketch'),next.wiring),nextFirmware=new Firmware(rewritten.source);
+    nextFirmware.tick({timeMs:0,brainLeft:0,brainRight:0,echoUs:0,wiring:next.wiring});
+    pauseForEdit('SW-420 connection changed');
+    wiring=next.wiring;physics.config=next.config;firmware=nextFirmware;actualPWM=[0,0];el<HTMLTextAreaElement>('sketch').value=rewritten.source;sketchEditor.refresh();
+    vibration=new VibrationSensor(noiseConfig.seed);vibration.simulate(simTime*1000,physics.config.vibration!,0,false,0,1/30);
+    pinoutDiagram.update(wiring,physics.config);fillHardware();saveLocal();telemetry();
+    log('vibration',connected?'SW-420 disconnected':`SW-420 connected · DO ${wiring.vibration} · sketch pin synchronized`,{wiring,settings:physics.config.vibration});
+    message(connected?'SW-420 disconnected; other connections retained.':`SW-420 connected in simulation · GPIO ${wiring.vibration}; sketch updated. ${wiring.vibration===33&&!physics.config.vibration?.gpio33Access?'Physical GPIO33 pad access still needs confirmation in Components & wiring.':''}`);
+  }));
   button("vibration-shake",()=>{if(!physics.config.vibration?.enabled){message("Enable SW-420 in Components & wiring and Apply components first.");return;}const s=physics.config.vibration;vibration.sample(s.activeLow?1:0,simTime*1000,s);vibration.sample(s.activeLow?0:1,simTime*1000,s);log("vibration",`Injected test shake · DO=${vibration.reading.level} · event #${vibration.reading.count}`,{...vibration.reading});telemetry();});
   button("run", () => setRunning(!running)); button("step", () => { setRunning(false, "stepped simulation"); for (let i = 0; i < Number(value("step-size")); i++) tick(); telemetry(); }); button("reset", () => { if(training)endTraining("Robot reset; training stopped.");resetRobot(); });
   button("focus", () => { following = !following; if (following) scene.focus(physics.pose); el("focus").textContent = following ? "Unfollow robot" : "Follow robot"; });
@@ -773,8 +806,17 @@ function wireEvents(): void {
   button("save-lab", () => safe(() => download("robot-habitat.json", JSON.stringify(labData(), null, 2))));
   const file = (id: string, callback: (text: string) => void|Promise<void>, max = 64000000) => el<HTMLInputElement>(id).addEventListener("change", async e => { const input = e.target as HTMLInputElement, upload = input.files?.[0]; if (!upload) return; if (upload.size > max) { message("File exceeds the size limit.", true); input.value = ""; return; } try { const opening="Opening " + upload.name + "…"; message(opening); await callback(await upload.text()); if(el("status").textContent===opening)message("Opened " + upload.name + "."); } catch (error) { message(error instanceof Error ? error.message : String(error), true); } input.value = ""; });
 
-  mountBrainShelf(el('brain-name').closest('section')!,'robot',robotBrainText,text=>{setRunning(false);installBrain(text);},importBusy);
-  attachJsonImport(el<HTMLInputElement>('brain-file'), text => { setRunning(false); installBrain(text); }, { title: 'Import robot brain', busy: importBusy, onError: detail => message(detail, true) });
+  const brainLoader=document.createElement('section');brainLoader.id='world-brain-loader';brainLoader.className='card world-brain-loader';
+  const brainHeading=document.createElement('div');brainHeading.className='card-head';brainHeading.innerHTML='<h2>Load a brain</h2><span>FILE / BROWSER / REPOSITORY</span>';
+  const actions=document.createElement('div');actions.className='row';
+  const importButton=document.createElement('button');importButton.id='world-import-brain';importButton.className='primary';importButton.textContent='Import brain…';
+  actions.append(importButton,el('brain-file').closest('.import-label')!,el('export-brain'),el('restore-brain'),el('vibration-connect'));
+  // Keep the same input and its fallback dialog; the single button opens that dialog.
+  actions.querySelector<HTMLElement>('.import-label')!.hidden=true;
+  brainLoader.append(brainHeading,actions);editTools.prepend(brainLoader);
+  mountBrainShelf(brainLoader,'robot',robotBrainText,text=>{setRunning(false);installBrain(text);},importBusy);
+  brainLoader.querySelector<HTMLDetailsElement>('.browser-brain-shelf')!.open=false;
+  attachJsonImport(el<HTMLInputElement>('brain-file'), text => { setRunning(false); installBrain(text); }, { title: 'Import robot brain', trigger:el('world-import-brain'), busy: importBusy, onError: detail => message(detail, true) });
   file("ino-file", text => { program = "custom"; customDraft = text; el<HTMLTextAreaElement>("sketch").value = text; programInfo(); codeMessage("Sketch opened. Click Apply code to run it."); }, 60000);
   attachJsonImport(el<HTMLInputElement>('lab-file'), text => restoreLab(JSON.parse(text)), { title: 'Import robot lab', busy: importBusy, onError: detail => message(detail, true) });
   const editable = (target: EventTarget | null) => target instanceof HTMLElement && (target.matches("input,textarea,select") || target.isContentEditable);

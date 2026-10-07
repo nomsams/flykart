@@ -1,4 +1,19 @@
-import { Wiring, wiringIssues } from "./model";
+import { RobotConfig, Wiring, wiringIssues } from "./model";
+import { validateVibration } from './vibration';
+
+/** Add only a free input; never take UART, motor, sonar or camera pins away. */
+export function connectVibration(w:Wiring,c:RobotConfig):{wiring:Wiring;config:RobotConfig} {
+  const settings=validateVibration(c.vibration);
+  const used=new Set([w.in1,w.in2,w.in3,w.in4,w.ena,w.enb,w.trig,w.echo]);
+  const candidates=w.board==='esp32-cam'?[2,4,12,13,14,15,33]:[4,11,12,13,14,15,16,17,18,19,2,3,5,6,7,8,9,10];
+  const current=w.vibration??-1;
+  const pin=candidates.includes(current)&&!used.has(current)?current:candidates.find(p=>!used.has(p));
+  if(pin===undefined)throw new Error('No free SW-420 input. Free a GPIO in Components & wiring first.');
+  const next={...w,vibration:pin},errors=wiringIssues(next).errors;
+  if(errors.length)throw new Error(errors.join(' '));
+  // Simulation can use GPIO33 without pretending that the physical pad is accessible.
+  return{wiring:next,config:{...c,vibration:{...settings,enabled:true}}};
+}
 
 export const SIGNAL_NAMES = ["in1", "in2", "in3", "in4", "ena", "enb", "trig", "echo", "vibration"] as const;
 export type SignalName = typeof SIGNAL_NAMES[number];

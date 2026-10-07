@@ -1,13 +1,21 @@
 import {describe,it,expect} from 'vitest';
 import {DEFAULT_VIBRATION,validateVibration,VibrationSensor,parseVibrationLine} from './vibration';
-import {DEFAULT_ROBOT,ESP_WIRING,wiringIssues,validateRobotConfig} from './model';
+import {DEFAULT_ROBOT,ESP_WIRING,UNO_WIRING,wiringIssues,validateRobotConfig} from './model';
 import {bridgeSketch,bridgeConfigId} from './esp32-bridge';
-import {reconnect,rewritePins} from './rewiring';
+import {reconnect,rewritePins,connectVibration} from './rewiring';
 import {Firmware,defaultSketch} from './firmware';
 import {TASK_VIBRATION,TASK_TRACKED,DEFAULT_MODULES,BLUE_TARGET,taskContract} from './sensor-contract';
 import {TaskBrain} from './task-brain';
 const settings={...DEFAULT_VIBRATION,enabled:true};
 describe('SW-420 digital vibration channel',()=>{
+  it('connects in one step without taking another signal or claiming physical pad access',()=>{
+    const {wiring,config}=connectVibration(ESP_WIRING,DEFAULT_ROBOT);
+    expect(wiring).toEqual({...ESP_WIRING,vibration:33});expect(config.vibration).toMatchObject({enabled:true,gpio33Access:false});
+    expect(()=>bridgeSketch(wiring,config)).toThrow('confirmation');
+    const free=connectVibration({...ESP_WIRING,in4:1},DEFAULT_ROBOT);expect(free.wiring.vibration).toBe(15);
+    const uno=connectVibration(UNO_WIRING,DEFAULT_ROBOT);expect(uno.wiring.vibration).toBe(4);expect(wiringIssues(uno.wiring).errors).toEqual([]);
+    expect(connectVibration(wiring,config).wiring).toEqual(wiring);expect(DEFAULT_ROBOT.vibration!.enabled).toBe(false);
+  });
   it('holds a short pulse, suppresses bounce and does not call it force',()=>{const v=new VibrationSensor();expect(v.sample(1,0,settings)).toMatchObject({active:false,valid:true,count:0});expect(v.sample(0,1,settings)).toMatchObject({level:0,active:true,count:1});v.sample(1,3,settings);expect(v.sample(0,5,settings).count).toBe(1);v.sample(1,20,settings);expect(v.sample(0,21,settings).count).toBe(2);expect(v.sample(1,170,settings).active).toBe(true);expect(v.sample(1,171,settings).active).toBe(false);expect(v.sample(0,180,DEFAULT_VIBRATION)).toMatchObject({valid:false,active:false});});
   it('supports reversed polarity and missing sensor validity',()=>{const v=new VibrationSensor();expect(v.sample(0,0,{...settings,activeLow:false}).active).toBe(false);expect(v.sample(1,1,{...settings,activeLow:false}).active).toBe(true);expect(v.sample(1,2,settings,false)).toMatchObject({valid:false,active:false});expect(()=>v.sample(1,0,settings)).toThrow('monotonic');});
   it('has deterministic mount chatter and drive-over triggers independent of collision labels',()=>{const a=new VibrationSensor(6),b=new VibrationSensor(6);for(let i=0;i<100;i++)expect(a.simulate(i*33,settings,0,false,.2,1/30)).toEqual(b.simulate(i*33,settings,0,false,.2,1/30));const v=new VibrationSensor();expect(v.simulate(0,settings,0,true,.2,1/30).active).toBe(true);expect(new VibrationSensor().simulate(0,settings,.3,false,0,1/30).active).toBe(true);});

@@ -258,3 +258,18 @@ it('keeps remembered 3D wall returns intact through repeated missing echoes at c
   for(let i=0;i<30;i++)memory.mapPing(pose,.125,4,false);
   expect([...memory.map]).toEqual(before);
 });
+
+it('does not carve a remembered wall with farther noisy echoes and preserves the map reference',()=>{
+  const memory=new RoomMemory({count:512,sparsity:.01,rareWeighting:false}),pose={x:0,z:0,heading:0};
+  for(let i=0;i<4;i++)memory.mapPing(pose,.125,1,true);
+  const wall=[...memory.map].filter(([,v])=>v>0);
+  for(let i=0;i<40;i++)memory.mapPing(pose,.125,2,true);
+  for(const [cell,evidence] of wall)expect(memory.map.get(cell)).toBeGreaterThanOrEqual(evidence);
+  expect(memory.map.has('15,0')).toBe(false); // A farther echo does not prove space behind the wall.
+  expect(RoomMemory.fromJSON(memory.toJSON()).mapPoseSource).toBe('simulated');
+  const legacy=memory.toJSON();delete legacy.mapPoseSource;
+  expect(RoomMemory.fromJSON(legacy).mapPoseSource).toBe('estimated');
+  expect(RoomMemory.fromJSON(legacy).legacyMapReference).toBe(true);
+  expect(RoomMemory.fromJSON(memory.toJSON()).legacyMapReference).toBe(false);
+  expect(()=>RoomMemory.fromJSON({...legacy,mapPoseSource:'oracle'})).toThrow(/pose source/);
+});

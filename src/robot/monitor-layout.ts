@@ -18,7 +18,7 @@ export function setupMonitorLayout(shell: HTMLElement): void {
   ['All','Camera','Fly eye','Sonar map'].forEach((label,i)=>{const button=document.createElement('button');button.type='button';button.textContent=label;button.dataset.monitor=String(i-1);button.onclick=()=>focus(i-1);controls.append(button);});
   sensors.prepend(controls);focus(-1);
   cards.forEach((card,i)=>{const title=card.querySelector('.sensor-title')!;const button=document.createElement('button');button.type='button';button.className='monitor-expand';button.textContent='⤢';button.setAttribute('aria-label',`Expand ${['camera','fly eye','sonar map'][i]}`);button.onclick=()=>focus(focused===i?-1:i);title.append(button);
-    const help=card.querySelector('small');if(help){const details=document.createElement('details');details.className='monitor-help';details.innerHTML='<summary>Details & live activity</summary>';const metrics=Array.from(card.querySelectorAll('.input-bars,.neural-labels,.memory-row'));help.before(details);details.append(help,...metrics);}
+    const help=card.querySelector('small');if(help){const details=document.createElement('details');details.className='monitor-help';details.innerHTML='<summary>Details & live activity</summary>';const metrics=Array.from(card.querySelectorAll('.map-pose-control,.input-bars,.neural-labels,.memory-row'));help.before(details);details.append(...metrics.filter(e=>e.matches('.map-pose-control')),help,...metrics.filter(e=>!e.matches('.map-pose-control')));}
   });
   workspace.before(layout);
   // The run and program bars stay above the grid; all remaining tools share its left column.

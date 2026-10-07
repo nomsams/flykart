@@ -104,3 +104,18 @@ header{padding-top:12px;padding-bottom:12px;gap:12px}header h1{font-size:23px}he
 .workspace>.sidebar,.workspace>.sidebar>.card{min-width:0;max-width:100%}
 .workspace>.sidebar select{min-width:0;max-width:100%}
 @media(max-width:720px){.workspace>.sidebar{grid-template-columns:minmax(0,1fr)}}
+
+.world-brain-loader{margin:0;padding:10px 12px;min-width:0;display:flex;align-items:center;flex-wrap:wrap;gap:6px 12px}
+.scene-edit-tools>.world-brain-loader{flex-basis:100%}
+.world-brain-loader>.card-head{display:block;margin:0}
+.world-brain-loader>.card-head span{display:none}
+.world-brain-loader .row{flex-wrap:wrap;gap:6px}
+.world-brain-loader .browser-brain-shelf{margin:0;flex-basis:100%;min-width:0}
+.world-brain-loader .browser-brain-shelf>.toolbar>small,.world-brain-loader .browser-brain-shelf>small{font-size:10px;line-height:1.5}
+.world-brain-loader .browser-brain-shelf select{max-width:100%}
+.world-brain-loader .browser-brain-shelf button{white-space:normal}
+.world-brain-loader>div.row>.import-label[hidden]{display:none}
+.map-pose-control{display:block;font-size:11px;margin:8px 0}
+.map-pose-control select{display:block;width:100%;max-width:100%;margin-top:5px;font-size:11px}
+#vibration-connect{width:100%;margin-bottom:8px}
+.world-brain-loader #vibration-connect{width:auto;margin:0}
