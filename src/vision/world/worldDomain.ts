@@ -74,7 +74,7 @@ export function worldExpert(s: ArrayLike<number>): Action {
   return { steer, throttle, brake, reverse: 0 };
 }
 
-export type WorldEpisodeOptions = { seed: number; density?: number; styleStrength?: number; maxTicks?: number; camera?: CameraConfig; headless?: boolean; sonar?: SonarSpec | null; profile?: SensorProfile;cameraNoise?:number;cameraBrightness?:number; world?:WorldDef; start?:{x:number;y:number;heading:number}; goal?:GoalPoint; goals?:GoalPoint[]; goalPreset?:GoalPreset; goalCount?:GoalCount; goalRadius?:number; goalLimit?:number; hiddenGoalAngle?:number };
+export type WorldEpisodeOptions = { seed: number; density?: number; styleStrength?: number; maxTicks?: number; camera?: CameraConfig; headless?: boolean; sonar?: SonarSpec | null; scanSonar?: SonarSpec; profile?: SensorProfile;cameraNoise?:number;cameraBrightness?:number; world?:WorldDef; start?:{x:number;y:number;heading:number}; goal?:GoalPoint; goals?:GoalPoint[]; goalPreset?:GoalPreset; goalCount?:GoalCount; goalRadius?:number; goalLimit?:number; hiddenGoalAngle?:number };
 
 export class WorldEpisode implements VisionEpisode {
   readonly sim: WorldSim;
@@ -85,6 +85,8 @@ export class WorldEpisode implements VisionEpisode {
   private readonly random: Random;
   private readonly scan = new Array(SECTORS).fill(0);
   readonly sonarUnit: Sonar | null;
+  /** Observer-only ranger for a camera-only brain; never returned by sonar() or proprioception(). */
+  readonly scanSonarUnit: Sonar | null;
   private readonly fixedTargets: SonarTarget[] = [];
 
   constructor(readonly options: WorldEpisodeOptions) {
@@ -98,6 +100,7 @@ export class WorldEpisode implements VisionEpisode {
     this.frame = new Float32Array(options.headless ? 0 : frameLength(this.camera));
     const sonarSpec = options.sonar ?? options.profile?.sonar ?? null;
     this.sonarUnit = sonarSpec ? new Sonar(sonarSpec, mulberry32(options.seed * 104729 + 11)) : null;
+    this.scanSonarUnit = this.sonarUnit ?? (options.scanSonar ? new Sonar(options.scanSonar, mulberry32(options.seed * 104729 + 11)) : null);
     const { world } = this.sim;
     // Trunks and rocks are solid; ponds, sand and mud lie flat and cannot be heard. The fence is a low wall all round.
     const h = world.half;
@@ -110,9 +113,9 @@ export class WorldEpisode implements VisionEpisode {
 
   /** Take a reading now, after the kart has been moved by hand. */
   refreshSonar(): void {
-    if (!this.sonarUnit) return;
+    if (!this.scanSonarUnit) return;
     const { kart } = this.sim;
-    this.sonarUnit.update(this.tick, { x: kart.x, y: kart.y, heading: kart.heading }, this.targets(),true);
+    this.scanSonarUnit.update(this.tick, { x: kart.x, y: kart.y, heading: kart.heading }, this.targets(),true);
   }
 
   private targets():SonarTarget[]{
@@ -128,9 +131,9 @@ export class WorldEpisode implements VisionEpisode {
   }
 
   private ping(): void {
-    if (!this.sonarUnit) return;
+    if (!this.scanSonarUnit) return;
     const { kart } = this.sim;
-    this.sonarUnit.update(this.sim.status.ticks, { x: kart.x, y: kart.y, heading: kart.heading }, this.targets());
+    this.scanSonarUnit.update(this.sim.status.ticks, { x: kart.x, y: kart.y, heading: kart.heading }, this.targets());
   }
 
   get done(): boolean { return this.sim.done; }

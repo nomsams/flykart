@@ -6,7 +6,7 @@ import { WorldSession } from './ui/sessions';
 import { goalResult } from './world/training';
 import { SonarHistory } from './sonar-history';
 import { Sonar } from './sonar';
-import { HC_SR04 } from './robot';
+import { HC_SR04, KART_PROFILE, ROBOT_PROFILE } from './robot';
 import { mulberry32 } from './rng';
 import { controllerCheckpoint,exportVisionBrain,importFile } from './format';
 const field:WorldDef={seed:1,half:460,obstacles:[],patches:[]};
@@ -38,6 +38,17 @@ describe('Goal placement and completion',()=>{
   });
 });
 describe('Scan evidence',()=>{
+  it('maps camera-only room pings without supplying sonar to the brain, and uses one shared ranger on Robot',()=>{
+    const settings={seed:7,world:{...field,half:150,obstacles:[{x:80,y:0,radius:12,height:30,tone:.5,kind:'rock' as const}]},start:{x:0,y:0,heading:0},goals:[{x:-80,y:30}],kind:'blind' as const,controller:new SpikingNetwork(7).toJSON(),vision:null,density:0,style:0,fade:0,profile:KART_PROFILE};
+    const s=new WorldSession(settings),ep=s.episode,original=structuredClone(settings.controller);
+    expect(ep.sonarUnit).toBeNull();expect(ep.sonar()).toBeNull();expect(ep.proprioception().sonarCloseness).toBeUndefined();
+    expect(ep.camera).toEqual(KART_PROFILE.worldCamera);expect(s.controller.toJSON()).toEqual(original);
+    expect([...s.sonarMap.cells.values()].some(v=>v<0)).toBe(true);expect([...s.sonarMap.cells.values()].some(v=>v>0)).toBe(true);
+    const count=ep.scanSonarUnit!.count;for(let i=0;i<6;i++)s.step();
+    expect(ep.scanSonarUnit!.count).toBeGreaterThan(count);expect(s.sonarMap.samples.length).toBeGreaterThan(1);expect(s.driver!.sensors).toHaveLength(17);
+    const paused=new WorldSession({...settings,sonarOn:false});for(let i=0;i<4;i++)paused.step();expect(paused.sonarMap.samples).toHaveLength(0);
+    const robot=new WorldSession({...settings,profile:ROBOT_PROFILE});expect(robot.episode.scanSonarUnit).toBe(robot.episode.sonarUnit);
+  });
   const sonar=()=>new Sonar(HC_SR04,mulberry32(1));
   it('remembers uncertain echo bands and scanned approaches without marking no-echo space clear',()=>{
     const u=sonar(),h=new SonarHistory();u.reading={echo:true,range:100,strength:1};h.record(u,{x:0,y:0,heading:0});

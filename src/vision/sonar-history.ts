@@ -52,7 +52,7 @@ export function drawSonarHistory(canvas:HTMLCanvasElement,history:SonarHistory,p
   const grid=100;for(let a=Math.ceil(-extent/grid)*grid;a<=extent;a+=grid){line(project(-extent,a),project(extent,a));line(project(a,-extent),project(a,extent));}
   const visible=options.history!==false;
   if(visible){
-    for(const [key,value] of history.cells){const [x,y]=key.split(',').map(Number).map(v=>v*CELL);c.fillStyle=value>0?`rgba(255,177,72,${Math.min(.85,.2+value*.2)})`:`rgba(91,193,199,${Math.min(.65,.16-value*.12)})`;poly([project(x,y),project(x+CELL,y),project(x+CELL,y+CELL),project(x,y+CELL)]);}
+    for(const [key,value] of history.cells){const [x,y]=key.split(',').map(Number).map(v=>v*CELL);c.fillStyle=value>0?`rgba(255,209,72,${Math.min(.9,.4+value*.2)})`:`rgba(95,220,147,${Math.min(.8,.3-value*.12)})`;poly([project(x,y),project(x+CELL,y),project(x+CELL,y+CELL),project(x,y+CELL)]);}
     if(iso)for(const [key,value] of history.cells){if(value<=.3)continue;const [x,y]=key.split(',').map(Number).map(v=>(v+.5)*CELL),base=project(x,y),top=project(x,y,Math.min(12,3+value*2));c.strokeStyle='rgba(255,189,90,.55)';c.lineWidth=2;line(base,top);}
     c.strokeStyle='rgba(166,203,222,.4)';c.lineWidth=1;c.beginPath();history.samples.forEach((p,i)=>{const q=project(p.x,p.y);if(i===0||Math.hypot(p.x-history.samples[i-1].x,p.y-history.samples[i-1].y)>80)c.moveTo(q.x,q.y);else c.lineTo(q.x,q.y);});c.stroke();
   }

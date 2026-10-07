@@ -98,6 +98,15 @@ describe('Discovery fitness and portable settings',()=>{
     expect(discoveryScore({...result,firstSightTick:900},900)).toBeGreaterThan(discoveryScore({...failed,visualViews:64},900));
     expect(discoveryScore({...result,objective:'reach',ticks:100},900)).toBeGreaterThan(discoveryScore({...result,objective:'reach',ticks:200},900));
   });
+  it('uses the selected impact weight for sight and arrival searches while success always dominates',()=>{
+    for(const objective of ['sight','reach'] as const){
+      const fast={...result,objective,firstSightTick:100,ticks:100,pain:6},careful={...result,objective,firstSightTick:200,ticks:200,pain:0};
+      expect(discoveryScore(fast,900,0)).toBeGreaterThan(discoveryScore(careful,900,0));
+      expect(discoveryScore(fast,900,.2)).toBeLessThan(discoveryScore(careful,900,.2));
+      expect(discoveryScore(fast,900,1)).toBeLessThan(discoveryScore(careful,900,1));
+      expect(discoveryScore({...fast,ticks:900,firstSightTick:900},900,1)).toBeGreaterThan(discoveryScore({...careful,won:false,visualViews:64},900,1));
+    }
+  });
   it('preserves search objective and accepts old room settings',()=>{
     const training={version:1 as const,task:'explore' as const,searchWin:'reach' as const,crashWeight:.2,maxTicks:300,memoryEnabled:false,reverseCoach:false};
     const file=exportVisionBrain({name:'Search',controller:controllerCheckpoint(settings.controller,{domain:'world'}),vision:eyes,fusion:{fade:0,mode:'belief',visionTemperature:1},memory:null,world:null,worldTraining:training});expect(importFile(file).worldTraining).toEqual(training);

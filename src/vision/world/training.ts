@@ -12,9 +12,11 @@ export function goalScore(r:GoalResult,limit:number,crashWeight:number):number{
   if(r.arrived&&!r.crashed)return 1000+1000*((1-weight)*Math.max(0,1-r.ticks/limit)+weight*safety);
   return Math.max(0,Math.min(1,r.progress))*400-400*weight*(1-safety)-(r.crashed?200:0);
 }
-/** Successful searches outrank every failure; finding sooner determines the winner. No hidden-distance bonus. */
-export function discoveryScore(r:GoalResult,limit:number):number {
-  return r.won&&!r.crashed?10000+1000*Math.max(0,1-(r.objective==='reach'?r.ticks:r.firstSightTick??r.ticks)/limit)-Math.min(8,r.pain??r.collisions)*.001:Math.min(64,r.visualViews??0)*.02-(r.crashed?2:0);
+/** Successful searches outrank every failure; the speed / impact slider ranks successful searches. No hidden-distance bonus. */
+export function discoveryScore(r:GoalResult,limit:number,crashWeight=0):number {
+  const weight=Math.max(0,Math.min(1,crashWeight)),pain=Math.max(0,r.pain??r.collisions);
+  const speed=Math.max(0,Math.min(1,1-(r.objective==='reach'?r.ticks:r.firstSightTick??r.ticks)/limit));
+  return r.won&&!r.crashed?10000+1000*((1-weight)*speed+weight/(1+pain))-Math.min(8,pain)*.001:Math.min(64,r.visualViews??0)*.02-(r.crashed?2:0);
 }
 export function goalResult(s:WorldSession,initialDistance:number):GoalResult{
   const r=s.episode.sim.status;
@@ -37,7 +39,7 @@ export async function trainWorldController(settings:WorldSettings,generations:nu
       const sessions=brains.map(controller=>new WorldSession({...settings,start,controller,seed,kind:'vision',fade:0,sensorOnly:true,roomMemory:undefined,...(forward?{task:'forage' as const,practiceForward:true,goalPreset:'near' as const}:{})}));
       const distances=sessions.map(s=>s.episode.sim.status.distanceToGoal);
       if(!await runCohort(sessions,cancelled,s=>progress(s,generation,seed),speed,budget))return null;
-      sessions.forEach((s,i)=>{const r=goalResult(s,distances[i]);trials[i].push(r);scores[i]+=(settings.task==='explore'?discoveryScore(r,limit)-s.stallPain*12:goalScore(r,limit,crashWeight))/testSeeds.length;});
+      sessions.forEach((s,i)=>{const r=goalResult(s,distances[i]);trials[i].push(r);scores[i]+=(settings.task==='explore'?discoveryScore(r,limit,crashWeight)-s.stallPain*12:goalScore(r,limit,crashWeight))/testSeeds.length;});
     }return{scores,trials};
   };
   if(settings.task==='explore')log(`Explore & find · ${(settings.searchWin??'sight')==='sight'?'first confirmed sighting':'see then reach'} wins · processed RGB colour detector, no compass or pheromone · same seed for every ghost.`);
@@ -59,7 +61,7 @@ export async function trainWorldController(settings:WorldSettings,generations:nu
   const retention=check?{parent:check.scores[0],offspring:check.scores[1],parentTrials:check.trials[0],offspringTrials:check.trials[1],passed:retainsForward(check.trials[0],check.trials[1],limit,crashWeight)}:undefined;
   if(retention)log(`Held-out forward retention ${retention.passed?'PASS':'FAIL · adoption blocked'} · parent ${retention.parent.toFixed(2)}, offspring ${retention.offspring.toFixed(2)}.`);
   log(`Held-out room scores · parent ${validation.scores[0].toFixed(2)} · offspring ${validation.scores[1].toFixed(2)}. ${settings.world?'Same imported layout, new headings/light; geometry generalization not tested.':'Two unseen seeded layouts/headings.'}`);
-  return{retention,coachFrames:primed?.frames??0,brain:parent.toJSON(),score,generation:generations,crashWeight,task:settings.task??'forage',trainingSeeds:seeds,validation:{parent:validation.scores[0],offspring:validation.scores[1],seeds:heldOut,parentTrials:validation.trials[0],offspringTrials:validation.trials[1]},trials:lastTrials,scoreDefinition:settings.task==='explore'?'Search success: 10000 + 1000 × remaining time fraction at first confirmed visual sighting (or arrival after sighting), minus 0.001 × impact pain as a tie-break. Failure: at most 1.28 points for distinct coarse RGB views, minus 2 on fatal crash. No distance/progress reward, goal compass, pheromone or hidden target position in inputs. Two consecutive fresh processed-camera frames confirm a pink colour component; not a learned target head. Neural mission slots: pixel bearing / pi and apparent size, zero when unseen. Fresh independent memory; common training seeds and held-out trials.':'Arrival: 1000 + 1000 × ((1 − crashWeight) × remaining time fraction + crashWeight / (1 + impact pain)). Failure: partial progress × 400 − contact cost − 200 if crashed. Fixed target set (collect both in two-dot mode); fresh visual memory per trial; explicit goal compass; no reward or collision labels in neural inputs.'};
+  return{retention,coachFrames:primed?.frames??0,brain:parent.toJSON(),score,generation:generations,crashWeight,task:settings.task??'forage',trainingSeeds:seeds,validation:{parent:validation.scores[0],offspring:validation.scores[1],seeds:heldOut,parentTrials:validation.trials[0],offspringTrials:validation.trials[1]},trials:lastTrials,scoreDefinition:settings.task==='explore'?'Search success: 10000 + 1000 × ((1 − crashWeight) × remaining time fraction at first confirmed visual sighting (or arrival after sighting) + crashWeight / (1 + impact pain)), minus 0.001 × impact pain as a tie-break. Failure: at most 1.28 points for distinct coarse RGB views, minus 2 on fatal crash. No distance/progress reward, goal compass, pheromone or hidden target position in inputs. Two consecutive fresh processed-camera frames confirm a pink colour component; not a learned target head. Neural mission slots: pixel bearing / pi and apparent size, zero when unseen. Fresh independent memory; common training seeds and held-out trials.':'Arrival: 1000 + 1000 × ((1 − crashWeight) × remaining time fraction + crashWeight / (1 + impact pain)). Failure: partial progress × 400 − contact cost − 200 if crashed. Fixed target set (collect both in two-dot mode); fresh visual memory per trial; explicit goal compass; no reward or collision labels in neural inputs.'};
 }
 
 /** Motor-only imitation. The coach sees exactly the same estimated inputs; no reward labels enter the learner. */

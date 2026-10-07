@@ -40,7 +40,7 @@ import { HOW_IT_WORKS } from "./ui/how";
 import { LapRecord, TrackSession, TrackSettings, WorldDriverKind, WorldSession, WorldSettings } from "./ui/sessions";
 import { trackDomain, worldDomain } from "./domains";
 import { proceduralTrack } from "./proceduralTracks";
-import { CM_PER_PIXEL, KART_PROFILE, MOUNT, ROBOT, ROBOT_PROFILE, SensorProfile } from "./robot";
+import { CM_PER_PIXEL, HC_SR04, KART_PROFILE, MOUNT, ROBOT, ROBOT_PROFILE, SensorProfile } from "./robot";
 
 const $ = <T extends HTMLElement>(id: string): T => { const element = document.getElementById(id); if (!element) throw new Error(`missing element #${id}`); return element as T; };
 
@@ -72,6 +72,7 @@ const state = {
 
 function showTab(name: string): void {
   state.tab = name;
+  const adopt=document.getElementById('world-train-adopt');if(adopt)adopt.hidden=name!=='world';
   if (name === "track" || name === "world") state.activeDomain = name;
   for (const id of ["track", "world", "evidence", "how"]) {
     const selected = id === name;
@@ -258,7 +259,7 @@ function updateProfileUi(): void {
   $("sonar-row").hidden = !robot; $("sonar-panel").hidden = state.tab !== "track"; $("world-sonar-box").hidden = !robot;
   $("profile-note").textContent = robot
     ? `Robot scale: ${ROBOT.lengthCm} × ${ROBOT.widthCm} cm body, wheels ${ROBOT.wheelbaseCm} cm apart, and the camera and the HC-SR04 sonar both ${ROBOT.mountHeightCm} cm above the floor (one simulator pixel is ${CM_PER_PIXEL} cm, so the 24 × 14 px kart is about 26 × 15 cm). From that height the road is seen almost edge-on, the ground just ahead of the wheels is hidden, and gantries are raised so the sonar can pass beneath them.${robotAssets()?.vision ? "" : " The robot camera network is not bundled in this build: eyes are off."}`
-    : "The original FlyKart Vision kart: a camera 16 cm up and no sonar. The robot profile adds the HC-SR04 and drops the camera to 6.5 cm.";
+    : "The original FlyKart Vision kart: a camera 16 cm up and no sonar inputs. Open world still shows a diagnostic HC-SR04 scan for the observer. The robot profile connects the HC-SR04 to perception and drops the camera to 6.5 cm.";
 }
 
 function setProfile(next: "kart" | "robot"): void {
@@ -277,7 +278,7 @@ function setProfile(next: "kart" | "robot"): void {
 function syncWorldTaskUi():void {
   const explore=$<HTMLSelectElement>('world-task').value==='explore';
   $<HTMLSelectElement>('world-driver').disabled=explore;$<HTMLInputElement>('world-fade').disabled=explore;
-  $<HTMLInputElement>('world-crash-weight').disabled=explore;$<HTMLInputElement>('world-reverse-coach').disabled=explore;
+  $<HTMLInputElement>('world-crash-weight').disabled=false;$<HTMLInputElement>('world-reverse-coach').disabled=explore;
   $('world-search-win-row').hidden=!explore;
   $('world-repeat-search-row').hidden=!explore;
   $('world-require-arrival-row').hidden=!explore;$<HTMLInputElement>('world-require-arrival').checked=$<HTMLSelectElement>('world-search-win').value==='reach';
@@ -285,8 +286,7 @@ function syncWorldTaskUi():void {
   $<HTMLSelectElement>('world-goal-preset').querySelector<HTMLOptionElement>('option[value=pair]')!.textContent=explore?'One random hidden flag · search':'Two dots · collect both, either order';
   if(explore){$<HTMLSelectElement>('world-driver').value='vision';$<HTMLInputElement>('world-fade').value='0';}
   $('world-task-note').textContent=explore?'Search starts with one pink flag outside the camera view. The brain sees processed colour pixels through obstacle eyes and a fixed pink-colour detector, enabled sonar and body feedback. Target slots are image bearing and apparent size; both are zero while unseen. No goal compass, true range, hidden-distance reward or pheromone trail. First confirmed sighting wins by default; optionally require arrival too. Live continuation creates fresh targets from the current robot pose; later targets may start visible. Ghost training always ends after one fair search trial. The map and scan history are observer diagnostics, never neural inputs. Existing compass brains need evolution for these new cue meanings.':'Compass exercises give direction and distance even when the flag is hidden; there is no pheromone trail. Camera estimates, enabled sonar and body feedback also reach the controller. Reverse practice ends on arrival. Ghosts have independent physics and common seeds. Rewards and contact labels select offspring only. A real robot needs a physical goal source.';
-  if(explore)$('world-weight-label').textContent='Fastest successful find wins · impact pain is a tiny tie-break';
-  else $('world-crash-weight').dispatchEvent(new Event('input'));
+  $('world-crash-weight').dispatchEvent(new Event('input'));
 }
 
 let trackCurriculum:ReturnType<typeof mountMapCurriculum>|null=null;
@@ -303,7 +303,7 @@ function buildWorld(): void {
   const settings=experiment.applied();if(document.getElementById('world-eye-layout'))$<HTMLSelectElement>('world-eye-layout').value=settings.visual.layout;state.accumulator.world=0;loggedWorldPing=-1;loggedWorldSight=null;
   if(state.worldMemory&&state.worldMemory.count!==Number($<HTMLSelectElement>("world-memory-count").value))state.worldMemory=null;
   const profile=sensorProfile();if(vision)profile.worldCamera={...profile.worldCamera,width:vision.spec.width,height:vision.spec.height};
-  state.world = new WorldSession({ stall:settings.stall,cameraNoise:settings.cameraNoise,cameraBrightness:settings.cameraBrightness,visual:settings.visual,resolution:settings.resolution, profile, sonarOn: state.sonarOn, roomMemory:$<HTMLInputElement>("world-memory-on").checked?state.worldMemory:null,memorySettings:$<HTMLInputElement>("world-memory-on").checked?{count:Number($<HTMLSelectElement>("world-memory-count").value),sparsity:.01,rareWeighting:true}:undefined,goalPreset:$<HTMLSelectElement>("world-goal-preset").value as GoalPreset,goalCount:readGoalCount(),goalRadius:readGoalRadius(),task:$<HTMLSelectElement>("world-task").value as "forage"|"reverse"|"explore",searchWin:$<HTMLSelectElement>("world-search-win").value as "sight"|"reach",goals:$<HTMLSelectElement>("world-map-preset").value==="imported"?state.arena?.goals:undefined,world:worldScene(),start:$<HTMLSelectElement>("world-map-preset").value==="imported"?state.arena?.start:undefined,seed: boundedInput("world-seed",1,999999,7), density: Number($<HTMLInputElement>("world-density").value), style: Number($<HTMLInputElement>("world-style").value), kind, sensorOnly:kind==="vision",fade: Number($<HTMLInputElement>("world-fade").value), controller, vision });
+  state.world = new WorldSession({ stall:settings.stall,cameraNoise:settings.cameraNoise,cameraBrightness:settings.cameraBrightness,visual:settings.visual,resolution:settings.resolution, profile, scanSonar:calibratedProfile({...KART_PROFILE,sonar:HC_SR04},settings).sonar!, sonarOn: state.sonarOn, roomMemory:$<HTMLInputElement>("world-memory-on").checked?state.worldMemory:null,memorySettings:$<HTMLInputElement>("world-memory-on").checked?{count:Number($<HTMLSelectElement>("world-memory-count").value),sparsity:.01,rareWeighting:true}:undefined,goalPreset:$<HTMLSelectElement>("world-goal-preset").value as GoalPreset,goalCount:readGoalCount(),goalRadius:readGoalRadius(),task:$<HTMLSelectElement>("world-task").value as "forage"|"reverse"|"explore",searchWin:$<HTMLSelectElement>("world-search-win").value as "sight"|"reach",goals:$<HTMLSelectElement>("world-map-preset").value==="imported"?state.arena?.goals:undefined,world:worldScene(),start:$<HTMLSelectElement>("world-map-preset").value==="imported"?state.arena?.start:undefined,seed: boundedInput("world-seed",1,999999,7), density: Number($<HTMLInputElement>("world-density").value), style: Number($<HTMLInputElement>("world-style").value), kind, sensorOnly:kind==="vision",fade: Number($<HTMLInputElement>("world-fade").value), controller, vision });
   state.worldMemory=state.world.memory;
   renderWorldPreviews();
   $("world-brain-info").textContent = !assets.worldController ? "The trained world controller was not found; the track controller is being used instead, which does not understand this world." : !vision && (kind === "vision" || kind === "both") ? "The world camera network was not found, so the kart is driving without eyes." : "";
@@ -316,13 +316,13 @@ function paintWorld(preview?:WorldSession,ghosts:WorldSession[]=[]): void {
   const episode = session.episode; const sim = episode.sim; const driver = session.driver;
   const truth = episode.truth(session.lastTruth); const perception = driver?.perception ?? null;
   updateStallStatus(session);
-  const reading = episode.sonar();
-  const spec=episode.sonarUnit?.spec;
+  const reading = episode.scanSonarUnit?.reading??null;
+  const spec=episode.scanSonarUnit?.spec;
   const sonarView: SonarView | null = reading ? { x: sim.kart.x + Math.cos(sim.kart.heading) * (spec?.mountForward??MOUNT.forward), y: sim.kart.y + Math.sin(sim.kart.heading) * (spec?.mountForward??MOUNT.forward), heading: sim.kart.heading+(spec?.yawDeg??0)*Math.PI/180,beamDeg:(spec?.lobeSigmaDeg??12)*1.25, rangePx: reading.range, echo: reading.echo, on: state.sonarOn } : null;
   drawWorldMap($("world-map") as HTMLCanvasElement, sim.world, sim.kart, { x: sim.status.goalX, y: sim.status.goalY }, { truth, seen: perception ? perception.mean : null, sigma: perception ? perception.variance : null },
     `goals ${sim.status.goals}   speed ${sim.kart.speed.toFixed(0)}   ${sim.surface}${sim.status.crashed ? "   " + sim.status.crashReason : ""}`, sonarView,{goals:sim.goals,goalRadius:sim.goalRadius,trail:$<HTMLInputElement>("world-trail-visible").checked?session.trail:undefined,ghosts:ghosts.map((s,i)=>({...s.episode.sim.kart,trail:$<HTMLInputElement>("world-trail-visible").checked?s.trail:undefined,label:String(i+1),color:GHOST_COLORS[i%GHOST_COLORS.length]}))});
   updateScanStatus("world",session);
-  drawSonarHistory($("world-sonar-map") as HTMLCanvasElement,session.sonarMap,sim.kart,state.sonarOn&&Boolean(episode.sonarUnit),{...scanOptions("world"),available:Boolean(episode.sonarUnit),extent:sim.world.half+50});
+  drawSonarHistory($("world-sonar-map") as HTMLCanvasElement,session.sonarMap,sim.kart,state.sonarOn&&Boolean(episode.scanSonarUnit),{...scanOptions("world"),available:Boolean(episode.scanSonarUnit),extent:sim.world.half+50});
   const discovery=session.discovery, sight=$('world-discovery-status');sight.hidden=!discovery;
   if(discovery){const cue=discovery.cue(),first=discovery.firstSightTick; sight.textContent=`${session.won?'WINNER · ':''}${discovery.tracker.current.visible?'Flag visible':'Searching · flag not visible'} · ${session.searchesCompleted} searches completed · current first sight ${first===null?'not yet':((first-session.searchStartTick)/30).toFixed(2)+' s'} · pixel bearing ${(cue[0]*180).toFixed(1)}° · apparent size ${cue[1].toFixed(3)} · ${discovery.visualViews} coarse views. No compass or true range; map is for the observer.`;}
   paintWorldInputAudit(session);
@@ -349,10 +349,12 @@ function paintWorldInputAudit(session:WorldSession):void {
 }
 
 function updateScanStatus(domain:'track'|'world',session:TrackSession|WorldSession):void {
-  const map=session.sonarMap,unit=session.episode.sonarUnit;
+  const map=session.sonarMap,unit=session instanceof WorldSession?session.episode.scanSonarUnit:session.episode.sonarUnit;
+  const diagnostic=session instanceof WorldSession&&!session.episode.sonarUnit;
   const echoes=map.samples.filter(p=>p.echo).length;
-  $(domain+'-scan-status').textContent=!unit?'No sonar is fitted to the camera-only head. Enable the robot head below to start scanning.':!state.sonarOn?'Sonar ignored; scan recording paused. Enable it below.':`${map.samples.length} remembered pings · ${echoes} echoes · ${map.cells.size} cells · ${state.running[domain]||cameraTraining?'scanning at 15 Hz simulation time':'paused; press Start to scan'}${echoes===0?' · No returns yet: dark ground is unknown, not empty space.':''}`;
-  $(domain+'-scan-enable').hidden=Boolean(unit)&&state.sonarOn;
+  $(domain+'-scan-status').textContent=!unit?'No sonar is fitted to the camera-only head. Enable the robot head below to start scanning.':!state.sonarOn?'Sonar ignored; scan recording paused. Enable it below.':`${diagnostic?'Diagnostic HC-SR04 · camera-only brain unchanged · ':''}${map.samples.length} remembered pings · ${echoes} echoes · ${map.cells.size} cells · ${state.running[domain]||cameraTraining?'scanning at 15 Hz simulation time':'paused; press Start to scan'}${echoes===0?' · No returns yet: dark ground is unknown, not empty space.':''}`;
+  $(domain+'-scan-enable').hidden=Boolean(unit)&&state.sonarOn&&!diagnostic;
+  $(domain+'-scan-enable').textContent=diagnostic&&state.sonarOn?'Use Robot head · feed sonar to brain':'Enable camera + HC-SR04 sonar';
 }
 function mountRuntimeControls():void {
   const panel=document.createElement('section');panel.className='vision-runtime';panel.setAttribute('aria-label','Performance controls');
@@ -630,6 +632,10 @@ function mountBrainFiles():void{
   const bar=document.createElement('section');bar.className='brain-file-bar';bar.setAttribute('aria-label','Brain import and export');
   bar.innerHTML='<div><strong>Brain files</strong><small>Available in Track and Open world · import again at any time</small></div><div class="button-row"><button id="brain-import-always" class="primary">Import brain + eyes…</button><button id="brain-load-project">Load repository brain</button><button id="brain-export-always">Export current brain + setup</button><button id="brain-json-copy">Copy export JSON</button></div><p id="brain-file-status" role="status">Choose Racer v1 or Visual explorer from the repository checkpoint menu. Both are included with this site. Browser saves and uploaded files are separate sources.</p>';
   bar.querySelector('.button-row')!.prepend(repositorySelector('brain-project-choice'));
+  const adopt=$('world-train-adopt');
+  bar.querySelector('.button-row')!.append(adopt);
+  adopt.title='Use the evaluated room offspring, then export or save it. Your parent is retained.';
+  adopt.hidden=state.tab!=='world';
   document.querySelector('.profile-bar')!.after(bar);
   $('brain-load-project').onclick=()=>{if(cameraTraining)return;const button=$<HTMLButtonElement>('load-racer-checkpoint');button.click();button.closest('details')!.open=true;};
   $('brain-import-always').onclick=()=>{if(!cameraTraining)$('import-btn').click();};$('brain-export-always').onclick=exportVision;
@@ -666,7 +672,7 @@ function mountTrainingTools():void{
     const trial=new WorldSim(arena.world.seed,{world:arena.world,start:arena.start,goals:arena.goals,goalCount:arena.exercise?.goalCount,goalRadius:arena.exercise?.goalRadius,goalPreset:arena.exercise?.goalPreset??$<HTMLSelectElement>('world-goal-preset').value as GoalPreset,hiddenGoalAngle:task==='explore'?Math.min(Math.PI-.01,sensorProfile().worldCamera.hfov/2+.25):undefined});
     if(task==='reverse'&&!arena.goals)reverseGoal(trial.world,trial.kart);
     state.arena=arena;$<HTMLInputElement>('world-repeat-search').checked=arena.exercise?.repeatSearch??true;$<HTMLInputElement>('world-goal-radius').value=String((arena.exercise?.goalRadius??24)*CM_PER_PIXEL);$<HTMLSelectElement>('world-goal-count').value=String(arena.exercise?.goalCount??'auto');$<HTMLSelectElement>('world-map-preset').querySelector<HTMLOptionElement>('option[value=imported]')!.disabled=false;$<HTMLSelectElement>('world-map-preset').value='imported';$<HTMLSelectElement>('world-task').value=arena.exercise?.task??'forage';$<HTMLSelectElement>('world-search-win').value=arena.exercise?.searchWin??'sight';$<HTMLSelectElement>('world-goal-preset').value=arena.exercise?.goalPreset??$<HTMLSelectElement>('world-goal-preset').value;$<HTMLInputElement>('world-seed').value=String(arena.world.seed);state.worldMemory=null;buildWorld();setStatus('world','Scene + target positions loaded. Brain retained.');},{title:'Import Open world scene',trigger:$('world-map-import'),busy:()=>cameraTraining,onError:message=>setStatus('world',message)});
-  const weight=$<HTMLInputElement>('world-crash-weight');weight.oninput=()=>{$('world-weight-label').textContent=`${100-Number(weight.value)}% arrival speed · ${weight.value}% less impact pain`;};
+  const weight=$<HTMLInputElement>('world-crash-weight');weight.oninput=()=>{$('world-weight-label').textContent=`${100-Number(weight.value)}% ${$<HTMLSelectElement>('world-task').value==='explore'?'search speed':'arrival speed'} · ${weight.value}% less impact pain · success always ranks first`;};
   $('world-adapt-racer').onclick=()=>{if(cameraTraining)return;const parent=selectedCheckpoint(),worldEyes=state.world?.settings.vision??worldExportSource()?.vision;if(!worldEyes){setStatus('world','Load a world camera network first.');return;}state.importedWorld={controller:racerToRoom(parent.network),vision:worldEyes,generation:parent.generation,fitness:0,trainingRecipe:parent.trainingRecipe,provenance:[{context:'racer-to-room',source:'Explicit input remapping; untrained room offspring',trained:false,parent}]};state.robotExtensions=null;state.worldMemory=null;$<HTMLSelectElement>('world-driver').value='vision';buildWorld();setStatus('world','Room offspring created. Racer parent kept; evolve and test before use.');};
   $('world-train').onclick=()=>{void runWorldTraining();};$('world-train-stop').onclick=()=>{cancelTraining=true;$('world-training-status').textContent='Cancelling after the current cohort tick…';};
   $('world-train-report').onclick=()=>{if(trainedWorld)download('flykart-room-training.json',JSON.stringify({...trainedWorld,context:{...trainedWorldContext,roomMemory:undefined},experiment:trainedWorldExperiment,notes:'Frozen eyes; independent ghosts; fresh visual memory; no deployment claim.'},null,2));};
@@ -703,7 +709,7 @@ async function runWorldTraining():Promise<void>{
 function logWorldPing(session:WorldSession):void{
   logStall(session);
   const first=session.discovery?.firstSightTick;if(first!==null&&first!==undefined&&first!==loggedWorldSight){loggedWorldSight=first;logSensor(`room discovery firstSight=${(first/30).toFixed(3)}s source=processed-RGB confirmed=2-frames compass=off objective=${session.settings.searchWin??'sight'}`);}
-  const unit=session.episode.sonarUnit;if(!unit||loggedWorldPing===unit.count)return;
+  const unit=session.episode.scanSonarUnit;if(!unit||loggedWorldPing===unit.count)return;
   loggedWorldPing=unit.count;const r=unit.reading;
-  logSensor(`room t=${(session.episode.tick/30).toFixed(3)}s ping=${unit.count} ${r.echo?`range=${(r.range*CM_PER_PIXEL).toFixed(2)}cm strength=${r.strength.toFixed(3)}`:'NO_ECHO'} speed=${session.episode.sim.kart.speed.toFixed(2)} contacts=${session.episode.sim.status.collisions} pain=${session.episode.sim.status.pain.toFixed(3)}`);
+  logSensor(`room ${session.episode.sonarUnit?'controller sonar':'diagnostic sonar (not brain input)'} t=${(session.episode.tick/30).toFixed(3)}s ping=${unit.count} ${r.echo?`range=${(r.range*CM_PER_PIXEL).toFixed(2)}cm strength=${r.strength.toFixed(3)}`:'NO_ECHO'} speed=${session.episode.sim.kart.speed.toFixed(2)} contacts=${session.episode.sim.status.collisions} pain=${session.episode.sim.status.pain.toFixed(3)}`);
 }

@@ -19,7 +19,8 @@ export class EyePreview {
     this.gallery = document.createElement('div'); this.gallery.className = 'eye-preview-grid';
     this.gallery.id = domain === 'track' ? 'virtual-eyes' : 'world-virtual-eyes';
     section.append(title, this.status, this.gallery);
-    document.getElementById(domain + '-eye')!.closest('.view-box')!.append(section);
+    const host=domain==='world'?document.getElementById('world-eye-settings')!:document.getElementById(domain + '-eye')!.closest('.view-box')!;
+    host.append(section);
   }
 
   paint(raw: Float32Array, camera: CameraConfig, settings: { visual?: VisionSettings; resolution?: RacingSettings['resolution'] }, ensemble: VisionEnsemble | null, inactive?: string): void {

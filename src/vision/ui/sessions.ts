@@ -16,7 +16,7 @@ import { WORLD_CAMERA, WorldEpisode, worldExpert } from "../world/worldDomain";
 import { SECTORS } from "../world/world";
 import type { SonarSample, TraceSample } from "./draw";
 import type { RacingSettings } from "../racing-settings";
-import { CM_PER_PIXEL, SensorProfile } from "../robot";
+import { CM_PER_PIXEL, HC_SR04, SensorProfile, SonarSpec } from "../robot";
 
 export type TrackSettings = {
   trackId: string; rivals: number; objects: number; style: number; walls: boolean;
@@ -97,7 +97,7 @@ export class TrackSession {
 }
 
 export type WorldDriverKind = "vision" | "both" | "feeling" | "expert" | "blind";
-export type WorldSettings = { seed: number; density: number; style: number; kind: WorldDriverKind; fade: number; controller: BrainSnapshot; vision: VisionModel | null; profile?: SensorProfile; sonarOn?: boolean; visual?:RacingSettings["visual"]; resolution?:RacingSettings["resolution"]; cameraNoise?:number;cameraBrightness?:number;stall?:StallSettings;maxTicks?:number; goals?:{x:number;y:number}[]; goalPreset?:import("../world/world").GoalPreset; goalCount?:import("../world/world").GoalCount;goalRadius?:number; task?:"forage"|"reverse"|"explore"; searchWin?:SearchWin; world?:WorldDef; start?:{x:number;y:number;heading:number}; memorySettings?:MemorySettings; roomMemory?:RoomMemory|null; sensorOnly?:boolean; practiceForward?:boolean };
+export type WorldSettings = { seed: number; density: number; style: number; kind: WorldDriverKind; scanSonar?:SonarSpec; fade: number; controller: BrainSnapshot; vision: VisionModel | null; profile?: SensorProfile; sonarOn?: boolean; visual?:RacingSettings["visual"]; resolution?:RacingSettings["resolution"]; cameraNoise?:number;cameraBrightness?:number;stall?:StallSettings;maxTicks?:number; goals?:{x:number;y:number}[]; goalPreset?:import("../world/world").GoalPreset; goalCount?:import("../world/world").GoalCount;goalRadius?:number; task?:"forage"|"reverse"|"explore"; searchWin?:SearchWin; world?:WorldDef; start?:{x:number;y:number;heading:number}; memorySettings?:MemorySettings; roomMemory?:RoomMemory|null; sensorOnly?:boolean; practiceForward?:boolean };
 
 export class WorldSession {
   readonly episode: WorldEpisode;
@@ -121,7 +121,7 @@ export class WorldSession {
     const camera=settings.profile?.worldCamera??WORLD_CAMERA;
     this.discovery=explore?new FlagDiscovery(settings.vision!.spec.width,settings.vision!.spec.height,camera.hfov):null;
     this.controller = SpikingNetwork.fromJSON(settings.controller);
-    this.episode = new WorldEpisode({ seed: settings.seed, density: settings.density, styleStrength: settings.style,cameraNoise:settings.cameraNoise,cameraBrightness:settings.cameraBrightness, camera: WORLD_CAMERA, maxTicks: settings.maxTicks??4200, world:settings.world,start:settings.start,goals:settings.goals,goalCount:explore?1:settings.task==='reverse'?1:settings.goalCount,goalRadius:settings.goalRadius,goalLimit:settings.goals?.length,goalPreset:settings.task==='reverse'?'near':explore&&settings.goalPreset==='pair'?'random':settings.goalPreset,hiddenGoalAngle:explore?Math.min(Math.PI-.01,camera.hfov/2+.25):undefined, profile: settings.profile });
+    this.episode = new WorldEpisode({ seed: settings.seed, density: settings.density, styleStrength: settings.style,cameraNoise:settings.cameraNoise,cameraBrightness:settings.cameraBrightness, camera: WORLD_CAMERA, maxTicks: settings.maxTicks??4200, world:settings.world,start:settings.start,goals:settings.goals,goalCount:explore?1:settings.task==='reverse'?1:settings.goalCount,goalRadius:settings.goalRadius,goalLimit:settings.goals?.length,goalPreset:settings.task==='reverse'?'near':explore&&settings.goalPreset==='pair'?'random':settings.goalPreset,hiddenGoalAngle:explore?Math.min(Math.PI-.01,camera.hfov/2+.25):undefined, scanSonar:settings.scanSonar??HC_SR04, profile: settings.profile });
     this.initialPose={x:this.episode.sim.kart.x,y:this.episode.sim.kart.y,heading:this.episode.sim.kart.heading};
     if(settings.task==='reverse'||settings.sensorOnly){
       let goal=settings.goals?.[0]??(settings.task==='reverse'?reverseGoal(this.episode.sim.world,this.episode.sim.kart):{x:this.episode.sim.status.goalX,y:this.episode.sim.status.goalY});
@@ -131,7 +131,7 @@ export class WorldSession {
     }
     this.memory=settings.roomMemory??(settings.memorySettings?new RoomMemory(settings.memorySettings):null);
     this.trail.push({x:this.episode.sim.kart.x,y:this.episode.sim.kart.y});
-    this.sonarMap.record(this.episode.sonarUnit,this.episode.sim.kart,settings.sonarOn!==false);
+    this.sonarMap.record(this.episode.scanSonarUnit,this.episode.sim.kart,settings.sonarOn!==false);
     const needsEyes = settings.kind === "vision" || settings.kind === "both";
     const perceiver = needsEyes && settings.vision ? new Perceiver(settings.vision) : null;
     this.driver = settings.kind === "expert" ? null : new VisionDriver({
@@ -173,6 +173,6 @@ export class WorldSession {
     const kart=this.episode.sim.kart,travel=Math.hypot(kart.x-before.x,kart.y-before.y);
     if(kart.speed<0)this.reverseDistance+=travel;
     const last=this.trail[this.trail.length-1];if(Math.hypot(kart.x-last.x,kart.y-last.y)>=2){this.trail.push({x:kart.x,y:kart.y});if(this.trail.length>4000)this.trail.shift();}
-    this.sonarMap.record(this.episode.sonarUnit,kart,this.settings.sonarOn!==false&&this.driver?.options.sonarOff!==true);
+    this.sonarMap.record(this.episode.scanSonarUnit,kart,this.settings.sonarOn!==false&&this.driver?.options.sonarOff!==true);
   }
 }
