@@ -39,6 +39,7 @@ describe('browser brain shelf fallback',()=>{
     values.set('flykart.best-brain.v1',racer);expect((await loadBrowserBrain('racer')).text).toBe(racer);
     await saveBrowserBrain('racer',racer);const offspring=JSON.stringify(controllerCheckpoint(new SpikingNetwork(2),{trainingRecipe:recipe()}));await saveBrowserBrain('vision',offspring);
     expect((await loadBrowserBrain('racer')).text).toBe(racer);expect((await loadBrowserBrain('vision')).text).toBe(offspring);
+    const parking=JSON.stringify(controllerCheckpoint(new SpikingNetwork(3),{domain:'world'}));await saveBrowserBrain('parking',parking);expect((await loadBrowserBrain('parking')).text).toBe(parking);expect((await loadBrowserBrain('racer')).text).toBe(racer);expect((await loadBrowserBrain('vision')).text).toBe(offspring);
     full=true;await expect(saveBrowserBrain('vision',racer)).rejects.toThrow(/full/);expect((await loadBrowserBrain('vision')).text).toBe(offspring);
   });
 });

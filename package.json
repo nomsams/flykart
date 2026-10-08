@@ -27,6 +27,7 @@
     "vision:camera": "vite-node scripts/preview-camera.ts camera-preview.png",
     "robot:camera": "vite-node scripts/preview-camera.ts robot-camera-preview.png robot",
     "robot:ui-check": "node scripts/robot-ui-check.mjs",
+    "parking:ui-check": "node scripts/robot-parking-ui-check.mjs",
     "vision:world-camera": "vite-node scripts/preview-world.ts world-preview.png"
   },
   "devDependencies": {

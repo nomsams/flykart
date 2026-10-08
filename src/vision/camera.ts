@@ -28,7 +28,7 @@ export const DEFAULT_CAMERA: CameraConfig = { width: 48, height: 24, hfov: (96 *
 
 export type Pose = { x: number; y: number; heading: number };
 
-export type SpriteShape = "box" | "kart" | "cone" | "post" | "banner" | "tree" | "rock" | "flag" | "wall";
+export type SpriteShape = "box" | "oriented-box" | "kart" | "cone" | "post" | "banner" | "tree" | "rock" | "flag" | "wall";
 export type Sprite = {
   x: number; y: number;
   /** Direction the object faces; only matters for oriented shapes (karts). */
@@ -209,7 +209,7 @@ function drawSprites(scene: Scene, pose: Pose, config: CameraConfig, projection:
     const view = Math.atan2(right, forward); // bearing of the object from the lens, camera frame
     const worldView = pose.heading + view;
     const relative = sprite.heading - worldView;
-    const oriented = sprite.shape === "kart" || sprite.shape === "wall" || sprite.shape === "banner";
+    const oriented = sprite.shape === "oriented-box" || sprite.shape === "kart" || sprite.shape === "wall" || sprite.shape === "banner";
     const apparent = oriented ? Math.abs(sprite.width * Math.cos(relative)) + Math.abs(sprite.length * Math.sin(relative)) : sprite.width;
     const centerU = cx + f * right / baseDepth;
     const halfPx = (f * apparent / 2) / baseDepth;
