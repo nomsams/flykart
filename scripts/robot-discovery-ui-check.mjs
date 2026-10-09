@@ -13,13 +13,31 @@ try{
   assert.equal(await page.locator('#world-driver').isDisabled(),true);assert.equal(await page.locator('#world-driver').inputValue(),'vision');assert.equal(await page.locator('#world-fade').inputValue(),'0');assert.equal(await page.locator('#world-crash-weight').isDisabled(),false);assert.equal(await page.locator('#world-search-win').inputValue(),'sight');assert.match(await page.locator('#world-task-note').innerText(),/No goal compass/);
   const initial=await page.evaluate(()=>{const s=window.flykartVision.world,k=s.episode.sim.kart,g=s.episode.sim.goals[0];s.step();return{angle:Math.abs(Math.atan2(Math.sin(Math.atan2(g.y-k.y,g.x-k.x)-s.initialPose.heading),Math.cos(Math.atan2(g.y-k.y,g.x-k.x)-s.initialPose.heading))),fov:s.episode.camera.hfov,cue:s.driver.sensors.slice(0,2),found:s.found,limit:s.episode.sim.goalLimit};});
   assert.ok(initial.angle>initial.fov/2);assert.deepEqual(initial.cue,[0,0]);assert.equal(initial.found,false);assert.equal(initial.limit,1);
+  // Rear placement used to silently switch Explore to a compass-powered reverse exercise.
+  await page.locator('#world-search-win').selectOption('reach');
+  await page.locator('#world-goal-behind').click();
+  assert.equal(await page.locator('#world-task').inputValue(),'explore');
+  assert.equal(await page.locator('#world-search-win').inputValue(),'reach');
+  assert.equal(await page.locator('#world-driver').isDisabled(),true);
+  const rear=await page.evaluate(()=>{const s=window.flykartVision.world,k=s.episode.sim.kart,g=s.episode.sim.goals[0];s.step();return {forward:(g.x-k.x)*Math.cos(k.heading)+(g.y-k.y)*Math.sin(k.heading),inputs:s.driver.sensors.slice(0,2),missionCue:s.driver.options.missionCue};});
+  assert.ok(rear.forward<0);assert.deepEqual(rear.inputs,[0,0]);assert.equal(rear.missionCue,false);
+  assert.match(await page.locator('#world-goal-cue-status').innerText(),/TARGET: CAMERA ONLY/);
+  // A legacy scene without an exercise must preserve the user's selected visual mode too.
+  const legacy=await download('world-map-export');delete legacy.exercise;
+  await page.locator('#world-map-import').click();await page.locator('#world-map-file').setInputFiles({name:'legacy-room.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(legacy))});
+  await page.waitForFunction(()=>document.querySelector('#world-status').textContent.includes('Scene + target positions loaded'));
+  assert.equal(await page.locator('#world-task').inputValue(),'explore');
+  assert.equal(await page.evaluate(()=>window.flykartVision.world.driver.options.missionCue),false);
+  assert.equal(await page.locator('#world-search-win').inputValue(),'reach');
+  assert.equal(await page.locator('#world-repeat-search').isChecked(),false);
+  await page.locator('#world-search-win').selectOption('sight');
   // Test actual camera rendering by aiming the robot at an unobstructed nearby flag.
   // The test may set pose; the detector and controller must not query mission/truth.
   await page.evaluate(()=>{const s=window.flykartVision.world,k=s.episode.sim.kart,g=s.episode.sim.goals[0];k.x=g.x-80;k.y=g.y;k.heading=0;k.speed=0;s.episode.mission=()=>{throw Error('Compass leak');};});
   await page.locator('#world-speed').selectOption('4');await page.locator('#world-run').click();await page.waitForFunction(()=>window.flykartVision.world.won,{},{timeout:30000});await page.locator('#world-status').filter({hasText:'Search won'}).waitFor();
   assert.match(await page.locator('#world-discovery-status').innerText(),/WINNER/);assert.match(await page.locator('#world-sensor-log').inputValue(),/discovery firstSight=.*compass=off/);
   await page.locator('#world-search-win').selectOption('reach');const room=await download('brain-export-always');assert.equal(room.worldTraining.task,'explore');assert.equal(room.worldTraining.searchWin,'reach');
-  await page.locator('#world-task').selectOption('forage');assert.equal(await page.locator('#world-driver').isDisabled(),false);assert.equal(await page.locator('#world-crash-weight').isDisabled(),false);await load(room);assert.equal(await page.locator('#world-task').inputValue(),'explore');assert.equal(await page.locator('#world-search-win').inputValue(),'reach');assert.equal(await page.locator('#world-driver').isDisabled(),true);
+  await page.locator('#world-task').selectOption('forage');assert.equal(await page.locator('#world-driver').isDisabled(),false);assert.equal(await page.locator('#world-crash-weight').isDisabled(),false);assert.match(await page.locator('#world-goal-cue-status').innerText(),/COMPASS ON/);await load(room);assert.equal(await page.locator('#world-task').inputValue(),'explore');assert.equal(await page.locator('#world-search-win').inputValue(),'reach');assert.equal(await page.locator('#world-driver').isDisabled(),true);
   await page.evaluate(()=>window.retainedSearch=window.flykartVision.world);const invalid={...room,worldTraining:{...room.worldTraining,searchWin:'oracle'}};await page.locator('#brain-import-always').click();await page.locator('#import-file').setInputFiles({name:'invalid.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(invalid))});await page.locator('#import-file-dialog .json-import-error').filter({hasText:'Invalid room training'}).waitFor();assert.equal(await page.evaluate(()=>window.flykartVision.world===window.retainedSearch),true);await page.locator('#import-file-dialog [data-close]').first().click();
   const impossible={...room,worldSetup:{...room.worldSetup,goalPreset:'far'},worldArena:{...room.worldArena,goals:undefined,start:{x:400,y:400,heading:-3*Math.PI/4}}};await page.locator('#brain-import-always').click();await page.locator('#import-file').setInputFiles({name:'impossible-search.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(impossible))});await page.locator('#import-file-dialog .json-import-error').filter({hasText:'No clear targets'}).waitFor();assert.equal(await page.evaluate(()=>window.flykartVision.world===window.retainedSearch),true);await page.locator('#import-file-dialog [data-close]').first().click();
   // Frozen, small valid eyes keep the UI evolution test inexpensive; no claim of learned navigation.

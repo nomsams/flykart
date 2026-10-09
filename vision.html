@@ -163,6 +163,7 @@
               <div class="view-box">
                 <div class="view-title"><span>Top view</span><span id="world-caption" class="muted"></span></div>
                 <div class="canvas-wrap square"><canvas id="world-map" width="620" height="620" aria-label="Top-down view of the open world"></canvas></div>
+                <div id="world-goal-cue-status" class="eye-note" role="status"></div>
                 <div class="eye-note">The pink flag is the goal. Furniture legs and fixed objects block movement; high tops leave room underneath. Shoes can move; floor hazards slow the wheels. Blue ponds end the run.</div>
               </div>
               <div class="view-box">
@@ -187,7 +188,7 @@
               <div class="section-title"><h2>Driver</h2></div>
               <label>Who steers
                 <select id="world-driver">
-                  <option value="vision">Camera → spiking controller</option>
+                  <option value="vision">Camera → spiking controller · goal cue below</option>
                   <option value="both">Camera + exact whiskers (fused)</option>
                   <option value="feeling">Exact numbers → spiking controller</option>
                   <option value="expert">Hand-written expert</option>

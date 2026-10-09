@@ -25,6 +25,7 @@ export const alignedParkingDomain={...parkingDomain,sensors(estimates:ArrayLike<
 }};
 export class ParkingSession{
   private prepared:DriverFrame|null=null;
+  lastAction:Action={steer:0,throttle:0,brake:0,reverse:0};
   readonly episode:ParkingEpisode;readonly network:SpikingNetwork;readonly driver:VisionDriver;readonly cue:ParkingCue;readonly scan=new SonarHistory();readonly memory:RoomMemory;
   constructor(readonly settings:ParkingSettings,readonly brain:ParkingBrain,options:{scene?:ParkingScene;memory?:RoomMemory;learn?:boolean}={}){
     this.network=SpikingNetwork.fromJSON(brain.controller);this.memory=options.memory??new RoomMemory(brain.memory);
@@ -34,5 +35,5 @@ export class ParkingSession{
     this.driver.reset();this.scan.record(this.episode.sonarUnit,this.episode.pose,settings.sonarOn);this.prepared=this.driver.act(this.episode);
   }
   get done(){return this.episode.done;}
-  step(action?:Action){if(this.done)return;const frame=this.prepared??this.driver.act(this.episode);this.prepared=null;this.episode.step(action??frame.action);const stall=action?0:this.driver.stall?.painForTick(this.episode.tick)??0;this.episode.status.pain+=stall;this.episode.status.score-=stall*(4+this.settings.crashWeight*60);this.scan.record(this.episode.sonarUnit,this.episode.pose,this.settings.sonarOn);}
+  step(action?:Action){if(this.done)return;const frame=this.prepared??this.driver.act(this.episode);this.prepared=null;this.lastAction={...(action??frame.action)};this.episode.step(this.lastAction);const stall=action?0:this.driver.stall?.painForTick(this.episode.tick)??0;this.episode.status.pain+=stall;this.episode.status.score-=stall*(4+this.settings.crashWeight*60);this.scan.record(this.episode.sonarUnit,this.episode.pose,this.settings.sonarOn);}
 }

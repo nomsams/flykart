@@ -1,3 +1,4 @@
+import {goalCueStatus} from './goal-cue-status';
 import { RuntimeBudget, PreviewMode } from './runtime-budget';
 import { repositorySelector } from '../repository-brains';
 import { EyePreview } from './ui/eye-preview';
@@ -355,6 +356,7 @@ function updateStallStatus(session:TrackSession|WorldSession):void{const stall=s
 function paintWorldInputAudit(session:WorldSession):void {
   const driver=session.driver,s=driver?.sensors,visual=!!session.discovery;
   const source=$('world-input-source');
+  $('world-goal-cue-status').textContent=goalCueStatus(visual?'pixels':session.settings.kind==='vision'?'compass':'privileged',s,session.discovery,session.episode.tick);
   source.textContent=visual?'Explore & find: WORLD COMPASS BLOCKED. A fixed pink-colour detector supplies image bearing and apparent size, zero while unseen. CNN obstacle estimates also produce calculated steering/speed hints: this is not an end-to-end pixel-only network. Body speed is simulated feedback; hardware needs an encoder or estimator. Rewards, contacts, target coordinates, scan map and ground-truth charts are observer/scoring data only.':session.settings.kind==='vision'?'Camera navigation with an EXPLICIT GOAL COMPASS: direction and distance can be known while the flag is hidden. Select Explore & find for image-only target cues.':`${session.settings.kind} mode can use privileged surroundings or an expert; it is not a visual-search test.`;
   const f=(n:number)=>s?.[n]?.toFixed(3)??'—';
   $('world-neural-inputs').textContent=[`00 ${visual?'Image bearing / π':'Compass bearing / π'}: ${f(0)}`,`01 ${visual?'Apparent flag size':'Compass closeness'}: ${f(1)}`,`02–10 Obstacle estimates: ${s?s.slice(2,11).map(v=>v.toFixed(2)).join(' '):'—'}`,`11 Simulated body speed: ${f(11)}`,`12–13 Last steer / drive: ${f(12)} / ${f(13)}`,`14 Surface estimate: ${f(14)}`,`15 Derived steering hint: ${f(15)}`,`16 Derived speed hint: ${f(16)}`,...(s&&s.length>17?[`17–18 Sonar closeness / strength: ${f(17)} / ${f(18)}`]:[])].join('\n');
@@ -681,7 +683,18 @@ function mountTrainingTools():void{
   $('world-sonar-apply').onclick=()=>{if(cameraTraining||!state.world)return;try{const scene=savedScene(),surface=validateSonarSurface($<HTMLSelectElement>('world-sonar-surface').value);scene.world.obstacles.forEach(o=>o.sonarSurface=surface);state.arena=validateArena(scene);const picker=$<HTMLSelectElement>('world-map-preset');picker.querySelector<HTMLOptionElement>('option[value=imported]')!.disabled=false;picker.value='imported';state.worldMemory=null;buildWorld();setStatus('world','Sonar surfaces applied; room and target positions preserved.');}catch(e){setStatus('world',(e as Error).message);}};
   $('world-clearance-apply').onclick=()=>{if(cameraTraining||!state.world)return;try{const cm=Number($<HTMLInputElement>('world-clearance').value);if(!Number.isFinite(cm)||cm<0||cm>26)throw Error('Clearance must be 0–26 cm.');const world=structuredClone(state.world.episode.sim.world);for(const o of world.obstacles)if(furniture(o))o.clearance=Math.min(cm/1.1,o.height-.5);state.arena=validateArena({...savedScene(),world});const picker=$<HTMLSelectElement>('world-map-preset');picker.querySelector<HTMLOptionElement>('option[value=imported]')!.disabled=false;picker.value='imported';state.worldMemory=null;buildWorld();setStatus('world','Furniture clearance applied; layout preserved as Your scene.');}catch(e){setStatus('world',(e as Error).message);}};
   $('world-map-preset').addEventListener('change',()=>{if(cameraTraining)return;const kind=$<HTMLSelectElement>('world-map-preset').value;if(kind==='woods')$<HTMLInputElement>('world-density').value='1';else if(kind==='procedural')$<HTMLInputElement>('world-density').value='.6';try{buildWorld();}catch(e){setStatus('world',(e as Error).message);}});
-  $('world-goal-behind').onclick=()=>{if(cameraTraining||!state.world)return;const sim=state.world.episode.sim;try{reverseGoal(sim.world,sim.kart);state.arena=validateArena({format:'flykart-world',version:1,world:sim.world,start:{x:sim.kart.x,y:sim.kart.y,heading:sim.kart.heading}});$<HTMLSelectElement>('world-map-preset').querySelector<HTMLOptionElement>('option[value=imported]')!.disabled=false;$<HTMLSelectElement>('world-map-preset').value='imported';$<HTMLSelectElement>('world-task').value='reverse';buildWorld();setStatus('world','Fixed goal behind the start · ready');}catch(e){setStatus('world',(e as Error).message);}};
+  $('world-goal-behind').onclick=()=>{
+    if(cameraTraining||!state.world)return;const sim=state.world.episode.sim;
+    try{
+      const goal=reverseGoal(sim.world,sim.kart),visual=$<HTMLSelectElement>('world-task').value==='explore';
+      // Placement must not quietly replace the chosen pixel-only mission with a compass exercise.
+      state.arena=validateArena({...savedScene(),start:{x:sim.kart.x,y:sim.kart.y,heading:sim.kart.heading},goals:[goal]});
+      $<HTMLSelectElement>('world-map-preset').querySelector<HTMLOptionElement>('option[value=imported]')!.disabled=false;
+      $<HTMLSelectElement>('world-map-preset').value='imported';
+      if(!visual)$<HTMLSelectElement>('world-task').value='reverse';
+      buildWorld();setStatus('world',visual?'Rear flag placed · visual exploration retained · compass OFF':'Rear flag placed · reverse exercise · compass ON');
+    }catch(e){setStatus('world',(e as Error).message);}
+  };
   $('world-require-arrival').addEventListener('change',()=>{$<HTMLSelectElement>('world-search-win').value=$<HTMLInputElement>('world-require-arrival').checked?'reach':'sight';buildWorld();});
   $('world-goal-radius').addEventListener('change',()=>{try{buildWorld();}catch(e){setStatus('world',(e as Error).message);}});
   $('world-search-win').addEventListener('change',()=>{try{buildWorld();}catch(e){setStatus('world',(e as Error).message);}});
@@ -691,11 +704,28 @@ function mountTrainingTools():void{
   $('world-copy-logs').onclick=()=>{void copySensorLogs('world');};$('world-clear-logs').onclick=clearSensorLogs;
   $('world-trail-visible').addEventListener('change',()=>paintWorld());$('world-trail-clear').onclick=()=>{if(state.world)state.world.trail.splice(0,state.world.trail.length,{x:state.world.episode.sim.kart.x,y:state.world.episode.sim.kart.y});paintWorld();};
   $('world-map-export').onclick=()=>{if(!state.world)return;download('flykart-open-world.json',JSON.stringify(savedScene(),null,2));};
-  attachJsonImport($<HTMLInputElement>('world-map-file'),async text=>{const arena=validateArena(JSON.parse(text)),task=arena.exercise?.task??'forage',eyes=(state.importedWorld??worldExportSource())?.vision;
+  attachJsonImport($<HTMLInputElement>('world-map-file'),async text=>{
+    const arena=validateArena(JSON.parse(text)),exercise=arena.exercise;
+    // Legacy geometry-only files have no authority to enable a compass or change the win rule.
+    const task=exercise?.task??$<HTMLSelectElement>('world-task').value;
+    const searchWin=exercise?.searchWin??$<HTMLSelectElement>('world-search-win').value;
+    const goalPreset=exercise?.goalPreset??$<HTMLSelectElement>('world-goal-preset').value as GoalPreset;
+    const goalCount=exercise?.goalCount??readGoalCount(),goalRadius=exercise?.goalRadius??readGoalRadius();
+    const repeatSearch=exercise?.repeatSearch??$<HTMLInputElement>('world-repeat-search').checked;
+    const eyes=(state.importedWorld??worldExportSource())?.vision;
     if((task==='explore'||$<HTMLSelectElement>('world-driver').value==='vision')&&!eyes)throw Error('Load a world camera network before importing a scene for camera-only driving.');
-    const trial=new WorldSim(arena.world.seed,{world:arena.world,start:arena.start,goals:arena.goals,goalCount:arena.exercise?.goalCount,goalRadius:arena.exercise?.goalRadius,goalPreset:arena.exercise?.goalPreset??$<HTMLSelectElement>('world-goal-preset').value as GoalPreset,hiddenGoalAngle:task==='explore'?Math.min(Math.PI-.01,sensorProfile().worldCamera.hfov/2+.25):undefined});
+    const trial=new WorldSim(arena.world.seed,{world:arena.world,start:arena.start,goals:arena.goals,goalCount,goalRadius,goalPreset,hiddenGoalAngle:task==='explore'?Math.min(Math.PI-.01,sensorProfile().worldCamera.hfov/2+.25):undefined});
     if(task==='reverse'&&!arena.goals)reverseGoal(trial.world,trial.kart);
-    state.arena=arena;$<HTMLInputElement>('world-repeat-search').checked=arena.exercise?.repeatSearch??true;$<HTMLInputElement>('world-goal-radius').value=String((arena.exercise?.goalRadius??24)*CM_PER_PIXEL);$<HTMLSelectElement>('world-goal-count').value=String(arena.exercise?.goalCount??'auto');$<HTMLSelectElement>('world-map-preset').querySelector<HTMLOptionElement>('option[value=imported]')!.disabled=false;$<HTMLSelectElement>('world-map-preset').value='imported';$<HTMLSelectElement>('world-task').value=arena.exercise?.task??'forage';$<HTMLSelectElement>('world-search-win').value=arena.exercise?.searchWin??'sight';$<HTMLSelectElement>('world-goal-preset').value=arena.exercise?.goalPreset??$<HTMLSelectElement>('world-goal-preset').value;$<HTMLInputElement>('world-seed').value=String(arena.world.seed);state.worldMemory=null;buildWorld();setStatus('world','Scene + target positions loaded. Brain retained.');},{title:'Import Open world scene',trigger:$('world-map-import'),busy:()=>cameraTraining,onError:message=>setStatus('world',message)});
+    state.arena=arena;
+    $<HTMLInputElement>('world-repeat-search').checked=repeatSearch;
+    $<HTMLInputElement>('world-goal-radius').value=String(goalRadius*CM_PER_PIXEL);
+    $<HTMLSelectElement>('world-goal-count').value=String(goalCount??'auto');
+    $<HTMLSelectElement>('world-map-preset').querySelector<HTMLOptionElement>('option[value=imported]')!.disabled=false;
+    $<HTMLSelectElement>('world-map-preset').value='imported';$<HTMLSelectElement>('world-task').value=task;
+    $<HTMLSelectElement>('world-search-win').value=searchWin;$<HTMLSelectElement>('world-goal-preset').value=goalPreset;
+    $<HTMLInputElement>('world-seed').value=String(arena.world.seed);state.worldMemory=null;
+    buildWorld();setStatus('world','Scene + target positions loaded. Brain retained.');
+  },{title:'Import Open world scene',trigger:$('world-map-import'),busy:()=>cameraTraining,onError:message=>setStatus('world',message)});
   const weight=$<HTMLInputElement>('world-crash-weight');weight.oninput=()=>{$('world-weight-label').textContent=`${100-Number(weight.value)}% ${$<HTMLSelectElement>('world-task').value==='explore'?'search speed':'arrival speed'} · ${weight.value}% less impact pain · success always ranks first`;};
   $('world-adapt-racer').onclick=()=>{if(cameraTraining)return;const parent=selectedCheckpoint(),worldEyes=state.world?.settings.vision??worldExportSource()?.vision;if(!worldEyes){setStatus('world','Load a world camera network first.');return;}state.importedWorld={controller:racerToRoom(parent.network),vision:worldEyes,generation:parent.generation,fitness:0,trainingRecipe:parent.trainingRecipe,provenance:[{context:'racer-to-room',source:'Explicit input remapping; untrained room offspring',trained:false,parent}]};state.robotExtensions=null;state.worldMemory=null;$<HTMLSelectElement>('world-driver').value='vision';buildWorld();setStatus('world','Room offspring created. Racer parent kept; evolve and test before use.');};
   $('world-train-setup').onclick=()=>{showTab('world');$('world-task').scrollIntoView({block:'center'});$('world-task').focus({preventScroll:true});};

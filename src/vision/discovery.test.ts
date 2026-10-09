@@ -11,6 +11,11 @@ import { defaultSpec, Perceiver, serialiseModel } from './perception';
 import { VisionDriver } from './pipeline';
 import { DEFAULT_VISION } from '../robot/vision-workbench';
 import { targetComponents } from '../robot/target-tracker';
+import visualParent from '../../assets/flykart-visual.json?raw';
+import { KART_PROFILE, HC_SR04 } from './robot';
+import { widenBrain } from './inputs';
+import { goalCueStatus } from './goal-cue-status';
+import { DEFAULT_MEMORY } from '../robot/memory';
 
 const field:WorldDef={seed:1,half:460,obstacles:[],patches:[]};
 const spec={...defaultSpec(2,10,'rgb',false),channels:[1,1,1] as [number,number,number],hidden:4};
@@ -23,6 +28,32 @@ function pixels(flag=true):Float32Array {
 }
 
 describe('Pixel discovery without a goal oracle',()=>{
+  it('the real visual checkpoint cannot distinguish two rear flags through rendered pixels, memory or actions',()=>{
+    const parent=importFile(visualParent);
+    const make=(y:number)=>new WorldSession({...settings,controller:widenBrain(parent.controller!.snapshot),vision:parent.vision!,profile:{...KART_PROFILE,sonar:HC_SR04},searchWin:'reach',goals:[{x:-200,y}],sonarOn:true,visual:{...DEFAULT_VISION,layout:'circle9',smooth:true},memorySettings:{...DEFAULT_MEMORY,count:512}});
+    const a=make(-80),b=make(80);
+    for(const s of [a,b]){s.episode.mission=()=>{throw Error('Hidden compass leak');};s.episode.truth=()=>{throw Error('Hidden geometry leak');};s.episode.lapContext=()=>{throw Error('Pose memory leak');};}
+    for(let tick=0;tick<24;tick++){
+      expect(a.episode.render()).toEqual(b.episode.render());
+      a.step();b.step();
+      expect(a.discovery!.tracker.current.visible).toBe(false);expect(b.discovery!.tracker.current.visible).toBe(false);
+      expect(a.driver!.sensors.slice(0,2)).toEqual([0,0]);expect(a.driver!.sensors).toHaveLength(19);
+      expect(a.driver!.sensors).toEqual(b.driver!.sensors);expect(a.lastAction).toEqual(b.lastAction);
+      expect(a.episode.sim.kart).toEqual(b.episode.sim.kart);
+    }
+    // Positive control: the explicitly selected compass distinguishes those same hidden targets.
+    const compass=(y:number)=>{const s=new WorldSession({...settings,task:'forage',sensorOnly:true,goals:[{x:-200,y}]});s.step();return s.driver!.sensors[0];};
+    expect(compass(-80)).toBeLessThan(0);expect(compass(80)).toBeGreaterThan(0);
+  },20000);
+  it('reports the active source and camera frame age without confusing visibility with the motor decision',()=>{
+    const d=new FlagDiscovery(48,24,WORLD_CAMERA.hfov);
+    expect(goalCueStatus('pixels',[0,0],d,0)).toContain('awaiting camera frame');
+    d.observe(pixels(),0);expect(goalCueStatus('pixels',[.1,.2],d,0)).toContain('flag visible');
+    expect(goalCueStatus('pixels',[.1,.2],d,2)).toContain('0.07 s old');
+    d.observe(pixels(false),3);expect(goalCueStatus('pixels',[0,0],d,3)).toContain('flag unseen');
+    expect(goalCueStatus('compass',[.4,.5],d,3)).toContain('COMPASS ON');
+    d.reset();expect(d.sampleTick).toBeNull();
+  });
   it('confirms fresh frames only and zeroes target cues when it disappears',()=>{
     const d=new FlagDiscovery(48,24,WORLD_CAMERA.hfov);
     d.observe(pixels(),0);expect(d.firstSightTick).toBeNull();expect(d.cue()[0]).toBeGreaterThan(0);expect(d.cue()[1]).toBeGreaterThan(0);

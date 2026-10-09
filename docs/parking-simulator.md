@@ -82,3 +82,11 @@ No physical robot, collision switch or serial flash was used to validate parking
 3. Add rear/side sensing explicitly. Current forward-camera crops cannot see behind the chassis, which makes safe reversing and parallel parking harder. Evaluate a bumper switch and a rear ranger as distinct sensor contracts rather than hidden simulator knowledge.
 4. Expand held-out tests to occluded markers, moving-car crossings, unfamiliar paint colours, different bay sizes and sensor dropout. Keep pedestrian contacts as a separate safety metric rather than trading them away for faster parking.
 5. Add an optional navigation memory built from estimated visual motion/odometry, with uncertainty and relocalization. The existing visual recall and diagnostic map are not yet a parking-space localization system.
+
+## Checking hidden goals
+
+The live target-cue line beside the world view shows **CAMERA ONLY** or **COMPASS ON**, the actual neural target inputs, and the age of the processed camera frame. Visual target bearing and apparent size come from a fixed pink-colour detector; obstacle estimates come from the inherited CNN. This is assisted visual perception, not end-to-end learned target recognition. Forward-camera swarm crops do not provide a rear camera.
+
+In Open world, **Place flag behind current robot** preserves Explore & find and its arrival rule. It previously selected the compass-powered reverse exercise even when exploration was selected. The reverse exercise is now explicitly labelled **goal compass**. Loading an older room file without an exercise also preserves the selected task, arrival rule and repeat-search setting.
+
+Regression tests run the actual bundled visual checkpoint against two different fully hidden rear targets, using real camera rendering, sonar, nine eye crops, temporal filtering and visual recall. Before either target is visible, neural inputs, motor actions and trajectories must match; compass mode is a positive control that must distinguish them. This checks that particular hidden-target scenario, not every possible scene. A learned reverse/search habit or a previously observed target can still explain purposeful-looking reversing; immediate reversing alone is not proof of a goal-position leak.

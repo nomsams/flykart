@@ -106,6 +106,22 @@ describe('parking lots and parking judge',()=>{
 });
 
 describe('camera and sensor-only parking',()=>{
+  it('the real visual parent has identical observations and actions for distinct fully hidden rear bays',()=>{
+    const parent=importFile(visualParent),b:ParkingBrain={controller:widenBrain(parent.controller!.snapshot),eyes:parent.vision!,visual:{...DEFAULT_VISION,layout:'circle9',smooth:true},memory:{...DEFAULT_MEMORY,count:512}};
+    const make=(z:number,cue:'visual'|'compass'='visual')=>{
+      const scene=generateParking(DEFAULT_PARKING);scene.actors=[];scene.start={x:0,z:0,heading:0};scene.target={...scene.target,x:-2,z,heading:Math.PI/2};scene.bays=[{...scene.target}];
+      return new ParkingSession({...DEFAULT_PARKING,cue,phase:'frozen'},b,{scene});
+    };
+    const a=make(-.8),c=make(.8);
+    for(const s of [a,c]){s.episode.mission=()=>{throw Error('Hidden compass leak');};s.episode.truth=()=>{throw Error('Hidden geometry leak');};}
+    for(let tick=0;tick<24;tick++){
+      expect(a.episode.render()).toEqual(c.episode.render());a.step();c.step();
+      expect(a.cue.tracker.current.visible).toBe(false);expect(c.cue.tracker.current.visible).toBe(false);
+      expect(a.driver.sensors.slice(0,2)).toEqual([0,0]);expect(a.driver.sensors).toEqual(c.driver.sensors);
+      expect(a.lastAction).toEqual(c.lastAction);expect(a.episode.physics.pose).toEqual(c.episode.physics.pose);
+    }
+    expect(make(-.8,'compass').driver.sensors[0]).toBeLessThan(0);expect(make(.8,'compass').driver.sensors[0]).toBeGreaterThan(0);
+  },20000);
   it('renders box roofs and distinct shaded faces from actual volume, with near-camera and goal occlusion',()=>{
     const camera:CameraConfig={width:80,height:40,hfov:Math.PI/2,mountHeight:6.5,mountForward:0,pitch:.2};
     const box:Sprite={x:40,y:0,heading:Math.PI/4,length:26,width:17,z0:0,z1:11,color:[.2,.4,.8],shape:'oriented-box'};

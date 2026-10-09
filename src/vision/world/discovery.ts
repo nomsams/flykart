@@ -17,6 +17,8 @@ export class FlagDiscovery {
     this.tracker = new TargetTracker(Math.max(2, Math.ceil(width * height * .0015)));
   }
   get visualViews(): number { return this.views.size; }
+  /** Timestamp of the most recent processed camera frame, not simulator target data. */
+  get sampleTick(): number | null { return Number.isFinite(this.lastTick) ? this.lastTick : null; }
   reset(): void {
     this.tracker.reset(); this.firstSightTick = null; this.lastTick = -Infinity;
     this.consecutive = 0; this.trackId = null; this.views.clear();
