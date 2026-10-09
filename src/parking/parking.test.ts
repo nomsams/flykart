@@ -1,4 +1,5 @@
 import {describe,expect,it} from 'vitest';
+import visualParent from '../../assets/flykart-visual.json?raw';
 import {SpikingNetwork,Action} from '../core';
 import {VisionCnn} from '../vision/cnn';
 import {defaultSpec,serialiseModel} from '../vision/perception';
@@ -9,8 +10,11 @@ import {DEFAULT_ROBOT,overlaps} from '../robot/model';
 import {widenBrain,narrowBrain} from '../vision/inputs';
 import {importFile} from '../vision/format';
 import {DEFAULT_PARKING,LESSONS,generateParking,validateParkingScene,parkingQuality,bodySolid,actorSolid} from './model';
-import {ParkingEpisode,ParkingCue,PX} from './episode';
-import {ParkingBrain,ParkingSession,parkingDomain} from './session';
+import {ParkingEpisode,ParkingCue,PX,parkingMotorRequests} from './episode';
+import {ParkingBrain,ParkingSession,parkingDomain,alignedParkingDomain} from './session';
+import {worldDomain,WORLD_CAMERA} from '../vision/world/worldDomain';
+import {VisionDriver} from '../vision/pipeline';
+import {Perceiver} from '../vision/perception';
 import {parkingBrainText,parkingLab,parseParkingLab,parkingRobotScene} from './files';
 import {coachChild,trainParking} from './training';
 import {renderFrame,DEFAULT_STYLE,CameraConfig,Scene,Sprite} from '../vision/camera';
@@ -25,10 +29,13 @@ const hold=(e:ParkingEpisode)=>{for(let i=0;i<35&&!e.done;i++)e.step(idle);};
 
 describe('parking lots and parking judge',()=>{
   it('migrates old saved settings and validates delayed reward configuration',()=>{
-    const old={...DEFAULT_PARKING} as Partial<typeof DEFAULT_PARKING>;delete old.delayReward;delete old.rewardDelaySeconds;
+    const old={...DEFAULT_PARKING} as Partial<typeof DEFAULT_PARKING>;delete old.delayReward;delete old.rewardDelaySeconds;delete old.sonarOn;delete old.cameraMount;delete old.bayAlignment;delete old.floor;
     expect(validateParkingSettings(old)).toEqual(DEFAULT_PARKING);
     expect(()=>validateParkingSettings({...DEFAULT_PARKING,rewardDelaySeconds:-1})).toThrow('reward delay');
     expect(()=>validateParkingSettings({...DEFAULT_PARKING,delayReward:'yes'})).toThrow();
+    expect(()=>validateParkingSettings({...DEFAULT_PARKING,sonarOn:'yes'})).toThrow('sensor');
+    expect(()=>validateParkingSettings({...DEFAULT_PARKING,cameraMount:'wrong'})).toThrow('sensor');
+    expect(()=>validateParkingSettings({...DEFAULT_PARKING,floor:'wrong'})).toThrow('sensor');
   });
   it('withholds all sugar until parked, controls released and the full delay elapsed',()=>{
     const e=new ParkingEpisode({...DEFAULT_PARKING,delayReward:true,rewardDelaySeconds:.5},ROBOT_WORLD_CAMERA);
@@ -126,7 +133,59 @@ describe('camera and sensor-only parking',()=>{
     const offscreen=new Float32Array(e.frame.length);cue.observe(offscreen,4);expect(cue.cue()).toEqual([0,0,0,0]);
   });
   it('alignment advisory is absent when no direction marker is observed',()=>{
-    const estimates=new Array(10).fill(.1),body={speed:0,lastSteer:0,lastDrive:0};expect(parkingDomain.sensors(estimates,[0,.4,1,0],body)).toEqual(parkingDomain.sensors(estimates,[0,.4,0,0],body));expect(parkingDomain.sensors(estimates,[0,.4,1,1],body)[15]).toBeGreaterThan(.5);
+    const estimates=new Array(10).fill(.1),body={speed:0,lastSteer:0,lastDrive:0};expect(alignedParkingDomain.sensors(estimates,[0,.4,1,0],body)).toEqual(parkingDomain.sensors(estimates,[0,.4,0,0],body));expect(alignedParkingDomain.sensors(estimates,[0,.4,1,1],body)[15]).toBeGreaterThan(.5);
+    expect(parkingDomain.sensors(estimates,[0,.4,1,1],body)).toEqual(worldDomain.sensors(estimates,[0,.4],body));
+  });
+  it('preserves the imported camera geometry unless the physical mount is explicitly selected',()=>{
+    const b=brain();b.eyes={...b.eyes,camera:{...WORLD_CAMERA}};
+    const s=new ParkingSession(DEFAULT_PARKING,b);expect(s.episode.camera).toEqual(WORLD_CAMERA);
+    const physical=new ParkingSession({...DEFAULT_PARKING,cameraMount:'robot'},b);expect(physical.episode.camera.mountHeight/PX*100).toBeCloseTo(6.5);expect(physical.episode.camera.hfov).toBe(WORLD_CAMERA.hfov);
+    expect(b.eyes.camera).toEqual(WORLD_CAMERA);
+  });
+  it('the bundled visual parent sees a clear transfer floor and its flag instead of hallucinating a wall',()=>{
+    const f=importFile(visualParent),b:ParkingBrain={controller:widenBrain(f.controller!.snapshot),eyes:f.vision!,visual:{...DEFAULT_VISION},memory:{...DEFAULT_MEMORY,count:512}},before=structuredClone(b.controller);
+    const scene=generateParking(DEFAULT_PARKING);scene.actors=[];scene.start={x:-1.2,z:.25,heading:0};scene.target={...scene.target,x:0,z:0,heading:Math.PI/2};scene.bays=scene.bays.map(b=>b.id===scene.target.id?{...scene.target}:b);
+    const transfer=new ParkingSession({...DEFAULT_PARKING,phase:'frozen'},b,{scene}),asphalt=new ParkingSession({...DEFAULT_PARKING,phase:'frozen',floor:'asphalt'},b,{scene});
+    expect(transfer.cue.tracker.current.visible).toBe(true);
+    for(let i=0;i<12;i++){transfer.step();asphalt.step();}
+    expect(Math.max(...transfer.driver.sensors.slice(5,8))).toBeLessThan(.3);
+    expect(Math.max(...asphalt.driver.sensors.slice(5,8))).toBeGreaterThan(.85);
+    expect(b.controller).toEqual(before);
+  });
+  it('steers the nose in opposite directions forward/backward, retaining the world last-gas/brake input',()=>{
+    for(const direction of [-1,1]){
+      const e=episode('arrival');e.scene.actors=[];e.physics.pose={x:0,z:0,heading:0};const a={...idle,steer:.6,throttle:direction>0?.6:0,reverse:direction<0?.6:0};
+      const pwm=parkingMotorRequests(a);expect(Math.sign(pwm.left-pwm.right)).toBe(direction);
+      for(let i=0;i<30;i++)e.step(a);expect(Math.sign(e.physics.pose.heading)).toBe(direction);expect(e.proprioception().lastDrive).toBe(a.throttle-a.brake);
+    }
+  });
+  it('sonar is on by default; disabling zeros the brain and camera feedback and pauses scan recording',()=>{
+    for(const sonarOn of [true,false]){
+      const s=new ParkingSession({...DEFAULT_PARKING,sonarOn},brain());s.episode.physics.pose={x:2.65,z:0,heading:0};
+      let cameraBody:{sonarCloseness?:number;sonarStrength?:number}|undefined;
+      const reader=s.driver.options.perceiver!,read=reader.see.bind(reader);reader.see=(pixels,body)=>{cameraBody=body;return read(pixels,body);};
+      for(let i=0;i<8;i++)s.step(idle);
+      const r=s.episode.sonar();expect(r.echo).toBe(true);expect(s.driver.options.sonarOff).toBe(!sonarOn);
+      expect(s.driver.sensors[17]>0).toBe(sonarOn);expect(s.driver.sensors[18]>0).toBe(sonarOn);expect(s.scan.samples.length>0).toBe(sonarOn);
+      expect(cameraBody!.sonarCloseness!>0).toBe(sonarOn);expect(cameraBody!.sonarStrength!>0).toBe(sonarOn);
+      const restored=parseParkingLab(parkingLab(s.settings,s.episode.scene,s.brain,s.memory,s.scan));expect(restored.settings.sonarOn).toBe(sonarOn);
+    }
+  });
+  it('matches an open-world visual controller exactly for the same sensor observations',()=>{
+    const b=brain(),s=new ParkingSession({...DEFAULT_PARKING,phase:'frozen'},b),pixels=s.episode.frame.slice();
+    const reference=new VisionDriver({controller:SpikingNetwork.fromJSON(b.controller),perceiver:new Perceiver(b.eyes),domain:worldDomain,sensorOnly:true,visual:b.visual,resolution:'native',fusion:{fade:0},pixelMission:{reset(){},observe(){},cue(){return [.2,.4];}}});
+    s.cue.observe=()=>{};s.cue.cue=()=>[.2,.4,.9,1];s.episode.render=()=>pixels;s.driver.reset();reference.reset();
+    for(let i=0;i<8;i++){s.episode.status.ticks=i;const a=s.driver.act(s.episode),r=reference.act(s.episode);expect(a.sensors).toEqual(r.sensors);expect(a.action).toEqual(r.action);}
+  });
+  it('prepares the preview without taking a second neural step at tick zero',()=>{
+    const s=new ParkingSession(DEFAULT_PARKING,brain()),activity=s.network.activity();
+    const before=s.network.toJSON(),inputs=[...s.driver.sensors];s.step(idle);
+    expect(s.network.toJSON()).toEqual(before);expect(s.driver.sensors).toEqual(inputs);expect(s.network.activity()).toEqual(activity);
+  });
+  it('bay direction is opt-in and cannot replace navigation in loose arrival lessons',()=>{
+    expect(new ParkingSession({...DEFAULT_PARKING,bayAlignment:true},brain()).driver.domain).toBe(parkingDomain);
+    expect(new ParkingSession({...DEFAULT_PARKING,lesson:'oriented'},brain()).driver.domain).toBe(parkingDomain);
+    expect(new ParkingSession({...DEFAULT_PARKING,lesson:'oriented',bayAlignment:true},brain()).driver.domain).toBe(alignedParkingDomain);
   });
   it('scan pose stays fixed when commanded motion is physically blocked',()=>{
     const s=new ParkingSession(DEFAULT_PARKING,brain()),a=s.episode.scene.actors[0];s.episode.physics.pose={x:a.pose.x,z:-.5,heading:-Math.PI/2};for(let i=0;i<120;i++)s.step({...idle,throttle:1});expect(s.episode.physics.blocked).toBe(true);const p={...s.episode.physics.pose};for(let i=0;i<20;i++)s.step({...idle,throttle:1});expect(s.episode.physics.pose).toEqual(p);expect(s.episode.proprioception().speed).toBeGreaterThan(.1);const ping=s.scan.samples.at(-1)!;expect(ping.x).toBeCloseTo(p.x*PX);expect(ping.y).toBeCloseTo((p.z-.26*.48)*PX);
@@ -148,6 +207,13 @@ describe('traffic, transfer and evolution',()=>{
     const b=brain(),s=new ParkingSession(DEFAULT_PARKING,b),text=parkingBrainText(b,s.memory,DEFAULT_PARKING),parsed=importFile(text);expect(parsed.controller!.domain).toBe('world');expect(parsed.controller!.snapshot).toEqual(b.controller);expect(parsed.controller!.meta.generation).toBe(7);expect(parsed.controller!.meta.fitness).toBe(22);expect(parsed.experiment!.visual).toEqual(b.visual);expect(RoomMemory.fromJSON(parsed.worldMemory).toJSON()).toEqual(s.memory.toJSON());expect(JSON.parse(text).robotLearning.memorySettings.count).toBe(512);
     expect(narrowBrain(widenBrain(new SpikingNetwork(13).toJSON()))).toEqual(new SpikingNetwork(13).toJSON());
   });
+  it('exports the actual camera mount and sonar choice for the next Vision stage',()=>{
+    const b=brain();b.eyes={...b.eyes,camera:{...WORLD_CAMERA}};
+    for(const cameraMount of ['trained','robot'] as const){
+      const settings={...DEFAULT_PARKING,cameraMount,sonarOn:false},s=new ParkingSession(settings,b),f=importFile(parkingBrainText(b,s.memory,settings));
+      expect(f.experiment!.camera!.heightCm).toBeCloseTo(s.episode.camera.mountHeight*1.1);expect(f.experiment!.camera!.hfov).toBeCloseTo(s.episode.camera.hfov*180/Math.PI);expect(f.worldSetup!.sonarOn).toBe(false);
+    }
+  });
   it('lab round trip preserves the exact replay lot, eyes, memory and scan',()=>{
     const b=brain(),s=new ParkingSession(DEFAULT_PARKING,b);s.step();const file=parkingLab(DEFAULT_PARKING,s.episode.scene,b,s.memory,s.scan),r=parseParkingLab(JSON.parse(JSON.stringify(file)));expect(r.scene).toEqual(s.episode.scene);expect(r.brain.controller).toEqual(b.controller);expect(r.memory.toJSON()).toEqual(s.memory.toJSON());expect(r.scan.toJSON()).toEqual(s.scan.toJSON());file.settings={...file.settings,seed:3};expect(()=>parseParkingLab(file)).toThrow('matching');
   });
@@ -158,9 +224,10 @@ describe('traffic, transfer and evolution',()=>{
     const parent=SpikingNetwork.fromJSON(brain().controller),before=parent.toJSON(),examples=Array.from({length:40},()=>({inputs:new Array(19).fill(.4),target:{...idle,reverse:.8}})),child=coachChild(parent,examples);expect(parent.toJSON()).toEqual(before);expect(child.toJSON()).not.toEqual(before);expect(()=>coachChild(parent,[{inputs:[1],target:idle}])).toThrow();
   });
   it('evolves independent ghosts on fresh seeded lots, reserves held-out tests and keeps its parent',async()=>{
-    const b=brain(),before=structuredClone(b.controller),seen=new Set<ParkingSession>(),settings={...DEFAULT_PARKING,maxTicks:60};
+    const b=brain(),before=structuredClone(b.controller),seen=new Set<ParkingSession>(),settings={...DEFAULT_PARKING,maxTicks:60,sonarOn:false};
     const run=()=>trainParking(b,settings,{generations:2,population:2,lessons:['arrival','exit'],seed:72,speed:0,cancel:()=>false,log:()=>{},progress:s=>s.forEach(a=>seen.add(a))});
     const a=(await run())!,c=(await run())!;expect(a.brain).toEqual(c.brain);expect(a.trials).toEqual(c.trials);expect(a.validation).toEqual(c.validation);expect(b.controller).toEqual(before);
+    expect(a.settings.sonarOn).toBe(false);expect([...seen].every(s=>s.driver.sensors.slice(17,19).every(v=>v===0)&&s.scan.samples.length===0)).toBe(true);
     const seeds=[...a.trials.flatMap(g=>g.scenarios.map(s=>s.seed)),...a.validation.scenarios.map(s=>s.seed)];expect(new Set(seeds).size).toBe(seeds.length);expect(a.trials[1].scenarios[1].lesson).toBe('exit');expect(new Set([...seen].map(s=>s.memory)).size).toBe(seen.size);expect(a.memoryProtocol).toContain('frozen');
   },60000);
   it('rejects frozen evolution and cancels without changing the parent',async()=>{

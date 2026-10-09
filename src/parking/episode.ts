@@ -7,24 +7,27 @@ import {mulberry32} from '../vision/rng';
 import {CM_PER_PIXEL,HC_SR04,SONAR_USEFUL_RANGE_PX} from '../vision/robot';
 import {Sonar,sonarInputs,SonarTarget} from '../vision/sonar';
 import {FlagDiscovery} from '../vision/world/discovery';
-import {ParkingSettings,ParkingScene,actorObject,actorSolid,bodySolid,parkingQuality,generateParking,validateParkingScene} from './model';
+import {parkingFloorColour,type ParkingFloor} from './floor';
+import {PARKING_FLAG,ParkingSettings,ParkingScene,actorObject,actorSolid,bodySolid,parkingQuality,generateParking,validateParkingScene} from './model';
 
 export const PX=100/CM_PER_PIXEL;
+/** Keep the imported kart's steering convention when backing: right input turns the nose left. */
+export function parkingMotorRequests(action:Action){const drive=action.throttle-(action.reverse??0);return motorRequests({...action,steer:action.steer*(drive<0?-1:1)},DEFAULT_ADAPTER);}
 export type ParkingResult={seed:number;lesson:string;success:boolean;quality:number;offsetCm:number;angleDeg:number;ticks:number;contacts:number;pedestrianHits:number;pain:number;reward:number;pendingReward:number;score:number};
 export type ImpactEffect={x:number;z:number;kind:'blood'|'explosion'|'smoke';tick:number};
 
 /** Camera geometry sees exactly the same actor footprints as contact and sonar. */
 export class ParkingCameraScene implements Scene{
   readonly style={...DEFAULT_STYLE,noise:.006,fogDistance:900};sprites:Sprite[]=[];
-  constructor(readonly scene:ParkingScene,readonly cars=false){}
+  constructor(readonly scene:ParkingScene,readonly cars=false,readonly floor:ParkingFloor='transfer'){}
   prepare():void{
     this.sprites=this.scene.actors.map(a=>({x:a.pose.x*PX,y:a.pose.z*PX,heading:a.pose.heading,width:a.width*PX,length:a.length*PX,z0:0,z1:a.height*PX,color:a.kind==='pedestrian'?[.72,.55,.3] as Rgb:[.35,.47,.6] as Rgb,shape:a.kind==='pedestrian'?'post':this.cars?'solid-car':'oriented-box'}));
-    const b=this.scene.target;this.sprites.push({x:b.x*PX,y:b.z*PX,heading:0,width:7,length:7,z0:0,z1:34,color:[1,.2,.62],shape:'flag'});
+    const b=this.scene.target;this.sprites.push({x:b.x*PX,y:b.z*PX,heading:0,width:PARKING_FLAG.width*PX,length:PARKING_FLAG.width*PX,z0:0,z1:PARKING_FLAG.height*PX,color:[1,.2,.62],shape:'flag'});
     const h=this.scene.half*PX;
     for(const [x,y,heading] of [[0,-h,0],[0,h,0],[-h,0,Math.PI/2],[h,0,Math.PI/2]])this.sprites.push({x,y,heading,width:.025*PX,length:h*2,z0:0,z1:.2*PX,color:[.7,.7,.66],shape:'oriented-box'});
   }
   ground(px:number,py:number,out:Rgb):void{
-    const x=px/PX,z=py/PX,b=this.scene.target;let color:Rgb=[.19,.23,.27];
+    const x=px/PX,z=py/PX,b=this.scene.target;let color:Rgb=parkingFloorColour(this.floor,px,py);
     for(const bay of this.scene.bays){const dx=x-bay.x,dz=z-bay.z,along=dx*Math.cos(bay.heading)+dz*Math.sin(bay.heading),across=-dx*Math.sin(bay.heading)+dz*Math.cos(bay.heading);
       if(Math.abs(along)<bay.length/2+.012&&Math.abs(across)<bay.width/2+.012&&(Math.abs(Math.abs(along)-bay.length/2)<.012||Math.abs(Math.abs(across)-bay.width/2)<.012))color=[.8,.83,.82];}
     const dx=x-b.x,dz=z-b.z,along=dx*Math.cos(b.heading)+dz*Math.sin(b.heading),across=-dx*Math.sin(b.heading)+dz*Math.cos(b.heading);
@@ -65,7 +68,7 @@ export class ParkingEpisode implements VisionEpisode{
   readonly status={ticks:0,contacts:0,pedestrianHits:0,pain:0,reward:0,pendingReward:0,score:0,success:false,hold:0};
   private lastCommand:Action={steer:0,throttle:0,brake:0,reverse:0};private lastContact=-Infinity;private potential=0;private cooldown=new Map<string,number>();
   constructor(readonly settings:ParkingSettings,readonly camera:CameraConfig,scene?:ParkingScene){
-    this.scene=scene?validateParkingScene(scene):generateParking(settings);this.physics.pose={...this.scene.start};this.physics.odometry={...this.scene.start};this.frame=new Float32Array(frameLength(camera));this.cameraScene=new ParkingCameraScene(this.scene,settings.cars);
+    this.scene=scene?validateParkingScene(scene):generateParking(settings);this.physics.pose={...this.scene.start};this.physics.odometry={...this.scene.start};this.frame=new Float32Array(frameLength(camera));this.cameraScene=new ParkingCameraScene(this.scene,settings.cars,settings.floor);
     this.sonarUnit=new Sonar({...HC_SR04,lobeSigmaDeg:12,mountForward:DEFAULT_ROBOT.length*.48*PX},mulberry32(settings.seed*31));this.potential=this.progressPotential();this.ping();this.render();
   }
   get tick(){return this.status.ticks;}get done(){return this.status.success||this.status.pedestrianHits>0||this.tick>=this.settings.maxTicks;}
@@ -76,7 +79,7 @@ export class ParkingEpisode implements VisionEpisode{
   private targets():SonarTarget[]{const h=this.scene.half*PX;return[...this.scene.actors.map(a=>a.kind==='pedestrian'?{kind:'circle' as const,x:a.pose.x*PX,y:a.pose.z*PX,radius:a.width*PX/2,z0:0,z1:a.height*PX}:{kind:'box' as const,x:a.pose.x*PX,y:a.pose.z*PX,heading:a.pose.heading,halfLength:a.length*PX/2,halfWidth:a.width*PX/2,z0:0,z1:a.height*PX}),...[-1,1].flatMap(sign=>[{kind:'box' as const,x:0,y:sign*h,heading:0,halfLength:h,halfWidth:.0125*PX,z0:0,z1:.2*PX},{kind:'box' as const,x:sign*h,y:0,heading:Math.PI/2,halfLength:h,halfWidth:.0125*PX,z0:0,z1:.2*PX}])];}
   private ping(){this.sonarUnit.update(this.tick,this.pose,this.targets());}sonar(){return this.sonarUnit.reading;}
   render(){return renderFrame(this.cameraScene,this.pose,this.camera,this.frame,mulberry32(this.settings.seed+this.tick*17));}
-  proprioception(){const a=this.lastCommand,pair=sonarInputs(this.sonar(),SONAR_USEFUL_RANGE_PX);return{speed:clamp((this.physics.left+this.physics.right)/2*PX/90,-1,1),lastSteer:a.steer,lastDrive:a.throttle-(a.reverse??0)-a.brake,sonarCloseness:pair[0],sonarStrength:pair[1]};}
+  proprioception(){const a=this.lastCommand,pair=this.settings.sonarOn?sonarInputs(this.sonar(),SONAR_USEFUL_RANGE_PX):[0,0];return{speed:clamp((this.physics.left+this.physics.right)/2*PX/90,-1,1),lastSteer:a.steer,lastDrive:clamp(a.throttle-a.brake,-1,1),sonarCloseness:pair[0],sonarStrength:pair[1]};}
   truth(out:number[]=new Array(10).fill(0)){out.fill(0);return out;} // Camera controller must never call privileged clearance.
   mission(){if(this.settings.cue!=='compass')throw Error('Visual parking cannot query the goal compass.');const p=this.physics.pose,b=this.scene.target;return[wrapAngle(Math.atan2(b.z-p.z,b.x-p.x)-p.heading)/Math.PI,clamp(1-Math.hypot(b.x-p.x,b.z-p.z)/2.2,0,1),wrapAngle(b.heading-p.heading)/Math.PI,1];}
   lapContext(){return null;}summary(){return{progress:this.status.success?1:0,finished:this.status.success,crashed:this.status.pedestrianHits>0};}
@@ -100,7 +103,7 @@ export class ParkingEpisode implements VisionEpisode{
     }
   }
   step(action:Action){
-    if(this.done)return;const before={...this.physics.pose},incoming=this.physics.speed,pwm=motorRequests(action,DEFAULT_ADAPTER);this.lastCommand={...action};this.traffic();
+    if(this.done)return;const before={...this.physics.pose},incoming=this.physics.speed,pwm=parkingMotorRequests(action);this.lastCommand={...action};this.traffic();
     const boundary=[-1,1].flatMap(sign=>[{id:'edge-x'+sign,kind:'wall' as const,x:sign*3,z:0,yaw:Math.PI/2,width:6,depth:.025,height:.2},{id:'edge-z'+sign,kind:'wall' as const,x:0,z:sign*3,yaw:0,width:6,depth:.025,height:.2}]);
     this.physics.step(pwm.left/255,pwm.right/255,[...this.scene.actors.map(actorObject),...boundary],1/30);
     const body=bodySolid(this.physics.pose,DEFAULT_ROBOT.length,DEFAULT_ROBOT.width),hit=this.scene.actors.find(a=>overlaps(body,actorSolid(a)))??this.scene.actors.find(a=>a.id===this.physics.contact?.objectId);
