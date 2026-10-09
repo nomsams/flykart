@@ -10,7 +10,7 @@ import {FlagDiscovery} from '../vision/world/discovery';
 import {ParkingSettings,ParkingScene,actorObject,actorSolid,bodySolid,parkingQuality,generateParking,validateParkingScene} from './model';
 
 export const PX=100/CM_PER_PIXEL;
-export type ParkingResult={seed:number;lesson:string;success:boolean;quality:number;offsetCm:number;angleDeg:number;ticks:number;contacts:number;pedestrianHits:number;pain:number;reward:number;score:number};
+export type ParkingResult={seed:number;lesson:string;success:boolean;quality:number;offsetCm:number;angleDeg:number;ticks:number;contacts:number;pedestrianHits:number;pain:number;reward:number;pendingReward:number;score:number};
 export type ImpactEffect={x:number;z:number;kind:'blood'|'explosion'|'smoke';tick:number};
 
 /** Camera geometry sees exactly the same actor footprints as contact and sonar. */
@@ -18,10 +18,10 @@ export class ParkingCameraScene implements Scene{
   readonly style={...DEFAULT_STYLE,noise:.006,fogDistance:900};sprites:Sprite[]=[];
   constructor(readonly scene:ParkingScene,readonly cars=false){}
   prepare():void{
-    this.sprites=this.scene.actors.map(a=>({x:a.pose.x*PX,y:a.pose.z*PX,heading:a.pose.heading,width:a.width*PX,length:a.length*PX,z0:0,z1:a.height*PX,color:a.kind==='pedestrian'?[.72,.55,.3] as Rgb:[.35,.47,.6] as Rgb,shape:a.kind==='pedestrian'?'post':this.cars?'kart':'oriented-box'}));
+    this.sprites=this.scene.actors.map(a=>({x:a.pose.x*PX,y:a.pose.z*PX,heading:a.pose.heading,width:a.width*PX,length:a.length*PX,z0:0,z1:a.height*PX,color:a.kind==='pedestrian'?[.72,.55,.3] as Rgb:[.35,.47,.6] as Rgb,shape:a.kind==='pedestrian'?'post':this.cars?'solid-car':'oriented-box'}));
     const b=this.scene.target;this.sprites.push({x:b.x*PX,y:b.z*PX,heading:0,width:7,length:7,z0:0,z1:34,color:[1,.2,.62],shape:'flag'});
     const h=this.scene.half*PX;
-    for(const [x,y,heading] of [[0,-h,0],[0,h,0],[-h,0,Math.PI/2],[h,0,Math.PI/2]])this.sprites.push({x,y,heading,width:3,length:h*2,z0:0,z1:12,color:[.7,.7,.66],shape:'wall'});
+    for(const [x,y,heading] of [[0,-h,0],[0,h,0],[-h,0,Math.PI/2],[h,0,Math.PI/2]])this.sprites.push({x,y,heading,width:.025*PX,length:h*2,z0:0,z1:.2*PX,color:[.7,.7,.66],shape:'oriented-box'});
   }
   ground(px:number,py:number,out:Rgb):void{
     const x=px/PX,z=py/PX,b=this.scene.target;let color:Rgb=[.19,.23,.27];
@@ -62,15 +62,18 @@ export class ParkingCue extends FlagDiscovery{
 export class ParkingEpisode implements VisionEpisode{
   readonly scene:ParkingScene;readonly physics=new RobotPhysics({...DEFAULT_ROBOT});readonly frame:Float32Array;readonly sonarUnit:Sonar;
   readonly cameraScene:ParkingCameraScene;readonly effects:ImpactEffect[]=[];readonly trail:{x:number;z:number}[]=[];
-  readonly status={ticks:0,contacts:0,pedestrianHits:0,pain:0,reward:0,score:0,success:false,hold:0};
+  readonly status={ticks:0,contacts:0,pedestrianHits:0,pain:0,reward:0,pendingReward:0,score:0,success:false,hold:0};
   private lastCommand:Action={steer:0,throttle:0,brake:0,reverse:0};private lastContact=-Infinity;private potential=0;private cooldown=new Map<string,number>();
   constructor(readonly settings:ParkingSettings,readonly camera:CameraConfig,scene?:ParkingScene){
     this.scene=scene?validateParkingScene(scene):generateParking(settings);this.physics.pose={...this.scene.start};this.physics.odometry={...this.scene.start};this.frame=new Float32Array(frameLength(camera));this.cameraScene=new ParkingCameraScene(this.scene,settings.cars);
     this.sonarUnit=new Sonar({...HC_SR04,lobeSigmaDeg:12,mountForward:DEFAULT_ROBOT.length*.48*PX},mulberry32(settings.seed*31));this.potential=this.progressPotential();this.ping();this.render();
   }
   get tick(){return this.status.ticks;}get done(){return this.status.success||this.status.pedestrianHits>0||this.tick>=this.settings.maxTicks;}
+  get controlsReleased(){return [this.lastCommand.steer,this.lastCommand.throttle,this.lastCommand.brake,this.lastCommand.reverse??0].every(v=>Math.abs(v)<=.03);}
+  get parkedInTarget(){const q=this.judgedQuality();return ['arrival','exit','switch'].includes(this.settings.lesson)?q.distance<.27:q.inside&&q.error<Math.PI/12;}
+  get requiredHold(){return 30+(this.settings.delayReward?Math.ceil(this.settings.rewardDelaySeconds*30):0);}
   get pose(){const p=this.physics.pose;return{x:p.x*PX,y:p.z*PX,heading:p.heading};}
-  private targets():SonarTarget[]{const h=this.scene.half*PX;return[...this.scene.actors.map(a=>a.kind==='pedestrian'?{kind:'circle' as const,x:a.pose.x*PX,y:a.pose.z*PX,radius:a.width*PX/2,z0:0,z1:a.height*PX}:{kind:'box' as const,x:a.pose.x*PX,y:a.pose.z*PX,heading:a.pose.heading,halfLength:a.length*PX/2,halfWidth:a.width*PX/2,z0:0,z1:a.height*PX}),...[-1,1].flatMap(sign=>[{kind:'box' as const,x:0,y:sign*h,heading:0,halfLength:h,halfWidth:1.5,z0:0,z1:12},{kind:'box' as const,x:sign*h,y:0,heading:Math.PI/2,halfLength:h,halfWidth:1.5,z0:0,z1:12}])];}
+  private targets():SonarTarget[]{const h=this.scene.half*PX;return[...this.scene.actors.map(a=>a.kind==='pedestrian'?{kind:'circle' as const,x:a.pose.x*PX,y:a.pose.z*PX,radius:a.width*PX/2,z0:0,z1:a.height*PX}:{kind:'box' as const,x:a.pose.x*PX,y:a.pose.z*PX,heading:a.pose.heading,halfLength:a.length*PX/2,halfWidth:a.width*PX/2,z0:0,z1:a.height*PX}),...[-1,1].flatMap(sign=>[{kind:'box' as const,x:0,y:sign*h,heading:0,halfLength:h,halfWidth:.0125*PX,z0:0,z1:.2*PX},{kind:'box' as const,x:sign*h,y:0,heading:Math.PI/2,halfLength:h,halfWidth:.0125*PX,z0:0,z1:.2*PX}])];}
   private ping(){this.sonarUnit.update(this.tick,this.pose,this.targets());}sonar(){return this.sonarUnit.reading;}
   render(){return renderFrame(this.cameraScene,this.pose,this.camera,this.frame,mulberry32(this.settings.seed+this.tick*17));}
   proprioception(){const a=this.lastCommand,pair=sonarInputs(this.sonar(),SONAR_USEFUL_RANGE_PX);return{speed:clamp((this.physics.left+this.physics.right)/2*PX/90,-1,1),lastSteer:a.steer,lastDrive:a.throttle-(a.reverse??0)-a.brake,sonarCloseness:pair[0],sonarStrength:pair[1]};}
@@ -109,13 +112,14 @@ export class ParkingEpisode implements VisionEpisode{
       }
     }
     this.status.ticks++;this.ping();const q=this.judgedQuality(),loose=['arrival','exit','switch'].includes(this.settings.lesson),fits=loose?q.distance<.27:q.inside&&q.error<Math.PI/12;
-    this.status.hold=fits&&Math.abs(this.physics.speed)<.035&&this.tick-this.lastContact>15?this.status.hold+1:0;
-    this.status.success=this.status.hold>=30&&this.status.pedestrianHits===0;
-    const nextPotential=this.progressPotential();if(this.settings.phase==='shaped')this.status.reward+=nextPotential-this.potential;this.potential=nextPotential;
-    if(this.status.success&&this.settings.phase!=='frozen')this.status.reward+=100+40*q.quality;
+    this.status.hold=fits&&Math.abs(this.physics.speed)<.035&&this.tick-this.lastContact>15&&(!this.settings.delayReward||this.controlsReleased)?this.status.hold+1:0;
+    this.status.success=this.status.hold>=this.requiredHold&&this.status.pedestrianHits===0;
+    const nextPotential=this.progressPotential();if(this.settings.phase==='shaped'){if(this.settings.delayReward)this.status.pendingReward+=nextPotential-this.potential;else this.status.reward+=nextPotential-this.potential;}this.potential=nextPotential;
+    if(this.status.success&&this.settings.phase!=='frozen'){this.status.reward+=100+40*q.quality+this.status.pendingReward;this.status.pendingReward=0;}
+    if(!this.status.success&&(this.tick>=this.settings.maxTicks||this.status.pedestrianHits>0))this.status.pendingReward=0;
     this.status.score=this.status.reward-this.tick/30*.2-this.status.pain*(4+this.settings.crashWeight*60)-this.status.pedestrianHits*1000;
     if(!this.trail.length||Math.hypot(this.physics.pose.x-this.trail.at(-1)!.x,this.physics.pose.z-this.trail.at(-1)!.z)>.025){this.trail.push({x:this.physics.pose.x,z:this.physics.pose.z});if(this.trail.length>1800)this.trail.shift();}
     while(this.effects.length&&this.tick-this.effects[0].tick>90)this.effects.shift();
   }
-  result():ParkingResult{const q=this.judgedQuality();return{seed:this.settings.seed,lesson:this.settings.lesson,success:this.status.success,quality:q.quality,offsetCm:q.distance*100,angleDeg:q.error*180/Math.PI,ticks:this.tick,contacts:this.status.contacts,pedestrianHits:this.status.pedestrianHits,pain:this.status.pain,reward:this.status.reward,score:this.status.score};}
+  result():ParkingResult{const q=this.judgedQuality();return{seed:this.settings.seed,lesson:this.settings.lesson,success:this.status.success,quality:q.quality,offsetCm:q.distance*100,angleDeg:q.error*180/Math.PI,ticks:this.tick,contacts:this.status.contacts,pedestrianHits:this.status.pedestrianHits,pain:this.status.pain,reward:this.status.reward,pendingReward:this.status.pendingReward,score:this.status.score};}
 }

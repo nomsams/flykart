@@ -9,6 +9,7 @@
 // Pixels are returned as planar floats (R plane, G plane, B plane) in [0, 1],
 // which is what the vision network consumes.
 import { Random, gaussian } from "./rng";
+import {drawSolids} from './solid-camera';
 
 export type Rgb = [number, number, number];
 
@@ -28,7 +29,7 @@ export const DEFAULT_CAMERA: CameraConfig = { width: 48, height: 24, hfov: (96 *
 
 export type Pose = { x: number; y: number; heading: number };
 
-export type SpriteShape = "box" | "oriented-box" | "kart" | "cone" | "post" | "banner" | "tree" | "rock" | "flag" | "wall";
+export type SpriteShape = "box" | "oriented-box" | "solid-car" | "kart" | "cone" | "post" | "banner" | "tree" | "rock" | "flag" | "wall";
 export type Sprite = {
   x: number; y: number;
   /** Direction the object faces; only matters for oriented shapes (karts). */
@@ -185,6 +186,7 @@ export function renderFrame(scene: Scene, pose: Pose, config: CameraConfig, out:
 }
 
 function drawSprites(scene: Scene, pose: Pose, config: CameraConfig, projection: Projection, out: Float32Array): void {
+  const solidDepths=drawSolids(scene,pose,config,projection,out);
   const { width, height } = config; const plane = width * height;
   const { f, cx, cy, sinP, cosP } = projection;
   const fx = Math.cos(pose.heading), fy = Math.sin(pose.heading);
@@ -193,6 +195,7 @@ function drawSprites(scene: Scene, pose: Pose, config: CameraConfig, projection:
   const fog = scene.style.fog;
   const queue: { sprite: Sprite; depth: number; forward: number; right: number }[] = [];
   for (const sprite of scene.sprites) {
+    if(sprite.shape==='oriented-box'||sprite.shape==='solid-car')continue;
     const dx = sprite.x - pose.x, dy = sprite.y - pose.y;
     const forward = dx * fx + dy * fy, right = dx * sx + dy * sy;
     const depth = forward * cosP + (h - sprite.z0) * sinP;
@@ -229,6 +232,7 @@ function drawSprites(scene: Scene, pose: Pose, config: CameraConfig, projection:
         let cr = 0, cg = 0, cb = 0, covered = 0;
         for (let su = 0; su < 2; su += 1) for (let sv = 0; sv < 2; sv += 1) {
           const uu = u + (su + 0.5) / 2, vv = v + (sv + 0.5) / 2;
+          if(solidDepths&&baseDepth>=solidDepths[v*width+u])continue;
           if (uu < left || uu > rightEdge || vv < topEdge || vv > bottomEdge) continue;
           const nx = ((uu - left) / spanU) * 2 - 1, ny = (bottomEdge - vv) / spanV;
           const shaded = shadeSprite(sprite, nx, ny, relative);

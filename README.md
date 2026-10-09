@@ -31,7 +31,7 @@ npx vite-node scripts/check-brain.ts public/sample-brain.json            # progr
 
 ## Parking simulator · stage 4 of the learning journey
 
-[`parking.html`](parking.html) adds six lessons: loose arrival, reversing out, switching bays, requested orientation, parallel parking and parking around yielding traffic/pedestrians. It uses the robot chassis/contact model, low-resolution colour FPV, HC-SR04 scan memory, actual swarm crops and 4,096–40,000 Kenyon visual cells. Choose camera-only target cues or an explicit goal compass, then guided sugar, sparse rewards or frozen evaluation.
+[`parking.html`](parking.html) adds six lessons: loose arrival, reversing out, switching bays, requested orientation, parallel parking and parking around yielding traffic/pedestrians. It uses the robot chassis/contact model, low-resolution colour FPV, HC-SR04 scan memory, actual swarm crops and 4,096–40,000 Kenyon visual cells. Choose camera-only target cues or an explicit goal compass, then guided sugar, sparse rewards or frozen evaluation. The lot has a rotatable Three.js view; the inference camera ray-renders solid block/car volumes with shaded faces and occlusion. Optional delayed sugar requires a full stop and released controls for an extra configurable interval before paying once.
 
 Import a visual/world brain directly or explicitly adapt a staged racer parent. Evolve independent ghosts on fresh lots, rehearse earlier lessons and compare on held-out seeds before adopting. Manual sensor/action examples can seed a child. Save replay lots and browser checkpoints; exported fly + eyes and static scenes are accepted by Vision and the 3D habitat. Parking orientation judging and moving traffic do not automatically transfer to the habitat.
 

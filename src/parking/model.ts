@@ -11,10 +11,12 @@ export const LESSONS=[
   {id:'traffic',title:'06 · Share the parking lot',detail:'Switch bays around following traffic and pedestrians. Traffic yields to nearby parking manoeuvres.'},
 ] as const;
 export type Lesson=typeof LESSONS[number]['id'];
-export type ParkingSettings={lesson:Lesson;cue:'compass'|'visual';phase:'shaped'|'sparse'|'frozen';seed:number;maxTicks:number;crashWeight:number;traffic:number;pedestrians:number;cars:boolean;shapeJitter:boolean;remember:boolean};
-export const DEFAULT_PARKING:ParkingSettings={lesson:'arrival',cue:'visual',phase:'shaped',seed:1701,maxTicks:900,crashWeight:.2,traffic:3,pedestrians:2,cars:false,shapeJitter:false,remember:false};
+export type ParkingSettings={lesson:Lesson;cue:'compass'|'visual';phase:'shaped'|'sparse'|'frozen';seed:number;maxTicks:number;crashWeight:number;traffic:number;pedestrians:number;cars:boolean;shapeJitter:boolean;remember:boolean;delayReward:boolean;rewardDelaySeconds:number};
+export const DEFAULT_PARKING:ParkingSettings={lesson:'arrival',cue:'visual',phase:'shaped',seed:1701,maxTicks:900,crashWeight:.2,traffic:3,pedestrians:2,cars:false,shapeJitter:false,remember:false,delayReward:false,rewardDelaySeconds:2};
 export function validateParkingSettings(raw:unknown):ParkingSettings{
-  const s=raw as ParkingSettings;
+  if(!raw||typeof raw!=='object'||Array.isArray(raw))throw Error('Invalid parking lesson settings.');
+  const s={delayReward:false,rewardDelaySeconds:2,...raw} as ParkingSettings;
+  if(typeof s.delayReward!=='boolean'||!Number.isFinite(s.rewardDelaySeconds)||s.rewardDelaySeconds<.25||s.rewardDelaySeconds>10)throw Error('Choose a reward delay from 0.25 to 10 seconds.');
   if(!s||!LESSONS.some(l=>l.id===s.lesson)||!['compass','visual'].includes(s.cue)||!['shaped','sparse','frozen'].includes(s.phase)||!Number.isInteger(s.seed)||s.seed<1||s.seed>999999999||!Number.isInteger(s.maxTicks)||s.maxTicks<60||s.maxTicks>5400||!Number.isFinite(s.crashWeight)||s.crashWeight<0||s.crashWeight>1||!Number.isInteger(s.traffic)||s.traffic<0||s.traffic>8||!Number.isInteger(s.pedestrians)||s.pedestrians<0||s.pedestrians>8||['cars','shapeJitter','remember'].some(k=>typeof s[k as keyof ParkingSettings]!=='boolean'))throw Error('Invalid parking lesson settings.');
   return {...s};
 }

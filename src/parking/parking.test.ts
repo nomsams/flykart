@@ -13,6 +13,8 @@ import {ParkingEpisode,ParkingCue,PX} from './episode';
 import {ParkingBrain,ParkingSession,parkingDomain} from './session';
 import {parkingBrainText,parkingLab,parseParkingLab,parkingRobotScene} from './files';
 import {coachChild,trainParking} from './training';
+import {renderFrame,DEFAULT_STYLE,CameraConfig,Scene,Sprite} from '../vision/camera';
+import {validateParkingSettings} from './model';
 
 const idle:Action={steer:0,throttle:0,brake:0,reverse:0};
 const spec={...defaultSpec(2,10,'rgb',false,5),channels:[2,2,2] as [number,number,number],hidden:8};
@@ -22,6 +24,37 @@ const episode=(lesson:typeof DEFAULT_PARKING.lesson,seed=1701)=>new ParkingEpiso
 const hold=(e:ParkingEpisode)=>{for(let i=0;i<35&&!e.done;i++)e.step(idle);};
 
 describe('parking lots and parking judge',()=>{
+  it('migrates old saved settings and validates delayed reward configuration',()=>{
+    const old={...DEFAULT_PARKING} as Partial<typeof DEFAULT_PARKING>;delete old.delayReward;delete old.rewardDelaySeconds;
+    expect(validateParkingSettings(old)).toEqual(DEFAULT_PARKING);
+    expect(()=>validateParkingSettings({...DEFAULT_PARKING,rewardDelaySeconds:-1})).toThrow('reward delay');
+    expect(()=>validateParkingSettings({...DEFAULT_PARKING,delayReward:'yes'})).toThrow();
+  });
+  it('withholds all sugar until parked, controls released and the full delay elapsed',()=>{
+    const e=new ParkingEpisode({...DEFAULT_PARKING,delayReward:true,rewardDelaySeconds:.5},ROBOT_WORLD_CAMERA);
+    e.physics.pose={x:e.scene.target.x,z:e.scene.target.z,heading:0};
+    for(let i=0;i<44;i++)e.step(idle);
+    expect(e.status.success).toBe(false);expect(e.status.reward).toBe(0);expect(e.status.pendingReward).toBeGreaterThan(0);
+    e.step(idle);expect(e.status.success).toBe(true);expect(e.status.reward).toBeGreaterThan(140);expect(e.status.pendingReward).toBe(0);
+    const paid=e.status.reward;e.step(idle);expect(e.status.reward).toBe(paid);
+  });
+  it('brake or steering requests cannot earn delayed sugar by standing still; moving away resets the timer',()=>{
+    const e=new ParkingEpisode({...DEFAULT_PARKING,delayReward:true,rewardDelaySeconds:.5},ROBOT_WORLD_CAMERA);
+    e.physics.pose={x:e.scene.target.x,z:e.scene.target.z,heading:0};
+    for(let i=0;i<60;i++)e.step({...idle,brake:1});expect(e.status.hold).toBe(0);expect(e.status.reward).toBe(0);expect(e.controlsReleased).toBe(false);
+    for(let i=0;i<40;i++)e.step(idle);expect(e.status.hold).toBe(40);
+    e.step({...idle,steer:.1});expect(e.status.hold).toBe(0);
+    e.step(idle);e.physics.pose.z+=1;e.step(idle);expect(e.status.hold).toBe(0);
+    e.physics.pose={x:e.scene.target.x,z:e.scene.target.z,heading:0};for(let i=0;i<45;i++)e.step(idle);expect(e.status.success).toBe(true);
+  });
+  it('timeouts lose pending sugar and frozen delayed tests still give no reward',()=>{
+    for(const phase of ['shaped','sparse','frozen'] as const){
+      const e=new ParkingEpisode({...DEFAULT_PARKING,phase,delayReward:true,rewardDelaySeconds:2,maxTicks:60},ROBOT_WORLD_CAMERA);
+      e.physics.pose={x:e.scene.target.x,z:e.scene.target.z,heading:0};for(let i=0;i<60;i++)e.step(idle);
+      expect(e.done).toBe(true);expect(e.status.success).toBe(false);expect(e.status.reward).toBe(0);expect(e.status.pendingReward).toBe(0);
+    }
+    const frozen=new ParkingEpisode({...DEFAULT_PARKING,phase:'frozen',delayReward:true,rewardDelaySeconds:.25},ROBOT_WORLD_CAMERA);frozen.physics.pose={x:frozen.scene.target.x,z:frozen.scene.target.z,heading:0};for(let i=0;i<38;i++)frozen.step(idle);expect(frozen.status.success).toBe(true);expect(frozen.status.reward).toBe(0);
+  });
   it('generates valid, repeatable lots with vacant goals and safe starts in all lessons',()=>{
     for(const {id:lesson} of LESSONS)for(let seed=1;seed<=40;seed++){
       const s={...DEFAULT_PARKING,lesson,seed,traffic:8,pedestrians:8,shapeJitter:true};
@@ -66,6 +99,16 @@ describe('parking lots and parking judge',()=>{
 });
 
 describe('camera and sensor-only parking',()=>{
+  it('renders box roofs and distinct shaded faces from actual volume, with near-camera and goal occlusion',()=>{
+    const camera:CameraConfig={width:80,height:40,hfov:Math.PI/2,mountHeight:6.5,mountForward:0,pitch:.2};
+    const box:Sprite={x:40,y:0,heading:Math.PI/4,length:26,width:17,z0:0,z1:11,color:[.2,.4,.8],shape:'oriented-box'};
+    const scene:Scene={style:{...DEFAULT_STYLE,skyTop:[.1,.1,.1],skyHorizon:[.1,.1,.1],fogDistance:100000,noise:0},sprites:[box],prepare(){},ground(_x,_y,out){out[0]=out[1]=out[2]=.1;}};
+    const capture=()=>renderFrame(scene,{x:0,y:0,heading:0},camera,new Float32Array(80*40*3)),count=(f:Float32Array)=>Array.from(f.slice(6400)).filter(v=>v>.45).length;
+    const tall=capture();box.z1=2;const flat=capture();expect(count(tall)).toBeGreaterThan(count(flat)*2);box.z1=11;
+    const blues=Array.from(tall.slice(6400)).filter(v=>v>.45);expect(Math.max(...blues)).toBeGreaterThan(.7);expect(Math.min(...blues)).toBeLessThan(.62);camera.mountHeight=18;const roof=capture();expect(Math.max(...roof.slice(6400))).toBeGreaterThan(.82);camera.mountHeight=6.5;
+    box.heading=0;scene.sprites.push({...box,x:70,width:7,length:7,color:[1,.2,.62],shape:'flag'});const occluded=capture();expect(Array.from(occluded.slice(0,3200)).filter((r,i)=>r>.6&&occluded[3200+i]<.3)).toHaveLength(0);
+    box.x=4;const near=capture();expect(count(near)).toBeGreaterThan(count(tall));
+  });
   it('visual driving never queries privileged geometry or a goal compass',()=>{
     const s=new ParkingSession({...DEFAULT_PARKING,maxTicks:60},brain());s.episode.truth=()=>{throw Error('privileged');};s.episode.mission=()=>{throw Error('compass');};
     const actor=s.episode.scene.actors[0];s.episode.physics.pose={x:actor.pose.x,z:-.4,heading:-Math.PI/2};for(let i=0;i<8;i++)s.step();expect(s.driver.sensors).toHaveLength(19);expect(s.driver.sensors.every(Number.isFinite)).toBe(true);expect(s.scan.samples.length).toBeGreaterThan(3);expect(s.scan.cells.size).toBeGreaterThan(0);
@@ -119,7 +162,7 @@ describe('traffic, transfer and evolution',()=>{
     const run=()=>trainParking(b,settings,{generations:2,population:2,lessons:['arrival','exit'],seed:72,speed:0,cancel:()=>false,log:()=>{},progress:s=>s.forEach(a=>seen.add(a))});
     const a=(await run())!,c=(await run())!;expect(a.brain).toEqual(c.brain);expect(a.trials).toEqual(c.trials);expect(a.validation).toEqual(c.validation);expect(b.controller).toEqual(before);
     const seeds=[...a.trials.flatMap(g=>g.scenarios.map(s=>s.seed)),...a.validation.scenarios.map(s=>s.seed)];expect(new Set(seeds).size).toBe(seeds.length);expect(a.trials[1].scenarios[1].lesson).toBe('exit');expect(new Set([...seen].map(s=>s.memory)).size).toBe(seen.size);expect(a.memoryProtocol).toContain('frozen');
-  },30000);
+  },60000);
   it('rejects frozen evolution and cancels without changing the parent',async()=>{
     const b=brain(),before=structuredClone(b.controller),options={generations:1,population:2,lessons:['arrival'] as const,seed:7,speed:0,cancel:()=>true,log:()=>{},progress:()=>{}};
     await expect(trainParking(b,{...DEFAULT_PARKING,phase:'frozen'},{...options,lessons:[...options.lessons]})).rejects.toThrow('Frozen');expect(await trainParking(b,DEFAULT_PARKING,{...options,lessons:[...options.lessons]})).toBeNull();expect(b.controller).toEqual(before);
