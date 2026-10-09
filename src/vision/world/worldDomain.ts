@@ -118,7 +118,7 @@ export class WorldEpisode implements VisionEpisode {
     this.scanSonarUnit.update(this.tick, { x: kart.x, y: kart.y, heading: kart.heading }, this.targets(),true);
   }
 
-  private targets():SonarTarget[]{
+  targets():SonarTarget[]{
     const targets=[...this.fixedTargets];
     for(const o of this.sim.world.obstacles){
       if(floorItem(o))continue;

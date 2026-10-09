@@ -1,3 +1,4 @@
+import {scanComparisonControls,bindScanComparison,scanComparison} from './scan-controls';
 import {goalCueStatus} from './goal-cue-status';
 import { RuntimeBudget, PreviewMode } from './runtime-budget';
 import { repositorySelector } from '../repository-brains';
@@ -255,7 +256,8 @@ function paintTrack(preview?:TrackSession,ghosts:TrackSession[]=[]): void {
   drawKenyon($("memory-cells") as HTMLCanvasElement, cells, new Set(Array.from(memory.active).filter((j) => j >= 0)), (j) => memory.isTaught(j), (j) => memory.cellDistance(j), on);
   if (reading) { drawSonarTrace($("sonar-canvas") as HTMLCanvasElement, session.sonarTrace, state.sonarOn); const age=(episode.tick-(episode.sonarUnit?.lastTick??0))/30;$("sonar-status").textContent = `${!state.sonarOn ? 'ignored by controller' : reading.echo ? `${(reading.range*CM_PER_PIXEL).toFixed(1)} cm · strength ${reading.strength.toFixed(1)}` : 'no echo (not zero distance)'} · ping ${episode.sonarUnit!.count} · age ${(age*1000).toFixed(0)} ms · ${state.running.track?'15 Hz simulation clock':'paused; held sample'}`;logFreshPing(session); }
   updateScanStatus("track",session);
-  drawSonarHistory($("track-sonar-map") as HTMLCanvasElement,session.sonarMap,{x:car.position.x,y:car.position.y,heading:car.heading},state.sonarOn&&Boolean(episode.sonarUnit),{...scanOptions("track"),available:Boolean(episode.sonarUnit)});
+  const comparison=scanComparison("track-scan",session.sonarMap);
+  drawSonarHistory($("track-sonar-map") as HTMLCanvasElement,session.sonarMap,{x:car.position.x,y:car.position.y,heading:car.heading},state.sonarOn&&Boolean(episode.sonarUnit),{...scanOptions("track"),available:Boolean(episode.sonarUnit),opacity:comparison.opacity,reference:comparison.reference?{objects:episode.sonarTargets(),path:session.route.points}:undefined});
   drawTrace($("memory-trace") as HTMLCanvasElement, session.trace, "bend 150 px ahead   white: truth · blue: camera · violet: memory · green: used");
   $("memory-status").textContent = on ? `lap ${Math.max(1,memory.lap)} · ${memory.taughtCells} of ${memory.kenyonCount} cells taught · ${memory.remembering ? "recalling an earlier lap" : "nothing remembered here yet"}` : "off";
 }
@@ -335,7 +337,8 @@ function paintWorld(preview?:WorldSession,ghosts:WorldSession[]=[]): void {
   drawWorldMap($("world-map") as HTMLCanvasElement, sim.world, sim.kart, { x: sim.status.goalX, y: sim.status.goalY }, { truth, seen: perception ? perception.mean : null, sigma: perception ? perception.variance : null },
     `goals ${sim.status.goals}   speed ${sim.kart.speed.toFixed(0)}   ${sim.surface}${sim.status.crashed ? "   " + sim.status.crashReason : ""}`, sonarView,{goals:sim.goals,goalRadius:sim.goalRadius,trail:$<HTMLInputElement>("world-trail-visible").checked?session.trail:undefined,ghosts:ghosts.map((s,i)=>({...s.episode.sim.kart,trail:$<HTMLInputElement>("world-trail-visible").checked?s.trail:undefined,label:String(i+1),color:GHOST_COLORS[i%GHOST_COLORS.length]}))});
   updateScanStatus("world",session);
-  drawSonarHistory($("world-sonar-map") as HTMLCanvasElement,session.sonarMap,sim.kart,state.sonarOn&&Boolean(episode.scanSonarUnit),{...scanOptions("world"),available:Boolean(episode.scanSonarUnit),extent:sim.world.half+50});
+  const comparison=scanComparison("world-scan",session.sonarMap);
+  drawSonarHistory($("world-sonar-map") as HTMLCanvasElement,session.sonarMap,sim.kart,state.sonarOn&&Boolean(episode.scanSonarUnit),{...scanOptions("world"),available:Boolean(episode.scanSonarUnit),extent:sim.world.half+50,opacity:comparison.opacity,reference:comparison.reference?{objects:session.episode.targets()}:undefined});
   const discovery=session.discovery, sight=$('world-discovery-status');sight.hidden=!discovery;
   if(discovery){const cue=discovery.cue(),first=discovery.firstSightTick; sight.textContent=`${session.won?'WINNER · ':''}${discovery.tracker.current.visible?'Flag visible':'Searching · flag not visible'} · ${session.searchesCompleted} searches completed · current first sight ${first===null?'not yet':((first-session.searchStartTick)/30).toFixed(2)+' s'} · pixel bearing ${(cue[0]*180).toFixed(1)}° · apparent size ${cue[1].toFixed(3)} · ${discovery.visualViews} coarse views. No compass or true range; map is for the observer.`;}
   paintWorldInputAudit(session);
@@ -473,8 +476,8 @@ async function importBrainText(text: string, name: string): Promise<void> {
   else if(raw.track&&Array.from($<HTMLSelectElement>('track-select').options).some(o=>o.value===raw.track))$<HTMLSelectElement>('track-select').value=raw.track;
   if(imported.fusion){state.mode=imported.fusion.mode;$<HTMLSelectElement>('track-mode').value=state.mode;const fade=imported.fusion.fade;setFade(fade<=0?0:fade>=1e5?1:Math.min(.98,1+Math.log10(Math.max(.001,fade))/3));}
   refreshBrainSelects(prefer);buildTrack({keepMemory:Boolean(track?.memory)});
-  if(full||world||imported.vision?.domain==='world'){buildWorld();if(imported.worldScan)state.world!.sonarMap.restore(imported.worldScan);}
-  if(imported.trackScan)state.track!.sonarMap.restore(imported.trackScan);
+  if(full||world||imported.vision?.domain==='world'){buildWorld();if(imported.worldScan){state.world!.sonarMap.restore(imported.worldScan);$<HTMLSelectElement>('world-scan-filter').value=state.world!.sonarMap.filterMode;}}
+  if(imported.trackScan){state.track!.sonarMap.restore(imported.trackScan);$<HTMLSelectElement>('track-scan-filter').value=state.track!.sonarMap.filterMode;}
   showTab(imported.controller?.domain==='world'||imported.vision?.domain==='world'?'world':'track');paintTrack();paintWorld();
   $('brain-info').textContent=`${imported.name}: ${imported.warnings.join(' ')}`;$('brain-file-status').textContent=`Imported ${imported.name}. Import remains available to replace it again.`;
 }
@@ -648,6 +651,8 @@ function scanOptions(domain:'track'|'world'):{mode:'perspective'|'top';history:b
 function mountScanControls():void{
   for(const domain of ['track','world'] as const){
     const paint=()=>domain==='track'?paintTrack():paintWorld();
+    $(domain+'-scan-view').closest('.scan-tools')!.append(Object.assign(document.createElement('div'),{innerHTML:scanComparisonControls(domain+'-scan')}));
+    bindScanComparison(domain+'-scan',paint);
     $(domain+'-scan-enable').onclick=()=>{if(cameraTraining)return;if(state.profile!=='robot')setProfile('robot');state.sonarOn=true;$<HTMLInputElement>('sonar-on').checked=true;$('sonar-on').dispatchEvent(new Event('change'));paint();};
     for(const id of ['view','history','beam'])$(domain+'-scan-'+id).addEventListener('change',paint);
     $(domain+'-scan-clear').onclick=()=>{state[domain]?.sonarMap.clear();paint();};

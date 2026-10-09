@@ -119,3 +119,7 @@ header{padding-top:12px;padding-bottom:12px;gap:12px}header h1{font-size:23px}he
 .map-pose-control select{display:block;width:100%;max-width:100%;margin-top:5px;font-size:11px}
 #vibration-connect{width:100%;margin-bottom:8px}
 .world-brain-loader #vibration-connect{width:auto;margin:0}
+
+.map-comparison{margin-top:5px;font-size:10px;max-height:180px;overflow:auto;flex-shrink:0}.map-comparison summary{cursor:pointer;color:#9ecde3}.map-comparison label{display:flex;align-items:center;gap:6px;margin:5px 0}.map-comparison input[type=checkbox]{width:auto}.map-comparison input[type=range]{width:100px}.map-comparison small{display:block;overflow-wrap:anywhere}.map-comparison select{font-size:10px;padding:3px;width:auto;min-width:0}
+
+.sensor-rail .map-card{overflow:auto}.sensor-rail .map-card canvas{flex:1 0 110px;min-height:110px;height:110px}.sensor-rail.monitor-focused .map-card canvas{flex:1 1 240px;min-height:240px}

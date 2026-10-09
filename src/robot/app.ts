@@ -1,3 +1,5 @@
+import {MotionRangeFilter,RangeEstimate} from '../vision/sonar-motion';
+import {drawScanReference} from '../vision/scan-overlay';
 import { SONAR_SURFACES,validateSonarSurface } from '../vision/sonar-surfaces';
 import { mountHabitatPicker } from './map-picker';
 import { mountBrainShelf } from '../browser-brain';
@@ -14,7 +16,7 @@ import {validateVisual,prepareVisual} from './imported-assets';
 import { DEFAULT_VIBRATION, validateVibration, VibrationSensor } from "./vibration";
 import { RobotWorkbench } from "./workbench";
 import { setupMonitorLayout } from "./monitor-layout";
-import { validateRobotConfig } from "./model";
+import { solidsFor, validateRobotConfig } from "./model";
 import "./robot.css";
 import { Action, SpikingNetwork, clamp } from "../core";
 import { controllerCheckpoint, exportVisionBrain, importFile } from "../vision/format";
@@ -68,7 +70,7 @@ root.innerHTML = `
       <div class="sensors">
         <div class="card sensor-card"><div class="sensor-title">01 / CAMERA <span>160 × 120 · RGB565</span></div><canvas id="camera" class="camera-feed" width="160" height="120" aria-label="Low resolution ESP32 camera view"></canvas><small>OV2640-style colour capture at <span id="camera-rate">10</span> Hz. Lens height <span id="camera-height">6.5</span> cm.</small></div>
         <div class="card sensor-card"><div class="sensor-title">02 / FLY VISION <span id="retina-size">48 × 24</span></div><canvas id="fly-eye" class="fly-feed" width="288" height="144" aria-label="Actual camera pixels sent to the fly vision network"></canvas><div class="input-bars" id="input-bars"></div><small id="perception-note">Colour image → estimates → spiking brain. Loading eyes…</small><div class="neural-labels"><span>LEFT</span><span>INPUT ACTIVITY</span><span>RIGHT</span></div></div>
-        <div class="card sensor-card map-card"><div><div class="sensor-title">03 / ROOM MEMORY <span>512 KENYON CELLS</span></div><canvas id="room-map" width="240" height="180" aria-label="Sonar observations and simulated robot position"></canvas></div><div><label class="map-pose-control">Map pose <select id="map-pose-source"><option value="simulated">Simulated motion · follows contact</option><option value="estimated">Command estimate · can drift</option></select></label><small id="map-pose-note">Sonar observations aligned to simulated motion. Amber: uncertain echoes. Green: scanned approach. Dark: unknown, not a doorway. Diagnostic only; no map or true pose reaches the fly.</small><div class="memory-row"><span id="memory-count">0 cells learned</span><span id="memory-recall">No recall yet</span></div></div></div>
+        <div class="card sensor-card map-card"><div><div class="sensor-title">03 / ROOM MEMORY <span>512 KENYON CELLS</span></div><canvas id="room-map" width="240" height="180" aria-label="Sonar observations and simulated robot position"></canvas></div><div><label class="map-pose-control">Map pose <select id="map-pose-source"><option value="simulated">Simulated motion · follows contact</option><option value="estimated">Command estimate · can drift</option></select></label><small id="map-pose-note">Sonar observations aligned to simulated motion. Amber: uncertain echoes. Green: scanned approach. Dark: unknown, not a doorway. Diagnostic only; no map or true pose reaches the fly.</small><details class="map-comparison"><summary>Compare scene &amp; filter scan</summary><label><input id="room-scan-reference" type="checkbox"> Overlay scene geometry</label><label>Overlay opacity <input id="room-scan-opacity" type="range" min=".1" max=".9" step=".05" value=".45"></label><label>View <select id="room-scan-view"><option value="top">Top view</option><option value="perspective">3D perspective</option></select></label><label>Map processing <select id="room-scan-filter"><option value="raw">Raw echo ranges</option><option value="kalman">Motion-aware Kalman</option></select></label><small>Cyan = known scene solids at their actual height; overhead footprints are dashed. Observer only, excluded from fly inputs. Changing processing clears scan evidence and retains learned visual memory. Filtering preserves no-echo gaps and resets on turns or new close returns.</small><small id="room-scan-motion" role="status"></small></details><div class="memory-row"><span id="memory-count">0 cells learned</span><span id="memory-recall">No recall yet</span></div></div></div>
       </div>
     </section>
     <aside class="sidebar">
@@ -147,6 +149,9 @@ let objectiveRun=new ObjectiveRun(mission),sugarPolicy=new SugarPolicy(memorySet
 let swarm:VisualSwarm|null=null;
 let sonar = new RobotSonar();
 let memory = new RoomMemory();
+const mapRangeFilter=new MotionRangeFilter();
+let mapRangeEstimate:RangeEstimate|null=null;
+let rangeMemory=memory;
 let controller: SpikingNetwork | null = null;
 let perceiver: Perceiver | null = null;
 let brainDomain: "world" | "track" = "world";
@@ -544,7 +549,10 @@ function tick(): void {
   if (sonar.update(simTime, physics.pose, objects, physics.config, noise)) {
     sensorTiming.sample('Sim sonar',simTime,0,sonar.reading.echo&&physics.config.sonarEnabled);
     log("sonar", sonar.reading.echo ? `${(sonar.metres * 100).toFixed(1)} cm · ECHO ${Math.round(sonar.pulseMicroseconds)} µs` : "No echo · distance unknown", { cm: sonar.reading.echo ? sonar.metres * 100 : null, echoUs: sonar.pulseMicroseconds });
-    if (check("memory-enabled") && physics.config.sonarEnabled) memory.mapPing(diagnosticMapPose(), physics.config.length * .48, sonar.metres, sonar.reading.echo);
+    if(rangeMemory!==memory){mapRangeFilter.reset();rangeMemory=memory;}
+    const mapPose=diagnosticMapPose(),mount=physics.config.length*.48;
+    mapRangeEstimate=mapRangeFilter.observe({time:sonar.lastTime,range:sonar.metres,echo:sonar.reading.echo,pose:{x:mapPose.x+Math.cos(mapPose.heading)*mount,y:mapPose.z+Math.sin(mapPose.heading)*mount,heading:mapPose.heading},sigma:Math.hypot(.0035+.004*sonar.metres,noiseConfig.sonarSigmaCm/100)});
+    if (check("memory-enabled") && physics.config.sonarEnabled) memory.mapPing(mapPose,mount,memory.mapFilter==='kalman'?(mapRangeEstimate.range??0):sonar.metres,sonar.reading.echo&&(memory.mapFilter==='raw'||mapRangeEstimate.range!==null));
   }
   if (simTime - captureTime >= 1 / physics.config.cameraHz - 1e-8) capture();
   supportTick(dt);
@@ -653,23 +661,33 @@ function initializeTraining(): void {
 
 function diagnosticMapPose():Pose {
   if(memory.legacyMapReference){
-    memory.map.clear();memory.mapPoseSource='simulated';memory.legacyMapReference=false;
+    mapRangeFilter.reset();mapRangeEstimate=null;memory.map.clear();memory.mapPoseSource='simulated';memory.legacyMapReference=false;
     log('system','Legacy command scan history reset for simulated-motion view; learned visual memory retained.');
   }
   return memory.mapPoseSource==='estimated'?estimator.pose:physics.pose;
 }
 function renderMap(): void {
+  if(rangeMemory!==memory){mapRangeFilter.reset();mapRangeEstimate=null;rangeMemory=memory;}
   const p=diagnosticMapPose();
   el<HTMLSelectElement>('map-pose-source').value=memory.mapPoseSource;
   const estimated=memory.mapPoseSource==='estimated';
   setText('map-pose-note',estimated?'Sonar observations aligned to command estimates. Wheel commands keep predicting motion during contact; this view can drift. Dark cells are unknown, not doorways. Excluded from fly inputs.':'Sonar observations aligned to simulated motion. Amber: uncertain echoes. Green: scanned approach. Dark: unknown, not a doorway. Diagnostic only; no map or true pose reaches the fly.');
   const canvas = el<HTMLCanvasElement>("room-map"), ctx = canvas.getContext("2d")!;
   ctx.fillStyle = "#142228"; ctx.fillRect(0, 0, canvas.width, canvas.height);
-  const scale = 23, originX = canvas.width / 2, originY = canvas.height / 2;
-  ctx.strokeStyle = "#26383d"; ctx.lineWidth = 1;
-  for (let i = -4; i <= 4; i++) { ctx.beginPath(); ctx.moveTo(originX + i * scale, 0); ctx.lineTo(originX + i * scale, canvas.height); ctx.moveTo(0, originY + i * scale); ctx.lineTo(canvas.width, originY + i * scale); ctx.stroke(); }
-  for (const [key, occupancy] of memory.map) { const [x, z] = key.split(",").map(Number); ctx.fillStyle = occupancy > 0 ? `rgba(233,186,115,${Math.min(.9, occupancy / 3 + .2)})` : "#466c5d"; ctx.fillRect(originX + x * .1 * scale, originY + z * .1 * scale, 3, 3); }
-  canvas.dataset.pose=JSON.stringify(p);canvas.dataset.poseSource=memory.mapPoseSource; ctx.save(); ctx.translate(originX + p.x * scale, originY + p.z * scale); ctx.rotate(p.heading); ctx.fillStyle = "#d4e7de"; ctx.beginPath(); ctx.moveTo(7, 0); ctx.lineTo(-4, -4); ctx.lineTo(-4, 4); ctx.closePath(); ctx.fill(); ctx.restore();
+  const iso=value('room-scan-view')==='perspective',scale=iso?18:23,originX=canvas.width/2,originY=canvas.height/2;
+  const project=(x:number,y:number,z=0)=>({x:originX+(iso?(x-y)*.72:x)*scale,y:originY+(iso?(x+y)*.36:y)*scale-z*scale});
+  const line=(a:{x:number;y:number},b:{x:number;y:number})=>{ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();};
+  ctx.strokeStyle="#26383d";ctx.lineWidth=1;
+  for(let i=-4;i<=4;i++){line(project(i,-4),project(i,4));line(project(-4,i),project(4,i));}
+  for(const [key,occupancy] of memory.map){const [x,y]=key.split(',').map(n=>Number(n)*.1);ctx.fillStyle=occupancy>0?`rgba(233,186,115,${Math.min(.9,occupancy/3+.2)})`:'#466c5d';ctx.beginPath();[project(x,y),project(x+.1,y),project(x+.1,y+.1),project(x,y+.1)].forEach((p,i)=>i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));ctx.closePath();ctx.fill();}
+  const reference=check('room-scan-reference')?objects.flatMap(solidsFor).map(o=>({kind:'box' as const,x:o.x,y:o.z,heading:o.yaw,halfLength:o.width/2,halfWidth:o.depth/2,z0:o.bottom,z1:o.top})):[];
+  if(reference.length)drawScanReference(ctx,{objects:reference},project,Number(value('room-scan-opacity')),iso);
+  canvas.dataset.referenceCount=String(reference.length);canvas.dataset.filter=memory.mapFilter;
+  canvas.dataset.pose=JSON.stringify(p);canvas.dataset.poseSource=memory.mapPoseSource;
+  const robot=project(p.x,p.z),front=project(p.x+Math.cos(p.heading)*.26,p.z+Math.sin(p.heading)*.26);ctx.fillStyle='#d4e7de';ctx.beginPath();ctx.arc(robot.x,robot.y,3,0,Math.PI*2);ctx.fill();ctx.strokeStyle='#d4e7de';line(robot,front);
+  el<HTMLSelectElement>('room-scan-filter').value=memory.mapFilter;
+  const d=mapRangeEstimate;
+  setText('room-scan-motion',d?`Raw ${sonar.reading.echo?(sonar.metres*100).toFixed(1)+' cm':'unknown'} · ${d.range===null?'filtered unknown':`filtered ${(d.range*100).toFixed(1)} ± ${(d.sigma*100).toFixed(1)} cm (1σ)`} · ${d.status}. Travel-time estimate ${d.flightMs.toFixed(1)} ms / ${d.travelMm.toFixed(2)} mm motion; theoretical Doppler ${d.dopplerHz.toFixed(0)} Hz at 40 kHz, stationary reflector / selected diagnostic pose. HC-SR04 does not measure frequency. Raw neural sonar is unchanged.`:'Move and scan to compare acquisition-timed ranges. Raw neural sonar is unchanged.');
   ctx.fillStyle = "#8fa6a7"; ctx.font = "9px system-ui"; ctx.fillText(memory.mapPoseSource==="estimated"?"COMMAND ESTIMATE / 1 m GRID":"SIMULATED MOTION / 1 m GRID", 9, 14);
 }
 function telemetry(): void {
@@ -723,8 +741,10 @@ function telemetry(): void {
 function wireEvents(): void {
   el("step").after(Object.assign(document.createElement("select"), { id: "step-size", innerHTML: '<option value="1">1 tick</option><option value="30">1 second</option><option value="150">5 seconds</option>', ariaLabel: "Step duration" }));
   el("reset").after(Object.assign(document.createElement("select"), { id: "sim-rate", innerHTML: '<option value="1">1× speed</option><option value="2">2× speed</option><option value="4">4× speed</option>', ariaLabel: "Simulation speed" }));
+  for(const id of ['room-scan-reference','room-scan-opacity','room-scan-view'])el(id).addEventListener('input',renderMap);
+  el('room-scan-filter').addEventListener('change',()=>{memory.mapFilter=value('room-scan-filter') as 'raw'|'kalman';memory.map.clear();mapRangeFilter.reset();mapRangeEstimate=null;saveLocal();renderMap();log('system','Scan processing changed; diagnostic cells reset, learned visual memory retained.');});
   el('map-pose-source').addEventListener('change',()=>{
-    memory.map.clear();memory.mapPoseSource=value('map-pose-source') as 'simulated'|'estimated';
+    mapRangeFilter.reset();mapRangeEstimate=null;memory.map.clear();memory.mapPoseSource=value('map-pose-source') as 'simulated'|'estimated';
     const estimated=value('map-pose-source')==='estimated';
     setText('map-pose-note',estimated?'Sonar observations aligned to command estimates. Wheel commands keep predicting motion during contact; this view can drift. Dark cells are unknown, not doorways. Excluded from fly inputs.':'Sonar observations aligned to simulated motion. Amber: uncertain echoes. Green: scanned approach. Dark: unknown, not a doorway. Diagnostic only; no map or true pose reaches the fly.');
     el('room-map').setAttribute('aria-label',estimated?'Sonar observations and estimated robot position':'Sonar observations and simulated robot position');

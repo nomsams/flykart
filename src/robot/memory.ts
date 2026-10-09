@@ -9,7 +9,7 @@ export function validateMemorySettings(raw: unknown): MemorySettings {
   if (!s || !MEMORY_SIZES.includes(s.count as typeof MEMORY_SIZES[number]) || !Number.isFinite(s.sparsity) || s.sparsity < .005 || s.sparsity > .05 || typeof s.rareWeighting !== "boolean") throw new Error("Invalid Kenyon memory settings.");
   return { count: s.count, sparsity: s.sparsity, rareWeighting: s.rareWeighting };
 }
-export type RoomMemorySnapshot = { format: "robot-kenyon-memory"; version: 1 | 2; mapPoseSource?:'simulated'|'estimated';settings?: MemorySettings; counts: number[]; means: number[][]; prototypes: (number[] | null)[]; map: [string, number][] };
+export type RoomMemorySnapshot = { format: "robot-kenyon-memory"; version: 1 | 2; mapPoseSource?:'simulated'|'estimated';mapFilter?:'raw'|'kalman';settings?: MemorySettings; counts: number[]; means: number[][]; prototypes: (number[] | null)[]; map: [string, number][] };
 /** Graded, sparse visual memory; no world meshes or true robot pose in visual recall. */
 export class RoomMemory {
   readonly count: number;
@@ -20,6 +20,7 @@ export class RoomMemory {
   private readonly prototypes: (Float32Array | null)[];
   readonly map = new Map<string, number>();
   mapPoseSource:'simulated'|'estimated'='simulated';
+  mapFilter:'raw'|'kalman'='raw';
   legacyMapReference=false;
   recalled = false;
   confidence = 0;
@@ -34,7 +35,7 @@ export class RoomMemory {
   }
   get taught(): number { return this.counts.filter(n => n > 0).length; }
   get occupancy(): number { return this.taught / this.count; }
-  fresh(): RoomMemory { return new RoomMemory({...this.settings},this.legacy); }
+  fresh(): RoomMemory { const next=new RoomMemory({...this.settings},this.legacy);next.mapPoseSource=this.mapPoseSource;next.mapFilter=this.mapFilter;return next; }
   observe(visual: Float32Array, estimates: ArrayLike<number>, learn = true): Float32Array | null {
     if (visual.length !== 24 || [...visual].some(v => !Number.isFinite(v))) throw new Error("Room memory expects 24 finite visual features.");
     const feature = new Float32Array(27); feature.set(visual);
@@ -77,7 +78,7 @@ export class RoomMemory {
     if(echo){const key=[Math.floor((startX+Math.cos(pose.heading)*distance)/.1),Math.floor((startZ+Math.sin(pose.heading)*distance)/.1)].join(",");this.map.set(key,Math.min(5,(this.map.get(key)??0)+.8));}
     if(this.map.size>12000)this.map.delete(this.map.keys().next().value!);
   }
-  toJSON(): RoomMemorySnapshot { return {format:"robot-kenyon-memory",version:this.legacy?1:2,mapPoseSource:this.mapPoseSource,settings:{...this.settings},counts:Array.from(this.counts),means:this.means.map(m=>Array.from(m)),prototypes:this.prototypes.map(m=>m?Array.from(m):null),map:[...this.map]}; }
+  toJSON(): RoomMemorySnapshot { return {format:"robot-kenyon-memory",version:this.legacy?1:2,mapPoseSource:this.mapPoseSource,mapFilter:this.mapFilter,settings:{...this.settings},counts:Array.from(this.counts),means:this.means.map(m=>Array.from(m)),prototypes:this.prototypes.map(m=>m?Array.from(m):null),map:[...this.map]}; }
   static fromJSON(raw: unknown): RoomMemory {
     const s=raw as RoomMemorySnapshot;
     if(!s||s.format!=="robot-kenyon-memory"||![1,2].includes(s.version))throw new Error("Invalid room memory.");
@@ -85,6 +86,7 @@ export class RoomMemory {
     const finiteRow=(r:number[],size:number)=>Array.isArray(r)&&r.length===size&&r.every(Number.isFinite);
     if(!finiteRow(s.counts,n)||s.counts.some(v=>v<0)||!Array.isArray(s.means)||s.means.length!==n||s.means.some(r=>!finiteRow(r,10))||!Array.isArray(s.prototypes)||s.prototypes.length!==n||s.prototypes.some(r=>r!==null&&!finiteRow(r,24))||!Array.isArray(s.map)||s.map.length>12000||s.map.some(r=>!Array.isArray(r)||r.length!==2||typeof r[0]!=="string"||!/^[-]?\d+,[-]?\d+$/.test(r[0])||!Number.isFinite(r[1])))throw new Error("Invalid room memory values.");
     if(s.mapPoseSource!==undefined&&!['simulated','estimated'].includes(s.mapPoseSource))throw new Error('Invalid scan map pose source.');
-    const memory=new RoomMemory(settings,s.version===1);memory.legacyMapReference=s.mapPoseSource===undefined&&s.map.length>0;memory.mapPoseSource=s.mapPoseSource??(s.map.length?'estimated':'simulated');memory.counts.set(s.counts);s.means.forEach((r,i)=>memory.means[i].set(r));memory.prototypes.splice(0,n,...s.prototypes.map(r=>r?Float32Array.from(r):null));s.map.forEach(([key,value])=>memory.map.set(key,value));return memory;
+    if(s.mapFilter!==undefined&&!['raw','kalman'].includes(s.mapFilter))throw new Error('Invalid scan map processing.');
+    const memory=new RoomMemory(settings,s.version===1);memory.mapFilter=s.mapFilter??'raw';memory.legacyMapReference=s.mapPoseSource===undefined&&s.map.length>0;memory.mapPoseSource=s.mapPoseSource??(s.map.length?'estimated':'simulated');memory.counts.set(s.counts);s.means.forEach((r,i)=>memory.means[i].set(r));memory.prototypes.splice(0,n,...s.prototypes.map(r=>r?Float32Array.from(r):null));s.map.forEach(([key,value])=>memory.map.set(key,value));return memory;
   }
 }

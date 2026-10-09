@@ -148,6 +148,8 @@ export function ping(spec: SonarSpec, pose: SonarPose, targets: readonly SonarTa
 /** A sonar on a moving robot: it pings every few ticks and holds the last reading in between. */
 export class Sonar {
   reading: SonarReading;
+  /** Robot pose at acquisition, retained while the reading is held. */
+  samplePose: SonarPose | null = null;
   private readonly soundScale: number;
   private pings = 0;
   lastTick = -1;
@@ -160,6 +162,7 @@ export class Sonar {
   update(tick: number, pose: SonarPose, targets: readonly SonarTarget[], force=false): boolean {
     if (!force && (tick === this.lastTick || tick % this.spec.cycleTicks !== 0)) return false;
     this.lastTick = tick;
+    this.samplePose = {...pose};
     this.reading = ping(this.spec, pose, targets, this.random, this.soundScale); this.pings += 1;
     return true;
   }
@@ -171,4 +174,3 @@ export function sonarInputs(reading: SonarReading, usefulRangePx: number, out: n
   out[1] = reading.echo ? clamp(Math.log(Math.max(1, reading.strength)) / Math.log(40), 0, 1) : 0;
   return out;
 }
-
