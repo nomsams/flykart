@@ -23,6 +23,24 @@ Start with **Guided** sugar and short, simple lots. Then choose **Sparse** sugar
 
 Guided sugar is the signed change of a distance/parking-quality potential. Returning to the same pose cancels that shaping reward. Loose lessons ignore orientation in their reward too. Better centring/alignment gives a larger completion bonus. Trials also pay a small time cost; **Crash priority** controls the additional impact/visual-stall penalty. Pedestrian contact ends the episode and carries a large penalty. Animations are stylized overlays; they cannot provide neural cues or change the score.
 
+## Approach, reverse and route coach
+
+The **Reward coach** panel shows the score components live; completion logs and training reports include the same breakdown. Controls persist in replay states, preferences, brain provenance and generation checkpoints. Every ghost and held-out comparison uses the selected rules.
+
+**Reward approaching the parking space** is on by default. Three observer-only rings show the selected radius (default 3 m). Moving inward earns the signed change in a bounded radial potential; moving outward subtracts it, and no approach sugar is earned outside the radius. A round trip cancels it. Alignment/centring shaping remains a separate component. The rings never appear in the inference camera.
+
+**Penalize no useful progress** is on by default. After three seconds without a new 2 cm best distance improvement, useful final orientation improvement, or valid stopped parking hold, the evaluation score loses 1 point/s. The rate doubles every three seconds to a cap of 10 point/s. Driving in circles, repeating the same approach and motor commands without movement do not reset the timer. Valid stopped parking, including delayed gratification, is exempt. This cost is separate from impact/visual-stall pain and still applies in sparse/frozen evaluation.
+
+**Extra sugar for useful reverse** is optional. Actual backward displacement must improve the best distance reached, or advance a nearby planned route. It pays 12 sugar/m of new useful reversing, capped at 5 per episode. Holding reverse against a wall, driving away, or repeating a previously credited approach cannot farm this bonus.
+
+**Path coach** is optional and off by default. A bounded A* search plans forward/reverse translations and in-place turns on a 6 cm / 45° lattice. It minimizes translation plus estimated turn wheel-travel cost, checks the full oriented chassis with a clearance margin along each primitive, and seeks a centred destination plus required heading in precise lessons. Cyan marks forward segments; violet marks reverse. This is a shortest route in the sampled static model, not a guarantee of continuous physical optimality. Parked blocks are planned around; moving traffic is excluded and still requires avoidance. A blocked start or exhausted search budget is reported and produces no route sugar.
+
+Following the route earns a signed progress potential attenuated by cross-track error; leaving the route reduces it. Returning to the same pose cancels route sugar. With the coach active, new progress along the nearby route also resets the no-progress timer, allowing a useful detour away from the goal. The route is external training supervision: it never supplies motor commands, hidden bearings, map coordinates, or extra neural inputs. Turn it off when evaluating independent visual discovery.
+
+Approach, reverse, alignment and route shaping apply only in **Guided** mode; **Sparse** pays completed parking only, and **Frozen** pays no sugar. Delayed gratification withholds all bonuses until valid completion. **Show radius rings & coach route** affects only diagnostic views and can be toggled during a run without resetting it.
+
+Sonar geometry checks cover all four lot walls, rotated parked-car faces, blind-zone occlusion and acquisition-pose mapping. Distances originate at the front transducer, not the car centre. The live sonar status shows reading age: at 30 Hz the last reading is held between two-tick pings. Below 2 cm, or at weak/specular surfaces, no echo means unknown; the map does not invent clear floor from a timeout. These are simulation checks, not measurements of physical hardware.
+
 ## Continuing ghost evolution
 
 The top **Ghost evolution** bar appears in Visual racer, Open world and Parking. It names the selected parent, shows its weight ID and cumulative generation, and provides **Evolve ghosts**, **Cancel** and **Export saved winner**. The driving brain is identified separately. Completed generations autosave their selected winner before the next generation starts, including before held-out validation. Cancelling later work preserves the last completed generation.

@@ -11,7 +11,7 @@ export class ParkingView3D{
   readonly renderer:THREE.WebGLRenderer;readonly controls:OrbitControls;
   private staticGroup=new THREE.Group();private actors=new THREE.Group();private agents=new THREE.Group();private trails=new THREE.Group();private effects=new THREE.Group();
   private lot:ParkingScene|null=null;private cars=false;private floor:ParkingFloor='transfer';private floorTexture:THREE.DataTexture|null=null;private bodyMap=new Map<string,THREE.Group>();private effectTimes=new WeakMap<object,number>();
-  private lastFrame='';
+  private coachVisible=false;private lastFrame='';
   private agentBodies:THREE.Group[]=[];private traceLines:THREE.Line[]=[];
   constructor(readonly canvas:HTMLCanvasElement,onPick:(x:number,z:number)=>void){
     this.renderer=new THREE.WebGLRenderer({canvas,antialias:true,preserveDrawingBuffer:true});this.renderer.setPixelRatio(Math.min(devicePixelRatio,1.5));this.renderer.shadowMap.enabled=true;this.renderer.shadowMap.type=THREE.PCFSoftShadowMap;this.scene.background=new THREE.Color(0x14232d);
@@ -36,10 +36,15 @@ export class ParkingView3D{
     for(const a of lot.actors){let body:THREE.Group;if(a.kind==='pedestrian'){body=new THREE.Group();const mesh=new THREE.Mesh(new THREE.CylinderGeometry(a.width/2,a.width/2,a.height,12),new THREE.MeshStandardMaterial({color:0xb88c4d}));mesh.position.y=a.height/2;mesh.castShadow=true;body.add(mesh);}else body=this.vehicle(a,cars,0x597899);body.name='actor-'+a.id;body.userData.height=a.height;body.userData.footprint={length:a.length,width:a.width};this.actors.add(body);this.bodyMap.set(a.id,body);}
   }
   draw(sessions:ParkingSession[],cars:boolean,showTrail:boolean){
-    const e=sessions[0].episode,changed=this.lot!==e.scene||this.cars!==cars||this.floor!==e.settings.floor,frame=sessions.map(s=>s.episode.tick).join(',')+':'+showTrail;
+    const e=sessions[0].episode,changed=this.lot!==e.scene||this.cars!==cars||this.floor!==e.settings.floor||this.coachVisible!==e.settings.showCoach,frame=sessions.map(s=>s.episode.tick).join(',')+':'+showTrail;
     const animating=e.effects.some(effect=>performance.now()-(this.effectTimes.get(effect)??performance.now())<1200);
     if(!changed&&frame===this.lastFrame&&!animating)return;
-    this.lastFrame=frame;if(changed)this.rebuild(e.scene,cars,e.settings.floor);
+    this.lastFrame=frame;if(changed){this.rebuild(e.scene,cars,e.settings.floor);this.coachVisible=e.settings.showCoach;}
+    if(changed&&e.settings.showCoach){
+      const target=e.scene.target;
+      if(e.settings.approachReward)for(let j=1;j<=3;j++){const r=e.settings.approachRadius*j/3,points=Array.from({length:97},(_,i)=>new THREE.Vector3(target.x+Math.cos(i/96*Math.PI*2)*r,.006,target.z+Math.sin(i/96*Math.PI*2)*r));const line=new THREE.Line(new THREE.BufferGeometry().setFromPoints(points),new THREE.LineDashedMaterial({color:0x9be8ff,transparent:true,opacity:.7,dashSize:.04,gapSize:.045}));line.name='reward-radius-'+j;line.computeLineDistances();this.staticGroup.add(line);}
+      const route=e.coachPath?.poses??[];for(const reverse of [false,true]){const group=new THREE.Group();group.name=reverse?'coach-reverse':'coach-forward';for(let i=1;i<route.length;i++){const a=route[i-1],b=route[i],length=Math.hypot(b.x-a.x,b.z-a.z);if(b.reverse!==reverse||length<1e-8)continue;const stripe=this.box(group,(a.x+b.x)/2,.012,(a.z+b.z)/2,length,.003,.012,reverse?0xc3a2ff:0x61e2eb);stripe.rotation.y=-Math.atan2(b.z-a.z,b.x-a.x);}if(group.children.length)this.staticGroup.add(group);}
+    }
     for(const a of e.scene.actors){const body=this.bodyMap.get(a.id)!;body.position.set(a.pose.x,0,a.pose.z);body.rotation.y=-a.pose.heading;}
     if(this.agentBodies.length!==sessions.length){
       [this.agents,this.trails].forEach(dispose);this.agentBodies=[];this.traceLines=[];

@@ -12,3 +12,8 @@
 .scan-settings{margin-top:8px}.scan-compare{display:grid;gap:8px;min-width:0;margin-top:8px}.scan-compare label{display:flex;gap:6px;align-items:center;flex-wrap:wrap;font-size:11px}.scan-compare select{max-width:100%}.scan-compare input[type=range]{width:100px}.scan-compare input[type=checkbox]{width:auto}.scan-compare .note{font-size:10px;overflow-wrap:anywhere;line-height:1.5}
 
 .monitor-buttons{flex-wrap:wrap;align-items:center}.monitor-buttons .scan-settings{position:relative;margin:0}.scan-settings summary{padding:5px 8px;font-size:10px;border:1px solid var(--line);border-radius:7px;background:#233947;list-style:none}.scan-settings summary::-webkit-details-marker{display:none}.scan-settings[open] summary{border-color:var(--accent)}.scan-settings>.scan-compare{position:absolute;right:0;top:100%;width:min(320px,80vw);z-index:10;margin-top:5px;padding:12px;background:#192934;border:1px solid var(--line);border-radius:9px;box-shadow:0 8px 28px #0008;max-height:400px;overflow:auto}
+
+.reward-breakdown{padding:10px;background:#12232d;border:1px solid var(--line);border-radius:8px;color:#b5dece;font-size:12px;line-height:1.7;overflow-wrap:anywhere}.reward-coach .check{margin-top:12px}.reward-coach .help{display:block;margin:7px 0}
+
+@media(min-width:1051px){.controls>.training-card{grid-column:1/-1}.training-card>.fields{grid-template-columns:repeat(4,minmax(0,1fr))}}
+@media(min-width:721px) and (max-width:1050px){.controls>.training-card{grid-column:auto}}

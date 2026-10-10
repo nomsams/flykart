@@ -137,7 +137,7 @@ describe('camera and sensor-only parking',()=>{
     const actor=s.episode.scene.actors[0];s.episode.physics.pose={x:actor.pose.x,z:-.4,heading:-Math.PI/2};for(let i=0;i<8;i++)s.step();expect(s.driver.sensors).toHaveLength(19);expect(s.driver.sensors.every(Number.isFinite)).toBe(true);expect(s.scan.samples.length).toBeGreaterThan(3);expect(s.scan.cells.size).toBeGreaterThan(0);
   });
   it('reward and collision labels cannot alter neural sensor inputs',()=>{
-    const b=brain(),a=new ParkingSession({...DEFAULT_PARKING,phase:'frozen'},b),c=new ParkingSession({...DEFAULT_PARKING,phase:'frozen'},b);c.episode.status.reward=999;c.episode.status.pain=1000;c.episode.status.contacts=500;a.step();c.step();expect(a.driver.sensors).toEqual(c.driver.sensors);
+    const b=brain(),a=new ParkingSession({...DEFAULT_PARKING,phase:'frozen'},b),c=new ParkingSession({...DEFAULT_PARKING,phase:'frozen',pathReward:true,reverseReward:true,approachRadius:6},b);c.episode.status.reward=999;c.episode.status.pain=1000;c.episode.status.contacts=500;a.step();c.step();expect(a.driver.sensors).toEqual(c.driver.sensors);
   });
   it('defaults to 4096 cells and distinct actual eye crops without changing raw pixels',()=>{
     const b=brain();b.memory={...DEFAULT_MEMORY};b.visual={...DEFAULT_VISION,layout:'circle9'};const s=new ParkingSession(DEFAULT_PARKING,b);expect(s.memory.count).toBe(4096);expect(s.driver.ensemble!.frames).toHaveLength(9);expect(s.driver.ensemble!.frames[0]).not.toEqual(s.driver.ensemble!.frames[1]);const raw=s.episode.frame.slice();s.driver.ensemble!.see(raw,s.episode.proprioception());expect(s.episode.frame).toEqual(raw);expect(s.episode.camera.mountHeight*CM_PER_PIXEL).toBeCloseTo(6.5);
