@@ -41,6 +41,24 @@ Approach, reverse, alignment and route shaping apply only in **Guided** mode; **
 
 Sonar geometry checks cover all four lot walls, rotated parked-car faces, blind-zone occlusion and acquisition-pose mapping. Distances originate at the front transducer, not the car centre. The live sonar status shows reading age: at 30 Hz the last reading is held between two-tick pings. Below 2 cm, or at weak/specular surfaces, no echo means unknown; the map does not invent clear floor from a timeout. These are simulation checks, not measurements of physical hardware.
 
+## Slow driving and long headless runs
+
+**Penalize crawling outside the target parking area** is optional and off by default. Choose a direct score cost or a pain signal, a minimum travel speed (default 5 cm/s), its strength, and a safe manoeuvring radius (default 45 cm). The first second is a start grace. Afterwards the cost is proportional to actual displacement-speed shortfall: stationary motion pays the full rate; half the minimum speed pays half. Forward and reverse count equally. Inside the target safe zone, slow parking and waiting are exempt, even before arrival is valid. Motor requests or spinning wheels without displacement do not exempt a stuck car. Pain mode adds to the existing pain channel and is weighted by crash priority in fitness; score mode subtracts directly. Frozen evaluations keep these diagnostic costs but dispense no sugar. This is external simulator training feedback, not a new hidden speed/location sensor.
+
+The top runtime controls remain available during evolution. **Start headless evolution** selects maximum throughput and starts the existing evolution flow. **View now** enables a 5 fps preview; **Headless again** pauses it without cancelling or restarting. **Inspect selected generations** can show a specific generation or every Nth generation, then automatically return to headless. Numbers refer to generations within this run. Automatic previews use their own watch speed (default 4×); held-out generation 0 stays headless. Training speed can be changed during a run: 1×, 4×, 16×, 64×, 256× or maximum. Hardware computation can limit all rates; higher settings do not change the 30 Hz simulation timestep.
+
+Headless ghosts skip display canvases, sonar-map accumulation, driving trails and contact animations. Real simulated camera pixels and eye inference, virtual-eye crops, sonar acquisitions, physics, memory and scoring still run. Up to six shown ghosts retain diagnostic history; the others still receive identical sensors. Switching views back on begins fresh scan evidence at the current acquisition; skipped history is not reconstructed. **Refresh views once** records the current sonar sample and draws once. The runtime status reports generation, preview state and aggregate sensor ticks/s. The limits are now 1,000 generations and 32 ghosts; larger populations require more work, not fewer calculations.
+
+Vision racer/Open world also offer **Headless training · maximum throughput**, separate from the existing **Headless preview · lowest CPU** option. The former runs longer compute batches without deliberate CPU-saver waits. Display modes can be changed during evolution.
+
+For a browser-free generator:
+
+```powershell
+npm run parking:train -- --from=assets/flykart-visual.json --gens=100 --pop=8 --seed=7331 --lessons=arrival,exit --out=.cache/parking/winner.json
+```
+
+To continue from a winner, use `--from=.cache/parking/winner.json` with a different output path; its parking reward settings and cumulative history are retained. Use `--state=<saved parking lab JSON>` instead of `--from` to transfer its brain and training settings. Evolution generates fresh lots, rather than repeating imported replay coordinates. Optional arguments include `--lesson=parallel --phase=shaped --ticks=900 --slow=penalty --min-speed=5 --slow-weight=1 --safe-radius=.45 --memory=4096`; `--help` lists them. Each completed generation atomically saves a portable fly + eyes checkpoint with cumulative history. The final checkpoint includes held-out validation and a `.report.json` companion. Ctrl+C retains completed generations; no partially evaluated winner is substituted. A failed retention test still saves the candidate with its failure disclosed for review. Import the checkpoint into Parking, Vision or the 3D habitat; later transfer still needs evaluation. No browser, canvas, WebGL or diagnostic maps are required by this generator.
+
 ## Continuing ghost evolution
 
 The top **Ghost evolution** bar appears in Visual racer, Open world and Parking. It names the selected parent, shows its weight ID and cumulative generation, and provides **Evolve ghosts**, **Cancel** and **Export saved winner**. The driving brain is identified separately. Completed generations autosave their selected winner before the next generation starts, including before held-out validation. Cancelling later work preserves the last completed generation.

@@ -25,15 +25,17 @@ export const alignedParkingDomain={...parkingDomain,sensors(estimates:ArrayLike<
 }};
 export class ParkingSession{
   private prepared:DriverFrame|null=null;
+  private readonly diagnostics:()=>boolean;
   lastAction:Action={steer:0,throttle:0,brake:0,reverse:0};
   readonly episode:ParkingEpisode;readonly network:SpikingNetwork;readonly driver:VisionDriver;readonly cue:ParkingCue;readonly scan=new SonarHistory();readonly memory:RoomMemory;
-  constructor(readonly settings:ParkingSettings,readonly brain:ParkingBrain,options:{scene?:ParkingScene;memory?:RoomMemory;learn?:boolean}={}){
+  constructor(readonly settings:ParkingSettings,readonly brain:ParkingBrain,options:{scene?:ParkingScene;memory?:RoomMemory;learn?:boolean;diagnostics?:()=>boolean}={}){
+    this.diagnostics=options.diagnostics??(()=>true);
     this.network=SpikingNetwork.fromJSON(brain.controller);this.memory=options.memory??new RoomMemory(brain.memory);
-    this.episode=new ParkingEpisode(settings,parkingCamera(settings,brain),options.scene);this.cue=new ParkingCue(this.episode.camera);
+    this.episode=new ParkingEpisode(settings,parkingCamera(settings,brain),options.scene,this.diagnostics());this.cue=new ParkingCue(this.episode.camera);
     const precise=!['arrival','exit','switch'].includes(settings.lesson);
     this.driver=new VisionDriver({controller:this.network,perceiver:new Perceiver(brain.eyes),domain:settings.bayAlignment&&precise?alignedParkingDomain:parkingDomain,sonarOff:!settings.sonarOn,sensorOnly:true,missionCue:settings.cue==='compass',...(settings.cue==='visual'?{pixelMission:this.cue}:{}),roomMemory:this.memory,learnMemory:options.learn!==false&&settings.phase!=='frozen',visual:brain.visual,resolution:'native',fusion:{fade:0},stall:{...DEFAULT_STALL,enabled:true}});
-    this.driver.reset();this.scan.record(this.episode.sonarUnit,this.episode.pose,settings.sonarOn);this.prepared=this.driver.act(this.episode);
+    this.driver.reset();if(this.diagnostics())this.scan.record(this.episode.sonarUnit,this.episode.pose,settings.sonarOn);this.prepared=this.driver.act(this.episode);
   }
   get done(){return this.episode.done;}
-  step(action?:Action){if(this.done)return;const frame=this.prepared??this.driver.act(this.episode);this.prepared=null;this.lastAction={...(action??frame.action)};this.episode.step(this.lastAction);const stall=action?0:this.driver.stall?.painForTick(this.episode.tick)??0;this.episode.status.pain+=stall;this.episode.status.score-=stall*(4+this.settings.crashWeight*60);this.scan.record(this.episode.sonarUnit,this.episode.pose,this.settings.sonarOn);}
+  step(action?:Action){if(this.done)return;this.episode.diagnostics=this.diagnostics();const frame=this.prepared??this.driver.act(this.episode);this.prepared=null;this.lastAction={...(action??frame.action)};this.episode.step(this.lastAction);const stall=action?0:this.driver.stall?.painForTick(this.episode.tick)??0;this.episode.status.pain+=stall;this.episode.status.score-=stall*(4+this.settings.crashWeight*60);if(this.episode.diagnostics)this.scan.record(this.episode.sonarUnit,this.episode.pose,this.settings.sonarOn);}
 }

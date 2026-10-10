@@ -10,6 +10,7 @@
     "build": "npm run build:lab && tsc --noEmit && vite build --base=./",
     "test": "vitest run",
     "test:watch": "vitest",
+    "parking:train": "vite-node scripts/parking-train.ts",
     "preview": "vite preview",
     "vision:controller": "vite-node scripts/robust-evolve.ts --from=public/sample-brain.json --out=public/vision/controller.json --gens=40",
     "vision:controller-check": "vite-node scripts/eval-controller.ts --brains=public/sample-brain.json,public/vision/controller.json --out=public/vision/results-controller.json",

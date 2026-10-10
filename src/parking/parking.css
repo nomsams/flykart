@@ -17,3 +17,5 @@
 
 @media(min-width:1051px){.controls>.training-card{grid-column:1/-1}.training-card>.fields{grid-template-columns:repeat(4,minmax(0,1fr))}}
 @media(min-width:721px) and (max-width:1050px){.controls>.training-card{grid-column:auto}}
+
+.training-runtime{display:flex;flex-wrap:wrap;align-items:center;gap:8px;border-top:1px solid var(--line);padding-top:9px;margin-top:9px}.training-runtime label{display:grid;gap:4px;color:var(--muted);font-size:11px}.training-runtime button,.training-runtime select{font-size:11px;padding:6px 8px}.training-runtime>small{flex-basis:100%}.runtime-schedule{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:8px}.runtime-schedule input{width:130px}@media(max-width:720px){.runtime-schedule{grid-template-columns:1fr}.training-runtime input,.training-runtime select{font-size:16px}}
