@@ -1,3 +1,4 @@
+import type {GenerationCheckpoint} from '../evolution-checkpoint';
 import {Action,BrainSnapshot,SpikingNetwork,createMutationPopulation} from '../core';
 import {mulberry32} from '../vision/rng';
 import {runCohort} from '../vision/cohort';
@@ -15,7 +16,7 @@ export function coachChild(parent:SpikingNetwork,examples:DrivingExample[]):Spik
 }
 export type ParkingTrainingReport={format:'flykart-parking-training';version:1;settings:ParkingSettings;seed:number;generations:number;population:number;lessons:Lesson[];manualExamples:number;brain:BrainSnapshot;trials:{generation:number;scenarios:ParkingTrial[];results:ParkingResult[][];winner:number}[];validation:{scenarios:ParkingTrial[];parent:ParkingResult[];offspring:ParkingResult[];passed:boolean};memoryProtocol:string;inputAudit:string};
 export function parkingFitness(r:ParkingResult):number{return r.success?1000+r.score:Math.min(99,r.quality*30+r.score)-r.pedestrianHits*1000;}
-export async function trainParking(brain:ParkingBrain,settings:ParkingSettings,options:{generations:number;population:number;lessons:Lesson[];seed:number;speed:number;cancel:()=>boolean;log:(text:string)=>void;progress:(sessions:ParkingSession[],generation:number)=>void;demonstrations?:DrivingExample[]}):Promise<ParkingTrainingReport|null>{
+export async function trainParking(brain:ParkingBrain,settings:ParkingSettings,options:{generations:number;population:number;lessons:Lesson[];seed:number;speed:number;cancel:()=>boolean;log:(text:string)=>void;progress:(sessions:ParkingSession[],generation:number)=>void;demonstrations?:DrivingExample[];onGeneration?:(c:GenerationCheckpoint)=>void|Promise<void>}):Promise<ParkingTrainingReport|null>{
   validateParkingSettings(settings);
   if(!Number.isInteger(options.seed)||options.seed<1||options.seed>999999999||![0,1,4,16].includes(options.speed)||options.lessons.some(l=>!LESSONS.some(v=>v.id===l)))throw Error('Invalid training seed, speed or lesson.');
   if(settings.phase==='frozen')throw Error('Frozen tests cannot evolve a controller. Choose shaped or sparse rewards.');
@@ -42,6 +43,7 @@ export async function trainParking(brain:ParkingBrain,settings:ParkingSettings,o
     const average=(rows:ParkingResult[])=>rows.reduce((a,r)=>a+parkingFitness(r),0)/rows.length;let winner=0;
     results.forEach((rows,i)=>{options.log(`Ghost ${i+1}: ${rows.filter(r=>r.success).length}/${rows.length} parks · score ${average(rows).toFixed(1)} · contacts ${rows.reduce((a,r)=>a+r.contacts,0)}`);if(average(rows)>average(results[winner]))winner=i;});
     champion=candidates[winner];trials.push({generation:g,scenarios,results,winner});
+    await options.onGeneration?.({brain:champion.toJSON(),generation:g,winner,score:average(results[winner]),training:{task:settings.lesson,runSeed:options.seed,mutationSeed:options.seed+g*503,cue:settings.cue,phase:settings.phase,lessons:[...options.lessons],scenarios,settings:{...settings},population:options.population,manualExamples:demonstrations.length}});
   }
   const validation=await evaluate([parent.toJSON(),champion.toJSON()],heldOut,0);if(!validation)return null;
   // Every selected earlier lesson must retain success count and avoid a substantial score regression.

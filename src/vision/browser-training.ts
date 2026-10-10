@@ -1,3 +1,4 @@
+import type {GenerationCheckpoint} from '../evolution-checkpoint';
 import type { CohortBudget } from './runtime-budget';
 import { BrainSnapshot, SpikingNetwork,TRACKS } from "../core";
 import { TrackSession, TrackSettings } from "./ui/sessions";
@@ -6,7 +7,7 @@ import { validateTrainingMaps } from '../map-curriculum';
 
 export type CameraTrainingResult={brain:BrainSnapshot;score:number;generation:number;validation:{parent:number;offspring:number;seeds:number[]};trainingSeeds:number[];trainingMaps:string[];scoreDefinition:string};
 /** Evolve a cohort behind frozen eyes, using the same seeds for every ghost. */
-export async function trainCameraController(settings:TrackSettings,generations:number,population:number,cancelled:()=>boolean,log:(s:string)=>void,progress:(sessions:TrackSession[],generation:number,seed:number)=>void=()=>{},speed=0,trainingMaps:string[]=[settings.trackId],budget?:()=>CohortBudget):Promise<CameraTrainingResult|null>{
+export async function trainCameraController(settings:TrackSettings,generations:number,population:number,cancelled:()=>boolean,log:(s:string)=>void,progress:(sessions:TrackSession[],generation:number,seed:number)=>void=()=>{},speed=0,trainingMaps:string[]=[settings.trackId],budget?:()=>CohortBudget,onGeneration?:(c:GenerationCheckpoint)=>void|Promise<void>):Promise<CameraTrainingResult|null>{
   if(!settings.vision)throw new Error('Choose a camera network before training.');
   const limit=Math.min(3000,settings.maxTicks??1500),seeds=[101,307],heldOut=[9001,12007];
   const maps=trainingMaps.length===1&&trainingMaps[0]===settings.trackId&&TRACKS.some(t=>t.id===settings.trackId)?[settings.trackId]:validateTrainingMaps(trainingMaps);
@@ -27,7 +28,7 @@ export async function trainCameraController(settings:TrackSettings,generations:n
     const candidates=Array.from({length:count},(_,i)=>i===0?parent.clone():parent.mutate(.12,.16,61001+gen*100+i));
     const scores=await evaluate(candidates.map(c=>c.toJSON()),seeds,gen+1);if(!scores)return null;
     let winner=0;scores.forEach((score,i)=>{log(`Generation ${gen+1}, ghost ${i+1}: ${score.toFixed(2)} (camera + enabled physical sensors only)`);if(score>scores[winner])winner=i;});
-    best=scores[winner];parent=candidates[winner];log(`Generation ${gen+1}: selected ${best.toFixed(2)}. Camera weights unchanged.`);
+    best=scores[winner];parent=candidates[winner];await onGeneration?.({brain:parent.toJSON(),generation:gen+1,winner,score:best,training:{task:'camera racer',mutationSeedBase:61001+gen*100,mutationRate:.12,mutationAmount:.16,maps:[...maps],seeds:[...seeds],population:count,ticks:limit,lapTarget:settings.lapTarget??1,reward:settings.rewardConfig??'legacy progress/survival'}});log(`Generation ${gen+1}: selected ${best.toFixed(2)}. Camera weights unchanged.`);
   }
   const validation=await evaluate([settings.controller,parent.toJSON()],heldOut,0);if(!validation)return null;
   const [baseline,offspring]=validation;

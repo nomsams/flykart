@@ -16,3 +16,10 @@ it('actually evaluates every selected map for every ghost and held-out compariso
  expect(runs.every(s=>s.sensorOnly&&s.fade===0&&s.memory===null)).toBe(true);expect(result!.validation.seeds).toEqual([9001,12007]);
  await expect(trainCameraController(settings,1,2,()=>false,()=>{},()=>{},0,[])).rejects.toThrow(/at least one/);
 });
+
+it('awaits a completed generation checkpoint before cancellation in held-out work',async()=>{
+ const settings={trackId:'grand-loop',controller:new SpikingNetwork(2).toJSON(),vision:{},rewardConfig:DEFAULT_REWARD_CONFIG,seed:1} as TrackSettings;
+ let cancelled=false;const checkpoints:unknown[]=[];
+ const result=await trainCameraController(settings,2,2,()=>cancelled,()=>{},()=>{},0,['grand-loop'],undefined,async c=>{checkpoints.push(structuredClone(c));cancelled=true;});
+ expect(result).toBeNull();expect(checkpoints).toHaveLength(1);expect((checkpoints[0] as {generation:number}).generation).toBe(1);expect(settings.controller).toEqual(new SpikingNetwork(2).toJSON());
+});

@@ -12,7 +12,7 @@ import {ParkingSettings,ParkingScene} from './model';
 import {ControllerCheckpoint} from '../vision/format';
 import {ParkingEpisode,ParkingCue} from './episode';
 
-export type ParkingBrain={controller:BrainSnapshot;eyes:VisionModel;visual:VisionSettings;memory:MemorySettings;metadata?:Pick<ControllerCheckpoint,'generation'|'fitness'|'track'|'trainingRecipe'>};
+export type ParkingBrain={controller:BrainSnapshot;eyes:VisionModel;visual:VisionSettings;memory:MemorySettings;metadata?:Partial<Pick<ControllerCheckpoint,'generation'|'fitness'|'track'|'trainingRecipe'|'provenance'>>&{name?:string}};
 export const PARKING_VISUAL={...DEFAULT_VISION},PARKING_MEMORY={...DEFAULT_MEMORY};
 export function parkingCamera(settings:ParkingSettings,brain:ParkingBrain){return {...brain.eyes.camera,width:brain.eyes.spec.width,height:brain.eyes.spec.height,...(settings.cameraMount==='robot'?{mountHeight:.065*(100/CM_PER_PIXEL),mountForward:.26*.48*(100/CM_PER_PIXEL)}:{})};}
 export const parkingDomain={...worldDomain,title:'Parking · camera + sonar'};

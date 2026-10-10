@@ -23,6 +23,14 @@ Start with **Guided** sugar and short, simple lots. Then choose **Sparse** sugar
 
 Guided sugar is the signed change of a distance/parking-quality potential. Returning to the same pose cancels that shaping reward. Loose lessons ignore orientation in their reward too. Better centring/alignment gives a larger completion bonus. Trials also pay a small time cost; **Crash priority** controls the additional impact/visual-stall penalty. Pedestrian contact ends the episode and carries a large penalty. Animations are stylized overlays; they cannot provide neural cues or change the score.
 
+## Continuing ghost evolution
+
+The top **Ghost evolution** bar appears in Visual racer, Open world and Parking. It names the selected parent, shows its weight ID and cumulative generation, and provides **Evolve ghosts**, **Cancel** and **Export saved winner**. The driving brain is identified separately. Completed generations autosave their selected winner before the next generation starts, including before held-out validation. Cancelling later work preserves the last completed generation.
+
+**Evolve again** starts from that winner with the current eye and exercise settings. Reloading this site restores the stage's latest autosaved winner. Loading a new brain selects **Active loaded brain**; the previous winner remains available in **Next parent**. Track, world and parking checkpoints are separate, and are separate from manual browser brain saves. A storage failure is reported explicitly: the winner remains available in the current tab and can be exported, but is not promised to survive reload.
+
+**Driving brain & training history** records each generation's parent/winner IDs, task or maps, seed/scenario information, score, rewards, sensor settings and final held-out results. Intermediate generations are not independently held-out tested. Winner exports carry the eye model, setup and full history to Vision/Parking/3D; trial-specific memories and neural spike state are not saved. Automatic training continuation does not adopt the winner for live driving. Review held-out results and use the existing offspring button; Parking and reverse-retention adoption gates still apply.
+
 ## What the controller can know
 
 **Explore · camera only target** uses an explicit pink-pixel detector for bearing and apparent size. Requested direction comes from cyan nose and orange tail patches painted on the floor, projected into the actual RGB camera image. Both patches must be resolved before that direction advisory is available. Occlusion, distance and the low resolution can hide them. These detectors are fixed image-processing rules, not a newly trained target CNN.

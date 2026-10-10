@@ -149,6 +149,12 @@ describe('Discovery fitness and portable settings',()=>{
     expect(trained!.task).toBe('explore');expect(trained!.coachFrames).toBe(0);expect(trained!.scoreDefinition).toContain('No distance/progress reward');expect(trained!.trials).toHaveLength(2);expect(trained!.trials.every(t=>t.firstSightTick===null&&t.progress===0)).toBe(true);
     expect(logs.some(l=>l.includes('no compass or pheromone'))).toBe(true);expect(contexts.every(s=>s[0]!==s[1]&&s[0].discovery!==s[1].discovery)).toBe(true);expect(settings.controller).toEqual(original);
   });
+  it('keeps a completed world winner available when later training is cancelled',async()=>{
+    let cancelled=false;const saved:{brain:ReturnType<SpikingNetwork['toJSON']>;generation:number;training:Record<string,unknown>}[]=[];
+    const parent=structuredClone(settings.controller);
+    const report=await trainWorldController({...settings,maxTicks:12},2,2,.2,()=>cancelled,()=>{},()=>{},0,false,true,undefined,{seed:55,onGeneration:async c=>{saved.push(structuredClone(c));cancelled=true;}});
+    expect(report).toBeNull();expect(saved).toHaveLength(1);expect(saved[0].generation).toBe(1);expect(saved[0].training.task).toBe('explore');expect(saved[0].training.scenarios).toHaveLength(2);expect(settings.controller).toEqual(parent);
+  });
   it('evolves beyond imported saved dots with fair fresh cohorts and bounded failure retries',async()=>{
     const imported={...settings,goals:[{x:300,y:0},{x:-300,y:0}],maxTicks:1};
     const original=structuredClone(imported),seen=new Map<string,{x:number;y:number}[]>();

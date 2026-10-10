@@ -1,7 +1,7 @@
 /** Undo simulation settings; editable text retains the browser's native undo. */
 export function installSettingsHistory(root:HTMLElement, refresh:()=>void, busy:()=>boolean=()=>false):void {
   type Snapshot=Record<string,{value:string;checked:boolean}>;
-  const read=():Snapshot=>Object.fromEntries(Array.from(root.querySelectorAll<HTMLInputElement|HTMLSelectElement>('input[id]:not([type=file]),select[id]')).map(e=>[e.id,{value:e.value,checked:e instanceof HTMLInputElement?e.checked:false}]));
+  const read=():Snapshot=>Object.fromEntries(Array.from(root.querySelectorAll<HTMLInputElement|HTMLSelectElement>('input[id]:not([type=file]),select[id]')).filter(e=>!e.closest('.evolution-parent')).map(e=>[e.id,{value:e.value,checked:e instanceof HTMLInputElement?e.checked:false}]));
   let current=read(), restoring=false;
   const past:Snapshot[]=[],future:Snapshot[]=[];
   const toolbar=document.createElement('div');toolbar.className='toolbar settings-history';

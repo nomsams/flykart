@@ -4,7 +4,7 @@
 
 [hidden]{display:none!important}#manual-pad{padding:7px 0}#manual-pad button{touch-action:none}
 
-@media(min-width:1051px){.monitor{padding:10px}.monitor h2{font-size:11px;margin-bottom:6px}.monitor canvas{height:clamp(80px,calc((100vh - 640px)/3),150px)}.monitor small{font-size:10px;line-height:1.45}.monitor-buttons button{padding:5px 8px;font-size:10px}}
+@media(min-width:1051px){.monitor{padding:10px}.monitor h2{font-size:11px;margin-bottom:6px}.monitor canvas{height:var(--parking-preview-height,clamp(80px,calc((100vh - 640px)/3),150px))}.monitor small{font-size:10px;line-height:1.45}.monitor-buttons button{padding:5px 8px;font-size:10px}}
 @media(max-width:720px){input,select,textarea{font-size:16px}.toolbar label{flex-wrap:wrap}.toolbar select{max-width:100%}.fields label{font-size:12px}.help,small{font-size:12px}.monitor h2{font-size:11px}.monitor small{font-size:11px}.browser-brain-shelf select{max-width:100%}}
 
 .world-head{flex-wrap:wrap;align-items:center}.world-head select,.world-head button{font-size:10px;padding:5px 7px}.delay-field{display:grid;gap:5px;color:var(--muted);font-size:11px;max-width:190px}.delay-field input{width:100%}#lot-3d{image-rendering:auto}

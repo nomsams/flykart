@@ -241,8 +241,9 @@ describe('traffic, transfer and evolution',()=>{
   });
   it('evolves independent ghosts on fresh seeded lots, reserves held-out tests and keeps its parent',async()=>{
     const b=brain(),before=structuredClone(b.controller),seen=new Set<ParkingSession>(),settings={...DEFAULT_PARKING,maxTicks:60,sonarOn:false};
-    const run=()=>trainParking(b,settings,{generations:2,population:2,lessons:['arrival','exit'],seed:72,speed:0,cancel:()=>false,log:()=>{},progress:s=>s.forEach(a=>seen.add(a))});
-    const a=(await run())!,c=(await run())!;expect(a.brain).toEqual(c.brain);expect(a.trials).toEqual(c.trials);expect(a.validation).toEqual(c.validation);expect(b.controller).toEqual(before);
+    const checkpoints:{generation:number;brain:ReturnType<SpikingNetwork['toJSON']>;training:Record<string,unknown>}[]=[];
+    const run=()=>trainParking(b,settings,{generations:2,population:2,lessons:['arrival','exit'],seed:72,speed:0,cancel:()=>false,log:()=>{},progress:s=>s.forEach(a=>seen.add(a)),onGeneration:async c=>{checkpoints.push(structuredClone(c));}});
+    const a=(await run())!,c=(await run())!;expect(checkpoints.map(v=>v.generation)).toEqual([1,2,1,2]);expect(checkpoints[1].brain).toEqual(a.brain);expect(checkpoints[0].training.scenarios).toEqual(a.trials[0].scenarios);expect(a.brain).toEqual(c.brain);expect(a.trials).toEqual(c.trials);expect(a.validation).toEqual(c.validation);expect(b.controller).toEqual(before);
     expect(a.settings.sonarOn).toBe(false);expect([...seen].every(s=>s.driver.sensors.slice(17,19).every(v=>v===0)&&s.scan.samples.length===0)).toBe(true);
     const seeds=[...a.trials.flatMap(g=>g.scenarios.map(s=>s.seed)),...a.validation.scenarios.map(s=>s.seed)];expect(new Set(seeds).size).toBe(seeds.length);expect(a.trials[1].scenarios[1].lesson).toBe('exit');expect(new Set([...seen].map(s=>s.memory)).size).toBe(seen.size);expect(a.memoryProtocol).toContain('frozen');
   },60000);

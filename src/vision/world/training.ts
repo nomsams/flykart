@@ -1,3 +1,4 @@
+import type {GenerationCheckpoint} from '../../evolution-checkpoint';
 import type { CohortBudget } from '../runtime-budget';
 import { Action, BrainSnapshot, SpikingNetwork, clamp, wrapAngle } from '../../core';
 import { mulberry32 } from '../rng';
@@ -30,7 +31,7 @@ export function retainsForward(parent:GoalResult[],child:GoalResult[],limit:numb
   return child.filter(t=>t.arrived&&!t.crashed).length>=parent.filter(t=>t.arrived&&!t.crashed).length&&child.reduce((s,t)=>s+goalScore(t,limit,weight),0)>=parent.reduce((s,t)=>s+goalScore(t,limit,weight),0)-20*parent.length;
 }
 export type WorldTargetTrial=TargetTrial&{generation:number;phase:'training'|'validation'|'forward';start:{x:number;y:number;heading:number};targets:{x:number;y:number}[]};
-export type WorldTrainingOptions={seed?:number;failureRetries?:number};
+export type WorldTrainingOptions={seed?:number;failureRetries?:number;onGeneration?:(c:GenerationCheckpoint)=>void|Promise<void>};
 export type WorldTrainingResult={targetSeed:number;failureRetries:number;targetTrials:WorldTargetTrial[];brain:BrainSnapshot;score:number;generation:number;crashWeight:number;trainingSeeds:number[];validation:{parent:number;offspring:number;seeds:number[];parentTrials:GoalResult[];offspringTrials:GoalResult[]};retention?:RetentionResult;trials:GoalResult[];task:string;scoreDefinition:string;coachFrames:number};
 export async function trainWorldController(settings:WorldSettings,generations:number,population:number,crashWeight:number,cancelled:()=>boolean,log:(line:string)=>void,progress:(sessions:WorldSession[],generation:number,seed:number)=>void,speed=0,coach=false,retain=true,budget?:()=>CohortBudget,options:WorldTrainingOptions={}):Promise<WorldTrainingResult|null>{
   if(!settings.vision)throw Error('Open world training requires a world camera network.');
@@ -69,6 +70,7 @@ export async function trainWorldController(settings:WorldSettings,generations:nu
     if(rehearsal){winner=0;for(let i=1;i<candidates.length;i++)if(retainsForward(rehearsal.trials[0],rehearsal.trials[i],limit,crashWeight)&&batch.scores[i]>batch.scores[winner])winner=i;log(`Forward retention · selected ghost ${winner+1}; forward score ${rehearsal.scores[winner].toFixed(2)} vs current parent ${rehearsal.scores[0].toFixed(2)}. Reverse-only regressions rejected.`);}
     curriculum.remember(scenarios,batch.trials[winner].map(t=>settings.task==='explore'?Boolean(t.won):t.arrived&&!t.crashed));
     parent=candidates[winner];score=batch.scores[winner];lastTrials=batch.trials[winner];
+    await options.onGeneration?.({brain:parent.toJSON(),generation:g+1,winner,score,training:{task:settings.task??'forage',runSeed:curriculum.seed,failureRetries:curriculum.failureRetries,searchWin:settings.searchWin??'sight',goalPreset:settings.goalPreset,scenarios:targetTrials.filter(t=>t.generation===g+1),population,crashWeight,ticks:limit,coachFrames:primed?.frames??0,retainForward:protect}});
   }
   const validation=await evaluate([settings.controller,parent.toJSON()],heldOut,0);if(!validation)return null;
   const check=protect?await evaluate([settings.controller,parent.toJSON()],heldOut,0,true):null;if(protect&&!check)return null;
