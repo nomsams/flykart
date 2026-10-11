@@ -1,0 +1,37 @@
+import {chromium} from '@playwright/test';
+import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
+const browser=await chromium.launch({...(process.platform==='win32'?{channel:'msedge'}:{}),headless:true});
+const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];
+page.on('pageerror',e=>errors.push(e.message));page.setDefaultTimeout(90000);
+const base=process.env.ROBOT_LAB_URL??'http://127.0.0.1:5173';
+const download=async id=>{const [d]=await Promise.all([page.waitForEvent('download'),page.locator('#'+id).click()]);return JSON.parse(await readFile(await d.path(),'utf8'));};
+try{
+  await page.goto(base+'/parking.html');await page.locator('#status').filter({hasText:'Ready ·'}).waitFor();
+  await page.locator('.parking-gene-pool>summary').click();
+  const parent=await page.evaluate(()=>JSON.stringify(window.flykartParking.brain.controller));
+  await page.locator('#pool-repository').selectOption('visual');await page.locator('#pool-repository-add').click();
+  await page.locator('.parking-gene-pool [data-count]').filter({hasText:'1 donor'}).waitFor();
+  assert.equal(await page.evaluate(()=>JSON.stringify(window.flykartParking.brain.controller)),parent);
+  const pool=await download('pool-export');assert.equal(pool.donors.length,1);assert.equal(pool.donors[0].domain,'world');assert.equal(pool.donors[0].controller.inputCount,19);
+  const lab=await download('save-state');lab.settings.maxTicks=120;lab.scene.actors=[];
+  await page.locator('#import-state').setInputFiles({name:'short-lot.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(lab))});await page.locator('#status').filter({hasText:'restored'}).waitFor();
+  await page.locator('#memory-size').selectOption('512');await page.locator('#memory-on').uncheck();assert.match(await page.locator('#memory-info').innerText(),/Memory OFF/);await page.locator('#generations').fill('2');await page.locator('#population').fill('2');await page.locator('#training-speed').selectOption('1');
+  await page.locator('.training-options').evaluate(e=>e.open=true);for(const box of await page.locator('#curriculum input').all())await box.uncheck();await page.locator('#curriculum input[value=arrival]').check();
+  const racer=await readFile('assets/flykart-brain-racer.json');
+  await page.locator('#pool-file').setInputFiles({name:'racer-donor.json',mimeType:'application/json',buffer:racer});
+  await page.locator('#pool-file-dialog .json-import-error').filter({hasText:'Enable'}).waitFor();await page.locator('#pool-file-dialog [data-close]').first().click();
+  assert.equal((await download('pool-export')).donors.length,1);
+  await page.locator('#evolve').click();await page.waitForFunction(()=>window.flykartParking.busy&&window.flykartParking.ghosts.length===2);
+  assert.equal(await page.locator('#pool-add').isEnabled(),true);assert.equal(await page.locator('#pool-repository-add').isEnabled(),true);
+  await page.locator('#pool-adapt').check();await page.locator('#pool-file').setInputFiles({name:'racer-donor.json',mimeType:'application/json',buffer:racer});await page.locator('.parking-gene-pool [data-count]').filter({hasText:'2 donors'}).waitFor();
+  assert.match(await page.locator('.parking-gene-pool [data-status]').innerText(),/next generation/);assert.equal(await page.evaluate(()=>JSON.stringify(window.flykartParking.brain.controller)),parent);
+  await page.locator('#headless-again').click();await page.waitForFunction(()=>!window.flykartParking.busy&&window.flykartParking.report,{},{timeout:240000});
+  const report=await download('export-report');assert.equal(report.settings.memoryOn,false);assert.equal(report.trials[0].genePool.length,1);assert.equal(report.trials[1].genePool.length,2);assert.equal(report.trials[1].donorParents[0],null);assert.ok(report.trials[1].donorParents[1]);
+  const exported=await download('pool-export');assert.equal(exported.donors[1].domain,'track');assert.notDeepEqual(exported.donors[1].original,exported.donors[1].controller);
+  await page.reload();await page.locator('#status').filter({hasText:'Ready ·'}).waitFor();assert.equal(await page.locator('.parking-gene-pool [data-count]').innerText(),'2 donors');await page.locator('.parking-gene-pool>summary').click();
+  await page.locator('[data-donors] button').first().click();assert.equal(await page.locator('.parking-gene-pool [data-count]').innerText(),'1 donor');
+  await page.locator('#pool-add').click();await page.locator('#pool-file-paste').fill(JSON.stringify(exported));await page.locator('#pool-file-dialog [type=submit]').click();await page.locator('.parking-gene-pool [data-count]').filter({hasText:'2 donors'}).waitFor();
+  await page.setViewportSize({width:390,height:844});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));assert.deepEqual(errors,[]);
+  console.log('Parking gene pool passed: repository/file/paste donors, explicit racer remapping, protected parent, live next-generation admission, controller lineage, browser persistence, portable pool and mobile layout.');
+}finally{await browser.close();}

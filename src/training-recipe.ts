@@ -1,4 +1,4 @@
-import { validateTrainingMaps } from './map-curriculum';
+import { validateTrainingMaps } from './map-curriculum-data';
 import { DEFAULT_REWARD_CONFIG, RewardConfig, RoadObjectKind } from './core';
 
 // Portable scoring contract. Rewards remain external labels, never controller inputs.

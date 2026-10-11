@@ -68,21 +68,24 @@ function addEvidence(cells:Map<string,number>,p:MappedPing){
   for(const [key,value] of evidence)cells.set(key,Math.max(-4,Math.min(4,(cells.get(key)??0)+value)));
   while(cells.size>MAX_CELLS)cells.delete(cells.keys().next().value!);
 }
-export type ScanView={mode?:'perspective'|'top';extent?:number;history?:boolean;beam?:boolean;available?:boolean;reference?:ScanReference;opacity?:number;occluders?:readonly SonarTarget[];boundary?:number};
+export type ScanView={mode?:'perspective'|'top';extent?:number;zoom?:number;center?:{x:number;y:number};history?:boolean;beam?:boolean;available?:boolean;reference?:ScanReference;opacity?:number;occluders?:readonly SonarTarget[];boundary?:number};
 /** An isometric ground map. Return markers have illustrative height, not measured object height. */
 export function drawSonarHistory(canvas:HTMLCanvasElement,history:SonarHistory,pose:SonarPose,on:boolean,options:ScanView={}):void{
   const c=canvas.getContext('2d')!,w=canvas.width,h=canvas.height,iso=options.mode!=='top';
   const data=history.viewData();canvas.dataset.referenceCount=String(options.reference?.objects.length??0);canvas.dataset.filter=history.filterMode;
   c.fillStyle='#0b151e';c.fillRect(0,0,w,h);
-  const extent=options.extent??Math.max(460,Math.abs(pose.x)+70,Math.abs(pose.y)+70,...data.samples.flatMap(p=>[Math.abs(p.x)+p.range,Math.abs(p.y)+p.range]));
+  const zoom=Number.isFinite(options.zoom)?Math.max(1,Math.min(8,options.zoom!)):1;
+  const extent=(options.extent??Math.max(460,Math.abs(pose.x)+70,Math.abs(pose.y)+70,...data.samples.flatMap(p=>[Math.abs(p.x)+p.range,Math.abs(p.y)+p.range])))/zoom;
+  const center=options.center&&Number.isFinite(options.center.x)&&Number.isFinite(options.center.y)?options.center:{x:0,y:0};canvas.dataset.zoom=String(zoom);canvas.dataset.center=JSON.stringify(center);
   const scale=Math.min((w-36)/(iso?2.9:2),(h-56)/(iso?1.55:2))/extent;
-  // Fixed world origin: memory never shifts when the robot moves.
-  const project=(x:number,y:number,z=0)=>({x:w/2+(iso?(x-y)*.72:x)*scale,y:h/2+12+(iso?(x+y)*.36:y)*scale-z});
+  // Pan/zoom changes only the display transform; evidence stays in world coordinates.
+  const project=(x:number,y:number,z=0)=>{x-=center.x;y-=center.y;return{x:w/2+(iso?(x-y)*.72:x)*scale,y:h/2+12+(iso?(x+y)*.36:y)*scale-z};};
   const line=(a:{x:number;y:number},b:{x:number;y:number})=>{c.beginPath();c.moveTo(a.x,a.y);c.lineTo(b.x,b.y);c.stroke();};
   const poly=(points:{x:number;y:number}[])=>{c.beginPath();points.forEach((p,i)=>i?c.lineTo(p.x,p.y):c.moveTo(p.x,p.y));c.closePath();c.fill();};
-  c.fillStyle='#14232c';poly([project(-extent,-extent),project(extent,-extent),project(extent,extent),project(-extent,extent)]);
+  const xmin=center.x-extent,xmax=center.x+extent,ymin=center.y-extent,ymax=center.y+extent;
+  c.fillStyle='#14232c';poly([project(xmin,ymin),project(xmax,ymin),project(xmax,ymax),project(xmin,ymax)]);
   c.strokeStyle='#293f4d';c.lineWidth=.6;
-  const grid=100;for(let a=Math.ceil(-extent/grid)*grid;a<=extent;a+=grid){line(project(-extent,a),project(extent,a));line(project(a,-extent),project(a,extent));}
+  const grid=100;for(let a=Math.ceil(ymin/grid)*grid;a<=ymax;a+=grid)line(project(xmin,a),project(xmax,a));for(let a=Math.ceil(xmin/grid)*grid;a<=xmax;a+=grid)line(project(a,ymin),project(a,ymax));
   const visible=options.history!==false;
   // A closed simulated arena is a display boundary, not an extra range input.
   // Coarse/noisy evidence is retained in exports rather than painted off-floor.

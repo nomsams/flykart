@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
-import {PARKING_FLAG,type ParkingScene,type Actor} from './model';
+import {PARKING_FLAG,hasBayDirectionPaint,type ParkingScene,type Actor} from './model';
 import type {ParkingSession} from './session';
 import {parkingFloorColour,type ParkingFloor} from './floor';
 
@@ -24,7 +24,7 @@ export class ParkingView3D{
   private paint(){if(this.canvas.hidden||!this.canvas.clientWidth)return;const w=this.canvas.clientWidth,h=w*3/5;this.renderer.setSize(w,h,false);this.camera.aspect=w/h;this.camera.updateProjectionMatrix();this.renderer.render(this.scene,this.camera);}
   private box(parent:THREE.Group,x:number,y:number,z:number,l:number,h:number,w:number,color:number){const mesh=new THREE.Mesh(new THREE.BoxGeometry(l,h,w),new THREE.MeshStandardMaterial({color,roughness:.72}));mesh.position.set(x,y,z);mesh.castShadow=mesh.receiveShadow=true;parent.add(mesh);return mesh;}
   private vehicle(a:Pick<Actor,'length'|'width'|'height'>,cars:boolean,color:number){const g=new THREE.Group(),h=a.height;if(cars){this.box(g,0,h*.31,0,a.length,h*.62,a.width,color);this.box(g,0,h*.81,0,a.length*.5,h*.38,a.width*.82,0x293d4f);}else{this.box(g,0,h/2,0,a.length,h,a.width,color);const edge=new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(a.length,h,a.width)),new THREE.LineBasicMaterial({color:0xc1d8e4,transparent:true,opacity:.45}));edge.position.y=h/2;g.add(edge);}return g;}
-  private rebuild(lot:ParkingScene,cars:boolean,floor:ParkingFloor){
+  private rebuild(lot:ParkingScene,cars:boolean,floor:ParkingFloor,directionPaint=false){
     [this.staticGroup,this.actors].forEach(dispose);this.bodyMap.clear();this.lot=lot;this.cars=cars;
     this.floor=floor;this.floorTexture?.dispose();const pixels=new Uint8Array(256*256*4);for(let y=0;y<256;y++)for(let x=0;x<256;x++){const c=parkingFloorColour(floor,(x/256*6-3)*100/1.1,(3-y/256*6)*100/1.1),i=(y*256+x)*4;for(let k=0;k<3;k++)pixels[i+k]=Math.round(c[k]*255);pixels[i+3]=255;}this.floorTexture=new THREE.DataTexture(pixels,256,256);this.floorTexture.colorSpace=THREE.SRGBColorSpace;this.floorTexture.needsUpdate=true;
     const ground=new THREE.Mesh(new THREE.PlaneGeometry(6,6),new THREE.MeshStandardMaterial({map:this.floorTexture,roughness:1}));ground.rotation.x=-Math.PI/2;ground.receiveShadow=true;this.staticGroup.add(ground);const grid=new THREE.GridHelper(6,24,0x617c8a,0x425565);grid.position.y=.001;this.staticGroup.add(grid);
@@ -32,17 +32,17 @@ export class ParkingView3D{
     for(const bay of lot.bays){const p=new THREE.Group();p.position.set(bay.x,.002,bay.z);p.rotation.y=-bay.heading;for(const s of [-1,1]){this.box(p,0,0,s*bay.width/2,bay.length,.002,.009,0xcad6dd);this.box(p,s*bay.length/2,0,0,.009,.002,bay.width,0xcad6dd);}this.staticGroup.add(p);}
     const b=lot.target,g=new THREE.Group();g.position.set(b.x,.004,b.z);g.rotation.y=-b.heading;
     for(const s of [-1,1]){this.box(g,0,0,s*b.width/2,b.length,.003,.014,0xffda6c);this.box(g,s*b.length/2,0,0,.014,.003,b.width,0xffda6c);}
-    this.box(g,.14,.001,0,.15,.002,.2,0x20e9ed);this.box(g,-.14,.001,0,.15,.002,.2,0xff883b);const ring=new THREE.Mesh(new THREE.RingGeometry(.205,.23,48),new THREE.MeshBasicMaterial({color:0xffd15d,side:THREE.DoubleSide}));ring.rotation.x=-Math.PI/2;g.add(ring);this.box(g,0,PARKING_FLAG.height/2,0,.004,PARKING_FLAG.height,.004,0xe1e8ec);const flag=new THREE.Mesh(new THREE.PlaneGeometry(PARKING_FLAG.width/2,PARKING_FLAG.height*.38),new THREE.MeshBasicMaterial({color:0xff73b0,side:THREE.DoubleSide}));flag.position.set(PARKING_FLAG.width/4,PARKING_FLAG.height*.81,0);g.add(flag);this.staticGroup.add(g);
+    if(directionPaint){this.box(g,.14,.001,0,.15,.002,.2,0x20e9ed).name='bay-direction-nose';this.box(g,-.14,.001,0,.15,.002,.2,0xff883b).name='bay-direction-tail';}const ring=new THREE.Mesh(new THREE.RingGeometry(.205,.23,48),new THREE.MeshBasicMaterial({color:0xffd15d,side:THREE.DoubleSide}));ring.rotation.x=-Math.PI/2;g.add(ring);this.box(g,0,PARKING_FLAG.height/2,0,.004,PARKING_FLAG.height,.004,0xe1e8ec);const flag=new THREE.Mesh(new THREE.PlaneGeometry(PARKING_FLAG.width/2,PARKING_FLAG.height*.38),new THREE.MeshBasicMaterial({color:0xff73b0,side:THREE.DoubleSide}));flag.position.set(PARKING_FLAG.width/4,PARKING_FLAG.height*.81,0);g.add(flag);this.staticGroup.add(g);
     for(const a of lot.actors){let body:THREE.Group;if(a.kind==='pedestrian'){body=new THREE.Group();const mesh=new THREE.Mesh(new THREE.CylinderGeometry(a.width/2,a.width/2,a.height,12),new THREE.MeshStandardMaterial({color:0xb88c4d}));mesh.position.y=a.height/2;mesh.castShadow=true;body.add(mesh);}else body=this.vehicle(a,cars,0x597899);body.name='actor-'+a.id;body.userData.height=a.height;body.userData.footprint={length:a.length,width:a.width};this.actors.add(body);this.bodyMap.set(a.id,body);}
   }
   draw(sessions:ParkingSession[],cars:boolean,showTrail:boolean,selected=0){
     const e=(sessions[selected]??sessions[0]).episode;
     // Worker observers patch a scene in place; object identity alone misses new lots.
-    const lotKey=JSON.stringify([e.scene.seed,e.scene.lesson,e.scene.target,e.scene.bays,e.scene.actors.map(a=>[a.id,a.kind,a.length,a.width,a.height]),e.settings.approachRadius,e.settings.approachReward]);
+    const lotKey=JSON.stringify([e.scene.seed,e.scene.lesson,e.scene.target,e.scene.bays,e.scene.actors.map(a=>[a.id,a.kind,a.length,a.width,a.height]),e.settings.approachRadius,e.settings.approachReward,hasBayDirectionPaint(e.settings)]);
     const changed=this.lot!==e.scene||this.lotKey!==lotKey||this.cars!==cars||this.floor!==e.settings.floor||this.coachVisible!==e.settings.showCoach,frame=sessions.map(s=>s.episode.tick).join(',')+':'+showTrail+':'+selected;
     const shownEffects=sessions.flatMap(s=>s.episode.effects),animating=shownEffects.some(effect=>performance.now()-(this.effectTimes.get(effect)??performance.now())<1200);
     if(!changed&&frame===this.lastFrame&&!animating)return;
-    this.lastFrame=frame;if(changed){this.rebuild(e.scene,cars,e.settings.floor);this.coachVisible=e.settings.showCoach;this.lotKey=lotKey;}
+    this.lastFrame=frame;if(changed){this.rebuild(e.scene,cars,e.settings.floor,hasBayDirectionPaint(e.settings));this.coachVisible=e.settings.showCoach;this.lotKey=lotKey;}
     if(changed&&e.settings.showCoach){
       const target=e.scene.target;
       if(e.settings.approachReward)for(let j=1;j<=3;j++){const r=e.settings.approachRadius*j/3,points=Array.from({length:97},(_,i)=>new THREE.Vector3(target.x+Math.cos(i/96*Math.PI*2)*r,.006,target.z+Math.sin(i/96*Math.PI*2)*r));const line=new THREE.Line(new THREE.BufferGeometry().setFromPoints(points),new THREE.LineDashedMaterial({color:0x9be8ff,transparent:true,opacity:.7,dashSize:.04,gapSize:.045}));line.name='reward-radius-'+j;line.computeLineDistances();this.staticGroup.add(line);}

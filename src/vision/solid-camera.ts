@@ -39,17 +39,25 @@ export function drawSolids(scene:Scene,pose:Pose,camera:CameraConfig,p:Projectio
   });if(!boxes.length)return null;
   const {width:w,height:h,mountHeight}=camera,n=w*h,depths=new Float32Array(n);depths.fill(Infinity);
   const fx=Math.cos(pose.heading),fy=Math.sin(pose.heading);
-  for(let v=0;v<h;v++)for(let u=0;u<w;u++){
+  // Cull once per pixel, rather than repeating every prism bound check for
+  // each of the four subpixel rays. Empty pixels retain the ground/sky exactly.
+  const candidates:RayBox[]=[];
+  for(let v=0;v<h;v++){
+    const rowBoxes=cull?boxes.filter(box=>v>=box.v0&&v<=box.v1):boxes;
+    if(!rowBoxes.length)continue;
+    for(let u=0;u<w;u++){
+    candidates.length=0;for(const box of rowBoxes)if(!cull||u>=box.u0&&u<=box.u1)candidates.push(box);
+    if(!candidates.length)continue;
     const at=v*w+u;let r=0,g=0,b=0;
     for(let sv=0;sv<2;sv++)for(let su=0;su<2;su++){
       const row=(v+(sv+.5)/2-p.cy)/p.f,right=(u+(su+.5)/2-p.cx)/p.f;
       const forward=p.cosP-row*p.sinP,vertical=-p.sinP-row*p.cosP,dx=fx*forward-fy*right,dy=fy*forward+fx*right;
       let best=vertical<0?-mountHeight/vertical:Infinity,color:Rgb|null=null,shade=1;
-      for(const box of boxes){if(cull&&(u<box.u0||u>box.u1||v<box.v0||v>box.v1))continue;const hit=intersect(box,mountHeight,dx,dy,vertical);if(hit&&hit.depth<best){best=hit.depth;color=box.color;shade=hit.shade;}}
+      for(const box of candidates){const hit=intersect(box,mountHeight,dx,dy,vertical);if(hit&&hit.depth<best){best=hit.depth;color=box.color;shade=hit.shade;}}
       if(color){depths[at]=Math.min(depths[at],best);const haze=1-Math.exp(-best*Math.hypot(dx,dy)/scene.style.fogDistance);r+=color[0]*shade*(1-haze)+scene.style.fog[0]*haze;g+=color[1]*shade*(1-haze)+scene.style.fog[1]*haze;b+=color[2]*shade*(1-haze)+scene.style.fog[2]*haze;}
       else{r+=out[at];g+=out[n+at];b+=out[2*n+at];}
     }
     out[at]=r/4;out[n+at]=g/4;out[2*n+at]=b/4;
-  }
+  }}
   return depths;
 }

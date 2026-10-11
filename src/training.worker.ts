@@ -5,9 +5,11 @@ import {registerTrack} from './vision/proceduralTracks';
 import {capturePreview,type TrainingSession} from './training-preview';
 import type {GenerationCheckpoint} from './evolution-checkpoint';
 import type {TrainingControls,TrainingJob,WorkerRequest,WorkerReply} from './training-worker-protocol';
+import type {ParkingDonor} from './parking/gene-pool';
 
 const port=globalThis as unknown as {postMessage:(message:WorkerReply)=>void;onmessage:((event:MessageEvent<WorkerRequest>)=>void)|null};
 let controls:TrainingControls,cancelled=false,started=false,checkpointId=0,previewId=0,lastPreview=-Infinity,lastProgress=-Infinity;
+let donors:ParkingDonor[]=[];
 const ids=new WeakMap<TrainingSession,number>(),acks=new Map<number,{resolve:()=>void;reject:(e:Error)=>void}>();
 const visible=(g:number)=>controls.visible&&(controls.preview[g]??controls.preview[0]);
 const rate=(g:number)=>controls.rates[controls.visible?g:0]??controls.rates[0];
@@ -21,7 +23,7 @@ async function run(job:TrainingJob){
   const log=(text:string)=>port.postMessage({type:'log',text}),cancel=()=>cancelled;
   try{
     let report;
-    if(job.kind==='parking')report=await trainParking(job.brain,job.settings,{...job,getSpeed:rate,preview:visible,cancel,log,progress,onGeneration:checkpoint});
+    if(job.kind==='parking')report=await trainParking(job.brain,job.settings,{...job,getSpeed:rate,getGenePool:()=>donors,preview:visible,cancel,log,progress,onMetrics:metrics=>port.postMessage({type:'parking-metrics',metrics}),onGeneration:checkpoint});
     else if(job.kind==='track'){
       job.tracks.forEach(registerTrack);
       report=await trainCameraController(job.settings,job.generations,job.population,cancel,log,progress,job.speed,job.maps,()=>controls.visible?controls.budget:{workMs:32,idleMs:0},checkpoint);
@@ -33,5 +35,6 @@ port.onmessage=({data})=>{
   if(data.type==='ack'){const a=acks.get(data.id);acks.delete(data.id);if(data.error)a?.reject(new Error(data.error));else a?.resolve();}
   else if(data.type==='controls')controls=data.controls;
   else if(data.type==='cancel')cancelled=true;
+  else if(data.type==='gene-pool')donors=data.donors;
   else if(!started){started=true;controls=data.controls;void run(data.job);}
 };

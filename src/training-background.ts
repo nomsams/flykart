@@ -4,25 +4,28 @@ import type {TrainingSession} from './training-preview';
 import type {TrainingControls,TrainingJob,TrainingReport,WorkerRequest,WorkerReply} from './training-worker-protocol';
 import type {GenerationCheckpoint} from './evolution-checkpoint';
 import type {ParkingSession} from './parking/session';
-import type {ParkingTrainingReport,trainParking} from './parking/training';
+import type {ParkingTrainingReport,ParkingGenerationMetrics,trainParking} from './parking/training';
 import type {TrackSession,WorldSession} from './vision/ui/sessions';
 import type {trainCameraController,CameraTrainingResult} from './vision/browser-training';
 import type {trainWorldController,WorldTrainingResult} from './vision/world/training';
+import type {ParkingDonor} from './parking/gene-pool';
 
-type Callbacks={cancel:()=>boolean;log:(text:string)=>void;progress:(s:TrainingSession[],generation:number,seed:number)=>void;checkpoint?:(c:GenerationCheckpoint)=>void|Promise<void>;controls:()=>TrainingControls};
+type Callbacks={cancel:()=>boolean;log:(text:string)=>void;progress:(s:TrainingSession[],generation:number,seed:number)=>void;metrics?:(m:ParkingGenerationMetrics)=>void;checkpoint?:(c:GenerationCheckpoint)=>void|Promise<void>;genePool?:()=>ParkingDonor[];controls:()=>TrainingControls};
 /** All simulation/inference/selection lives in the worker. Window timers and paint callbacks never gate it. */
 function background(job:TrainingJob,callbacks:Callbacks):Promise<TrainingReport>{
   if(typeof Worker==='undefined')return Promise.reject(new Error('Background workers are unavailable. Use npm run parking:train for browser-free training.'));
   return new Promise((resolve,reject)=>{
     const worker=new Worker(new URL('./training.worker.ts',import.meta.url),{type:'module',name:'FlyKart '+job.kind+' evolution'}),views=new TrainingPreviews(job);
     let finished=false,sentCancel=false;
+    let sentPool:ParkingDonor[]|undefined;
     const send=(data:WorkerRequest)=>worker.postMessage(data);
-    const sync=()=>{if(finished)return;if(callbacks.cancel()&&!sentCancel){sentCancel=true;send({type:'cancel'});}send({type:'controls',controls:callbacks.controls()});};
+    const syncPool=()=>{const pool=callbacks.genePool?.();if(pool!==sentPool){sentPool=pool;send({type:'gene-pool',donors:pool??[]});}};
+    const sync=()=>{if(finished)return;if(callbacks.cancel()&&!sentCancel){sentCancel=true;send({type:'cancel'});}syncPool();send({type:'controls',controls:callbacks.controls()});};
     // Native event listeners can run microtasks before the target's handler.
     // A message task observes the finished click/change, without hidden-tab timers.
     const controlEvents=new MessageChannel();controlEvents.port1.onmessage=sync;
     const event=()=>controlEvents.port2.postMessage(null);
-    const cleanup=()=>{finished=true;worker.terminate();controlEvents.port1.close();controlEvents.port2.close();document.removeEventListener('visibilitychange',event);window.removeEventListener('change',event,true);window.removeEventListener('click',event,true);};
+    const cleanup=()=>{finished=true;worker.terminate();controlEvents.port1.close();controlEvents.port2.close();document.removeEventListener('visibilitychange',event);window.removeEventListener('change',event,true);window.removeEventListener('click',event,true);window.removeEventListener('flykart-genepool',event);};
     const fail=(error:unknown)=>{if(finished)return;cleanup();reject(error);};
     worker.onerror=e=>fail(new Error('Background training worker: '+e.message+' ('+e.filename+':'+e.lineno+')'));worker.onmessageerror=()=>fail(new Error('Unable to read a background training snapshot.'));
     worker.onmessage=({data}:MessageEvent<WorkerReply>)=>{
@@ -30,17 +33,19 @@ function background(job:TrainingJob,callbacks:Callbacks):Promise<TrainingReport>
       try{
         if(data.type==='log')callbacks.log(data.text);
         else if(data.type==='progress'){callbacks.progress(views.update(data.rows),data.generation,data.seed);}
+        else if(data.type==='parking-metrics')callbacks.metrics?.(data.metrics);
         else if(data.type==='checkpoint')Promise.resolve().then(()=>callbacks.checkpoint?.(data.checkpoint)).then(()=>{if(!finished)send({type:'ack',id:data.id});},e=>{if(!finished)send({type:'ack',id:data.id,error:(e as Error).message});});
         else if(data.type==='result'){cleanup();resolve(data.report);}
         else fail(new Error(data.message));
       }catch(e){fail(e);}
     };
     document.addEventListener('visibilitychange',event);window.addEventListener('change',event,true);window.addEventListener('click',event,true);
-    try{send({type:'start',job,controls:callbacks.controls()});}catch(e){fail(e);}
+    window.addEventListener('flykart-genepool',event);
+    try{syncPool();send({type:'start',job,controls:callbacks.controls()});}catch(e){fail(e);}
   });
 }
 export function trainParkingBackground(brain:Parameters<typeof trainParking>[0],settings:Parameters<typeof trainParking>[1],options:Parameters<typeof trainParking>[2]):Promise<ParkingTrainingReport|null>{
-  return background({kind:'parking',brain,settings,generations:options.generations,population:options.population,lessons:options.lessons,seed:options.seed,speed:options.speed,demonstrations:options.demonstrations},{cancel:options.cancel,log:options.log,progress:(s,g)=>options.progress(s as ParkingSession[],g),checkpoint:options.onGeneration,controls:()=>({visible:!document.hidden,preview:Array.from({length:options.generations+1},(_,g)=>options.preview?.(g)??true),rates:Array.from({length:options.generations+1},(_,g)=>options.getSpeed?.(g)??options.speed),budget:{workMs:32,idleMs:0}})}) as Promise<ParkingTrainingReport|null>;
+  return background({kind:'parking',brain,settings,generations:options.generations,population:options.population,lessons:options.lessons,seed:options.seed,speed:options.speed,demonstrations:options.demonstrations},{cancel:options.cancel,log:options.log,progress:(s,g)=>options.progress(s as ParkingSession[],g),metrics:options.onMetrics,checkpoint:options.onGeneration,genePool:options.getGenePool,controls:()=>({visible:!document.hidden,preview:Array.from({length:options.generations+1},(_,g)=>options.preview?.(g)??true),rates:Array.from({length:options.generations+1},(_,g)=>options.getSpeed?.(g)??options.speed),budget:{workMs:32,idleMs:0}})}) as Promise<ParkingTrainingReport|null>;
 }
 export function trainCameraBackground(...args:Parameters<typeof trainCameraController>):Promise<CameraTrainingResult|null>{
   const [settings,generations,population,cancel,log,progress=()=>{},speed=0,maps=[settings.trackId],budget=()=>({workMs:12,idleMs:0}),checkpoint]=args;

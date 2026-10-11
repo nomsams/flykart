@@ -11,7 +11,7 @@ import {Sonar,sonarInputs,SonarTarget} from '../vision/sonar';
 import {FlagDiscovery} from '../vision/world/discovery';
 import {parkingFloorColour,type ParkingFloor} from './floor';
 import {CoachPath,planParkingPath,pathPosition} from './path-coach';
-import {PARKING_FLAG,ParkingSettings,ParkingScene,actorObject,actorSolid,bodySolid,parkingQuality,generateParking,validateParkingScene} from './model';
+import {PARKING_FLAG,hasBayDirectionPaint,ParkingSettings,ParkingScene,actorObject,actorSolid,bodySolid,parkingQuality,generateParking,validateParkingScene} from './model';
 
 export const PX=100/CM_PER_PIXEL;
 /** Keep the imported kart's steering convention when backing: right input turns the nose left. */
@@ -23,25 +23,31 @@ export type ImpactEffect={x:number;z:number;kind:'blood'|'explosion'|'smoke'|'er
 export class ParkingCameraScene implements Scene{
   readonly style={...DEFAULT_STYLE,noise:.006,fogDistance:900};sprites:Sprite[]=[];
   private bays:{x:number;z:number;length:number;width:number;c:number;s:number}[]=[];
+  private bayBounds=[Infinity,-Infinity,Infinity,-Infinity];
   private targetC=1;private targetS=0;
-  constructor(readonly scene:ParkingScene,readonly cars=false,readonly floor:ParkingFloor='transfer'){}
+  constructor(readonly scene:ParkingScene,readonly cars=false,readonly floor:ParkingFloor='transfer',readonly directionPaint=false){}
   prepare():void{
     this.bays=this.scene.bays.map(b=>({...b,c:Math.cos(b.heading),s:Math.sin(b.heading)}));this.targetC=Math.cos(this.scene.target.heading);this.targetS=Math.sin(this.scene.target.heading);
+    this.bayBounds=[Infinity,-Infinity,Infinity,-Infinity];
+    for(const b of this.bays){const bound=(b.length+b.width)/2+.024;this.bayBounds[0]=Math.min(this.bayBounds[0],b.x-bound);this.bayBounds[1]=Math.max(this.bayBounds[1],b.x+bound);this.bayBounds[2]=Math.min(this.bayBounds[2],b.z-bound);this.bayBounds[3]=Math.max(this.bayBounds[3],b.z+bound);}
     this.sprites=this.scene.actors.map(a=>({x:a.pose.x*PX,y:a.pose.z*PX,heading:a.pose.heading,width:a.width*PX,length:a.length*PX,z0:0,z1:a.height*PX,color:a.kind==='pedestrian'?[.72,.55,.3] as Rgb:[.35,.47,.6] as Rgb,shape:a.kind==='pedestrian'?'post':this.cars?'solid-car':'oriented-box'}));
     const b=this.scene.target;this.sprites.push({x:b.x*PX,y:b.z*PX,heading:0,width:PARKING_FLAG.width*PX,length:PARKING_FLAG.width*PX,z0:0,z1:PARKING_FLAG.height*PX,color:[1,.2,.62],shape:'flag'});
     const h=this.scene.half*PX;
     for(const [x,y,heading] of [[0,-h,0],[0,h,0],[-h,0,Math.PI/2],[h,0,Math.PI/2]])this.sprites.push({x,y,heading,width:.025*PX,length:h*2,z0:0,z1:.2*PX,color:[.7,.7,.66],shape:'oriented-box'});
   }
   ground(px:number,py:number,out:Rgb):void{
-    const x=px/PX,z=py/PX,b=this.scene.target;let color:Rgb=parkingFloorColour(this.floor,px,py);
-    for(const bay of this.bays){const dx=x-bay.x,dz=z-bay.z,along=dx*bay.c+dz*bay.s,across=-dx*bay.s+dz*bay.c;
+    const x=px/PX,z=py/PX,b=this.scene.target;let color:Rgb=parkingFloorColour(this.floor,px,py,out);
+    if(x>=this.bayBounds[0]&&x<=this.bayBounds[1]&&z>=this.bayBounds[2]&&z<=this.bayBounds[3])for(const bay of this.bays){const dx=x-bay.x,dz=z-bay.z;
+      // Conservative world bounds discard distant paint before rotating each ground sample.
+      const bound=(bay.length+bay.width)/2+.024;if(Math.abs(dx)>bound||Math.abs(dz)>bound)continue;
+      const along=dx*bay.c+dz*bay.s,across=-dx*bay.s+dz*bay.c;
       if(Math.abs(along)<bay.length/2+.012&&Math.abs(across)<bay.width/2+.012&&(Math.abs(Math.abs(along)-bay.length/2)<.012||Math.abs(Math.abs(across)-bay.width/2)<.012))color=[.8,.83,.82];}
     const dx=x-b.x,dz=z-b.z,along=dx*this.targetC+dz*this.targetS,across=-dx*this.targetS+dz*this.targetC,distance=Math.hypot(dx,dz);
     if(distance<.23&&distance>.205)color=[1,.84,.2];
     if(Math.abs(along)<b.length/2+.016&&Math.abs(across)<b.width/2+.016&&(Math.abs(Math.abs(along)-b.length/2)<.016||Math.abs(Math.abs(across)-b.width/2)<.016))color=[1,.84,.2];
-    // Cyan nose and orange tail are painted on the ground, so the camera must see them.
-    if(Math.abs(across)<.1&&Math.abs(along-.14)<.075)color=[.05,.95,1];
-    if(Math.abs(across)<.1&&Math.abs(along+.14)<.075)color=[1,.38,.04];
+    // Only the explicit orientation curriculum adds these physical paint patches.
+    if(this.directionPaint&&Math.abs(across)<.1&&Math.abs(along-.14)<.075)color=[.05,.95,1];
+    if(this.directionPaint&&Math.abs(across)<.1&&Math.abs(along+.14)<.075)color=[1,.38,.04];
     out[0]=color[0];out[1]=color[1];out[2]=color[2];
   }
 }
@@ -49,10 +55,11 @@ export class ParkingCameraScene implements Scene{
 /** Pixel-only marker pose. No hidden robot/goal coordinates or orientation enter this detector. */
 export class ParkingCue extends FlagDiscovery{
   alignment=0;confidence=0;
-  constructor(readonly camera:CameraConfig){super(camera.width,camera.height,camera.hfov);}
+  constructor(readonly camera:CameraConfig,readonly detectDirection=true){super(camera.width,camera.height,camera.hfov);}
   override reset():void{super.reset();this.alignment=0;this.confidence=0;}
   override observe(pixels:Float32Array,tick:number):void{
-    super.observe(pixels,tick);const {width:w,height:h,hfov}=this.camera,n=w*h,f=w/(2*Math.tan(hfov/2)),points:number[][]=[[],[]];
+    super.observe(pixels,tick);this.confidence=0;this.alignment=0;if(!this.detectDirection)return;
+    const {width:w,height:h,hfov}=this.camera,n=w*h,f=w/(2*Math.tan(hfov/2)),points:number[][]=[[],[]];
     for(let y=0;y<h;y++)for(let x=0;x<w;x++){
       const i=y*w+x,r=pixels[i],g=pixels[n+i],b=pixels[2*n+i],kind=g>.45&&b>.5&&r<.3&&r<g*.65?0:r>.55&&g>.12&&g<r*.68&&b<g*.65?1:-1;
       if(kind<0)continue;const forward=groundDistanceAtRow(this.camera,y);if(forward<=0||forward>PX*4)continue;
@@ -78,7 +85,7 @@ export class ParkingEpisode implements VisionEpisode{
   private qualityPotential=0;private pathPotential=0;private bestRemaining=0;private bestAngle=Infinity;private progressTick=0;private progressMark=0;
   private lastCommand:Action={steer:0,throttle:0,brake:0,reverse:0};private lastContact=-Infinity;private potential=0;private cooldown=new Map<string,number>();
   constructor(readonly settings:ParkingSettings,readonly camera:CameraConfig,scene?:ParkingScene,public diagnostics=true){
-    this.scene=scene?validateParkingScene(scene):generateParking(settings);this.physics.pose={...this.scene.start};this.physics.odometry={...this.scene.start};this.frame=new Float32Array(frameLength(camera));this.cameraScene=new ParkingCameraScene(this.scene,settings.cars,settings.floor);
+    this.scene=scene?validateParkingScene(scene):generateParking(settings);this.physics.pose={...this.scene.start};this.physics.odometry={...this.scene.start};this.frame=new Float32Array(frameLength(camera));this.cameraScene=new ParkingCameraScene(this.scene,settings.cars,settings.floor,hasBayDirectionPaint(settings));
     this.sonarUnit=new Sonar({...HC_SR04,mountForward:DEFAULT_ROBOT.length*.48*PX},mulberry32(settings.seed*31));
     this.coachPath=settings.pathReward?planParkingPath(this.scene):null;
     this.potential=this.progressPotential();this.qualityPotential=10*this.judgedQuality().quality;this.pathPotential=this.routePotential();this.bestRemaining=this.remaining();this.progressMark=this.bestRemaining;this.bestAngle=this.judgedQuality().error;this.ping();this.render();

@@ -143,10 +143,20 @@ describe('camera and sensor-only parking',()=>{
     const b=brain();b.memory={...DEFAULT_MEMORY};b.visual={...DEFAULT_VISION,layout:'circle9'};const s=new ParkingSession(DEFAULT_PARKING,b);expect(s.memory.count).toBe(4096);expect(s.driver.ensemble!.frames).toHaveLength(9);expect(s.driver.ensemble!.frames[0]).not.toEqual(s.driver.ensemble!.frames[1]);const raw=s.episode.frame.slice();s.driver.ensemble!.see(raw,s.episode.proprioception());expect(s.episode.frame).toEqual(raw);expect(s.episode.camera.mountHeight*CM_PER_PIXEL).toBeCloseTo(6.5);
   });
   it('extracts both marker orientations from RGB, without pose access',()=>{
-    const e=episode('oriented');e.scene.actors=[];e.scene.target={...e.scene.target,x:0,z:0,heading:Math.PI/2};e.physics.pose={x:-.5,z:0,heading:0};e.cameraScene.style.noise=0;
+    const e=new ParkingEpisode({...DEFAULT_PARKING,lesson:'oriented',bayAlignment:true},ROBOT_WORLD_CAMERA);e.scene.actors=[];e.scene.target={...e.scene.target,x:0,z:0,heading:Math.PI/2};e.physics.pose={x:-.5,z:0,heading:0};e.cameraScene.style.noise=0;
     const cue=new ParkingCue(e.camera);cue.observe(e.render(),0);expect(cue.confidence).toBe(1);expect(cue.alignment).toBeCloseTo(.5,1);
     e.scene.target.heading=-Math.PI/2;cue.observe(e.render(),2);expect(cue.confidence).toBe(1);expect(cue.alignment).toBeCloseTo(-.5,1);
     const offscreen=new Float32Array(e.frame.length);cue.observe(offscreen,4);expect(cue.cue()).toEqual([0,0,0,0]);
+  });
+  it('keeps direction paint out of default/compass RGB and all sonar/contact geometry',()=>{
+    const scene=generateParking({...DEFAULT_PARKING,lesson:'oriented'});scene.actors=[];scene.target={...scene.target,x:0,z:0,heading:0};scene.bays=scene.bays.map(b=>b.id===scene.target.id?{...scene.target}:b);scene.start={x:-.5,z:0,heading:0};
+    const plain=new ParkingEpisode({...DEFAULT_PARKING,lesson:'oriented'},ROBOT_WORLD_CAMERA,scene),painted=new ParkingEpisode({...DEFAULT_PARKING,lesson:'oriented',bayAlignment:true},ROBOT_WORLD_CAMERA,scene);
+    const rgb:[number,number,number]=[0,0,0];plain.cameraScene.prepare();plain.cameraScene.ground(.1*PX,0,rgb);expect(rgb).not.toEqual([.05,.95,1]);painted.cameraScene.prepare();painted.cameraScene.ground(.1*PX,0,rgb);expect(rgb).toEqual([.05,.95,1]);
+    expect(plain.render()).not.toEqual(painted.render());expect(plain.targets()).toEqual(painted.targets());expect(plain.sonar()).toEqual(painted.sonar());
+    for(const lesson of ['arrival','exit','switch','oriented','parallel','traffic'] as const){const e=new ParkingEpisode({...DEFAULT_PARKING,lesson,cue:'compass'},ROBOT_WORLD_CAMERA,scene);expect(e.frame).toEqual(plain.frame);expect(e.cameraScene.directionPaint).toBe(false);}
+    const easy=new ParkingEpisode({...DEFAULT_PARKING,bayAlignment:true},ROBOT_WORLD_CAMERA,scene);expect(easy.cameraScene.directionPaint).toBe(false);
+    // Drive through the target paint itself; only the unchanged perimeter can block it.
+    for(let tick=0;tick<12;tick++){plain.step({...idle,throttle:1});painted.step({...idle,throttle:1});expect(plain.physics.pose).toEqual(painted.physics.pose);expect(plain.sonar()).toEqual(painted.sonar());expect(plain.status.contacts).toBe(0);}
   });
   it('alignment advisory is absent when no direction marker is observed',()=>{
     const estimates=new Array(10).fill(.1),body={speed:0,lastSteer:0,lastDrive:0};expect(alignedParkingDomain.sensors(estimates,[0,.4,1,0],body)).toEqual(parkingDomain.sensors(estimates,[0,.4,0,0],body));expect(alignedParkingDomain.sensors(estimates,[0,.4,1,1],body)[15]).toBeGreaterThan(.5);
@@ -248,9 +258,10 @@ describe('traffic, transfer and evolution',()=>{
     const seeds=[...a.trials.flatMap(g=>g.scenarios.map(s=>s.seed)),...a.validation.scenarios.map(s=>s.seed)];expect(new Set(seeds).size).toBe(seeds.length);expect(a.trials[1].scenarios[1].lesson).toBe('exit');expect(new Set([...seen].map(s=>s.memory)).size).toBe(seen.size);expect(a.memoryProtocol).toContain('frozen');
   },60000);
   it('discards every strict-crash ghost without autosaving it or mutating the parent',async()=>{
-    const b=brain(),before=structuredClone(b.controller),checkpoints:unknown[]=[];
-    const r=await trainParking(b,{...DEFAULT_PARKING,strictCrash:true,maxTicks:60},{generations:1,population:2,lessons:['arrival'],seed:8,speed:0,cancel:()=>false,log:()=>{},progress:s=>s.forEach(a=>a.episode.status.disqualified=true),onGeneration:c=>{checkpoints.push(c);}});
+    const b=brain(),before=structuredClone(b.controller),checkpoints:unknown[]=[],metrics:unknown[]=[];
+    const r=await trainParking(b,{...DEFAULT_PARKING,strictCrash:true,maxTicks:60},{generations:1,population:2,lessons:['arrival'],seed:8,speed:0,cancel:()=>false,log:()=>{},progress:s=>s.forEach(a=>a.episode.status.disqualified=true),onMetrics:m=>{metrics.push(structuredClone(m));},onGeneration:c=>{checkpoints.push(c);}});
     expect(r!.trials[0].winner).toBe(-1);expect(checkpoints).toEqual([]);expect(r!.brain).toEqual(before);expect(r!.validation.passed).toBe(false);expect(b.controller).toEqual(before);
+    expect(metrics).toEqual([{generation:1,winner:-1,metrics:r!.trials[0].metrics}]);
   },30000);
   it('rejects frozen evolution and cancels without changing the parent',async()=>{
     const b=brain(),before=structuredClone(b.controller),options={generations:1,population:2,lessons:['arrival'] as const,seed:7,speed:0,cancel:()=>true,log:()=>{},progress:()=>{}};

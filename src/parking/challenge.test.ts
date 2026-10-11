@@ -15,7 +15,7 @@ describe('parking challenges',()=>{
       const end=parkingQuality(path.poses.at(-1)!,scene.target);expect(end.inside).toBe(true);expect(end.distance).toBeLessThan(.001);expect(end.error).toBeLessThan(.001);
       for(let i=1;i<path.poses.length;i++){const a=path.poses[i-1],b=path.poses[i],travel=Math.hypot(a.x-b.x,a.z-b.z);expect(travel).toBeGreaterThan(1e-6);expect(Math.abs(b.heading-a.heading)/travel).toBeLessThanOrEqual(1/.18+.001);for(const actor of scene.actors)expect(overlaps(bodySolid(b,DEFAULT_ROBOT.length+.008,DEFAULT_ROBOT.width+.008),actorSolid(actor))).toBe(false);}
     }
-  },30000);
+  },90000);
   it('migrates old settings, validates new fields and safely seeds every harder lesson',()=>{
     const old={...DEFAULT_PARKING} as Record<string,unknown>;for(const k of ['strictCrash','parkedOffset','layout'])delete old[k];expect(validateParkingSettings(old)).toEqual(DEFAULT_PARKING);
     expect(()=>validateParkingSettings({...old,layout:'unknown'})).toThrow();

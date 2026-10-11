@@ -9,6 +9,7 @@ import {SonarHistory} from '../vision/sonar-history';
 import {CM_PER_PIXEL} from '../vision/robot';
 import {DEFAULT_STALL} from '../vision/stall';
 import {ParkingSettings,ParkingScene} from './model';
+import {hasBayDirectionPaint} from './model';
 import {ControllerCheckpoint} from '../vision/format';
 import {ParkingEpisode,ParkingCue} from './episode';
 
@@ -31,9 +32,9 @@ export class ParkingSession{
   constructor(readonly settings:ParkingSettings,readonly brain:ParkingBrain,options:{scene?:ParkingScene;memory?:RoomMemory;learn?:boolean;diagnostics?:()=>boolean}={}){
     this.diagnostics=options.diagnostics??(()=>true);
     this.network=SpikingNetwork.fromJSON(brain.controller);this.memory=options.memory??new RoomMemory(brain.memory);
-    this.episode=new ParkingEpisode(settings,parkingCamera(settings,brain),options.scene,this.diagnostics());this.cue=new ParkingCue(this.episode.camera);
+    this.episode=new ParkingEpisode(settings,parkingCamera(settings,brain),options.scene,this.diagnostics());this.cue=new ParkingCue(this.episode.camera,hasBayDirectionPaint(settings));
     const precise=!['arrival','exit','switch'].includes(settings.lesson);
-    this.driver=new VisionDriver({controller:this.network,perceiver:new Perceiver(brain.eyes),domain:settings.bayAlignment&&precise?alignedParkingDomain:parkingDomain,sonarOff:!settings.sonarOn,sensorOnly:true,missionCue:settings.cue==='compass',...(settings.cue==='visual'?{pixelMission:this.cue}:{}),roomMemory:this.memory,learnMemory:options.learn!==false&&settings.phase!=='frozen',visual:brain.visual,resolution:'native',fusion:{fade:0},stall:{...DEFAULT_STALL,enabled:true}});
+    this.driver=new VisionDriver({controller:this.network,perceiver:new Perceiver(brain.eyes),domain:settings.bayAlignment&&precise?alignedParkingDomain:parkingDomain,sonarOff:!settings.sonarOn,sensorOnly:true,missionCue:settings.cue==='compass',...(settings.cue==='visual'?{pixelMission:this.cue}:{}),roomMemory:settings.memoryOn?this.memory:undefined,learnMemory:options.learn!==false&&settings.phase!=='frozen',visual:brain.visual,resolution:'native',fusion:{fade:0},stall:{...DEFAULT_STALL,enabled:true}});
     this.driver.reset();if(this.diagnostics())this.scan.record(this.episode.sonarUnit,this.episode.pose,settings.sonarOn);this.prepared=this.driver.act(this.episode);
   }
   get done(){return this.episode.done;}

@@ -19,7 +19,7 @@ import { narrowBrain } from "./inputs";
 import type { DriverMode } from "./pipeline";
 import { MemorySnapshot, MushroomBody } from "./memory";
 import { VisionModel, validateVisionModel } from "./perception";
-import { validateTrainingMaps } from '../map-curriculum';
+import { validateTrainingMaps } from '../map-curriculum-data';
 import { TrainingRecipe, validateRecipe } from '../training-recipe';
 
 export type ControllerCheckpoint = {
