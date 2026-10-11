@@ -86,9 +86,10 @@ export class RoomMemory {
     const max=distance,startX=pose.x+Math.cos(pose.heading)*mountForward,startZ=pose.z+Math.sin(pose.heading)*mountForward;
     // A farther noisy/off-axis echo cannot turn earlier occupied cells into a doorway.
     // Stop carving at repeated wall evidence; isolated uncertain hits also keep their sign.
-    for(let r=.04;r<max-.1;r+=.07){const key=[Math.floor((startX+Math.cos(pose.heading)*r)/.1),Math.floor((startZ+Math.sin(pose.heading)*r)/.1)].join(","),occupied=this.map.get(key)??0;if(occupied>=1.6)break;if(occupied<=0)this.map.set(key,Math.max(-5,occupied-.25));}
-    if(echo){const key=[Math.floor((startX+Math.cos(pose.heading)*distance)/.1),Math.floor((startZ+Math.sin(pose.heading)*distance)/.1)].join(",");this.map.set(key,Math.min(5,(this.map.get(key)??0)+.8));}
-    if(this.map.size>12000)this.map.delete(this.map.keys().next().value!);
+    let blocked=false;
+    for(let r=.04;r<max-.1;r+=.07){const key=[Math.floor((startX+Math.cos(pose.heading)*r)/.1),Math.floor((startZ+Math.sin(pose.heading)*r)/.1)].join(","),occupied=this.map.get(key)??0;if(occupied>=1.6){blocked=true;break;}if(occupied<=0)this.map.set(key,Math.max(-5,occupied-.25));}
+    if(!blocked){const key=[Math.floor((startX+Math.cos(pose.heading)*distance)/.1),Math.floor((startZ+Math.sin(pose.heading)*distance)/.1)].join(",");this.map.set(key,Math.min(5,(this.map.get(key)??0)+.8));}
+    while(this.map.size>12000)this.map.delete(this.map.keys().next().value!);
   }
   toJSON(): RoomMemorySnapshot { return {format:"robot-kenyon-memory",version:this.legacy?1:2,mapPoseSource:this.mapPoseSource,mapFilter:this.mapFilter,settings:{...this.settings},counts:Array.from(this.counts),means:this.means.map(m=>Array.from(m)),prototypes:this.prototypes.map(m=>m?Array.from(m):null),map:[...this.map]}; }
   static fromJSON(raw: unknown): RoomMemory {
