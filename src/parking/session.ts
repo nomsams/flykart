@@ -37,5 +37,5 @@ export class ParkingSession{
     this.driver.reset();if(this.diagnostics())this.scan.record(this.episode.sonarUnit,this.episode.pose,settings.sonarOn);this.prepared=this.driver.act(this.episode);
   }
   get done(){return this.episode.done;}
-  step(action?:Action){if(this.done)return;this.episode.diagnostics=this.diagnostics();const frame=this.prepared??this.driver.act(this.episode);this.prepared=null;this.lastAction={...(action??frame.action)};this.episode.step(this.lastAction);const stall=action?0:this.driver.stall?.painForTick(this.episode.tick)??0;this.episode.status.pain+=stall;this.episode.status.score-=stall*(4+this.settings.crashWeight*60);if(this.episode.diagnostics)this.scan.record(this.episode.sonarUnit,this.episode.pose,this.settings.sonarOn);}
+  step(action?:Action){if(this.done)return;this.episode.diagnostics=this.diagnostics();const frame=this.prepared??this.driver.act(this.episode);this.prepared=null;this.lastAction={...(action??frame.action)};this.episode.step(this.lastAction);const stall=action?0:this.driver.stall?.painForTick(this.episode.tick)??0;this.episode.addPain(stall);if(this.episode.diagnostics)this.scan.record(this.episode.sonarUnit,this.episode.pose,this.settings.sonarOn);}
 }

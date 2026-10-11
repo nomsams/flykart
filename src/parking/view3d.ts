@@ -11,14 +11,14 @@ export class ParkingView3D{
   readonly renderer:THREE.WebGLRenderer;readonly controls:OrbitControls;
   private staticGroup=new THREE.Group();private actors=new THREE.Group();private agents=new THREE.Group();private trails=new THREE.Group();private effects=new THREE.Group();
   private lot:ParkingScene|null=null;private cars=false;private floor:ParkingFloor='transfer';private floorTexture:THREE.DataTexture|null=null;private bodyMap=new Map<string,THREE.Group>();private effectTimes=new WeakMap<object,number>();
-  private coachVisible=false;private lastFrame='';
+  private coachVisible=false;private lastFrame='';private lotKey='';
   private agentBodies:THREE.Group[]=[];private traceLines:THREE.Line[]=[];
-  constructor(readonly canvas:HTMLCanvasElement,onPick:(x:number,z:number)=>void){
+  constructor(readonly canvas:HTMLCanvasElement,onPick:(x:number,z:number)=>void,onAgentPick:(index:number)=>boolean=()=>false){
     this.renderer=new THREE.WebGLRenderer({canvas,antialias:true,preserveDrawingBuffer:true});this.renderer.setPixelRatio(Math.min(devicePixelRatio,1.5));this.renderer.shadowMap.enabled=true;this.renderer.shadowMap.type=THREE.PCFSoftShadowMap;this.scene.background=new THREE.Color(0x14232d);
     this.scene.add(new THREE.HemisphereLight(0xdcefff,0x334854,2));const sun=new THREE.DirectionalLight(0xffebca,3);sun.position.set(-3,6,4);sun.castShadow=true;sun.shadow.mapSize.set(1024,1024);Object.assign(sun.shadow.camera,{left:-4,right:4,top:4,bottom:-4,near:.1,far:15});sun.shadow.bias=-.0002;this.scene.add(sun);
     this.scene.add(this.staticGroup,this.actors,this.agents,this.trails,this.effects);this.controls=new OrbitControls(this.camera,canvas);this.controls.maxPolarAngle=Math.PI/2-.05;this.controls.minDistance=.4;this.controls.maxDistance=12;this.controls.addEventListener('change',()=>this.paint());this.focus();
     new ResizeObserver(()=>this.paint()).observe(canvas);
-    let press={x:0,y:0};canvas.addEventListener('pointerdown',e=>{press={x:e.clientX,y:e.clientY};});canvas.addEventListener('pointerup',e=>{if(Math.hypot(e.clientX-press.x,e.clientY-press.y)>4)return;const rect=canvas.getBoundingClientRect(),ray=new THREE.Raycaster();ray.setFromCamera(new THREE.Vector2((e.clientX-rect.left)/rect.width*2-1,1-(e.clientY-rect.top)/rect.height*2),this.camera);const hit=new THREE.Vector3();if(ray.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0,1,0),0),hit))onPick(hit.x,hit.z);});
+    let press={x:0,y:0};canvas.addEventListener('pointerdown',e=>{press={x:e.clientX,y:e.clientY};});canvas.addEventListener('pointerup',e=>{if(Math.hypot(e.clientX-press.x,e.clientY-press.y)>4)return;const rect=canvas.getBoundingClientRect(),ray=new THREE.Raycaster();ray.setFromCamera(new THREE.Vector2((e.clientX-rect.left)/rect.width*2-1,1-(e.clientY-rect.top)/rect.height*2),this.camera);const candidate=ray.intersectObjects(this.agentBodies.filter(b=>b.visible),true)[0];if(candidate){let body:THREE.Object3D|null=candidate.object;while(body&&!Number.isInteger(body.userData.ghostIndex))body=body.parent;if(body&&onAgentPick(body.userData.ghostIndex))return;}const hit=new THREE.Vector3();if(ray.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0,1,0),0),hit))onPick(hit.x,hit.z);});
   }
   focus(overview=false){this.controls.target.set(0,0,-.45);this.camera.position.set(...(overview?[3.5,5.5,4.8]:[1.65,2.15,1.75]) as [number,number,number]);this.controls.update();this.paint();}
   private paint(){if(this.canvas.hidden||!this.canvas.clientWidth)return;const w=this.canvas.clientWidth,h=w*3/5;this.renderer.setSize(w,h,false);this.camera.aspect=w/h;this.camera.updateProjectionMatrix();this.renderer.render(this.scene,this.camera);}
@@ -35,11 +35,14 @@ export class ParkingView3D{
     this.box(g,.14,.001,0,.15,.002,.2,0x20e9ed);this.box(g,-.14,.001,0,.15,.002,.2,0xff883b);const ring=new THREE.Mesh(new THREE.RingGeometry(.205,.23,48),new THREE.MeshBasicMaterial({color:0xffd15d,side:THREE.DoubleSide}));ring.rotation.x=-Math.PI/2;g.add(ring);this.box(g,0,PARKING_FLAG.height/2,0,.004,PARKING_FLAG.height,.004,0xe1e8ec);const flag=new THREE.Mesh(new THREE.PlaneGeometry(PARKING_FLAG.width/2,PARKING_FLAG.height*.38),new THREE.MeshBasicMaterial({color:0xff73b0,side:THREE.DoubleSide}));flag.position.set(PARKING_FLAG.width/4,PARKING_FLAG.height*.81,0);g.add(flag);this.staticGroup.add(g);
     for(const a of lot.actors){let body:THREE.Group;if(a.kind==='pedestrian'){body=new THREE.Group();const mesh=new THREE.Mesh(new THREE.CylinderGeometry(a.width/2,a.width/2,a.height,12),new THREE.MeshStandardMaterial({color:0xb88c4d}));mesh.position.y=a.height/2;mesh.castShadow=true;body.add(mesh);}else body=this.vehicle(a,cars,0x597899);body.name='actor-'+a.id;body.userData.height=a.height;body.userData.footprint={length:a.length,width:a.width};this.actors.add(body);this.bodyMap.set(a.id,body);}
   }
-  draw(sessions:ParkingSession[],cars:boolean,showTrail:boolean){
-    const e=sessions[0].episode,changed=this.lot!==e.scene||this.cars!==cars||this.floor!==e.settings.floor||this.coachVisible!==e.settings.showCoach,frame=sessions.map(s=>s.episode.tick).join(',')+':'+showTrail;
-    const animating=e.effects.some(effect=>performance.now()-(this.effectTimes.get(effect)??performance.now())<1200);
+  draw(sessions:ParkingSession[],cars:boolean,showTrail:boolean,selected=0){
+    const e=(sessions[selected]??sessions[0]).episode;
+    // Worker observers patch a scene in place; object identity alone misses new lots.
+    const lotKey=JSON.stringify([e.scene.seed,e.scene.lesson,e.scene.target,e.scene.bays,e.scene.actors.map(a=>[a.id,a.kind,a.length,a.width,a.height]),e.settings.approachRadius,e.settings.approachReward]);
+    const changed=this.lot!==e.scene||this.lotKey!==lotKey||this.cars!==cars||this.floor!==e.settings.floor||this.coachVisible!==e.settings.showCoach,frame=sessions.map(s=>s.episode.tick).join(',')+':'+showTrail+':'+selected;
+    const shownEffects=sessions.flatMap(s=>s.episode.effects),animating=shownEffects.some(effect=>performance.now()-(this.effectTimes.get(effect)??performance.now())<1200);
     if(!changed&&frame===this.lastFrame&&!animating)return;
-    this.lastFrame=frame;if(changed){this.rebuild(e.scene,cars,e.settings.floor);this.coachVisible=e.settings.showCoach;}
+    this.lastFrame=frame;if(changed){this.rebuild(e.scene,cars,e.settings.floor);this.coachVisible=e.settings.showCoach;this.lotKey=lotKey;}
     if(changed&&e.settings.showCoach){
       const target=e.scene.target;
       if(e.settings.approachReward)for(let j=1;j<=3;j++){const r=e.settings.approachRadius*j/3,points=Array.from({length:97},(_,i)=>new THREE.Vector3(target.x+Math.cos(i/96*Math.PI*2)*r,.006,target.z+Math.sin(i/96*Math.PI*2)*r));const line=new THREE.Line(new THREE.BufferGeometry().setFromPoints(points),new THREE.LineDashedMaterial({color:0x9be8ff,transparent:true,opacity:.7,dashSize:.04,gapSize:.045}));line.name='reward-radius-'+j;line.computeLineDistances();this.staticGroup.add(line);}
@@ -48,13 +51,13 @@ export class ParkingView3D{
     for(const a of e.scene.actors){const body=this.bodyMap.get(a.id)!;body.position.set(a.pose.x,0,a.pose.z);body.rotation.y=-a.pose.heading;}
     if(this.agentBodies.length!==sessions.length){
       [this.agents,this.trails].forEach(dispose);this.agentBodies=[];this.traceLines=[];
-      sessions.forEach((_,i)=>{const color=COLORS[i%COLORS.length],g=this.vehicle({length:.26,width:.17,height:.065},true,color);this.box(g,.11,.07,0,.025,.03,.08,0x111c27);this.agents.add(g);this.agentBodies.push(g);const geometry=new THREE.BufferGeometry();geometry.setAttribute('position',new THREE.BufferAttribute(new Float32Array(1800*3),3).setUsage(THREE.DynamicDrawUsage));const line=new THREE.Line(geometry,new THREE.LineBasicMaterial({color,transparent:true,opacity:.65}));line.frustumCulled=false;this.trails.add(line);this.traceLines.push(line);});
+      sessions.forEach((_,i)=>{const color=COLORS[i%COLORS.length],g=this.vehicle({length:.26,width:.17,height:.065},true,color);this.box(g,.11,.07,0,.025,.03,.08,0x111c27);g.userData.ghostIndex=i;g.name='ghost-'+i;const halo=new THREE.Mesh(new THREE.RingGeometry(.17,.18,40),new THREE.MeshBasicMaterial({color:0xffffff,side:THREE.DoubleSide}));halo.name='selection';halo.rotation.x=-Math.PI/2;halo.position.y=.003;g.add(halo);this.agents.add(g);this.agentBodies.push(g);const geometry=new THREE.BufferGeometry();geometry.setAttribute('position',new THREE.BufferAttribute(new Float32Array(1800*3),3).setUsage(THREE.DynamicDrawUsage));const line=new THREE.Line(geometry,new THREE.LineBasicMaterial({color,transparent:true,opacity:.65}));line.frustumCulled=false;this.trails.add(line);this.traceLines.push(line);});
     }
     dispose(this.effects);
-    sessions.forEach((s,i)=>{const p=s.episode.physics.pose,g=this.agentBodies[i];g.position.set(p.x,0,p.z);g.rotation.y=-p.heading;
+    sessions.forEach((s,i)=>{const p=s.episode.physics.pose,g=this.agentBodies[i];g.visible=!s.episode.status.disqualified;g.getObjectByName('selection')!.visible=sessions.length>1&&i===selected;g.position.set(p.x,0,p.z);g.rotation.y=-p.heading;
       const line=this.traceLines[i],trail=s.episode.trail;line.visible=showTrail&&trail.length>1;if(line.visible){const positions=line.geometry.getAttribute('position') as THREE.BufferAttribute;trail.forEach((p,j)=>positions.setXYZ(j,p.x,.007,p.z));positions.needsUpdate=true;line.geometry.setDrawRange(0,trail.length);}
     });
-    for(const effect of e.effects){const now=performance.now();if(!this.effectTimes.has(effect))this.effectTimes.set(effect,now);const age=(now-this.effectTimes.get(effect)!)/1200;if(age>=1)continue;for(let i=0;i<8;i++){const material=new THREE.MeshBasicMaterial({color:effect.kind==='blood'?0xcb334c:effect.kind==='explosion'?0xffa547:0x9aa5ad,transparent:true,opacity:1-age});const particle=new THREE.Mesh(new THREE.SphereGeometry(.02+age*.025,5,4),material),angle=i/8*Math.PI*2;particle.position.set(effect.x+Math.cos(angle)*age*.2,.03+age*.1,effect.z+Math.sin(angle)*age*.2);this.effects.add(particle);}}
+    for(const effect of shownEffects){const now=performance.now();if(!this.effectTimes.has(effect))this.effectTimes.set(effect,now);const age=(now-this.effectTimes.get(effect)!)/1200;if(age>=1)continue;for(let i=0;i<8;i++){const material=new THREE.MeshBasicMaterial({color:effect.kind==='eradicated'?0xd994ff:effect.kind==='blood'?0xcb334c:effect.kind==='explosion'?0xffa547:0x9aa5ad,transparent:true,opacity:1-age});const particle=new THREE.Mesh(new THREE.SphereGeometry(.02+age*.025,5,4),material),angle=i/8*Math.PI*2;particle.position.set(effect.x+Math.cos(angle)*age*.2,.03+age*.1,effect.z+Math.sin(angle)*age*.2);this.effects.add(particle);}}
     this.paint();
   }
 }

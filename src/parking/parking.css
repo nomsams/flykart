@@ -28,3 +28,5 @@ header{padding-top:12px;padding-bottom:9px;gap:12px}h1{font-size:23px}.eyebrow{m
 .monitor[hidden]{display:none}.training-processes{flex-basis:100%;display:grid;gap:4px;border-left:3px solid var(--accent);padding:5px 9px;font-size:11px;line-height:1.45;color:var(--muted);overflow-wrap:anywhere}.training-processes .off b{color:#f7b599}.training-processes .on b{color:#88dfb5}.ghost-isolation{display:block;margin-bottom:8px}
 
 .training-plots{margin-top:7px}.training-plots>summary{font-size:11px}.training-plots canvas{display:block;width:100%;height:auto;background:#0b1821;border-radius:8px;margin:8px 0;touch-action:none}.training-plots p,.training-plots small{font-size:11px;color:var(--muted);line-height:1.5}.breeding-weights{margin:8px 0}.breeding-weights input{width:90px}
+
+.ghost-picker{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:6px}.ghost-picker label{font-size:12px;color:var(--muted)}.ghost-picker small{flex:1 1 210px}.judge-status{font-size:12px;line-height:1.5;color:#b8dace;margin:5px 0;overflow-wrap:anywhere}.judge-status.eradicated{color:#e6b4ff}#sensor-agreement{margin:5px 0 8px}
