@@ -247,6 +247,11 @@ describe('traffic, transfer and evolution',()=>{
     expect(a.settings.sonarOn).toBe(false);expect([...seen].every(s=>s.driver.sensors.slice(17,19).every(v=>v===0)&&s.scan.samples.length===0)).toBe(true);
     const seeds=[...a.trials.flatMap(g=>g.scenarios.map(s=>s.seed)),...a.validation.scenarios.map(s=>s.seed)];expect(new Set(seeds).size).toBe(seeds.length);expect(a.trials[1].scenarios[1].lesson).toBe('exit');expect(new Set([...seen].map(s=>s.memory)).size).toBe(seen.size);expect(a.memoryProtocol).toContain('frozen');
   },60000);
+  it('discards every strict-crash ghost without autosaving it or mutating the parent',async()=>{
+    const b=brain(),before=structuredClone(b.controller),checkpoints:unknown[]=[];
+    const r=await trainParking(b,{...DEFAULT_PARKING,strictCrash:true,maxTicks:60},{generations:1,population:2,lessons:['arrival'],seed:8,speed:0,cancel:()=>false,log:()=>{},progress:s=>s.forEach(a=>a.episode.status.disqualified=true),onGeneration:c=>{checkpoints.push(c);}});
+    expect(r!.trials[0].winner).toBe(-1);expect(checkpoints).toEqual([]);expect(r!.brain).toEqual(before);expect(r!.validation.passed).toBe(false);expect(b.controller).toEqual(before);
+  },30000);
   it('rejects frozen evolution and cancels without changing the parent',async()=>{
     const b=brain(),before=structuredClone(b.controller),options={generations:1,population:2,lessons:['arrival'] as const,seed:7,speed:0,cancel:()=>true,log:()=>{},progress:()=>{}};
     await expect(trainParking(b,{...DEFAULT_PARKING,phase:'frozen'},{...options,lessons:[...options.lessons]})).rejects.toThrow('Frozen');expect(await trainParking(b,DEFAULT_PARKING,{...options,lessons:[...options.lessons]})).toBeNull();expect(b.controller).toEqual(before);

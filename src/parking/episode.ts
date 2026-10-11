@@ -1,3 +1,4 @@
+import {inParkingArea} from './model';
 import {Action,clamp,wrapAngle} from '../core';
 import {DEFAULT_ROBOT,RobotPhysics,overlaps} from '../robot/model';
 import {DEFAULT_ADAPTER,motorRequests} from '../robot/controls';
@@ -14,7 +15,7 @@ import {PARKING_FLAG,ParkingSettings,ParkingScene,actorObject,actorSolid,bodySol
 export const PX=100/CM_PER_PIXEL;
 /** Keep the imported kart's steering convention when backing: right input turns the nose left. */
 export function parkingMotorRequests(action:Action){const drive=action.throttle-(action.reverse??0);return motorRequests({...action,steer:action.steer*(drive<0?-1:1)},DEFAULT_ADAPTER);}
-export type ParkingResult={seed:number;lesson:string;success:boolean;quality:number;offsetCm:number;angleDeg:number;ticks:number;contacts:number;pedestrianHits:number;pain:number;reward:number;pendingReward:number;score:number;approachReward:number;qualityReward:number;reverseReward:number;pathReward:number;progressPenalty:number;idleSeconds:number;pathStatus:CoachPath['reason']|'off';slowPenalty:number;slowPain:number;slowSeconds:number};
+export type ParkingResult={disqualified:boolean;seed:number;lesson:string;success:boolean;quality:number;offsetCm:number;angleDeg:number;ticks:number;contacts:number;pedestrianHits:number;pain:number;reward:number;pendingReward:number;score:number;approachReward:number;qualityReward:number;reverseReward:number;pathReward:number;progressPenalty:number;idleSeconds:number;pathStatus:CoachPath['reason']|'off';slowPenalty:number;slowPain:number;slowSeconds:number};
 export type ImpactEffect={x:number;z:number;kind:'blood'|'explosion'|'smoke';tick:number};
 
 /** Camera geometry sees exactly the same actor footprints as contact and sonar. */
@@ -66,7 +67,7 @@ export class ParkingCue extends FlagDiscovery{
 export class ParkingEpisode implements VisionEpisode{
   readonly scene:ParkingScene;readonly physics=new RobotPhysics({...DEFAULT_ROBOT});readonly frame:Float32Array;readonly sonarUnit:Sonar;
   readonly cameraScene:ParkingCameraScene;readonly effects:ImpactEffect[]=[];readonly trail:{x:number;z:number}[]=[];
-  readonly status={ticks:0,contacts:0,pedestrianHits:0,pain:0,reward:0,pendingReward:0,score:0,success:false,hold:0,approachReward:0,qualityReward:0,reverseReward:0,pathReward:0,progressPenalty:0,idleSeconds:0,slowPenalty:0,slowPain:0,slowSeconds:0};
+  readonly status={disqualified:false,ticks:0,contacts:0,pedestrianHits:0,pain:0,reward:0,pendingReward:0,score:0,success:false,hold:0,approachReward:0,qualityReward:0,reverseReward:0,pathReward:0,progressPenalty:0,idleSeconds:0,slowPenalty:0,slowPain:0,slowSeconds:0};
   readonly coachPath:CoachPath|null;
   private qualityPotential=0;private pathPotential=0;private bestRemaining=0;private bestAngle=Infinity;private progressTick=0;private progressMark=0;
   private lastCommand:Action={steer:0,throttle:0,brake:0,reverse:0};private lastContact=-Infinity;private potential=0;private cooldown=new Map<string,number>();
@@ -76,7 +77,7 @@ export class ParkingEpisode implements VisionEpisode{
     this.coachPath=settings.pathReward?planParkingPath(this.scene):null;
     this.potential=this.progressPotential();this.qualityPotential=10*this.judgedQuality().quality;this.pathPotential=this.routePotential();this.bestRemaining=this.remaining();this.progressMark=this.bestRemaining;this.bestAngle=this.judgedQuality().error;this.ping();this.render();
   }
-  get tick(){return this.status.ticks;}get done(){return this.status.success||this.status.pedestrianHits>0||this.tick>=this.settings.maxTicks;}
+  get tick(){return this.status.ticks;}get done(){return this.status.disqualified||this.status.success||this.status.pedestrianHits>0||this.tick>=this.settings.maxTicks;}
   get controlsReleased(){return [this.lastCommand.steer,this.lastCommand.throttle,this.lastCommand.brake,this.lastCommand.reverse??0].every(v=>Math.abs(v)<=.03);}
   get parkedInTarget(){const q=this.judgedQuality();return ['arrival','exit','switch'].includes(this.settings.lesson)?q.distance<.27:q.inside&&q.error<Math.PI/12;}
   get requiredHold(){return 30+(this.settings.delayReward?Math.ceil(this.settings.rewardDelaySeconds*30):0);}
@@ -87,7 +88,7 @@ export class ParkingEpisode implements VisionEpisode{
   proprioception(){const a=this.lastCommand,pair=this.settings.sonarOn?sonarInputs(this.sonar(),SONAR_USEFUL_RANGE_PX):[0,0];return{speed:clamp((this.physics.left+this.physics.right)/2*PX/90,-1,1),lastSteer:a.steer,lastDrive:clamp(a.throttle-a.brake,-1,1),sonarCloseness:pair[0],sonarStrength:pair[1]};}
   truth(out:number[]=new Array(10).fill(0)){out.fill(0);return out;} // Camera controller must never call privileged clearance.
   mission(){if(this.settings.cue!=='compass')throw Error('Visual parking cannot query the goal compass.');const p=this.physics.pose,b=this.scene.target;return[wrapAngle(Math.atan2(b.z-p.z,b.x-p.x)-p.heading)/Math.PI,clamp(1-Math.hypot(b.x-p.x,b.z-p.z)/2.2,0,1),wrapAngle(b.heading-p.heading)/Math.PI,1];}
-  lapContext(){return null;}summary(){return{progress:this.status.success?1:0,finished:this.status.success,crashed:this.status.pedestrianHits>0};}
+  lapContext(){return null;}summary(){return{progress:this.status.success?1:0,finished:this.status.success,crashed:this.status.disqualified||this.status.pedestrianHits>0};}
   private judgedQuality(){const q=parkingQuality(this.physics.pose,this.scene.target);return {...q,quality:['arrival','exit','switch'].includes(this.settings.lesson)?q.centring:q.quality};}
   private progressPotential(){const r=this.settings.approachRadius,d=this.judgedQuality().distance;return this.settings.approachReward?15*(Math.exp(-Math.min(d,r))-Math.exp(-r))/(1-Math.exp(-r)):0;}
   private routePotential(){if(this.coachPath?.reason!=='ready')return 0;const p=pathPosition(this.coachPath,this.physics.pose);return 8*p.progress*Math.exp(-Math.pow(p.distance/.15,2))-8*Math.min(.3,p.distance);}
@@ -131,6 +132,7 @@ export class ParkingEpisode implements VisionEpisode{
     this.physics.step(pwm.left/255,pwm.right/255,[...this.scene.actors.map(actorObject),...boundary],1/30);
     const body=bodySolid(this.physics.pose,DEFAULT_ROBOT.length,DEFAULT_ROBOT.width),hit=this.scene.actors.find(a=>overlaps(body,actorSolid(a)))??this.scene.actors.find(a=>a.id===this.physics.contact?.objectId);
     if(this.physics.blocked||hit){
+      if(this.settings.strictCrash&&!inParkingArea(this.physics.pose,this.scene.target))this.status.disqualified=true;
       this.lastContact=this.tick;const id=hit?.id??'boundary';if((this.cooldown.get(id)??-100)<this.tick-15){
         this.cooldown.set(id,this.tick);const normal=hit?Math.atan2(hit.pose.z-before.z,hit.pose.x-before.x):before.heading,relative=Math.abs(incoming*Math.cos(before.heading-normal)-(hit?.speed??0)*Math.cos((hit?.pose.heading??0)-normal));
         const pain=.1+Math.pow(relative/.3,2)*(hit?.kind==='pedestrian'?10:1);this.status.contacts++;this.status.pain+=pain;if(hit?.kind==='pedestrian')this.status.pedestrianHits++;
@@ -139,7 +141,7 @@ export class ParkingEpisode implements VisionEpisode{
     }
     this.status.ticks++;this.ping();const q=this.judgedQuality(),loose=['arrival','exit','switch'].includes(this.settings.lesson),fits=loose?q.distance<.27:q.inside&&q.error<Math.PI/12;
     this.status.hold=fits&&Math.abs(this.physics.speed)<.035&&this.tick-this.lastContact>15&&(!this.settings.delayReward||this.controlsReleased)?this.status.hold+1:0;
-    this.status.success=this.status.hold>=this.requiredHold&&this.status.pedestrianHits===0;
+    this.status.success=!this.status.disqualified&&this.status.hold>=this.requiredHold&&this.status.pedestrianHits===0;
     this.rewardCoach(before,action,this.status.hold>0);
     if(this.settings.slowDriving&&this.tick>30&&q.distance>this.settings.slowZoneRadius){
       const actualSpeed=Math.hypot(this.physics.pose.x-before.x,this.physics.pose.z-before.z)*30*100,deficit=clamp(1-actualSpeed/this.settings.slowSpeedCm,0,1);
@@ -148,10 +150,10 @@ export class ParkingEpisode implements VisionEpisode{
       }
     }
     if(this.status.success&&this.settings.phase!=='frozen'){this.status.reward+=100+40*q.quality+this.status.pendingReward;this.status.pendingReward=0;}
-    if(!this.status.success&&(this.tick>=this.settings.maxTicks||this.status.pedestrianHits>0))this.status.pendingReward=0;
+    if(!this.status.success&&(this.status.disqualified||this.tick>=this.settings.maxTicks||this.status.pedestrianHits>0))this.status.pendingReward=0;
     this.status.score=this.status.reward-this.status.progressPenalty-this.status.slowPenalty-this.tick/30*.2-this.status.pain*(4+this.settings.crashWeight*60)-this.status.pedestrianHits*1000;
     if(this.diagnostics&&(!this.trail.length||Math.hypot(this.physics.pose.x-this.trail.at(-1)!.x,this.physics.pose.z-this.trail.at(-1)!.z)>.025)){this.trail.push({x:this.physics.pose.x,z:this.physics.pose.z});if(this.trail.length>1800)this.trail.shift();}
     while(this.effects.length&&this.tick-this.effects[0].tick>90)this.effects.shift();
   }
-  result():ParkingResult{const q=this.judgedQuality();return{seed:this.settings.seed,lesson:this.settings.lesson,success:this.status.success,quality:q.quality,offsetCm:q.distance*100,angleDeg:q.error*180/Math.PI,ticks:this.tick,contacts:this.status.contacts,pedestrianHits:this.status.pedestrianHits,pain:this.status.pain,reward:this.status.reward,pendingReward:this.status.pendingReward,score:this.status.score,approachReward:this.status.approachReward,qualityReward:this.status.qualityReward,reverseReward:this.status.reverseReward,pathReward:this.status.pathReward,progressPenalty:this.status.progressPenalty,idleSeconds:this.status.idleSeconds,pathStatus:this.coachPath?.reason??'off',slowPenalty:this.status.slowPenalty,slowPain:this.status.slowPain,slowSeconds:this.status.slowSeconds};}
+  result():ParkingResult{const q=this.judgedQuality();return{disqualified:this.status.disqualified,seed:this.settings.seed,lesson:this.settings.lesson,success:this.status.success,quality:q.quality,offsetCm:q.distance*100,angleDeg:q.error*180/Math.PI,ticks:this.tick,contacts:this.status.contacts,pedestrianHits:this.status.pedestrianHits,pain:this.status.pain,reward:this.status.reward,pendingReward:this.status.pendingReward,score:this.status.score,approachReward:this.status.approachReward,qualityReward:this.status.qualityReward,reverseReward:this.status.reverseReward,pathReward:this.status.pathReward,progressPenalty:this.status.progressPenalty,idleSeconds:this.status.idleSeconds,pathStatus:this.coachPath?.reason??'off',slowPenalty:this.status.slowPenalty,slowPain:this.status.slowPain,slowSeconds:this.status.slowSeconds};}
 }

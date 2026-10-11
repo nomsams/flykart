@@ -14,11 +14,14 @@ export const LESSONS=[
 export type Lesson=typeof LESSONS[number]['id'];
 /** Same visible marker dimensions as the open-world flag (14 × 46 pixels at 1.1 cm/pixel). */
 export const PARKING_FLAG={width:.154,height:.506};
-export type ParkingSettings={lesson:Lesson;cue:'compass'|'visual';phase:'shaped'|'sparse'|'frozen';seed:number;maxTicks:number;crashWeight:number;traffic:number;pedestrians:number;cars:boolean;shapeJitter:boolean;remember:boolean;delayReward:boolean;rewardDelaySeconds:number;sonarOn:boolean;cameraMount:'trained'|'robot';bayAlignment:boolean;floor:ParkingFloor;approachReward:boolean;approachRadius:number;progressPenalty:boolean;reverseReward:boolean;pathReward:boolean;showCoach:boolean;slowDriving:boolean;slowMode:'penalty'|'pain';slowSpeedCm:number;slowWeight:number;slowZoneRadius:number};
-export const DEFAULT_PARKING:ParkingSettings={lesson:'arrival',cue:'visual',phase:'shaped',seed:1701,maxTicks:900,crashWeight:.2,traffic:3,pedestrians:2,cars:false,shapeJitter:false,remember:false,delayReward:false,rewardDelaySeconds:2,sonarOn:true,cameraMount:'trained',bayAlignment:false,floor:'transfer',approachReward:true,approachRadius:3,progressPenalty:true,reverseReward:false,pathReward:false,showCoach:true,slowDriving:false,slowMode:'penalty',slowSpeedCm:5,slowWeight:1,slowZoneRadius:.45};
+export const PARKING_LAYOUTS=['standard','tight','angled','double-row'] as const;
+export type ParkingLayout=typeof PARKING_LAYOUTS[number];
+export type ParkingSettings={lesson:Lesson;cue:'compass'|'visual';phase:'shaped'|'sparse'|'frozen';seed:number;maxTicks:number;crashWeight:number;traffic:number;pedestrians:number;cars:boolean;shapeJitter:boolean;remember:boolean;delayReward:boolean;rewardDelaySeconds:number;sonarOn:boolean;cameraMount:'trained'|'robot';bayAlignment:boolean;floor:ParkingFloor;approachReward:boolean;approachRadius:number;progressPenalty:boolean;reverseReward:boolean;pathReward:boolean;showCoach:boolean;slowDriving:boolean;slowMode:'penalty'|'pain';slowSpeedCm:number;slowWeight:number;slowZoneRadius:number;strictCrash:boolean;parkedOffset:boolean;layout:ParkingLayout};
+export const DEFAULT_PARKING:ParkingSettings={lesson:'arrival',cue:'visual',phase:'shaped',seed:1701,maxTicks:900,crashWeight:.2,traffic:3,pedestrians:2,cars:false,shapeJitter:false,remember:false,delayReward:false,rewardDelaySeconds:2,sonarOn:true,cameraMount:'trained',bayAlignment:false,floor:'transfer',approachReward:true,approachRadius:3,progressPenalty:true,reverseReward:false,pathReward:false,showCoach:true,slowDriving:false,slowMode:'penalty',slowSpeedCm:5,slowWeight:1,slowZoneRadius:.45,strictCrash:false,parkedOffset:false,layout:'standard'};
 export function validateParkingSettings(raw:unknown):ParkingSettings{
   if(!raw||typeof raw!=='object'||Array.isArray(raw))throw Error('Invalid parking lesson settings.');
-  const s={delayReward:false,rewardDelaySeconds:2,sonarOn:true,cameraMount:'trained',bayAlignment:false,floor:'transfer',approachReward:true,approachRadius:3,progressPenalty:true,reverseReward:false,pathReward:false,showCoach:true,slowDriving:false,slowMode:'penalty',slowSpeedCm:5,slowWeight:1,slowZoneRadius:.45,...raw} as ParkingSettings;
+  const s={delayReward:false,rewardDelaySeconds:2,sonarOn:true,cameraMount:'trained',bayAlignment:false,floor:'transfer',approachReward:true,approachRadius:3,progressPenalty:true,reverseReward:false,pathReward:false,showCoach:true,slowDriving:false,slowMode:'penalty',slowSpeedCm:5,slowWeight:1,slowZoneRadius:.45,strictCrash:false,parkedOffset:false,layout:'standard',...raw} as ParkingSettings;
+  if(typeof s.strictCrash!=='boolean'||typeof s.parkedOffset!=='boolean'||!PARKING_LAYOUTS.includes(s.layout))throw Error('Invalid parking layout or crash policy.');
   if(['approachReward','progressPenalty','reverseReward','pathReward','showCoach'].some(k=>typeof s[k as keyof ParkingSettings]!=='boolean')||!Number.isFinite(s.approachRadius)||s.approachRadius<.5||s.approachRadius>6)throw Error('Invalid parking reward coach settings (radius 0.5–6 m).');
   if(typeof s.slowDriving!=='boolean'||!['penalty','pain'].includes(s.slowMode)||!Number.isFinite(s.slowSpeedCm)||s.slowSpeedCm<1||s.slowSpeedCm>30||!Number.isFinite(s.slowWeight)||s.slowWeight<.1||s.slowWeight>10||!Number.isFinite(s.slowZoneRadius)||s.slowZoneRadius<.27||s.slowZoneRadius>2)throw Error('Invalid slow-driving settings (1–30 cm/s, weight 0.1–10, safe radius 0.27–2 m).');
   if(typeof s.sonarOn!=='boolean'||typeof s.bayAlignment!=='boolean'||!['trained','robot'].includes(s.cameraMount)||!['transfer','asphalt'].includes(s.floor))throw Error('Invalid parking sensor settings.');
@@ -32,17 +35,26 @@ export type ParkingScene={format:'flykart-parking-scene';version:1;seed:number;h
 export function generateParking(s:ParkingSettings):ParkingScene{
   validateParkingSettings(s);const random=mulberry32(s.seed),bays:Bay[]=[],actors:Actor[]=[];
   const parallel=s.lesson==='parallel',count=parallel?6:8,targetIndex=parallel?1+Math.floor(random()*4):s.lesson==='arrival'?1+Math.floor(random()*6):Math.floor(random()*8),startIndex=(targetIndex+2+Math.floor(random()*4))%8;
-  const parked=(bay:Bay)=>{const scale=s.shapeJitter ? .96+random()*.08 : 1;actors.push({id:'car-'+bay.id,kind:'vehicle',pose:{x:bay.x,z:bay.z,heading:parallel?0:-Math.PI/2},length:.26*scale,width:.17*scale,height:.11,speed:0,parked:true,route:[],waypoint:0,waitTicks:0});};
+  const parked=(bay:Bay)=>{const scale=s.shapeJitter ? .96+random()*.08 : 1;actors.push({id:'car-'+bay.id,kind:'vehicle',pose:{x:bay.x,z:bay.z,heading:bay.heading},length:.26*scale,width:.17*scale,height:.11,speed:0,parked:true,route:[],waypoint:0,waitTicks:0});};
   for(let i=0;i<count;i++){
-    const bay:Bay={id:'bay-'+i,x:(i-(count-1)/2)*(parallel ? .48 : .44),z:-.8,heading:parallel?0:-Math.PI/2,length:parallel ? .44 : .52,width:.36,occupied:i!==targetIndex&&!(s.lesson!=='arrival'&&!parallel&&i===startIndex)};
+    const bay:Bay={id:'bay-'+i,x:(i-(count-1)/2)*(parallel ? s.layout==='tight'?.39:.48 : s.layout==='tight'?.32:s.layout==='angled'?.58:.44),z:-.8,heading:parallel?0:s.layout==='angled'?-Math.PI/3:-Math.PI/2,length:parallel ? s.layout==='tight'?.36:.44 : .52,width:s.layout==='tight'?.30:.36,occupied:i!==targetIndex&&!(s.lesson!=='arrival'&&!parallel&&i===startIndex)};
     if(s.lesson==='arrival')bay.occupied=i===targetIndex-1||i===targetIndex+1||targetIndex===0&&i===2||targetIndex===7&&i===5;
     bays.push(bay);if(bay.occupied)parked(bay);
   }
-  const target={...bays[targetIndex]};if(['oriented','traffic'].includes(s.lesson))target.heading=random()<.5?-Math.PI/2:Math.PI/2;
+  const target={...bays[targetIndex]};if(['oriented','traffic'].includes(s.lesson))target.heading=bays[targetIndex].heading+(random()<.5?0:Math.PI);
   let start:Pose={x:target.x+(random()-.5)*.8,z:.45+random()*.25,heading:-Math.PI/2+(random()-.5)*.8};
-  if(['switch','oriented','traffic','exit'].includes(s.lesson))start={x:bays[startIndex].x,z:bays[startIndex].z,heading:-Math.PI/2};
+  if(['switch','oriented','traffic','exit'].includes(s.lesson))start={x:bays[startIndex].x,z:bays[startIndex].z,heading:bays[startIndex].heading};
   if(parallel)start={x:-1.2,z:-.1,heading:0};
   if(s.lesson==='exit')Object.assign(target,{id:'aisle-exit',x:start.x+(random()-.5)*.5,z:.35,heading:Math.PI/2,length:.6,width:.6,occupied:false});
+  if(s.layout==='double-row')for(let i=0;i<count;i++){
+    const bay:Bay={...bays[i],id:'opposite-'+i,z:1.1,heading:Math.PI/2,occupied:true};bays.push(bay);parked(bay);
+  }
+  // Offset actual solid bodies, not their painted bays. Retry safely near vacant starts/goals.
+  if(s.parkedOffset)for(const a of actors){const original={...a.pose};for(let attempt=0;attempt<16;attempt++){
+    const candidate={x:original.x+(random()-.5)*.06,z:original.z+(random()-.5)*.06,heading:original.heading+(random()-.5)*Math.PI/9};
+    const solid=bodySolid(candidate,a.length+.012,a.width+.012);
+    if(!actors.some(b=>b!==a&&overlaps(solid,actorSolid(b)))&&!overlaps(solid,bodySolid(start,.28,.19))&&!overlaps(solid,bodySolid({...target},.28,.19))){a.pose=candidate;break;}
+  }}
   if(s.lesson==='traffic'){
     // A single clockwise lane, ordered headway, pedestrian priority and manoeuvre yielding.
     const route=[{x:-2.2,z:.25},{x:2.2,z:.25},{x:2.2,z:1.45},{x:-2.2,z:1.45}];
@@ -74,3 +86,6 @@ export function parkingQuality(p:Pose,b:Bay,c:RobotConfig=DEFAULT_ROBOT){
   const centring=clamp(1-Math.hypot(x/(b.length/2),z/(b.width/2)),0,1),alignment=(1+Math.cos(error))/2;
   return{inside,error,centring,alignment,quality:centring*.6+alignment*.4,distance:Math.hypot(dx,dz)};
 }
+
+/** Zero-tolerance exemption uses the painted target rectangle, not a flag visibility/radius cue. */
+export function inParkingArea(p:Pose,b:Bay){const dx=p.x-b.x,dz=p.z-b.z;return Math.abs(dx*Math.cos(b.heading)+dz*Math.sin(b.heading))<=b.length/2&&Math.abs(-dx*Math.sin(b.heading)+dz*Math.cos(b.heading))<=b.width/2;}
