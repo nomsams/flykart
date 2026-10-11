@@ -21,8 +21,11 @@ export type ImpactEffect={x:number;z:number;kind:'blood'|'explosion'|'smoke';tic
 /** Camera geometry sees exactly the same actor footprints as contact and sonar. */
 export class ParkingCameraScene implements Scene{
   readonly style={...DEFAULT_STYLE,noise:.006,fogDistance:900};sprites:Sprite[]=[];
+  private bays:{x:number;z:number;length:number;width:number;c:number;s:number}[]=[];
+  private targetC=1;private targetS=0;
   constructor(readonly scene:ParkingScene,readonly cars=false,readonly floor:ParkingFloor='transfer'){}
   prepare():void{
+    this.bays=this.scene.bays.map(b=>({...b,c:Math.cos(b.heading),s:Math.sin(b.heading)}));this.targetC=Math.cos(this.scene.target.heading);this.targetS=Math.sin(this.scene.target.heading);
     this.sprites=this.scene.actors.map(a=>({x:a.pose.x*PX,y:a.pose.z*PX,heading:a.pose.heading,width:a.width*PX,length:a.length*PX,z0:0,z1:a.height*PX,color:a.kind==='pedestrian'?[.72,.55,.3] as Rgb:[.35,.47,.6] as Rgb,shape:a.kind==='pedestrian'?'post':this.cars?'solid-car':'oriented-box'}));
     const b=this.scene.target;this.sprites.push({x:b.x*PX,y:b.z*PX,heading:0,width:PARKING_FLAG.width*PX,length:PARKING_FLAG.width*PX,z0:0,z1:PARKING_FLAG.height*PX,color:[1,.2,.62],shape:'flag'});
     const h=this.scene.half*PX;
@@ -30,10 +33,10 @@ export class ParkingCameraScene implements Scene{
   }
   ground(px:number,py:number,out:Rgb):void{
     const x=px/PX,z=py/PX,b=this.scene.target;let color:Rgb=parkingFloorColour(this.floor,px,py);
-    for(const bay of this.scene.bays){const dx=x-bay.x,dz=z-bay.z,along=dx*Math.cos(bay.heading)+dz*Math.sin(bay.heading),across=-dx*Math.sin(bay.heading)+dz*Math.cos(bay.heading);
+    for(const bay of this.bays){const dx=x-bay.x,dz=z-bay.z,along=dx*bay.c+dz*bay.s,across=-dx*bay.s+dz*bay.c;
       if(Math.abs(along)<bay.length/2+.012&&Math.abs(across)<bay.width/2+.012&&(Math.abs(Math.abs(along)-bay.length/2)<.012||Math.abs(Math.abs(across)-bay.width/2)<.012))color=[.8,.83,.82];}
-    const dx=x-b.x,dz=z-b.z,along=dx*Math.cos(b.heading)+dz*Math.sin(b.heading),across=-dx*Math.sin(b.heading)+dz*Math.cos(b.heading);
-    if(Math.hypot(dx,dz)<.23&&Math.hypot(dx,dz)>.205)color=[1,.84,.2];
+    const dx=x-b.x,dz=z-b.z,along=dx*this.targetC+dz*this.targetS,across=-dx*this.targetS+dz*this.targetC,distance=Math.hypot(dx,dz);
+    if(distance<.23&&distance>.205)color=[1,.84,.2];
     if(Math.abs(along)<b.length/2+.016&&Math.abs(across)<b.width/2+.016&&(Math.abs(Math.abs(along)-b.length/2)<.016||Math.abs(Math.abs(across)-b.width/2)<.016))color=[1,.84,.2];
     // Cyan nose and orange tail are painted on the ground, so the camera must see them.
     if(Math.abs(across)<.1&&Math.abs(along-.14)<.075)color=[.05,.95,1];
@@ -83,7 +86,7 @@ export class ParkingEpisode implements VisionEpisode{
   get requiredHold(){return 30+(this.settings.delayReward?Math.ceil(this.settings.rewardDelaySeconds*30):0);}
   get pose(){const p=this.physics.pose;return{x:p.x*PX,y:p.z*PX,heading:p.heading};}
   targets():SonarTarget[]{const h=this.scene.half*PX;return[...this.scene.actors.map(a=>a.kind==='pedestrian'?{kind:'circle' as const,x:a.pose.x*PX,y:a.pose.z*PX,radius:a.width*PX/2,z0:0,z1:a.height*PX}:{kind:'box' as const,x:a.pose.x*PX,y:a.pose.z*PX,heading:a.pose.heading,halfLength:a.length*PX/2,halfWidth:a.width*PX/2,z0:0,z1:a.height*PX}),...[-1,1].flatMap(sign=>[{kind:'box' as const,x:0,y:sign*h,heading:0,halfLength:h,halfWidth:.0125*PX,z0:0,z1:.2*PX},{kind:'box' as const,x:sign*h,y:0,heading:Math.PI/2,halfLength:h,halfWidth:.0125*PX,z0:0,z1:.2*PX}])];}
-  private ping(){this.sonarUnit.update(this.tick,this.pose,this.targets());}sonar(){return this.sonarUnit.reading;}
+  private ping(){if(this.tick!==this.sonarUnit.lastTick&&this.tick%this.sonarUnit.spec.cycleTicks===0)this.sonarUnit.update(this.tick,this.pose,this.targets());}sonar(){return this.sonarUnit.reading;}
   render(){return renderFrame(this.cameraScene,this.pose,this.camera,this.frame,mulberry32(this.settings.seed+this.tick*17));}
   proprioception(){const a=this.lastCommand,pair=this.settings.sonarOn?sonarInputs(this.sonar(),SONAR_USEFUL_RANGE_PX):[0,0];return{speed:clamp((this.physics.left+this.physics.right)/2*PX/90,-1,1),lastSteer:a.steer,lastDrive:clamp(a.throttle-a.brake,-1,1),sonarCloseness:pair[0],sonarStrength:pair[1]};}
   truth(out:number[]=new Array(10).fill(0)){out.fill(0);return out;} // Camera controller must never call privileged clearance.
@@ -110,6 +113,7 @@ export class ParkingEpisode implements VisionEpisode{
     if(this.settings.progressPenalty&&!fits&&this.status.idleSeconds>3)this.status.progressPenalty+=Math.min(10,Math.pow(2,(this.status.idleSeconds-3)/3))/30;
   }
   private traffic(){
+    if(this.scene.actors.every(a=>a.parked&&!a.waitTicks||!a.route.length&&!a.waitTicks)){for(const a of this.scene.actors){a.speed=0;a.yielding=undefined;}return;}
     const ego=this.physics.pose,old=structuredClone(this.scene.actors),dt=1/30;
     for(const a of this.scene.actors){a.yielding=undefined;if(a.waitTicks>0){a.waitTicks--;a.speed=0;continue;}if(a.parked||!a.route.length){a.speed=0;continue;}
       const dest=a.route[a.waypoint],distance=Math.hypot(dest.x-a.pose.x,dest.z-a.pose.z);

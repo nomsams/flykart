@@ -1,7 +1,7 @@
 import type {CameraConfig,Pose,Rgb,Scene,Sprite} from './camera';
 
 type Box={x:number;y:number;heading:number;length:number;width:number;z0:number;z1:number;color:Rgb};
-type RayBox=Box&{c:number;s:number;ox:number;oy:number};
+type RayBox=Box&{c:number;s:number;ox:number;oy:number;u0:number;u1:number;v0:number;v1:number};
 type Projection={f:number;cx:number;cy:number;sinP:number;cosP:number};
 /** Actual oriented prisms, independent of WebGL: training and browser inference see the same surfaces. */
 export function solidParts(s:Sprite):Box[]{
@@ -23,8 +23,20 @@ function intersect(b:RayBox,oz:number,dx:number,dy:number,dz:number):{depth:numb
   const axis=near>.02?nearAxis:farAxis,depth=near>.02?near:far;
   return{depth,shade:axis===2?1.12:axis===0?.74:.94};
 }
-export function drawSolids(scene:Scene,pose:Pose,camera:CameraConfig,p:Projection,out:Float32Array):Float32Array|null{
-  const boxes=scene.sprites.flatMap(solidParts).map(b=>{const c=Math.cos(b.heading),s=Math.sin(b.heading),x=pose.x-b.x,y=pose.y-b.y;return{...b,c,s,ox:x*c+y*s,oy:-x*s+y*c};});if(!boxes.length)return null;
+/** Set cull=false only for exhaustive renderer diagnostics/equivalence checks. */
+export function drawSolids(scene:Scene,pose:Pose,camera:CameraConfig,p:Projection,out:Float32Array,cull=true):Float32Array|null{
+  const boxes=scene.sprites.flatMap(solidParts).map(b=>{
+    const c=Math.cos(b.heading),s=Math.sin(b.heading),x=pose.x-b.x,y=pose.y-b.y,fx=Math.cos(pose.heading),fy=Math.sin(pose.heading);
+    let u0=Infinity,u1=-Infinity,v0=Infinity,v1=-Infinity,clipped=false;
+    // Conservative screen bounds avoid testing each off-screen prism against
+    // all four subpixel rays. Near-plane boxes retain the exhaustive fallback.
+    for(const along of [-b.length/2,b.length/2])for(const across of [-b.width/2,b.width/2])for(const z of [b.z0,b.z1]){
+      const dx=-x+along*c-across*s,dy=-y+along*s+across*c,forward=dx*fx+dy*fy,right=-dx*fy+dy*fx,depth=forward*p.cosP+(camera.mountHeight-z)*p.sinP;
+      if(depth<=.02){clipped=true;continue;}const u=p.cx+p.f*right/depth,v=p.cy+p.f*((camera.mountHeight-z)*p.cosP-forward*p.sinP)/depth;
+      u0=Math.min(u0,u);u1=Math.max(u1,u);v0=Math.min(v0,v);v1=Math.max(v1,v);
+    }
+    return{...b,c,s,ox:x*c+y*s,oy:-x*s+y*c,u0:clipped?-Infinity:Math.floor(u0)-1,u1:clipped?Infinity:Math.ceil(u1)+1,v0:clipped?-Infinity:Math.floor(v0)-1,v1:clipped?Infinity:Math.ceil(v1)+1};
+  });if(!boxes.length)return null;
   const {width:w,height:h,mountHeight}=camera,n=w*h,depths=new Float32Array(n);depths.fill(Infinity);
   const fx=Math.cos(pose.heading),fy=Math.sin(pose.heading);
   for(let v=0;v<h;v++)for(let u=0;u<w;u++){
@@ -33,7 +45,7 @@ export function drawSolids(scene:Scene,pose:Pose,camera:CameraConfig,p:Projectio
       const row=(v+(sv+.5)/2-p.cy)/p.f,right=(u+(su+.5)/2-p.cx)/p.f;
       const forward=p.cosP-row*p.sinP,vertical=-p.sinP-row*p.cosP,dx=fx*forward-fy*right,dy=fy*forward+fx*right;
       let best=vertical<0?-mountHeight/vertical:Infinity,color:Rgb|null=null,shade=1;
-      for(const box of boxes){const hit=intersect(box,mountHeight,dx,dy,vertical);if(hit&&hit.depth<best){best=hit.depth;color=box.color;shade=hit.shade;}}
+      for(const box of boxes){if(cull&&(u<box.u0||u>box.u1||v<box.v0||v>box.v1))continue;const hit=intersect(box,mountHeight,dx,dy,vertical);if(hit&&hit.depth<best){best=hit.depth;color=box.color;shade=hit.shade;}}
       if(color){depths[at]=Math.min(depths[at],best);const haze=1-Math.exp(-best*Math.hypot(dx,dy)/scene.style.fogDistance);r+=color[0]*shade*(1-haze)+scene.style.fog[0]*haze;g+=color[1]*shade*(1-haze)+scene.style.fog[1]*haze;b+=color[2]*shade*(1-haze)+scene.style.fog[2]*haze;}
       else{r+=out[at];g+=out[n+at];b+=out[2*n+at];}
     }

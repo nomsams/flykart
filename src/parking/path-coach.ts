@@ -16,6 +16,30 @@ export function planParkingPath(scene:ParkingScene):CoachPath{
   const obstacles=scene.actors.filter(a=>a.parked).map(a=>{const solid=actorSolid(a),c=Math.abs(Math.cos(a.pose.heading)),s=Math.abs(Math.sin(a.pose.heading));return {...solid,hx:(a.length*c+a.width*s)/2,hz:(a.length*s+a.width*c)/2};}),precise=!['arrival','exit','switch'].includes(scene.lesson);
   const clear=(p:Pose)=>{const body=bodySolid(p,DEFAULT_ROBOT.length+.008,DEFAULT_ROBOT.width+.008),c=Math.abs(Math.cos(p.heading)),s=Math.abs(Math.sin(p.heading));
     return Math.abs(p.x)+(body.width*c+body.depth*s)/2<scene.half-.0125&&Math.abs(p.z)+(body.width*s+body.depth*c)/2<scene.half-.0125&&!obstacles.some(o=>Math.abs(p.x-o.x)<(body.width*c+body.depth*s)/2+o.hx&&Math.abs(p.z-o.z)<(body.width*s+body.depth*c)/2+o.hz&&overlaps(body,o));};
+  // A conventional reverse S: drive past the bay, back toward the kerb,
+  // countersteer, and finish parallel. Try exact feasible arcs before a generic
+  // search, whose distance heuristic otherwise encourages nose-first pivots.
+  const radius=Math.max(.18,(DEFAULT_ROBOT.width-DEFAULT_ROBOT.wheelWidth)/(2*DEFAULT_ROBOT.turnGrip));
+  if(scene.lesson==='parallel'){
+    const b=scene.target,c=Math.cos(b.heading),s=Math.sin(b.heading),dx=scene.start.x-b.x,dz=scene.start.z-b.z,lateral=-dx*s+dz*c;
+    const headingError=Math.abs(Math.atan2(Math.sin(scene.start.heading-b.heading),Math.cos(scene.start.heading-b.heading)));
+    let selected:CoachPath|null=null;
+    if(lateral>.1&&headingError<1e-8)for(let degrees=25;degrees<=85;degrees+=5)for(const finishOffset of [0,-.02,-.04,-.06,-.08])for(const secondRadius of [radius,.22,.3,.4,Infinity]){
+      const angle=degrees*Math.PI/180,sumRadius=lateral/(1-Math.cos(angle)),r2=Number.isFinite(secondRadius)?secondRadius:sumRadius/2,r1=sumRadius-r2;if(r1<radius||r2<radius)continue;
+      const staging={x:b.x+(sumRadius*Math.sin(angle)+finishOffset)*c-lateral*s,z:b.z+(sumRadius*Math.sin(angle)+finishOffset)*s+lateral*c,heading:b.heading};
+      const approach=(staging.x-scene.start.x)*c+(staging.z-scene.start.z)*s;if(approach<0)continue;
+      const poses:CoachPose[]=[{...scene.start,reverse:false}],append=(p:CoachPose)=>{if(!clear(p))return false;poses.push(p);return true;};let valid=clear(scene.start);
+      const steps=Math.max(1,Math.ceil(approach/.008));for(let i=1;i<=steps&&valid;i++)valid=append({x:scene.start.x+(staging.x-scene.start.x)*i/steps,z:scene.start.z+(staging.z-scene.start.z)*i/steps,heading:b.heading,reverse:false});
+      for(const k of [-1/r1,1/r2]){
+        const start=poses.at(-1)!,n=Math.max(1,Math.ceil(angle/Math.abs(k)/.008));
+        for(let i=1;i<=n&&valid;i++){const h=start.heading-angle*i/n*Math.sign(k);valid=append({x:start.x+(Math.sin(h)-Math.sin(start.heading))/k,z:start.z+(-Math.cos(h)+Math.cos(start.heading))/k,heading:h,reverse:true});}
+      }
+      if(valid&&finishOffset){const start=poses.at(-1)!,n=Math.ceil(-finishOffset/.008);for(let i=1;i<=n&&valid;i++)valid=append({x:start.x-finishOffset*c*i/n,z:start.z-finishOffset*s*i/n,heading:b.heading,reverse:false});}
+      if(!valid)continue;let length=0;for(let i=1;i<poses.length;i++)length+=Math.hypot(poses[i].x-poses[i-1].x,poses[i].z-poses[i-1].z);
+      const candidate:CoachPath={poses,length,cost:length+.09+(finishOffset?.09:0),expanded:0,reason:'ready'};if(!selected||candidate.cost<selected.cost)selected=candidate;
+    }
+    if(selected){if(cache.size>=128)cache.delete(cache.keys().next().value!);cache.set(key,structuredClone(selected));return selected;}
+  }
   type Node={p:Pose;g:number;f:number;parent:Node|null;reverse:boolean;curve:number;segment:CoachPose[]};
   const queue:Node[]=[],best=new Map<string,number>();
   const push=(n:Node)=>{let i=queue.length;queue.push(n);while(i){const p=(i-1)>>1;if(queue[p].f<=n.f)break;queue[i]=queue[p];i=p;}queue[i]=n;};
@@ -26,7 +50,6 @@ export function planParkingPath(scene:ParkingScene):CoachPath{
   if(clear(start.p)){push(start);best.set(id(start),0);}
   // Minimum arc radius exceeds half the effective track / turn grip: both
   // wheels can turn in the same direction at the configured steering grip.
-  const radius=Math.max(.18,(DEFAULT_ROBOT.width-DEFAULT_ROBOT.wheelWidth)/(2*DEFAULT_ROBOT.turnGrip));
   const curves=[0,1/.65,-1/.65,1/.35,-1/.35,1/radius,-1/radius];
   while(queue.length&&expanded<MAX_NODES){const n=pop();if(n.g!==best.get(id(n)))continue;expanded++;const q=parkingQuality(n.p,scene.target);
     if(q.distance<=.06&&(!precise||q.inside&&q.error<Math.PI/12)){end=n;break;}

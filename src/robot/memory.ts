@@ -4,6 +4,10 @@ import { Pose } from "./model";
 export const MEMORY_SIZES = [512, 2048, 4096, 10000, 20000, 40000] as const;
 export type MemorySettings = { count: number; sparsity: number; rareWeighting: boolean };
 export const DEFAULT_MEMORY: MemorySettings = { count: 4096, sparsity: .01, rareWeighting: true };
+// These deterministic, read-only projection weights are identical for every fly.
+// Learned counts, prototypes and means remain private to each memory instance.
+const projectionBanks=new Map<number,Float32Array[]>();
+function projectionBank(count:number){let bank=projectionBanks.get(count);if(!bank){const random=mulberry32(751);bank=Array.from({length:count},()=>Float32Array.from({length:27},()=>random()*2-1));projectionBanks.set(count,bank);}return bank;}
 export function validateMemorySettings(raw: unknown): MemorySettings {
   const s = raw as MemorySettings;
   if (!s || !MEMORY_SIZES.includes(s.count as typeof MEMORY_SIZES[number]) || !Number.isFinite(s.sparsity) || s.sparsity < .005 || s.sparsity > .05 || typeof s.rareWeighting !== "boolean") throw new Error("Invalid Kenyon memory settings.");
@@ -16,6 +20,7 @@ export class RoomMemory {
   readonly active: number[] = [];
   readonly counts: Float32Array;
   private readonly projections: Float32Array[];
+  private readonly values: Float64Array;
   private readonly means: Float32Array[];
   private readonly prototypes: (Float32Array | null)[];
   readonly map = new Map<string, number>();
@@ -30,8 +35,7 @@ export class RoomMemory {
     this.counts = new Float32Array(this.count);
     this.means = Array.from({ length: this.count }, () => new Float32Array(10));
     this.prototypes = Array(this.count).fill(null);
-    const random = mulberry32(751);
-    this.projections = Array.from({ length: this.count }, () => Float32Array.from({ length: 27 }, () => random() * 2 - 1));
+    this.projections = projectionBank(this.count);this.values=new Float64Array(this.count);
   }
   get taught(): number { return this.counts.filter(n => n > 0).length; }
   get occupancy(): number { return this.taught / this.count; }
@@ -46,11 +50,19 @@ export class RoomMemory {
       for(let k=0;k<24;k++) feature[k]=(visual[k]-mean)/spread;
       feature[24]=visual[0]-visual[12];feature[25]=visual[5]-visual[17];feature[26]=visual[8]-visual[20];
     }
-    const candidates = this.projections.map((weights,id) => { let value=0;for(let k=0;k<27;k++)value+=weights[k]*feature[k];return {id,value}; })
-      .sort((a,b)=>b.value-a.value).slice(0,this.legacy?16:Math.max(4,Math.round(this.count*this.settings.sparsity)));
-    this.active.splice(0,this.active.length,...candidates.map(c=>c.id));
+    // Select the exact same top cells without allocating/sorting every cell.
+    // A worst-first bounded heap retains stable ascending IDs for equal values.
+    const limit=this.legacy?16:Math.max(4,Math.round(this.count*this.settings.sparsity)),values=this.values,heap:number[]=[];
+    const worse=(a:number,b:number)=>values[a]<values[b]||values[a]===values[b]&&a>b;
+    for(let id=0;id<this.count;id++){
+      const weights=this.projections[id];let value=0;for(let k=0;k<27;k++)value+=weights[k]*feature[k];values[id]=value;
+      if(heap.length<limit){let at=heap.length;heap.push(id);while(at>0){const parent=(at-1)>>1;if(!worse(heap[at],heap[parent]))break;[heap[at],heap[parent]]=[heap[parent],heap[at]];at=parent;}}
+      else if(worse(heap[0],id)){heap[0]=id;let at=0;while(at*2+1<heap.length){let child=at*2+1;if(child+1<heap.length&&worse(heap[child+1],heap[child]))child++;if(!worse(heap[child],heap[at]))break;[heap[at],heap[child]]=[heap[child],heap[at]];at=child;}}
+    }
+    const candidates=heap.sort((a,b)=>values[b]-values[a]||a-b);
+    this.active.splice(0,this.active.length,...candidates);
     const recall=new Float32Array(10);let matched=0,total=0;
-    for(const {id} of candidates) {
+    for(const id of candidates) {
       const prototype=this.prototypes[id];let error=0;
       if(prototype)for(let k=0;k<24;k++)error+=(visual[k]-prototype[k])**2;
       if(this.counts[id]>=3 && prototype && error/24<.012) {
@@ -59,7 +71,7 @@ export class RoomMemory {
       }
     }
     this.confidence=matched/candidates.length;this.recalled=this.confidence>=.375;
-    if(learn)for(const {id} of candidates) {
+    if(learn)for(const id of candidates) {
       const rate=1/(Math.min(this.counts[id],50)+1);this.prototypes[id]??=visual.slice();
       for(let k=0;k<24;k++)this.prototypes[id]![k]+=rate*(visual[k]-this.prototypes[id]![k]);
       for(let k=0;k<10;k++)this.means[id][k]+=rate*((estimates[k]??0)-this.means[id][k]);this.counts[id]++;

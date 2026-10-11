@@ -1,4 +1,11 @@
-import {ParkingSession,type ParkingBrain} from './parking/session';
+import {ParkingSession,parkingCamera,parkingDomain,alignedParkingDomain,type ParkingBrain} from './parking/session';
+import {ParkingEpisode,ParkingCue} from './parking/episode';
+import {RobotPhysics} from './robot/model';
+import {RoomMemory} from './robot/memory';
+import {Sonar} from './vision/sonar';
+import {SonarHistory} from './vision/sonar-history';
+import {SpikingNetwork} from './core';
+import {VisionDriver} from './vision/pipeline';
 import {TrackSession,WorldSession,type TrackSettings,type WorldSettings} from './vision/ui/sessions';
 import type {ParkingSettings} from './parking/model';
 
@@ -20,7 +27,25 @@ function copy(value:unknown,detailed:boolean):unknown{
 export function capturePreview(s:TrainingSession,id:number,detailed:boolean):PreviewState{
   const settings=Object.fromEntries(Object.entries(s.settings).filter(([k])=>!['controller','vision','memory','roomMemory'].includes(k)));
   const network=s instanceof ParkingSession?s.network:s.controller,memory=s instanceof TrackSession?null:s.memory;
-  return{id,settings,state:copy(s,detailed) as Record<string,unknown>,activity:network.activity(),...(memory?{memory:{count:memory.count,taught:memory.taught,confidence:memory.confidence,recalled:memory.recalled}}:{})};
+  // Headless parking only needs counters and the latest requests. Do not stream
+  // recurrent/vision workspaces or the (potentially huge) route every 200 ms.
+  const state=!detailed&&s instanceof ParkingSession?{
+    lastAction:s.lastAction,episode:copy(Object.fromEntries(Object.entries(s.episode).filter(([k])=>!['cameraScene','frame','coachPath','trail','effects','cooldown'].includes(k))),false),driver:{sensors:s.driver.sensors},
+  }:copy(s,detailed);
+  return{id,settings,state:state as Record<string,unknown>,activity:network.activity(),...(memory?{memory:{count:memory.count,taught:memory.taught,confidence:memory.confidence,recalled:memory.recalled}}:{})};
+}
+/** A display observer has prototypes and data, but no CNN, recurrent state or
+ * Kenyon projection allocation. Instantiating a runnable session here used to
+ * perform a duplicate camera/inference pass for every newly reported ghost. */
+function parkingObserver(settings:ParkingSettings,brain:ParkingBrain):ParkingSession{
+  const camera=parkingCamera(settings,brain),episode=Object.assign(Object.create(ParkingEpisode.prototype),{
+    settings,camera,physics:new RobotPhysics(),frame:new Float32Array(camera.width*camera.height*3),sonarUnit:Object.create(Sonar.prototype),trail:[],effects:[],coachPath:null,
+  });
+  const s=Object.assign(Object.create(ParkingSession.prototype),{
+    settings,brain,episode,cue:new ParkingCue(camera),scan:new SonarHistory(),memory:Object.create(RoomMemory.prototype),network:Object.create(SpikingNetwork.prototype),
+    driver:Object.assign(Object.create(VisionDriver.prototype),{domain:settings.bayAlignment&&!['arrival','exit','switch'].includes(settings.lesson)?alignedParkingDomain:parkingDomain,options:{perceiver:{model:brain.eyes}},ensemble:null,sensors:[]}),
+  }) as ParkingSession;
+  episode.render=()=>episode.frame;return s;
 }
 /** Patch data into existing observer prototypes; never restore these snapshots as runnable brains. */
 function patch(target:Record<string,unknown>,source:Record<string,unknown>){
@@ -40,8 +65,7 @@ export class TrainingPreviews{
       if(!s){
         if(this.job.kind==='parking'){
           const settings={...this.job.settings,...row.settings} as ParkingSettings;
-          s=new ParkingSession({...settings,pathReward:false},{...this.job.brain,memory:{...this.job.brain.memory,count:512}},{scene:(row.state.episode as ParkingSession['episode']).scene,learn:false,diagnostics:()=>false});
-          Object.assign(s,{settings});Object.assign(s.episode,{settings});
+          s=parkingObserver(settings,this.job.brain);
         }else if(this.job.kind==='track')s=new TrackSession({...this.job.settings,...row.settings,memory:null} as TrackSettings);
         else s=new WorldSession({...this.job.settings,...row.settings,roomMemory:null,memorySettings:this.job.settings.memorySettings?{...this.job.settings.memorySettings,count:512}:undefined} as WorldSettings);
         const episode=s.episode;episode.render=()=>episode.frame;
