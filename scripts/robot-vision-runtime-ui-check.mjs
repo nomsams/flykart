@@ -73,11 +73,12 @@ try{
   await page.locator('#world-run').click();await page.waitForFunction(()=>window.flykartVision.world.episode.tick>=5);await page.locator('#world-run').click();
   // Camera-only training still runs inference with preview disabled, and keeps
   // CPU mode / cancellation available while editing brain setup is locked.
-  await page.locator('#world-driver').selectOption('vision');await page.locator('#world-generations').fill('1');await page.locator('#world-population').fill('2');await page.locator('#world-train-ticks').fill('300');await page.locator('#world-reverse-coach').uncheck();
+  // Keep the job active while native Refresh/Cancel clicks cross the worker boundary.
+  await page.locator('#world-driver').selectOption('vision');await page.locator('#world-generations').fill('50');await page.locator('#world-population').fill('2');await page.locator('#world-train-ticks').fill('300');await page.locator('#world-reverse-coach').uncheck();
   await page.locator('#world-train').click();await page.locator('#world-train-stop').waitFor({state:'visible'});assert.equal(await page.locator('#vision-render-mode').isEnabled(),true);
   await page.locator('#world-ghost-scores').filter({hasText:'targets'}).waitFor();await page.locator('#vision-refresh').click();await page.locator('#world-train-stop').click();await page.locator('#world-training-status').filter({hasText:'Cancelled'}).waitFor({timeout:60000});
   await page.locator('#vision-render-mode').selectOption('economy');await page.reload();await page.waitForFunction(()=>document.querySelector('#boot-screen').hidden,{},{timeout:60000}).catch(async e=>{console.error('Vision boot diagnostics:',errors,await page.locator('#boot-screen').innerText());throw e;});assert.equal(await page.locator('#vision-render-mode').inputValue(),'economy');
   await page.setViewportSize({width:390,height:844});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
   await page.locator('#vision-render-mode').scrollIntoViewIfNeeded();await page.screenshot({path:'.cache/vision-runtime-mobile.png'});assert.deepEqual(errors,[]);
   console.log('Vision runtime passed: repository weights, sonar activation and mapped echoes, headless live sensor capture and refresh, varied seeded target counts/scene replay, safe near-flag completion and subsequent Start, low-CPU training/cancel, preference persistence and mobile layout.');
-}finally{await browser.close();}
+}catch(e){console.error('Vision runtime diagnostics:',errors,await page.locator('#world-training-status,#world-evolution-status,#camera-train-status').allTextContents());throw e;}finally{await browser.close();}

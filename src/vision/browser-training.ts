@@ -3,7 +3,7 @@ import type { CohortBudget } from './runtime-budget';
 import { BrainSnapshot, SpikingNetwork,TRACKS } from "../core";
 import { TrackSession, TrackSettings } from "./ui/sessions";
 import { runCohort } from './cohort';
-import { validateTrainingMaps } from '../map-curriculum';
+import { validateTrainingMaps } from '../map-curriculum-data';
 
 export type CameraTrainingResult={brain:BrainSnapshot;score:number;generation:number;validation:{parent:number;offspring:number;seeds:number[]};trainingSeeds:number[];trainingMaps:string[];scoreDefinition:string};
 /** Evolve a cohort behind frozen eyes, using the same seeds for every ghost. */

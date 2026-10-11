@@ -14,7 +14,8 @@ import { mountMapCurriculum,TRAINING_MAPS } from '../map-curriculum';
 import { mountMapPicker } from '../map-picker';
 import { mountRoomPanel } from './room-panel';
 import { ArenaFile, validateArena, reverseGoal } from './world/arena';
-import { WorldTrainingResult, trainWorldController } from './world/training';
+import type {WorldTrainingResult} from './world/training';
+import {trainWorldBackground as trainWorldController,trainCameraBackground as trainCameraController} from '../training-background';
 import { drawSonarHistory } from './sonar-history';
 import { GHOST_COLORS } from './ui/draw';
 import { mountBrainShelf } from '../browser-brain';
@@ -28,7 +29,7 @@ import { explainControls } from "../control-help";
 import { installSettingsHistory } from "../settings-history";
 import { mountExperimentPanel } from "./experiment-panel";
 import { calibratedProfile } from "./racing-settings";
-import { CameraTrainingResult, trainCameraController } from "./browser-training";
+import type {CameraTrainingResult} from "./browser-training";
 import type { RacingSettings } from "./racing-settings";
 import { lowResolution } from "./ensemble";
 import "./vision.css";
@@ -238,6 +239,7 @@ function finishLap(): void {
 function setStatus(which: "track" | "world", text: string): void { $(`${which}-status`).textContent = text; }
 
 function paintTrack(preview?:TrackSession,ghosts:TrackSession[]=[]): void {
+  if(document.hidden)return;
   evolutionPanels.track?.refresh();
   const session = preview??state.track; if (!session) return;
   const episode = session.episode; const car = episode.car; const driver = session.driver;
@@ -328,6 +330,7 @@ function buildWorld(): void {
 }
 
 function paintWorld(preview?:WorldSession,ghosts:WorldSession[]=[]): void {
+  if(document.hidden)return;
   evolutionPanels.world?.refresh();
   const session = preview??state.world; if (!session) return;
   const episode = session.episode; const sim = episode.sim; const driver = session.driver;
@@ -385,7 +388,7 @@ function mountRuntimeControls():void {
   document.querySelector('.profile-bar')!.after(panel);
   const select=$<HTMLSelectElement>('vision-render-mode');
   try{const saved=localStorage.getItem('flykart.vision.preview');if(['full','economy','headless','turbo'].includes(saved??''))select.value=saved!;}catch{/* optional local preference */}
-  const apply=()=>{runtimeBudget.mode=select.value as PreviewMode;try{localStorage.setItem('flykart.vision.preview',runtimeBudget.mode);}catch{/* optional */} $('vision-runtime-note').textContent=runtimeBudget.mode==='full'?'Live views. Speed remains limited by camera and neural computation.':runtimeBudget.mode==='economy'?'Views refresh at most five times per second. Simulation and training yield more CPU time; maximum evolution may take longer. Sensor timing and learning rules stay the same.':runtimeBudget.mode==='turbo'?'Views paused; maximum evolution uses longer compute batches without CPU-saver delays. Camera inference, sonar and scoring remain active. Choose a preview mode during training to inspect it.':'Live rendering paused; refresh once to inspect. Simulation, camera pixels needed by the brain, sonar and learning continue. Training yields more CPU time and may take longer; this does not remove the brain’s eyes.';};
+  const apply=()=>{runtimeBudget.mode=select.value as PreviewMode;try{localStorage.setItem('flykart.vision.preview',runtimeBudget.mode);}catch{/* optional */} $('vision-runtime-note').textContent=runtimeBudget.mode==='full'?'Live views. Ghost evolution runs in a background worker while you use other tabs. Speed remains limited by camera and neural computation.':runtimeBudget.mode==='economy'?'Views refresh at most five times per second. Simulation and training yield more CPU time; maximum evolution may take longer. Sensor timing and learning rules stay the same.':runtimeBudget.mode==='turbo'?'Views paused; maximum evolution uses longer compute batches without CPU-saver delays. Camera inference, sonar and scoring remain active. Choose a preview mode during training to inspect it.':'Live rendering paused; refresh once to inspect. Simulation, camera pixels needed by the brain, sonar and learning continue. Training yields more CPU time and may take longer; this does not remove the brain’s eyes.';};
   select.onchange=apply;apply();$('vision-refresh').onclick=()=>{if(state.tab==='track')paintTrack(previewTrack?.[0],previewTrack??[]);else if(state.tab==='world')paintWorld(previewWorld?.[0],previewWorld??[]);};
 }
 
@@ -411,7 +414,7 @@ function frame(now: number): void {
     let steps = Math.min(40, Math.floor(state.accumulator.track));  const started = performance.now();
     while (steps-- > 0 && !state.track.done) { state.track.step(); logFreshPing(state.track); state.accumulator.track -= 1; if (performance.now() - started > (runtimeBudget.mode==='full'?22:runtimeBudget.cohort.workMs)) break; }
     if (state.track.done) finishLap();
-    if(runtimeBudget.shouldPaint(now)||(state.track.done&&runtimeBudget.mode!=='headless'))paintTrack();
+    if(!document.hidden&&runtimeBudget.shouldPaint(now)||(state.track.done&&runtimeBudget.mode!=='headless'))paintTrack();
     if (state.running.track) setStatus("track", `${state.track.episode.car.finished ? "lap done" : "driving"} · ${(state.track.episode.car.ticks / 30).toFixed(1)} s`);
   } else if (state.tab === "world" && state.running.world && state.world) {
     const speed = Number($<HTMLSelectElement>("world-speed").value);
@@ -420,7 +423,7 @@ function frame(now: number): void {
     while (steps-- > 0 && !state.world.done) { state.world.step();logWorldPing(state.world); state.accumulator.world -= 1; if (performance.now() - started > (runtimeBudget.mode==='full'?22:runtimeBudget.cohort.workMs)) break; }
     continueWorldTargets();
     if (state.world.done) { state.running.world = false; $("world-run").textContent = "Start"; setStatus("world", state.world.episode.sim.status.stopReason ?? (state.world.episode.sim.status.crashed ? `stopped: ${state.world.episode.sim.status.crashReason}` : state.world.discovery?`${state.world.won?'Search won':'Search ended without a win'} · first sight ${state.world.discovery.firstSightTick===null?'not found':(state.world.discovery.firstSightTick/30).toFixed(2)+' s'} · ${(state.world.episode.tick/30).toFixed(1)} s`:state.world.episode.sim.status.goals>=state.world.episode.sim.goalLimit?`Goal reached · ${(state.world.episode.tick/30).toFixed(1)} s`:`time up · ${state.world.episode.sim.status.goals} goals`)); }
-    if(runtimeBudget.shouldPaint(now)||(state.world.done&&runtimeBudget.mode!=='headless'))paintWorld();
+    if(!document.hidden&&runtimeBudget.shouldPaint(now)||(state.world.done&&runtimeBudget.mode!=='headless'))paintWorld();
   }
   }catch(error){const domain=state.activeDomain;state.running[domain]=false;$(domain+'-run').textContent='Start';setStatus(domain,'Stopped: '+(error as Error).message);logSensor('Simulation error: '+(error as Error).message);}
   finally{if(runtimeBudget.interval)setTimeout(()=>frame(performance.now()),runtimeBudget.interval);else requestAnimationFrame(frame);}
@@ -609,7 +612,7 @@ async function runCameraTraining():Promise<void>{
     if(!Number.isInteger(generations)||generations<1||generations>50||!Number.isInteger(population)||population<2||population>16)throw new Error('Use 1–50 generations and 2–16 candidates.');
     const controls=Array.from(document.querySelectorAll<HTMLInputElement|HTMLSelectElement|HTMLButtonElement>('main input,main select,main button')).filter(e=>!['camera-train-stop','track-evolve-stop-top','copy-sensor-log','clear-sensor-log','vision-render-mode','vision-refresh'].includes(e.id)),disabled=controls.map(e=>e.disabled);
     controls.forEach(e=>e.disabled=true);$<HTMLButtonElement>('camera-train-stop').disabled=false;
-    try{trainedCamera=await trainCameraController(settings,generations,population,()=>cancelTraining,line=>{$('camera-train-status').textContent=line;logSensor(line);},(sessions,generation,seed)=>{previewTrack=sessions;sessions.forEach(logStall);if(runtimeBudget.shouldPaint(performance.now()))paintTrack(sessions[0],sessions);renderGhostScores('camera-ghost-scores',sessions.map((s,i)=>`${i+1} · ${(s.episode.car.totalProgress*100).toFixed(0)}% · ${(s.episode.tick/30).toFixed(1)} s · ${s.episode.car.collisions} contacts`),generation,seed);},Number($<HTMLSelectElement>('camera-train-speed').value),trackCurriculum?.enabled()?trackCurriculum.read():[settings.trackId],()=>runtimeBudget.cohort,c=>evolutionPanels.track!.checkpoint({...c,training:{...c.training,experiment:trainedExperiment,eyes:describeEvolution(visionBrainText('track')).raw.vision?.trainedOn??'current camera',profile:state.profile}}));}
+    try{trainedCamera=await trainCameraController(settings,generations,population,()=>cancelTraining,line=>{$('camera-train-status').textContent=line;logSensor(line);},(sessions,generation,seed)=>{previewTrack=sessions;sessions.forEach(logStall);if(!document.hidden&&runtimeBudget.shouldPaint(performance.now()))paintTrack(sessions[0],sessions);renderGhostScores('camera-ghost-scores',sessions.map((s,i)=>`${i+1} · ${(s.episode.car.totalProgress*100).toFixed(0)}% · ${(s.episode.tick/30).toFixed(1)} s · ${s.episode.car.collisions} contacts`),generation,seed);},Number($<HTMLSelectElement>('camera-train-speed').value),trackCurriculum?.enabled()?trackCurriculum.read():[settings.trackId],()=>runtimeBudget.cohort,c=>evolutionPanels.track!.checkpoint({...c,training:{...c.training,experiment:trainedExperiment,eyes:describeEvolution(visionBrainText('track')).raw.vision?.trainedOn??'current camera',profile:state.profile}}));}
     finally{controls.forEach((e,i)=>e.disabled=disabled[i]);$<HTMLButtonElement>('camera-train-stop').disabled=true;}
     $<HTMLButtonElement>('camera-train-adopt').disabled=!trainedCamera;$<HTMLButtonElement>('camera-report').disabled=!trainedCamera;
     $('camera-train-status').textContent=trainedCamera?`Training complete. Held-out parent ${trainedCamera.validation.parent.toFixed(2)}, offspring ${trainedCamera.validation.offspring.toFixed(2)}. Saved winner is the next evolution parent; review before driving adoption.`:'Training cancelled; last completed generation remains the next evolution parent.';
@@ -768,7 +771,7 @@ async function runWorldTraining():Promise<void>{
     const crashWeight=Number($<HTMLInputElement>('world-crash-weight').value)/100;if(!Number.isFinite(crashWeight)||crashWeight<0||crashWeight>1)throw Error('Contact weight must be 0–100%.');
     state.running.track=state.running.world=false;$('track-run').textContent=$('world-run').textContent='Start';cameraTraining=true;cancelTraining=false;
     const controls=Array.from(document.querySelectorAll<HTMLInputElement|HTMLSelectElement|HTMLButtonElement>('main input,main select,main button')).filter(e=>!['world-train-stop','world-evolve-stop-top','copy-sensor-log','clear-sensor-log','world-copy-logs','world-clear-logs','vision-render-mode','vision-refresh'].includes(e.id)),disabled=controls.map(e=>e.disabled);controls.forEach(e=>e.disabled=true);$<HTMLButtonElement>('world-train-stop').disabled=false;restore=()=>{controls.forEach((e,i)=>e.disabled=disabled[i]);$<HTMLButtonElement>('world-train-stop').disabled=true;};
-    trainedWorld=await trainWorldController(trainedWorldContext,generations,population,crashWeight,()=>cancelTraining,line=>{logSensor(line);$('world-training-status').textContent=line;},(sessions,generation,seed)=>{previewWorld=sessions;sessions.forEach(logStall);if(runtimeBudget.shouldPaint(performance.now()))paintWorld(sessions[0],sessions);renderGhostScores('world-ghost-scores',sessions.map((s,i)=>s.discovery?`${i+1} · ${s.won?'FOUND / WIN':s.done?(s.found?'seen, no arrival':'not found'):'searching'} · first sight ${s.discovery.firstSightTick===null?'—':(s.discovery.firstSightTick/30).toFixed(2)+' s'} · ${(s.episode.tick/30).toFixed(1)} s · ${s.episode.sim.status.collisions} contacts · pain ${s.episode.sim.status.pain.toFixed(2)} · ${s.discovery.visualViews} views`:`${i+1} · ${s.episode.sim.status.goals>=s.episode.sim.goalLimit?'ARRIVED':s.done?'stopped':'driving'} · targets ${s.episode.sim.status.goals}/${s.episode.sim.goalLimit} · ${(s.episode.tick/30).toFixed(1)} s · ${s.episode.sim.status.collisions} contacts · pain ${s.episode.sim.status.pain.toFixed(2)} · reverse ${(s.reverseDistance*CM_PER_PIXEL/100).toFixed(2)} m`),generation,seed);},Number($<HTMLSelectElement>('world-train-speed').value),$<HTMLInputElement>('world-reverse-coach').checked,$<HTMLInputElement>('world-retain-forward').checked,()=>runtimeBudget.cohort,{seed:crypto.getRandomValues(new Uint32Array(1))[0],failureRetries:Number($<HTMLSelectElement>('world-failure-retries').value),onGeneration:c=>evolutionPanels.world!.checkpoint({...c,training:{...c.training,experiment:trainedWorldExperiment,profile:state.profile,eyes:session.settings.vision?.trainedOn,map:$<HTMLSelectElement>('world-map-preset').value,memoryCount:session.memory?.count??0}})});
+    trainedWorld=await trainWorldController(trainedWorldContext,generations,population,crashWeight,()=>cancelTraining,line=>{logSensor(line);$('world-training-status').textContent=line;},(sessions,generation,seed)=>{previewWorld=sessions;sessions.forEach(logStall);if(!document.hidden&&runtimeBudget.shouldPaint(performance.now()))paintWorld(sessions[0],sessions);renderGhostScores('world-ghost-scores',sessions.map((s,i)=>s.discovery?`${i+1} · ${s.won?'FOUND / WIN':s.done?(s.found?'seen, no arrival':'not found'):'searching'} · first sight ${s.discovery.firstSightTick===null?'—':(s.discovery.firstSightTick/30).toFixed(2)+' s'} · ${(s.episode.tick/30).toFixed(1)} s · ${s.episode.sim.status.collisions} contacts · pain ${s.episode.sim.status.pain.toFixed(2)} · ${s.discovery.visualViews} views`:`${i+1} · ${s.episode.sim.status.goals>=s.episode.sim.goalLimit?'ARRIVED':s.done?'stopped':'driving'} · targets ${s.episode.sim.status.goals}/${s.episode.sim.goalLimit} · ${(s.episode.tick/30).toFixed(1)} s · ${s.episode.sim.status.collisions} contacts · pain ${s.episode.sim.status.pain.toFixed(2)} · reverse ${(s.reverseDistance*CM_PER_PIXEL/100).toFixed(2)} m`),generation,seed);},Number($<HTMLSelectElement>('world-train-speed').value),$<HTMLInputElement>('world-reverse-coach').checked,$<HTMLInputElement>('world-retain-forward').checked,()=>runtimeBudget.cohort,{seed:crypto.getRandomValues(new Uint32Array(1))[0],failureRetries:Number($<HTMLSelectElement>('world-failure-retries').value),onGeneration:c=>evolutionPanels.world!.checkpoint({...c,training:{...c.training,experiment:trainedWorldExperiment,profile:state.profile,eyes:session.settings.vision?.trainedOn,map:$<HTMLSelectElement>('world-map-preset').value,memoryCount:session.memory?.count??0}})});
     if(trainedWorld){
       const v=trainedWorld.validation,search=trainedWorld.task==='explore';
       const parentWins=v.parentTrials.filter(t=>t.won).length,childWins=v.offspringTrials.filter(t=>t.won).length;
