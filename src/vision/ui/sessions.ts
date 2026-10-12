@@ -180,7 +180,7 @@ export class WorldSession {
     if(this.episode.sim.status.pain>=8&&!this.episode.sim.status.crashed)this.episode.sim.status.stopReason='Stall pain limit reached; stop motors and try another policy.';
     const kart=this.episode.sim.kart,travel=Math.hypot(kart.x-before.x,kart.y-before.y);
     const status=this.episode.sim.status,progress=this.discovery?this.discovery.cue()[1]:Math.max(0,1-status.distanceToGoal/Math.max(1,Math.hypot(this.initialPose.x-status.goalX,this.initialPose.y-status.goalY)));
-    const feedback=this.searchJudge.observe(kart.x,kart.y,this.episode.tick,progress,status.goals,this.won,status.collisions,{visualSearch:Boolean(this.discovery),reverse:kart.speed< -.5||((this.lastAction.reverse??0)>this.lastAction.throttle+.1),targetVisible:this.discovery?.tracker.current.visible??false});
+    const feedback=this.searchJudge.observe(kart.x,kart.y,this.episode.tick,progress,status.goals,this.won,status.collisions,{visualSearch:Boolean(this.discovery),reverse:kart.speed< -.5||((this.lastAction.reverse??0)>this.lastAction.throttle+.1),targetVisible:this.discovery?.tracker.current.visible??false,heading:kart.heading,drive:this.lastAction.throttle-(this.lastAction.reverse??0)});
     // Judge pain is a separate training ledger. It must not masquerade as
     // physical impact pain or trigger the simulator's fatal-contact threshold.
     status.score-=feedback.penalty;

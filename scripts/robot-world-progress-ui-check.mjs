@@ -17,7 +17,7 @@ try{
   // relying on one imported champion's evolving motor behavior.
   const network=brain.controller.network;for(const key of ['inputWeights','recurrentWeights','outputWeights'])network[key]=network[key].map(()=>0);network.bias=network.bias.map(()=>-10);
   if(brain.world)brain.world.controller.network=structuredClone(network);
-  brain.worldTraining.searchJudge={enabled:true,zeroChill:true,delaySeconds:2,cutoffSeconds:3,weight:2,loopGuard:true,blindReverse:true};brain.worldTraining.maxTicks=300;brain.worldTraining.reverseCoach=false;
+  brain.worldTraining.searchJudge={enabled:true,zeroChill:true,delaySeconds:2,cutoffSeconds:3,weight:2,loopGuard:true,blindReverse:true,antiJitter:true,jitterWindowSeconds:4,jitterWeight:2};brain.worldTraining.maxTicks=300;brain.worldTraining.reverseCoach=false;
   await load(brain);assert.equal(await page.locator('#world-zero-chill').isChecked(),true);assert.equal(await page.locator('#world-progress-weight').inputValue(),'2');
   const parent=(await download('brain-export-always')).controller.network;
   const idle=await page.evaluate(()=>{const s=window.flykartVision.world;for(let i=0;i<100;i++)s.step();return {done:s.done,pain:s.searchJudge.pain,cost:s.searchJudge.penalty,rejected:s.searchJudge.disqualified,reason:s.episode.sim.status.stopReason,inputs:[...s.driver.sensors],pose:{...s.episode.sim.kart}};});
