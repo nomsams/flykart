@@ -1,3 +1,4 @@
+import {SearchJudge,validateSearchJudge,type SearchJudgeSettings} from '../world/search-judge';
 import type { StallSettings } from '../stall';
 import { RoomMemory, MemorySettings } from '../../robot/memory';
 import { WorldDef } from '../world/world';
@@ -97,7 +98,7 @@ export class TrackSession {
 }
 
 export type WorldDriverKind = "vision" | "both" | "feeling" | "expert" | "blind";
-export type WorldSettings = { seed: number; density: number; style: number; kind: WorldDriverKind; scanSonar?:SonarSpec; fade: number; controller: BrainSnapshot; vision: VisionModel | null; profile?: SensorProfile; sonarOn?: boolean; visual?:RacingSettings["visual"]; resolution?:RacingSettings["resolution"]; cameraNoise?:number;cameraBrightness?:number;stall?:StallSettings;maxTicks?:number; goals?:{x:number;y:number}[]; goalPreset?:import("../world/world").GoalPreset; goalCount?:import("../world/world").GoalCount;goalRadius?:number; task?:"forage"|"reverse"|"explore"; searchWin?:SearchWin; world?:WorldDef; start?:{x:number;y:number;heading:number}; memorySettings?:MemorySettings; roomMemory?:RoomMemory|null; sensorOnly?:boolean; practiceForward?:boolean };
+export type WorldSettings = { seed: number; density: number; style: number; kind: WorldDriverKind; scanSonar?:SonarSpec; fade: number; controller: BrainSnapshot; vision: VisionModel | null; profile?: SensorProfile; sonarOn?: boolean; visual?:RacingSettings["visual"]; resolution?:RacingSettings["resolution"]; cameraNoise?:number;cameraBrightness?:number;stall?:StallSettings;maxTicks?:number; goals?:{x:number;y:number}[]; goalPreset?:import("../world/world").GoalPreset; goalCount?:import("../world/world").GoalCount;goalRadius?:number; task?:"forage"|"reverse"|"explore"; searchWin?:SearchWin; world?:WorldDef; start?:{x:number;y:number;heading:number}; memorySettings?:MemorySettings; roomMemory?:RoomMemory|null; sensorOnly?:boolean; practiceForward?:boolean;searchJudge?:SearchJudgeSettings };
 
 export class WorldSession {
   readonly episode: WorldEpisode;
@@ -110,6 +111,7 @@ export class WorldSession {
   readonly memory:RoomMemory|null;
   readonly initialPose:{x:number;y:number;heading:number};
   readonly discovery:FlagDiscovery|null;
+  readonly searchJudge:SearchJudge;
   searchesCompleted=0;
   searchStartTick=0;
   reverseDistance=0;
@@ -132,6 +134,8 @@ export class WorldSession {
       // Rebuild a fixed-goal episode so arrival ends the trial rather than moving the flag.
       this.episode=new WorldEpisode({...this.episode.options,goal,goals:settings.practiceForward?[goal]:goals??(settings.task==='reverse'?[goal]:this.episode.sim.goals),goalLimit:explore||settings.practiceForward?1:goals?.length??(settings.goalCount!==undefined?this.episode.sim.targetCount:(!explore&&settings.task!=='reverse'&&!settings.practiceForward&&settings.goalPreset==='pair'?2:1))});
     }
+    this.searchJudge=new SearchJudge(validateSearchJudge(settings.searchJudge));
+    this.searchJudge.reset(this.initialPose.x,this.initialPose.y);
     this.memory=settings.roomMemory??(settings.memorySettings?new RoomMemory(settings.memorySettings):null);
     this.trail.push({x:this.episode.sim.kart.x,y:this.episode.sim.kart.y});
     this.sonarMap.record(this.episode.scanSonarUnit,this.episode.sim.kart,settings.sonarOn!==false);
@@ -147,8 +151,8 @@ export class WorldSession {
   }
 
   get found():boolean {return this.discovery?.firstSightTick!=null;}
-  get won():boolean {return this.discovery?this.found&&((this.settings.searchWin??'sight')==='sight'||this.episode.sim.status.goals>=this.episode.sim.goalLimit)&&!this.episode.sim.status.crashed:this.episode.sim.status.goals>=this.episode.sim.goalLimit&&!this.episode.sim.status.crashed;}
-  get done(): boolean { return this.episode.done || Boolean(this.discovery&&this.found&&(this.settings.searchWin??'sight')==='sight'); }
+  get won():boolean {return !this.searchJudge.disqualified&&(this.discovery?this.found&&((this.settings.searchWin??'sight')==='sight'||this.episode.sim.status.goals>=this.episode.sim.goalLimit)&&!this.episode.sim.status.crashed:this.episode.sim.status.goals>=this.episode.sim.goalLimit&&!this.episode.sim.status.crashed);}
+  get done(): boolean { return this.searchJudge.disqualified || this.episode.done || Boolean(this.discovery&&this.found&&(this.settings.searchWin??'sight')==='sight'); }
 
   /** Keep the robot, neural state, memory and sensor histories; reset only target tracking. */
   continueSearch():boolean {
@@ -156,6 +160,7 @@ export class WorldSession {
     this.searchesCompleted++;
     this.searchStartTick=this.episode.tick;
     this.discovery?.reset();
+    this.searchJudge.reset(this.episode.sim.kart.x,this.episode.sim.kart.y,this.episode.tick,this.episode.sim.status.goals);
     return true;
   }
 
@@ -174,6 +179,12 @@ export class WorldSession {
     const pain=this.driver?.stall?.painForTick(this.episode.tick)??0;this.stallPain+=pain;this.episode.sim.status.pain+=pain;this.episode.sim.status.score-=pain*12;
     if(this.episode.sim.status.pain>=8&&!this.episode.sim.status.crashed)this.episode.sim.status.stopReason='Stall pain limit reached; stop motors and try another policy.';
     const kart=this.episode.sim.kart,travel=Math.hypot(kart.x-before.x,kart.y-before.y);
+    const status=this.episode.sim.status,progress=this.discovery?this.discovery.cue()[1]:Math.max(0,1-status.distanceToGoal/Math.max(1,Math.hypot(this.initialPose.x-status.goalX,this.initialPose.y-status.goalY)));
+    const feedback=this.searchJudge.observe(kart.x,kart.y,this.episode.tick,progress,status.goals,this.won,status.collisions);
+    // Judge pain is a separate training ledger. It must not masquerade as
+    // physical impact pain or trigger the simulator's fatal-contact threshold.
+    status.score-=feedback.penalty;
+    if(this.searchJudge.disqualified){status.stopReason='Zero chill · '+this.searchJudge.reason;kart.speed=0;}
     if(kart.speed<0)this.reverseDistance+=travel;
     const last=this.trail[this.trail.length-1];if(Math.hypot(kart.x-last.x,kart.y-last.y)>=2){this.trail.push({x:kart.x,y:kart.y});if(this.trail.length>4000)this.trail.shift();}
     this.sonarMap.record(this.episode.scanSonarUnit,kart,this.settings.sonarOn!==false&&this.driver?.options.sonarOff!==true);

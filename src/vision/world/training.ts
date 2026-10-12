@@ -1,3 +1,4 @@
+import {validateSearchJudge} from './search-judge';
 import type {GenerationCheckpoint} from '../../evolution-checkpoint';
 import type { CohortBudget } from '../runtime-budget';
 import { Action, BrainSnapshot, SpikingNetwork, clamp, wrapAngle } from '../../core';
@@ -7,23 +8,28 @@ import { runCohort } from '../cohort';
 import { WorldSession, WorldSettings } from '../ui/sessions';
 import { TargetCurriculum, TargetTrial } from './target-curriculum';
 
-export type GoalResult={arrived:boolean;ticks:number;collisions:number;pain?:number;stallPain?:number;progress:number;goals?:number;goalTarget?:number;reverseDistance:number;crashed:boolean;found?:boolean;firstSightTick?:number|null;visualViews?:number;objective?:"sight"|"reach";won?:boolean};
+export type GoalResult={arrived:boolean;ticks:number;collisions:number;pain?:number;stallPain?:number;progress:number;goals?:number;goalTarget?:number;reverseDistance:number;crashed:boolean;found?:boolean;firstSightTick?:number|null;visualViews?:number;objective?:"sight"|"reach";won?:boolean;coverageCells?:number;coverageReward?:number;noProgressPain?:number;noProgressPenalty?:number;noProgressSeconds?:number;disqualified?:boolean;rejectionReason?:string};
 /** Arrival dominates partial progress. No time bonus for dying early. */
 export function goalScore(r:GoalResult,limit:number,crashWeight:number):number{
+  if(r.disqualified)return -1000000;
+  const penalty=Math.max(0,r.noProgressPenalty??0);
   const weight=Math.max(0,Math.min(1,crashWeight));
   const safety=1/(1+Math.max(0,r.pain??r.collisions));
-  if(r.arrived&&!r.crashed)return 1000+1000*((1-weight)*Math.max(0,1-r.ticks/limit)+weight*safety);
-  return Math.max(0,Math.min(1,r.progress))*400-400*weight*(1-safety)-(r.crashed?200:0);
+  if(r.arrived&&!r.crashed)return 1000+1000*((1-weight)*Math.max(0,1-r.ticks/limit)+weight*safety)-Math.min(200,penalty);
+  return Math.max(0,Math.min(1,r.progress))*400-400*weight*(1-safety)-(r.crashed?200:0)-penalty;
 }
 /** Successful searches outrank every failure; the speed / impact slider ranks successful searches. No hidden-distance bonus. */
 export function discoveryScore(r:GoalResult,limit:number,crashWeight=0):number {
+  if(r.disqualified)return -1000000;
+  const penalty=Math.max(0,r.noProgressPenalty??0);
   const weight=Math.max(0,Math.min(1,crashWeight)),pain=Math.max(0,r.pain??r.collisions);
   const speed=Math.max(0,Math.min(1,1-(r.objective==='reach'?r.ticks:r.firstSightTick??r.ticks)/limit));
-  return r.won&&!r.crashed?10000+1000*((1-weight)*speed+weight/(1+pain))-Math.min(8,pain)*.001:Math.min(64,r.visualViews??0)*.02-(r.crashed?2:0);
+  return r.won&&!r.crashed?10000+1000*((1-weight)*speed+weight/(1+pain))-Math.min(8,pain)*.001-Math.min(200,penalty):Math.min(64,r.visualViews??0)*.02+Math.min(20,r.coverageReward??0)-(r.crashed?2:0)-penalty;
 }
 export function goalResult(s:WorldSession,initialDistance:number):GoalResult{
   const r=s.episode.sim.status;
-  return{...(s.discovery?{found:s.found,firstSightTick:s.discovery.firstSightTick,visualViews:s.discovery.visualViews,objective:s.settings.searchWin??'sight',won:s.won}:{}),arrived:r.goals>=s.episode.sim.goalLimit&&!r.crashed,ticks:r.ticks,collisions:r.collisions,pain:r.pain,stallPain:s.stallPain,goals:r.goals,goalTarget:s.episode.sim.goalLimit,progress:s.discovery?0:(r.goals+Math.max(0,1-r.distanceToGoal/Math.max(1,initialDistance)))/s.episode.sim.goalLimit,reverseDistance:s.reverseDistance,crashed:r.crashed};
+  const judge=s.searchJudge;
+  return{coverageCells:judge.cells,coverageReward:judge.coverageReward,noProgressPain:judge.pain,noProgressPenalty:judge.penalty,noProgressSeconds:judge.seconds,disqualified:judge.disqualified,...(judge.disqualified?{rejectionReason:judge.reason}:{}),...(s.discovery?{found:s.found,firstSightTick:s.discovery.firstSightTick,visualViews:s.discovery.visualViews,objective:s.settings.searchWin??'sight',won:s.won}:{}),arrived:!judge.disqualified&&r.goals>=s.episode.sim.goalLimit&&!r.crashed,ticks:r.ticks,collisions:r.collisions,pain:r.pain+judge.pain,stallPain:s.stallPain,goals:r.goals,goalTarget:s.episode.sim.goalLimit,progress:s.discovery?0:(r.goals+Math.max(0,1-r.distanceToGoal/Math.max(1,initialDistance)))/s.episode.sim.goalLimit,reverseDistance:s.reverseDistance,crashed:r.crashed};
 }
 export type RetentionResult={parent:number;offspring:number;parentTrials:GoalResult[];offspringTrials:GoalResult[];passed:boolean};
 /** Preserve arrival count; allow at most 20 points per trial of score regression. */
@@ -32,9 +38,12 @@ export function retainsForward(parent:GoalResult[],child:GoalResult[],limit:numb
 }
 export type WorldTargetTrial=TargetTrial&{generation:number;phase:'training'|'validation'|'forward';start:{x:number;y:number;heading:number};targets:{x:number;y:number}[]};
 export type WorldTrainingOptions={seed?:number;failureRetries?:number;onGeneration?:(c:GenerationCheckpoint)=>void|Promise<void>};
-export type WorldTrainingResult={targetSeed:number;failureRetries:number;targetTrials:WorldTargetTrial[];brain:BrainSnapshot;score:number;generation:number;crashWeight:number;trainingSeeds:number[];validation:{parent:number;offspring:number;seeds:number[];parentTrials:GoalResult[];offspringTrials:GoalResult[]};retention?:RetentionResult;trials:GoalResult[];task:string;scoreDefinition:string;coachFrames:number};
+export type WorldTrainingResult={targetSeed:number;failureRetries:number;targetTrials:WorldTargetTrial[];brain:BrainSnapshot;score:number;generation:number;crashWeight:number;trainingSeeds:number[];validation:{parent:number;offspring:number;seeds:number[];parentTrials:GoalResult[];offspringTrials:GoalResult[]};retention?:RetentionResult;trials:GoalResult[];task:string;scoreDefinition:string;coachFrames:number;viableGenerations:number;attemptedGenerations:number;searchJudge:ReturnType<typeof validateSearchJudge>};
 export async function trainWorldController(settings:WorldSettings,generations:number,population:number,crashWeight:number,cancelled:()=>boolean,log:(line:string)=>void,progress:(sessions:WorldSession[],generation:number,seed:number)=>void,speed=0,coach=false,retain=true,budget?:()=>CohortBudget,options:WorldTrainingOptions={}):Promise<WorldTrainingResult|null>{
   if(!settings.vision)throw Error('Open world training requires a world camera network.');
+  const judgeSettings=validateSearchJudge(settings.searchJudge);
+  settings={...settings,searchJudge:judgeSettings};
+  let viableGenerations=0,lastWinnerGeneration=0;
   const curriculum=new TargetCurriculum(options.seed??settings.seed,options.failureRetries??1);
   const heldOut=[curriculum.fresh(),curriculum.fresh()],limit=settings.maxTicks??900;
   const trainingSeeds:number[]=[],targetTrials:WorldTargetTrial[]=[];
@@ -65,19 +74,21 @@ export async function trainWorldController(settings:WorldSettings,generations:nu
     const scenarios=curriculum.next();trainingSeeds.push(...scenarios.map(t=>t.seed));
     const batch=await evaluate(candidates.map(c=>c.toJSON()),scenarios,g+1);if(!batch)return null;
     const rehearsal=protect?await evaluate(candidates.map(c=>c.toJSON()),scenarios,g+1,true):null;if(protect&&!rehearsal)return null;
-    let winner=0;batch.scores.forEach((s,i)=>{log(`Room generation ${g+1} · ghost ${i+1}: ${s.toFixed(2)} · ${settings.task==='explore'?'finds/wins':'arrivals'} ${batch.trials[i].filter(t=>settings.task==='explore'?t.won:t.arrived).length}/${scenarios.length} · contacts ${batch.trials[i].reduce((n,t)=>n+t.collisions,0)}`);if(s>batch.scores[winner])winner=i;});
+    let winner=-1;batch.scores.forEach((s,i)=>{log(`Room generation ${g+1} · ghost ${i+1}: ${s.toFixed(2)} · ${settings.task==='explore'?'finds/wins':'arrivals'} ${batch.trials[i].filter(t=>settings.task==='explore'?t.won:t.arrived).length}/${scenarios.length} · contacts ${batch.trials[i].reduce((n,t)=>n+t.collisions,0)} · new-ground cells ${batch.trials[i].map(t=>t.coverageCells).join("/")} · no-progress cost ${batch.trials[i].reduce((n,t)=>n+(t.noProgressPenalty??0),0).toFixed(2)}${batch.trials[i].some(t=>t.disqualified)?" · DISQUALIFIED":""}`);if(!batch.trials[i].some(t=>t.disqualified)&&(winner<0||s>batch.scores[winner]))winner=i;});
+    if(winner<0){log('Zero chill: all ghosts disqualified; previous parent retained, no rejected brain autosaved.');curriculum.remember(scenarios,scenarios.map(()=>false));lastTrials=batch.trials[0];score=batch.scores[0];continue;}
     if(settings.task==='explore')log(`Search selected ghost ${winner+1} · first sight seconds ${batch.trials[winner].map(t=>t.firstSightTick===null||t.firstSightTick===undefined?'not found':(t.firstSightTick/30).toFixed(3)).join(', ')} · wins ${batch.trials[winner].filter(t=>t.won).length}/${scenarios.length}`);
-    if(rehearsal){winner=0;for(let i=1;i<candidates.length;i++)if(retainsForward(rehearsal.trials[0],rehearsal.trials[i],limit,crashWeight)&&batch.scores[i]>batch.scores[winner])winner=i;log(`Forward retention · selected ghost ${winner+1}; forward score ${rehearsal.scores[winner].toFixed(2)} vs current parent ${rehearsal.scores[0].toFixed(2)}. Reverse-only regressions rejected.`);}
+    if(rehearsal){winner=-1;for(let i=0;i<candidates.length;i++)if(!batch.trials[i].some(t=>t.disqualified)&&retainsForward(rehearsal.trials[0],rehearsal.trials[i],limit,crashWeight)&&(winner<0||batch.scores[i]>batch.scores[winner]))winner=i;if(winner<0){log('No eligible child retains forward skill; previous parent retained, no rejected brain autosaved.');curriculum.remember(scenarios,scenarios.map(()=>false));lastTrials=batch.trials[0];score=batch.scores[0];continue;}log(`Forward retention · selected ghost ${winner+1}; forward score ${rehearsal.scores[winner].toFixed(2)} vs current parent ${rehearsal.scores[0].toFixed(2)}. Reverse-only regressions rejected.`);}
+    viableGenerations++;lastWinnerGeneration=g+1;
     curriculum.remember(scenarios,batch.trials[winner].map(t=>settings.task==='explore'?Boolean(t.won):t.arrived&&!t.crashed));
     parent=candidates[winner];score=batch.scores[winner];lastTrials=batch.trials[winner];
-    await options.onGeneration?.({brain:parent.toJSON(),generation:g+1,winner,score,training:{task:settings.task??'forage',runSeed:curriculum.seed,failureRetries:curriculum.failureRetries,searchWin:settings.searchWin??'sight',goalPreset:settings.goalPreset,scenarios:targetTrials.filter(t=>t.generation===g+1),population,crashWeight,ticks:limit,coachFrames:primed?.frames??0,retainForward:protect}});
+    await options.onGeneration?.({brain:parent.toJSON(),generation:g+1,winner,score,training:{task:settings.task??'forage',runSeed:curriculum.seed,failureRetries:curriculum.failureRetries,searchWin:settings.searchWin??'sight',goalPreset:settings.goalPreset,scenarios:targetTrials.filter(t=>t.generation===g+1),population,crashWeight,searchJudge:judgeSettings,ticks:limit,coachFrames:primed?.frames??0,retainForward:protect}});
   }
   const validation=await evaluate([settings.controller,parent.toJSON()],heldOut,0);if(!validation)return null;
   const check=protect?await evaluate([settings.controller,parent.toJSON()],heldOut,0,true):null;if(protect&&!check)return null;
   const retention=check?{parent:check.scores[0],offspring:check.scores[1],parentTrials:check.trials[0],offspringTrials:check.trials[1],passed:retainsForward(check.trials[0],check.trials[1],limit,crashWeight)}:undefined;
   if(retention)log(`Held-out forward retention ${retention.passed?'PASS':'FAIL · adoption blocked'} · parent ${retention.parent.toFixed(2)}, offspring ${retention.offspring.toFixed(2)}.`);
   log(`Held-out room scores · parent ${validation.scores[0].toFixed(2)} · offspring ${validation.scores[1].toFixed(2)}. ${settings.world?'Same imported layout, new targets/headings/light; geometry generalization not tested.':'Two unseen seeded layouts/headings.'}`);
-  return{targetSeed:curriculum.seed,failureRetries:curriculum.failureRetries,targetTrials,retention,coachFrames:primed?.frames??0,brain:parent.toJSON(),score,generation:generations,crashWeight,task:settings.task??'forage',trainingSeeds,validation:{parent:validation.scores[0],offspring:validation.scores[1],seeds:heldOut.map(t=>t.seed),parentTrials:validation.trials[0],offspringTrials:validation.trials[1]},trials:lastTrials,scoreDefinition:settings.task==='explore'?'Search success: 10000 + 1000 × ((1 − crashWeight) × remaining time fraction at first confirmed visual sighting (or arrival after sighting) + crashWeight / (1 + impact pain)), minus 0.001 × impact pain as a tie-break. Failure: at most 1.28 points for distinct coarse RGB views, minus 2 on fatal crash. No distance/progress reward, goal compass, pheromone or hidden target position in inputs. Two consecutive fresh processed-camera frames confirm a pink colour component; not a learned target head. Neural mission slots: pixel bearing / pi and apparent size, zero when unseen. Fresh independent memory and fresh random target trials each generation, shared fairly by all ghosts; bounded failure replays and independent held-out targets.':'Arrival: 1000 + 1000 × ((1 − crashWeight) × remaining time fraction + crashWeight / (1 + impact pain)). Failure: partial progress × 400 − contact cost − 200 if crashed. Fresh random target sets each generation (collect both in two-dot mode), shared fairly by all ghosts; bounded failure replays; fresh visual memory per trial; explicit goal compass; no reward or collision labels in neural inputs.'};
+  return{viableGenerations,attemptedGenerations:generations,targetSeed:curriculum.seed,failureRetries:curriculum.failureRetries,targetTrials,searchJudge:judgeSettings,retention,coachFrames:primed?.frames??0,brain:parent.toJSON(),score,generation:lastWinnerGeneration,crashWeight,task:settings.task??'forage',trainingSeeds,validation:{parent:validation.scores[0],offspring:validation.scores[1],seeds:heldOut.map(t=>t.seed),parentTrials:validation.trials[0],offspringTrials:validation.trials[1]},trials:lastTrials,scoreDefinition:settings.task==='explore'?'Search success: 10000 + 1000 × ((1 − crashWeight) × remaining time fraction at first confirmed visual sighting (or arrival after sighting) + crashWeight / (1 + impact pain)), minus 0.001 × impact pain as a tie-break. Failure: at most 1.28 points for distinct coarse RGB views plus up to 20 points for new ground cells when the progress judge is enabled, minus escalating no-progress cost and 2 on fatal crash. Successful searches retain priority. Zero chill disqualifies contacts or sustained futile motion and excludes these candidates from breeding/autosaves. No distance/progress reward toward an unseen target, goal compass, pheromone or hidden target position in inputs. Two consecutive fresh processed-camera frames confirm a pink colour component; not a learned target head. Neural mission slots: pixel bearing / pi and apparent size, zero when unseen. Fresh independent memory and fresh random target trials each generation, shared fairly by all ghosts; bounded failure replays and independent held-out targets.':'Arrival: 1000 + 1000 × ((1 − crashWeight) × remaining time fraction + crashWeight / (1 + impact pain)). Failure: partial progress × 400 − contact cost − 200 if crashed. Fresh random target sets each generation (collect both in two-dot mode), shared fairly by all ghosts; bounded failure replays; fresh visual memory per trial; explicit goal compass; no reward or collision labels in neural inputs. Enabled external progress judge applies escalating pain/negative reward for no new ground, goal progress or collection; success deduction capped at 200. Zero chill disqualifies contacts or sustained futile motion; rejected brains never breed/autosave.'};
 }
 
 /** Motor-only imitation. The coach sees exactly the same estimated inputs; no reward labels enter the learner. */
