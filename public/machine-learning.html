@@ -96,6 +96,9 @@
                 <a href="#guided-flykart">Kart brain</a>
                 <a href="#guided-inspect">Inspect</a>
                 <a href="#guided-body">Body</a>
+                <a href="#guided-loss">Loss</a>
+                <a href="#guided-graphs">Graphs</a>
+                <a href="#guided-quiz">Quiz</a>
                 <a href="#interactive-labs">All labs</a>
             </nav>
 
@@ -115,6 +118,10 @@
                             <a href="#guided-flykart">8 · Assemble the kart brain</a>
                             <a href="#guided-inspect">9 · Open a trained brain</a>
                             <a href="#guided-body">10 · Give the brain a body</a>
+                            <a href="#guided-loss">11 · Loss functions</a>
+                            <a href="#guided-graphs">12 · Graph theory for ML</a>
+                            <a href="#guided-genes">13 · Undesired traits</a>
+                            <a href="#guided-quiz">14 · Check yourself</a>
                         </div>
                         <div>
                             <strong>Foundations</strong>
@@ -150,7 +157,7 @@
         <!-- GUIDED ROUTE: build the FlyKart brain, starting from one living neuron -->
         <section id="model-ladder" class="guide space-y-6" aria-labelledby="model-ladder-title">
             <div class="book-intro">
-                <p class="eyebrow">Part I · The guided route · one question, ten chapters</p>
+                <p class="eyebrow">Part I · The guided route · one question, fourteen chapters</p>
                 <h2 id="model-ladder-title">Build a brain for a racing kart, starting from one living neuron</h2>
                 <div class="mission-grid">
                     <div class="mission-copy">
@@ -172,7 +179,7 @@
                         <p>Two lines from the kart's neuron update. Chapter 3 explains where 0.86, 0.22, and 0.42 come from.</p>
                     </aside>
                 </div>
-                <ol class="compression-ladder" aria-label="Ten-chapter route">
+                <ol class="compression-ladder" aria-label="Fourteen-chapter route">
                     <li><a href="#guided-chapter-1"><b>01 · Neuron</b>A spike is an event</a></li>
                     <li><a href="#guided-hh"><b>02 · Circuit</b>The membrane is an RC circuit</a></li>
                     <li><a href="#guided-chapter-2"><b>03 · LIF</b>Keep the timing, drop the gates</a></li>
@@ -183,6 +190,10 @@
                     <li><a href="#guided-flykart"><b>08 · FlyKart</b>Read the whole brain</a></li>
                     <li><a href="#guided-inspect"><b>09 · Inspect</b>Open a trained brain</a></li>
                     <li><a href="#guided-body"><b>10 · Body</b>Add a camera and a sonar</a></li>
+                    <li><a href="#guided-loss"><b>11 · Loss</b>Choose how to score a mistake</a></li>
+                    <li><a href="#guided-graphs"><b>12 · Graphs</b>Structure, messages, gradients</a></li>
+                    <li><a href="#guided-genes"><b>13 · Genes</b>Inbreeding and lost diversity</a></li>
+                    <li><a href="#guided-quiz"><b>14 · Quiz</b>Check what stuck</a></li>
                 </ol>
             </div>
 
@@ -191,7 +202,7 @@
                 <ol class="route-map" id="routeMap" aria-label="Map of the guided route"></ol>
             </details>
 <nav class="thread-bar" aria-label="Guided route progress">
-                <div class="tb-now"><small>Chapter <span data-tb-num>1</span> of 10</small><strong><span data-tb-title>The living neuron</span><span class="tb-part" data-tb-part></span></strong></div>
+                <div class="tb-now"><small>Chapter <span data-tb-num>1</span> of 14</small><strong><span data-tb-title>The living neuron</span><span class="tb-part" data-tb-part></span></strong></div>
                 <div class="tb-track">
                     <a href="#guided-chapter-1" data-n="1"><span>Neuron</span><i></i></a>
                     <a href="#guided-hh" data-n="2"><span>Circuit</span><i></i></a>
@@ -203,6 +214,10 @@
                     <a href="#guided-flykart" data-n="8"><span>FlyKart</span><i></i></a>
                     <a href="#guided-inspect" data-n="9"><span>Inspect</span><i></i></a>
                     <a href="#guided-body" data-n="10"><span>Body</span><i></i></a>
+                    <a href="#guided-loss" data-n="11"><span>Loss</span><i></i></a>
+                    <a href="#guided-graphs" data-n="12"><span>Graphs</span><i></i></a>
+                    <a href="#guided-genes" data-n="13"><span>Genes</span><i></i></a>
+                    <a href="#guided-quiz" data-n="14"><span>Quiz</span><i></i></a>
                 </div>
                 <div class="tb-step"><a data-tb-prev href="#model-ladder" aria-label="Previous chapter">↑</a><a data-tb-next href="#guided-hh" aria-label="Next chapter">↓</a></div>
             </nav>
@@ -2571,7 +2586,20 @@
                 <a href="#height-lab" class="block p-4 rounded-xl border border-indigo-300 bg-indigo-50 text-sm text-indigo-950 hover:border-indigo-500 transition"><strong>Lab 10.2 · Two cameras</strong><span class="block text-xs text-slate-700 mt-1">See the Same Bend From 16 Cm and 6.5 Cm</span><span class="block text-xs text-slate-600 mt-1">Same pinhole model as the simulator.</span></a>
                 <a href="#sonar-wave-lab" class="block p-4 rounded-xl border border-cyan-300 bg-cyan-50 text-sm text-cyan-950 hover:border-cyan-500 transition"><strong>Lab 10.3 · The ping</strong><span class="block text-xs text-slate-700 mt-1">Will This Ping Come Back?</span><span class="block text-xs text-slate-600 mt-1">Beam, lobe, blind zone, threshold, tilt and temperature.</span></a>
                 <a href="#fusion-lab" class="block p-4 rounded-xl border border-emerald-300 bg-emerald-50 text-sm text-emerald-950 hover:border-emerald-500 transition"><strong>Lab 10.4 · Fusion</strong><span class="block text-xs text-slate-700 mt-1">Fuse a Camera and a Sonar, Then Fool Them</span><span class="block text-xs text-slate-600 mt-1">Inverse-variance fusion, ghost echoes, outlier gating.</span></a>
-                <a href="#results-lab" class="block p-4 rounded-xl border border-violet-300 bg-violet-50 text-sm text-violet-950 hover:border-violet-500 transition"><strong>Lab 10.5 · The evidence</strong><span class="block text-xs text-slate-700 mt-1">Read the Results With Their Error Bars</span><span class="block text-xs text-slate-600 mt-1">Measured laps, lap times and collisions.</span></a></li>
+                <a href="#results-lab" class="block p-4 rounded-xl border border-violet-300 bg-violet-50 text-sm text-violet-950 hover:border-violet-500 transition"><strong>Lab 10.5 · The evidence</strong><span class="block text-xs text-slate-700 mt-1">Read the Results With Their Error Bars</span><span class="block text-xs text-slate-600 mt-1">Measured laps, lap times and collisions.</span></a>
+                <a href="#loss-fit-lab" class="block p-4 rounded-xl border border-rose-300 bg-rose-50 text-sm text-rose-950 hover:border-rose-500 transition"><strong>Lab 11.1 · Outliers</strong><span class="block text-xs text-slate-700 mt-1">Drag a Bad Label and Watch Three Fits React</span><span class="block text-xs text-slate-600 mt-1">MSE, MAE and Huber on the same points.</span></a>
+                <a href="#loss-class-lab" class="block p-4 rounded-xl border border-amber-300 bg-amber-50 text-sm text-amber-950 hover:border-amber-500 transition"><strong>Lab 11.2 · Margins</strong><span class="block text-xs text-slate-700 mt-1">Compare Losses by Margin, Then by Who Pays</span><span class="block text-xs text-slate-600 mt-1">Hinge, cross-entropy, squared and focal.</span></a>
+                <a href="#loss-uncertainty-lab" class="block p-4 rounded-xl border border-cyan-300 bg-cyan-50 text-sm text-cyan-950 hover:border-cyan-500 transition"><strong>Lab 11.3 · Error bars</strong><span class="block text-xs text-slate-700 mt-1">A Constant Band Versus a Band the Model Learns</span><span class="block text-xs text-slate-600 mt-1">Gaussian NLL and honest coverage.</span></a>
+                <a href="#loss-choose-lab" class="block p-4 rounded-xl border border-violet-300 bg-violet-50 text-sm text-violet-950 hover:border-violet-500 transition"><strong>Lab 11.4 · A chooser</strong><span class="block text-xs text-slate-700 mt-1">Which Loss for My Situation?</span><span class="block text-xs text-slate-600 mt-1">A decision aid with reasons and traps.</span></a>
+                <a href="#graph-explorer-lab" class="block p-4 rounded-xl border border-indigo-300 bg-indigo-50 text-sm text-indigo-950 hover:border-indigo-500 transition"><strong>Lab 12.1 · Structure</strong><span class="block text-xs text-slate-700 mt-1">Generate a Graph and Measure It</span><span class="block text-xs text-slate-600 mt-1">Clustering, paths, hubs and the small-world sweep.</span></a>
+                <a href="#message-lab" class="block p-4 rounded-xl border border-emerald-300 bg-emerald-50 text-sm text-emerald-950 hover:border-emerald-500 transition"><strong>Lab 12.2 · Message passing</strong><span class="block text-xs text-slate-700 mt-1">Spread a Signal and Watch It Wash Out</span><span class="block text-xs text-slate-600 mt-1">Receptive field and over-smoothing.</span></a>
+                <a href="#autodiff-lab" class="block p-4 rounded-xl border border-rose-300 bg-rose-50 text-sm text-rose-950 hover:border-rose-500 transition"><strong>Lab 12.3 · Backpropagation</strong><span class="block text-xs text-slate-700 mt-1">Walk a Gradient Backward Through a Neuron</span><span class="block text-xs text-slate-600 mt-1">Chain rule, saturation, two losses racing.</span></a>
+                <a href="#brain-graph-lab" class="block p-4 rounded-xl border border-cyan-300 bg-cyan-50 text-sm text-cyan-950 hover:border-cyan-500 transition"><strong>Lab 12.4 · The kart's own graph</strong><span class="block text-xs text-slate-700 mt-1">The 48 × 48 Recurrent Matrix as a Directed Graph</span><span class="block text-xs text-slate-600 mt-1">Real weights, a shuffled control.</span></a>
+                <a href="#pedigree-lab" class="block p-4 rounded-xl border border-amber-300 bg-amber-50 text-sm text-amber-950 hover:border-amber-500 transition"><strong>Lab 13.1 · The pedigree</strong><span class="block text-xs text-slate-700 mt-1">Count Paths to the Inbreeding Coefficient</span><span class="block text-xs text-slate-600 mt-1">Siblings, cousins, repeated mating.</span></a>
+                <a href="#inbreeding-sim-lab" class="block p-4 rounded-xl border border-violet-300 bg-violet-50 text-sm text-violet-950 hover:border-violet-500 transition"><strong>Lab 13.2 · The simulator</strong><span class="block text-xs text-slate-700 mt-1">Run a Small Population for 60 Generations</span><span class="block text-xs text-slate-600 mt-1">Fitness, diversity, popular sires, outcrossing.</span></a>
+                <a href="#beak-lab" class="block p-4 rounded-xl border border-indigo-300 bg-indigo-50 text-sm text-indigo-950 hover:border-indigo-500 transition"><strong>Lab 13.3 · A beak trait</strong><span class="block text-xs text-slate-700 mt-1">Select a Beak and Watch Variation Drain</span><span class="block text-xs text-slate-600 mt-1">Breeder's equation and a founder bottleneck.</span></a>
+                <a href="#diversity-lab" class="block p-4 rounded-xl border border-emerald-300 bg-emerald-50 text-sm text-emerald-950 hover:border-emerald-500 transition"><strong>Lab 13.4 · A deceptive landscape</strong><span class="block text-xs text-slate-700 mt-1">Find the Narrow Peak Before Diversity Runs Out</span><span class="block text-xs text-slate-600 mt-1">Immigrants, niching, islands.</span></a>
+                <a href="#final-quiz-lab" class="block p-4 rounded-xl border border-rose-300 bg-rose-50 text-sm text-rose-950 hover:border-rose-500 transition"><strong>Lab 14.1 · The mixed quiz</strong><span class="block text-xs text-slate-700 mt-1">Twelve Questions Across Chapters 10–13</span><span class="block text-xs text-slate-600 mt-1">Review what you missed.</span></a></li>
                         <li><a href="#s9-8">Silence neurons to test what each one is for</a></li>
                     </ol></div>
                 </div>
@@ -3299,6 +3327,922 @@
                             <div class="price"><b>What it costs</b><p>Tens of minutes to an hour of laptop time per stage, a camera network that sees the road less well from 6.5 cm, and a sensor that sometimes only makes the robot faster.</p></div>
                         </div>
                         <div class="ledger-kart"><p><strong>Kart brain on a body:</strong> 19 inputs, 48 leaky spiking neurons, four readouts; a camera network at 6.5 cm and an echo that reaches both. Next step in the real world: log an actual HC-SR04 and camera on the chassis and replace the simulator’s noise with what you measure.</p></div>
+                    </div>
+                </div>
+            </article>
+
+            <div class="thread-knot">
+                <span>Open question</span>
+                <p>Everything the kart’s brain learned, it learned from a score. But a score is a choice: a squared error, a lap time, a reward with eighteen terms. Change the score and you change what gets learned. How do you pick one, and what goes wrong when you pick badly?</p>
+                <a href="#guided-loss">Chapter 11 · Loss functions ↓</a>
+            </div>
+
+            <!-- ============================ CHAPTER 11 ============================ -->
+            <article id="guided-loss" class="book-chapter" data-title="Loss functions">
+                <div class="chapter-heading">
+                    <span class="chapter-numeral" aria-hidden="true">11</span>
+                    <div>
+                        <span class="chapter-number">Chapter 11 · The score</span>
+                        <h3>Loss Functions: Which One, and When</h3>
+                    </div>
+                    <p class="chapter-question">Question: how should a model’s mistakes be scored, and how do outliers, rare classes and the need for error bars change the answer?</p>
+                </div>
+                <div class="chapter-bridge">
+                    <div class="bridge-from"><span>From Chapter 10</span><p>The robot’s camera network and its controller were each trained against a score. In both cases a different score would have produced a different robot: one that ignores a rare cone, trusts a noisy label, or claims certainty it has not earned. This chapter treats the score itself as the thing to design.</p></div>
+                    <div class="bridge-plan"><span>In this chapter</span><ol>
+                        <li><a href="#loss-fit-lab">Watch one bad label bend three different fits</a></li>
+                        <li><a href="#loss-class-lab">See why confident mistakes cost so much, and what focal loss changes</a></li>
+                        <li><a href="#loss-uncertainty-lab">Train a model to say how sure it is</a></li>
+                        <li><a href="#loss-choose-lab">Choose a loss for your own situation</a></li>
+                        <li><a href="#quiz-loss">Check yourself</a></li>
+                    </ol></div>
+                </div>
+                <div class="chapter-stack">
+
+                    <div id="part-11a" class="chapter-subhead">
+                        <span>Chapter 11 · Part A</span>
+                        <h4>One number for “how wrong”</h4>
+                        <p>Question: what does a regression loss really ask for?</p>
+                    </div>
+
+                    <div id="s11-1" class="chapter-panel formula">
+                        <h4><span class="step-no">11.1</span>A loss does three jobs at once</h4>
+                        <p>A loss function turns a prediction and the truth into one number. That number <strong>ranks</strong> candidates (which model is better), <strong>points</strong> the way (its gradient says which direction reduces it), and <strong>defines</strong> what you care about (everything the loss ignores, the model is free to get wrong). For a residual $r=y-\hat y$ the three classic choices are:</p>
+                        <div class="chapter-equation">
+                            $\text{MSE: }\tfrac12 r^2\qquad \text{MAE: }|r|\qquad \text{Huber: }\begin{cases}\tfrac12 r^2 & |r|\le\delta\\ \delta\,(|r|-\tfrac12\delta) & |r|>\delta\end{cases}$
+                        </div>
+                        <div class="option-cards">
+                            <div class="pick"><b>MSE</b><strong>Predicts the mean</strong><p>Smooth and convex, and its pull on the fit grows with the error. One wild label can dominate.</p></div>
+                            <div><b>MAE</b><strong>Predicts the median</strong><p>Every point pulls with the same strength, so outliers cannot take over. Its gradient never shrinks, so it needs a decaying step size.</p></div>
+                            <div><b>Huber</b><strong>Quadratic, then linear</strong><p>Honest noise is treated like MSE; large errors are capped like MAE. δ is in the units of the error.</p></div>
+                        </div>
+                    </div>
+
+                    <div id="loss-fit-lab" class="ap-lab">
+                        <div class="ap-lab-heading">
+                            <div>
+                                <span class="chapter-number">Lab 11.1 · Outliers</span>
+                                <h4>Drag a Bad Label and Watch Three Fits React</h4>
+                                <p>Ten honest points follow the dashed line $y=1+0.8x$. Add up to three bad labels (purple, draggable) and see where least squares, least absolute deviation and Huber put the line. The right-hand plots show each loss’s penalty and how hard a point of a given error pulls on the fit.</p>
+                            </div>
+                            <span class="ap-status">Fit three ways</span>
+                        </div>
+                        <div class="ap-lab-grid">
+                            <div class="ap-canvas-shell"><canvas id="lossFitCanvas" width="900" height="400" aria-label="Scatter plot with three fitted lines and loss curves"></canvas></div>
+                            <div class="ap-controls">
+                                <label for="lfOutliers"><span>Bad labels</span><output id="lfOutValue">1</output></label>
+                                <input id="lfOutliers" type="range" min="0" max="3" step="1" value="1">
+                                <label for="lfNoise"><span>Honest noise</span><output id="lfNoiseValue">0.50</output></label>
+                                <input id="lfNoise" type="range" min="0.1" max="1.2" step="0.05" value="0.5">
+                                <label for="lfDelta"><span>Huber δ</span><output id="lfDeltaValue">1.0</output></label>
+                                <input id="lfDelta" type="range" min="0.2" max="4" step="0.1" value="1">
+                                <div class="ap-buttons"><button id="lfReset" type="button">Reset points</button><span></span></div>
+                                <div class="ap-readouts">
+                                    <div><span>MSE slope</span><strong id="lfSlopeL2">—</strong></div>
+                                    <div><span>MAE slope</span><strong id="lfSlopeL1">—</strong></div>
+                                    <div><span>Huber slope</span><strong id="lfSlopeHub">—</strong></div>
+                                </div>
+                                <div class="ap-readouts">
+                                    <div><span>MSE off truth</span><strong id="lfErrL2">—</strong></div>
+                                    <div><span>MAE off truth</span><strong id="lfErrL1">—</strong></div>
+                                    <div><span>Huber off truth</span><strong id="lfErrHub">—</strong></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="lab-definition">
+                            <div><strong>MSE obeys the loudest point</strong><span>Its pull grows linearly with the error, so a point far from the line tugs hardest on the very line that makes it look far. The slope of the red line tilts toward the bad label.</span></div>
+                            <div><strong>MAE and Huber cap the pull</strong><span>The bottom-right plot is the whole story: MAE’s pull is flat at ±1, Huber’s is flat beyond δ. A bad label can only ever tug with that fixed strength.</span></div>
+                            <div><strong>δ is a belief about noise</strong><span>Set δ to zero and Huber becomes MAE; make it huge and it becomes MSE. Choosing it near the size of ordinary noise is the usual rule.</span></div>
+                        </div>
+                        <div class="try-list"><strong>Try this</strong><ol>
+                            <li><b>One bad label.</b> With the default points, MSE ends about 0.8 units off the truth on average while MAE and Huber stay within roughly 0.1 to 0.2.</li>
+                            <li><b>Two on the same side.</b> Drag the second bad label to the same corner. Robust fits hold longer, but a majority of bad points would win: robustness has a breaking point.</li>
+                            <li><b>Make the noise honest.</b> Set bad labels to 0 and raise the noise. MSE is now the most accurate: when the data really is Gaussian, its pull is the right one.</li>
+                        </ol></div>
+                        <p class="ap-lab-note">Fits are computed exactly in the page: least squares in closed form, MAE and Huber by iteratively reweighted least squares. The same numbers are checked in a test script against the minimisers (mean 3.25 for 1, 1, 1, 10 under MSE; the median 1 under MAE).</p>
+                    </div>
+
+                    <div id="part-11b" class="chapter-subhead">
+                        <span>Chapter 11 · Part B</span>
+                        <h4>Classification and confidence</h4>
+                        <p>Question: why does a classifier’s loss charge so much for being sure and wrong?</p>
+                    </div>
+
+                    <div id="s11-2" class="chapter-panel formula">
+                        <h4><span class="step-no">11.2</span>Cross-entropy is the surprise at the truth</h4>
+                        <p>For a classifier that gives the true class probability $p$, the log loss is $-\log p$: the surprise you would feel at the right answer. It is mild when $p$ is near 1 and grows without bound as $p\to0$, so confident mistakes are the most expensive. Written against a score $f$ and label $y=\pm1$, every classification loss is a function of the <em>margin</em> $m=y\,f$:</p>
+                        <div class="chapter-equation">
+                            $\underbrace{\mathbb 1[m\le0]}_{\text{0–1}}\quad\underbrace{\max(0,1-m)}_{\text{hinge}}\quad\underbrace{\log(1+e^{-m})}_{\text{cross-entropy}}\quad\underbrace{(1-m)^2}_{\text{squared}}\quad\underbrace{-(1-p)^\gamma\log p}_{\text{focal},\ p=\sigma(m)}$
+                        </div>
+                        <p class="cost-note">Accuracy (the 0–1 loss) is flat almost everywhere, so it gives no direction. Cross-entropy is its smooth, convex stand-in; hinge and squared losses are cheaper cousins with different quirks, which the lab shows.</p>
+                    </div>
+
+                    <div id="loss-class-lab" class="ap-lab">
+                        <div class="ap-lab-heading">
+                            <div>
+                                <span class="chapter-number">Lab 11.2 · Margins</span>
+                                <h4>Compare Losses by Margin, Then by Who Pays</h4>
+                                <p>The left plot draws each loss against the margin. Slide the dashed marker toward the wrong side and read how steeply each one climbs. The right-hand bars show how much of a dataset’s total loss is carried by easy examples under cross-entropy and under focal loss.</p>
+                            </div>
+                            <span class="ap-status">Margins and focus</span>
+                        </div>
+                        <div class="ap-lab-grid">
+                            <div class="ap-canvas-shell"><canvas id="lossClsCanvas" width="900" height="400" aria-label="Classification losses against margin and share of loss carried by easy examples"></canvas></div>
+                            <div class="ap-controls">
+                                <label for="lcMargin"><span>Margin m</span><output id="lcMarginValue">−1.5</output></label>
+                                <input id="lcMargin" type="range" min="-4" max="4" step="0.1" value="-1.5">
+                                <label for="lcGamma"><span>Focal γ</span><output id="lcGammaValue">2.0</output></label>
+                                <input id="lcGamma" type="range" min="0" max="5" step="0.5" value="2">
+                                <label for="lcEasy"><span>Share of easy examples</span><output id="lcEasyValue">95.0 %</output></label>
+                                <input id="lcEasy" type="range" min="50" max="99.5" step="0.5" value="95">
+                                <label for="lcEasyP"><span>Easy: true-class probability</span><output id="lcEasyPValue">0.90</output></label>
+                                <input id="lcEasyP" type="range" min="0.6" max="0.99" step="0.01" value="0.9">
+                                <label for="lcHardP"><span>Hard: true-class probability</span><output id="lcHardPValue">0.20</output></label>
+                                <input id="lcHardP" type="range" min="0.02" max="0.5" step="0.01" value="0.2">
+                                <div class="ap-readouts">
+                                    <div><span>p(correct)</span><strong id="lcPCorrect">—</strong></div>
+                                    <div><span>CE: easy share</span><strong id="lcShareCE">—</strong></div>
+                                    <div><span>Focal: easy share</span><strong id="lcShareFL">—</strong></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="lab-definition">
+                            <div><strong>Hinge goes flat, cross-entropy never does</strong><span>Past a margin of 1 the hinge loss is exactly zero: it stops caring. Cross-entropy keeps asking for more confidence, which is also why it can overfit label noise.</span></div>
+                            <div><strong>Squared loss punishes being right</strong><span>Look at margins above 1: the squared curve rises again, charging a model for being too confident about a correct answer. That is wrong for classification.</span></div>
+                            <div><strong>Focal loss moves the bill</strong><span>With 95 % easy examples at p = 0.9, cross-entropy lets the easy majority pay about 55 % of the loss. With γ = 2 they pay about 2 %, so the few hard examples steer the gradient.</span></div>
+                        </div>
+                        <div class="try-list"><strong>Try this</strong><ol>
+                            <li><b>Slide the margin to −3.</b> Cross-entropy reads about 3.0, hinge 4.0 and squared 16: three ideas of how bad “confidently wrong” is. Compare with 0–1, which says 1 for any wrong answer.</li>
+                            <li><b>Turn γ to 0.</b> Focal becomes cross-entropy and the two bars are identical.</li>
+                            <li><b>Make the easy share 99.5 %.</b> Even a tiny number of hard examples can still be buried under cross-entropy; focal loss keeps them in charge.</li>
+                        </ol></div>
+                    </div>
+
+                    <div id="s11-3" class="chapter-panel">
+                        <h4><span class="step-no">11.3</span>A trap that connects to Chapter 12</h4>
+                        <p>Pair a sigmoid output with squared error and a neuron that is <em>confidently wrong</em> learns almost nothing: the loss gradient is multiplied by $p(1-p)$, which is near zero exactly when $p$ has saturated. Cross-entropy’s gradient with respect to the pre-activation is just $p-t$, so the factor cancels. You will see this multiplication happen edge by edge in <a href="#autodiff-lab">Lab 12.3</a>.</p>
+                    </div>
+
+                    <div id="part-11c" class="chapter-subhead">
+                        <span>Chapter 11 · Part C</span>
+                        <h4>Say how sure you are</h4>
+                        <p>Question: how do you train a model to report its own uncertainty?</p>
+                    </div>
+
+                    <div id="s11-4" class="chapter-panel formula">
+                        <h4><span class="step-no">11.4</span>Predict a mean and a variance, and score both</h4>
+                        <p>If the model outputs a mean $\mu$ and a variance $\sigma^2$, the Gaussian negative log-likelihood scores them together:</p>
+                        <div class="chapter-equation">
+                            $\mathcal L=\tfrac12\log\sigma^2+\frac{(y-\mu)^2}{2\sigma^2}$
+                        </div>
+                        <p>The second term shrinks when σ is large, so the model is tempted to say “I am very unsure”. The first term charges for exactly that. The balance is struck at the true spread of the errors. That is how FlyKart Vision’s camera network is trained: a Huber loss on each estimate’s mean plus a Gaussian-NLL gradient on its predicted log-variance, and the fusion step then weighs each estimate by $1/\sigma^2$. A camera that says “I am unsure” in the dark is automatically listened to less (see <a href="#fusion-lab">Lab 10.4</a>).</p>
+                    </div>
+
+                    <div id="loss-uncertainty-lab" class="ap-lab">
+                        <div class="ap-lab-heading">
+                            <div>
+                                <span class="chapter-number">Lab 11.3 · Error bars</span>
+                                <h4>A Constant Band Versus a Band the Model Learns</h4>
+                                <p>The data’s noise grows with $x$. The red dashed band is what plain least squares implies: one width everywhere. The green band comes from fitting a variance with the Gaussian NLL. Both are scored on 800 fresh points: negative log-likelihood (lower is better) and how often the ±2σ band really contains the truth (about 95 % if honest).</p>
+                            </div>
+                            <span class="ap-status">±2σ coverage</span>
+                        </div>
+                        <div class="ap-lab-grid">
+                            <div class="ap-canvas-shell"><canvas id="lossNllCanvas" width="900" height="360" aria-label="Data with a constant error band and a learned error band"></canvas></div>
+                            <div class="ap-controls">
+                                <label for="lnHet"><span>How much the noise grows</span><output id="lnHetValue">0.90</output></label>
+                                <input id="lnHet" type="range" min="0" max="1.5" step="0.05" value="0.9">
+                                <label for="lnN"><span>Training points</span><output id="lnNValue">70</output></label>
+                                <input id="lnN" type="range" min="20" max="200" step="5" value="70">
+                                <div class="ap-buttons"><button id="lnResample" type="button">Draw new data</button><span></span></div>
+                                <div class="ap-readouts">
+                                    <div><span>NLL constant</span><strong id="lnNllC">—</strong></div>
+                                    <div><span>NLL learned</span><strong id="lnNllH">—</strong></div>
+                                    <div><span>Target</span><strong>95 %</strong></div>
+                                </div>
+                                <div class="ap-readouts">
+                                    <div><span>Cover, all x: constant</span><strong id="lnCovC">—</strong></div>
+                                    <div><span>Cover, all x: learned</span><strong id="lnCovH">—</strong></div>
+                                    <div><span>x &gt; 7 only</span><strong><span id="lnCovCHi">—</span> / <span id="lnCovHHi">—</span></strong></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="lab-definition">
+                            <div><strong>The average hides the problem</strong><span>Over the whole range both bands cover about the same share (medians of 93 % and 94 % over 40 draws), so a single coverage number looks fine. Split by region: at x &gt; 7 the constant band contains the truth a median of 80 % of the time (10th to 90th percentile: 70 to 88 %), the learned band 96 % (91 to 100 %).</span></div>
+                            <div><strong>The learned band is slightly cautious</strong><span>The variance model is a straight line in $logsigma^2$, which here over-estimates the noise at the far right, so it sometimes covers everything there. Press <em>Draw new data</em> a few times: the numbers move by several points, which is itself a reminder of how few points 70 is.</span></div>
+                            <div><strong>Set the noise growth to 0</strong><span>With constant noise the two bands agree and the extra machinery gains nothing: predicting variance is only worth its cost when the noise really changes.</span></div>
+                        </div>
+                    </div>
+
+                    <div id="part-11d" class="chapter-subhead">
+                        <span>Chapter 11 · Part D</span>
+                        <h4>Choose</h4>
+                        <p>Question: given a task and a problem with the data, which loss, and why?</p>
+                    </div>
+
+                    <div id="loss-choose-lab" class="ap-lab">
+                        <div class="ap-lab-heading">
+                            <div>
+                                <span class="chapter-number">Lab 11.4 · A chooser</span>
+                                <h4>Which Loss for My Situation?</h4>
+                                <p>Pick what you are predicting, what is awkward about the data and what you care about. The suggestion is a starting point with its reasoning and its traps, not an answer to copy.</p>
+                            </div>
+                            <span class="ap-status">Decision aid</span>
+                        </div>
+                        <div class="ap-lab-grid">
+                            <div id="chooseOut" aria-live="polite"></div>
+                            <div class="ap-controls">
+                                <label for="chooseTask"><span>What are you predicting?</span></label>
+                                <select id="chooseTask">
+                                    <option value="reg">A number (regression)</option>
+                                    <option value="cls">A category (classification)</option>
+                                    <option value="density">A number and how sure you are</option>
+                                    <option value="rank">An ordering or similarity</option>
+                                    <option value="policy">A behaviour scored only at the end (no gradient)</option>
+                                </select>
+                                <label for="chooseData"><span>What is awkward about the data?</span></label>
+                                <select id="chooseData">
+                                    <option value="clean">Nothing in particular</option>
+                                    <option value="outliers">A few wild values</option>
+                                    <option value="imbalance">One class (or range) is rare</option>
+                                    <option value="noisy">Labels are often wrong</option>
+                                </select>
+                                <label for="chooseCare"><span>What do you care about most?</span></label>
+                                <select id="chooseCare">
+                                    <option value="average">Being right on average</option>
+                                    <option value="worst">Never being very wrong</option>
+                                    <option value="calibrated">Trustworthy probabilities or error bars</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="s11-5" class="chapter-panel">
+                        <h4><span class="step-no">11.5</span>What FlyKart used, and why</h4>
+                        <div class="overflow-x-auto"><table class="decision-table"><thead><tr><th>Stage</th><th>Score</th><th>Why that one</th></tr></thead><tbody>
+                            <tr><td>Evolving the controller</td><td>Lap progress and a sum of reward terms for a whole episode</td><td>Spikes have no useful gradient and the score exists only at the end of a run; each term was added when a loophole was found (Chapter 9).</td></tr>
+                            <tr><td>Camera network: each estimate</td><td>Huber loss on the mean (targets scaled first)</td><td>Some frames have wrong or extreme labels; Huber caps their pull while staying smooth for ordinary error.</td></tr>
+                            <tr><td>Camera network: its confidence</td><td>Gaussian-NLL gradient on a predicted log-variance</td><td>The fusion step needs a calibrated variance to weigh the camera against the sonar, the exact channels and the lap memory.</td></tr>
+                            <tr><td>Camera network: the controller’s action</td><td>Squared error on the teacher’s steer, gas and reverse</td><td>Clean, bounded targets from a deterministic teacher: the textbook case for MSE.</td></tr>
+                        </tbody></table></div>
+                        <p class="cost-note">The same lesson in both directions: a score is a specification. A reward that can be gamed will be gamed, and a loss that ignores the rare case teaches the model to ignore it too.</p>
+                    </div>
+
+                    <div id="s11-6" class="chapter-panel">
+                        <h4><span class="step-no">11.6</span>Quick check</h4>
+                        <div class="quiz" id="quiz-loss" data-quiz="loss" data-topic="loss" data-count="6" data-title="Loss functions" data-intro="Six questions drawn from a bank of thirteen. Each explains its answer."></div>
+                    </div>
+
+                    <div class="ledger" data-build="11">
+                        <div class="ledger-head"><span>Chapter 11 ledger</span><strong>A loss is a promise about what matters</strong></div>
+                        <div class="ledger-grid">
+                            <div class="kept"><b>What you can now do</b><p>Say what MSE, MAE, Huber, cross-entropy, hinge, focal and Gaussian NLL each ask for, and match one to an outlier, an imbalance or a need for error bars.</p></div>
+                            <div class="dropped"><b>What it does not decide</b><p>Which metric you finally report. A model trained with Huber is still judged on whatever the real task costs, and that may differ from any training loss.</p></div>
+                            <div class="price"><b>What it costs</b><p>Hyper-parameters (δ, γ, class weights) that live in the units of your data, and a calibration check that nobody enjoys running.</p></div>
+                        </div>
+                    </div>
+                </div>
+            </article>
+
+            <div class="thread-knot">
+                <span>Open question</span>
+                <p>A loss says how wrong the output is. But the output depends on thousands of weights through a web of connections. How does a single number at the end become a push on every weight, and what does the shape of that web decide?</p>
+                <a href="#guided-graphs">Chapter 12 · The brain as a graph ↓</a>
+            </div>
+
+            <!-- ============================ CHAPTER 12 ============================ -->
+            <article id="guided-graphs" class="book-chapter" data-title="The brain as a graph">
+                <div class="chapter-heading">
+                    <span class="chapter-numeral" aria-hidden="true">12</span>
+                    <div>
+                        <span class="chapter-number">Chapter 12 · The wiring</span>
+                        <h3>Graph Theory for Machine Learning</h3>
+                    </div>
+                    <p class="chapter-question">Question: what does it mean that a network is a graph, and what do the graph’s structure, its message passing and its gradients tell you?</p>
+                </div>
+                <div class="chapter-bridge">
+                    <div class="bridge-from"><span>From Chapter 11</span><p>A loss is one number at the end. The weights it must correct are scattered across a web of connections. Graph theory is the vocabulary for that web: who connects to whom, how far apart things are, where information and blame can travel.</p></div>
+                    <div class="bridge-plan"><span>In this chapter</span><ol>
+                        <li><a href="#graph-explorer-lab">Build graphs and measure clustering, path length and hubs</a></li>
+                        <li><a href="#message-lab">Pass messages along edges until everything looks the same</a></li>
+                        <li><a href="#autodiff-lab">Send gradients backward through a computation graph</a></li>
+                        <li><a href="#brain-graph-lab">Read the wiring of the real kart brain</a></li>
+                        <li><a href="#quiz-graph">Check yourself</a></li>
+                    </ol></div>
+                </div>
+                <div class="chapter-stack">
+
+                    <div id="part-12a" class="chapter-subhead">
+                        <span>Chapter 12 · Part A</span>
+                        <h4>Nodes, edges and a matrix</h4>
+                        <p>Question: what is the smallest vocabulary that describes a network’s shape?</p>
+                    </div>
+
+                    <div id="s12-1" class="chapter-panel formula">
+                        <h4><span class="step-no">12.1</span>A graph is a set of nodes and a set of edges</h4>
+                        <p>A graph $G=(V,E)$ lists <strong>nodes</strong> and the <strong>edges</strong> that join them. Edges can be undirected or directed, and weighted. All of it fits in an <strong>adjacency matrix</strong> $A$ with $A_{ij}$ the weight from $j$ to $i$ (the convention FlyKart’s code uses). The kart’s controller is three graphs stacked: sensors to neurons (17 → 48), neurons to neurons (48 → 48, directed, with cycles) and neurons to outputs (48 → 4).</p>
+                        <div class="chapter-equation">
+                            $\text{degree: }k_i=\sum_j A_{ij}\qquad \text{walks of length }t:\ (A^t)_{ij}\qquad \text{clustering: }C_i=\frac{\text{links among neighbours of }i}{\binom{k_i}{2}}$
+                        </div>
+                        <div class="scorecard">
+                            <div><span>Density</span><strong>Edges present out of all possible: 2M / N(N−1) for an undirected graph</strong></div>
+                            <div><span>Average path length</span><strong>How many hops, on average, a signal needs between two nodes</strong></div>
+                            <div><span>Hubs</span><strong>A few nodes with many more connections than the rest</strong></div>
+                        </div>
+                    </div>
+
+                    <div id="graph-explorer-lab" class="ap-lab">
+                        <div class="ap-lab-heading">
+                            <div>
+                                <span class="chapter-number">Lab 12.1 · Structure</span>
+                                <h4>Generate a Graph and Measure It</h4>
+                                <p>Pick a family and its parameter. Node size and warmth show degree; click two nodes to see the shortest path between them; drag nodes to rearrange. The right panels show the degree distribution and the Watts–Strogatz sweep: how a little random rewiring shortens paths long before it destroys clustering.</p>
+                            </div>
+                            <span class="ap-status">Six measures</span>
+                        </div>
+                        <div class="ap-lab-grid">
+                            <div class="ap-canvas-shell"><canvas id="graphCanvas" width="900" height="400" aria-label="A graph, its degree distribution and the small-world sweep"></canvas></div>
+                            <div class="ap-controls">
+                                <div class="ap-seg" id="grPresets" role="group" aria-label="Presets">
+                                    <button type="button" data-type="ring" data-p="0.1" class="active">Ring</button>
+                                    <button type="button" data-type="small" data-p="0.1">Small world</button>
+                                    <button type="button" data-type="random" data-p="0.15">Random</button>
+                                    <button type="button" data-type="scale" data-p="0.1">Hubs</button>
+                                    <button type="button" data-type="comm" data-p="0.25">Two groups</button>
+                                </div>
+                                <label for="grType"><span>Graph family</span></label>
+                                <select id="grType">
+                                    <option value="ring">Ring lattice (regular)</option>
+                                    <option value="small">Small world (rewired ring)</option>
+                                    <option value="random">Random (Erdős–Rényi)</option>
+                                    <option value="scale">Scale-free (hubs)</option>
+                                    <option value="star">Star</option>
+                                    <option value="tree">Binary tree</option>
+                                    <option value="comm">Two communities</option>
+                                </select>
+                                <label for="grN"><span>Nodes</span><output id="grNValue">20</output></label>
+                                <input id="grN" type="range" min="8" max="40" step="1" value="20">
+                                <label for="grP"><span>Parameter</span><output id="grPValue">0.10</output></label>
+                                <input id="grP" type="range" min="0" max="1" step="0.01" value="0.1">
+                                <p id="grPHint">β = fraction of edges rewired</p>
+                                <div class="ap-buttons"><button id="grAgain" type="button">Draw again</button><span></span></div>
+                                <div class="ap-readouts">
+                                    <div><span>Edges</span><strong id="grM">—</strong></div>
+                                    <div><span>Mean degree</span><strong id="grDeg">—</strong></div>
+                                    <div><span>Clustering</span><strong id="grClust">—</strong></div>
+                                </div>
+                                <div class="ap-readouts">
+                                    <div><span>Mean path</span><strong id="grPath">—</strong></div>
+                                    <div><span>Diameter</span><strong id="grDiam">—</strong></div>
+                                    <div><span>Components</span><strong id="grComp">—</strong></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="lab-definition">
+                            <div><strong>Regular: clustered but far apart</strong><span>A ring of 20 with four neighbours each has clustering 0.5 but a diameter of 5 hops. Neighbours know each other; the far side of the ring is still many steps away.</span></div>
+                            <div><strong>A few shortcuts change the world</strong><span>In the sweep (60 nodes, six neighbours each), rewiring 10 % of edges leaves clustering at 78 % of the ring’s but shrinks the path length to 58 %. Brains, power grids and social graphs sit in that regime.</span></div>
+                            <div><strong>Hubs are efficient and fragile</strong><span>Scale-free graphs reach everywhere in a few hops because a handful of nodes carry most edges. Remove those hubs and the graph falls apart; remove random nodes and it barely notices.</span></div>
+                        </div>
+                        <div class="try-list"><strong>Try this</strong><ol>
+                            <li><b>Find the sweet spot.</b> Choose <em>Small world</em> and slide the parameter from 0 to 1. Clustering falls slowly, then fast; path length falls fast, then stops. The dashed marker follows you on the sweep.</li>
+                            <li><b>Measure the star.</b> Pick <em>Star</em>: clustering 0, diameter 2. A short path, but every message goes through one node.</li>
+                            <li><b>Two groups.</b> Choose <em>Two communities</em> and lower the parameter to 0: the graph splits into two components, and no message crosses.</li>
+                        </ol></div>
+                    </div>
+
+                    <div id="part-12b" class="chapter-subhead">
+                        <span>Chapter 12 · Part B</span>
+                        <h4>Information moves along edges</h4>
+                        <p>Question: what happens to a node’s state when it repeatedly listens to its neighbours?</p>
+                    </div>
+
+                    <div id="s12-2" class="chapter-panel formula">
+                        <h4><span class="step-no">12.2</span>Message passing, and why depth smooths</h4>
+                        <p>Graph neural networks repeat one step: each node averages its neighbours’ features (and its own), then transforms the result. With $\tilde A=A+I$ and $\tilde D$ its degree matrix, one round of mean aggregation is</p>
+                        <div class="chapter-equation">
+                            $H^{(t+1)}=(1-\alpha)\,H^{(t)}+\alpha\,\tilde D^{-1}\tilde A\,H^{(t)}$
+                        </div>
+                        <p>After $t$ rounds a node’s feature depends on every node within $t$ hops, which is the network’s receptive field. But averaging is smoothing: repeat it often enough and every node converges to nearly the same value (over-smoothing). The kart’s recurrent network does something similar in time: each tick, every neuron receives the previous spikes of its neighbours, weighted by $R$, before it decides whether to fire.</p>
+                    </div>
+
+                    <div id="message-lab" class="ap-lab">
+                        <div class="ap-lab-heading">
+                            <div>
+                                <span class="chapter-number">Lab 12.2 · Message passing</span>
+                                <h4>Spread a Signal and Watch It Wash Out</h4>
+                                <p>Every node holds one number. Each round it moves toward the average of its neighbours. Start from two groups with opposite values, a single spike you place by clicking, or noise, and slide the number of rounds. The plot shows how different the nodes still are.</p>
+                            </div>
+                            <span class="ap-status">Mean aggregation</span>
+                        </div>
+                        <div class="ap-lab-grid">
+                            <div class="ap-canvas-shell"><canvas id="msgCanvas" width="900" height="360" aria-label="A graph whose node values smooth out over rounds of message passing"></canvas></div>
+                            <div class="ap-controls">
+                                <label for="msGraph"><span>Graph</span></label>
+                                <select id="msGraph">
+                                    <option value="comm">Two communities</option>
+                                    <option value="ring">Ring lattice</option>
+                                    <option value="small">Small world</option>
+                                    <option value="scale">Hubs</option>
+                                </select>
+                                <label for="msInit"><span>Start from</span></label>
+                                <select id="msInit">
+                                    <option value="halves">Two groups, 1 and 0</option>
+                                    <option value="spike">A single spike (click a node)</option>
+                                    <option value="noise">Random noise</option>
+                                </select>
+                                <label for="msRounds"><span>Rounds of message passing</span><output id="msRoundsValue">0</output></label>
+                                <input id="msRounds" type="range" min="0" max="30" step="1" value="0">
+                                <label for="msSkip"><span>Skip connection (keep own value)</span><output id="msSkipValue">0.00</output></label>
+                                <input id="msSkip" type="range" min="0" max="0.9" step="0.05" value="0">
+                                <div class="ap-readouts">
+                                    <div><span>Spread now</span><strong id="msSpread">—</strong></div>
+                                    <div><span>Of the start</span><strong id="msRatio">—</strong></div>
+                                    <div><span>Rounds to halve</span><strong id="msHalf">—</strong></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="lab-definition">
+                            <div><strong>Bridges are the bottleneck</strong><span>On two communities each group quickly agrees with itself, and the difference between the groups drains only through the few bridges: the spread halves in about 8 rounds and is still about 6 % of the start after 30.</span></div>
+                            <div><strong>Shortcuts speed the mixing</strong><span>Same 24 nodes: the ring halves its spread in about 9 rounds, the small world in about 5, and the graph with hubs in 2.</span></div>
+                            <div><strong>A skip connection slows it</strong><span>With the skip at 0.7 and two communities, 72 % of the original difference is still there after 12 rounds, against 32 % without a skip. This is the idea behind residual connections.</span></div>
+                        </div>
+                    </div>
+
+                    <div id="part-12c" class="chapter-subhead">
+                        <span>Chapter 12 · Part C</span>
+                        <h4>Blame moves along edges too</h4>
+                        <p>Question: how does a loss at the end reach a weight at the start?</p>
+                    </div>
+
+                    <div id="s12-3" class="chapter-panel formula">
+                        <h4><span class="step-no">12.3</span>The computation graph and the chain rule</h4>
+                        <p>Every formula a network evaluates is itself a graph: inputs and weights flow through operations to a loss. Backpropagation walks that graph backwards, multiplying <em>local slopes</em> along each path and <em>adding</em> the contributions when a value is used twice:</p>
+                        <div class="chapter-equation">
+                            $\frac{\partial L}{\partial w}=\underbrace{\frac{\partial L}{\partial p}}_{\text{loss}}\cdot\underbrace{\frac{\partial p}{\partial z}}_{p(1-p)}\cdot\underbrace{\frac{\partial z}{\partial w}}_{x}\qquad \frac{\partial L}{\partial v}=\sum_{u\in\text{children}(v)}\frac{\partial L}{\partial u}\frac{\partial u}{\partial v}$
+                        </div>
+                        <p class="cost-note">A feed-forward network’s computation graph has no cycles (a DAG), so there is a clean order to visit it. A recurrent network such as the kart’s controller does have cycles; to differentiate it you unroll it through time, copying the graph once per tick (backpropagation through time). A spiking threshold adds a step with zero slope, which is why the controller is evolved instead.</p>
+                    </div>
+
+                    <div id="autodiff-lab" class="ap-lab">
+                        <div class="ap-lab-heading">
+                            <div>
+                                <span class="chapter-number">Lab 12.3 · Backpropagation</span>
+                                <h4>Walk a Gradient Backward Through a Neuron</h4>
+                                <p>One sigmoid neuron: $z=wx+b$, $p=\sigma(z)$, then a loss against the target $t$. Boxes show forward values and, in amber, the gradient arriving at each node. Choose which loss to display, then press <em>Step</em> to train two copies side by side: one with squared error, one with cross-entropy.</p>
+                            </div>
+                            <span class="ap-status">Chain rule, edge by edge</span>
+                        </div>
+                        <div class="ap-lab-grid">
+                            <div class="ap-canvas-shell"><canvas id="autodiffCanvas" width="900" height="360" aria-label="A computation graph with forward values and backward gradients"></canvas></div>
+                            <div class="ap-controls">
+                                <label for="adLoss"><span>Loss shown</span></label>
+                                <select id="adLoss"><option value="mse">Squared error</option><option value="ce">Cross-entropy</option></select>
+                                <label for="adT"><span>Target t</span></label>
+                                <select id="adT"><option value="1">1 (positive)</option><option value="0">0 (negative)</option></select>
+                                <label for="adX"><span>Input x</span><output id="adXValue">1.5</output></label>
+                                <input id="adX" type="range" min="-3" max="3" step="0.1" value="1.5">
+                                <label for="adW"><span>Weight w</span><output id="adWValue">−2.5</output></label>
+                                <input id="adW" type="range" min="-6" max="6" step="0.1" value="-2.5">
+                                <label for="adB"><span>Bias b</span><output id="adBValue">0.5</output></label>
+                                <input id="adB" type="range" min="-3" max="3" step="0.1" value="0.5">
+                                <label for="adLr"><span>Learning rate</span><output id="adLrValue">1.0</output></label>
+                                <input id="adLr" type="range" min="0.1" max="3" step="0.1" value="1">
+                                <div class="ap-buttons three"><button id="adStep" type="button">Step</button><button id="adRun" type="button">Run 40</button><button id="adReset" type="button">Reset</button></div>
+                                <div class="ap-readouts">
+                                    <div><span>p</span><strong id="adP">—</strong></div>
+                                    <div><span>Loss</span><strong id="adL">—</strong></div>
+                                    <div><span>∂L/∂z</span><strong id="adGz">—</strong></div>
+                                </div>
+                                <div class="ap-readouts">
+                                    <div><span>Other loss ∂L/∂z</span><strong id="adGzOther">—</strong></div>
+                                    <div><span>Squared: p · steps</span><strong id="adStepsMse">—</strong></div>
+                                    <div><span>Cross-entropy: p · steps</span><strong id="adStepsCe">—</strong></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="try-list"><strong>Try this</strong><ol>
+                            <li><b>Start confidently wrong.</b> The defaults (x = 1.5, w = −2.5, target 1) give p ≈ 0.04. Read ∂L/∂z: squared error delivers about −0.07 and cross-entropy about −0.96, fourteen times more.</li>
+                            <li><b>Press Run 40.</b> After one step cross-entropy has p = 0.47 and after two 0.83; squared error is still at 0.05 and 0.06, takes about ten steps to reach 0.83, and only then catches up. Same data, same start, same learning rate.</li>
+                            <li><b>Start only mildly wrong.</b> Set w = −0.5. The two gradients (−0.28 and −0.56) are within a factor of two and the two runs behave much alike: the problem is saturation, not squared error as such.</li>
+                        </ol></div>
+                    </div>
+
+                    <div id="part-12d" class="chapter-subhead">
+                        <span>Chapter 12 · Part D</span>
+                        <h4>Read a real brain’s wiring</h4>
+                        <p>Question: does the kart’s evolved recurrent matrix look like anything in particular?</p>
+                    </div>
+
+                    <div id="brain-graph-lab" class="ap-lab">
+                        <div class="ap-lab-heading">
+                            <div>
+                                <span class="chapter-number">Lab 12.4 · The kart’s own graph</span>
+                                <h4>The 48 × 48 Recurrent Matrix as a Directed Graph</h4>
+                                <p>This lab reads the bundled demo brain’s recurrent weights (or any brain file you drop in) and draws them as a directed graph. Slide how many of the strongest connections to keep, and compare its reciprocity with the same weights shuffled at random. The shuffle is the control: it tells you whether a number means anything.</p>
+                            </div>
+                            <span class="ap-status">Real weights</span>
+                        </div>
+                        <div class="ap-lab-grid">
+                            <div class="ap-canvas-shell"><canvas id="brainGraphCanvas" width="900" height="420" aria-label="The recurrent weight matrix of a brain drawn as a directed graph with degree bars"></canvas></div>
+                            <div class="ap-controls">
+                                <label for="bgKeep"><span>Strongest connections kept</span><output id="bgKeepValue">10 %</output></label>
+                                <input id="bgKeep" type="range" min="2" max="100" step="1" value="10">
+                                <label for="bgFile"><span>Use another brain file</span></label>
+                                <input id="bgFile" type="file" accept="application/json,.json">
+                                <p>Any FlyKart brain checkpoint works. Nothing is uploaded; the file is read in your browser.</p>
+                                <div class="ap-readouts">
+                                    <div><span>Edges</span><strong id="bgEdges">—</strong></div>
+                                    <div><span>Reciprocal</span><strong id="bgRecip">—</strong></div>
+                                    <div><span>Largest loop group</span><strong id="bgScc">—</strong></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="lab-definition">
+                            <div><strong>Reciprocal pairs</strong><span>How often A→B is matched by B→A. For the demo brain this sits close to what shuffling the same weights gives (about 11 % against 10 % at the strongest 10 %), so no reciprocal motif stands out.</span></div>
+                            <div><strong>The largest strongly connected group</strong><span>Neurons that can all reach each other through directed paths: 46 of 48 at 10 %, all 48 by 25 %. The brain is one tangled loop, not a pipeline.</span></div>
+                            <div><strong>Out-degree is the hub measure</strong><span>A neuron with many strong outgoing edges influences many others. Evolution had no reason to make hubs; look at the bars and decide whether it did.</span></div>
+                        </div>
+                        <p class="ap-lab-note">These readings are for the bundled demo brain at the time of writing; another brain gives other numbers. A graph statistic describes wiring, not behaviour. Chapter 9’s lesion and probe labs are the tests that turn a wiring hypothesis into evidence.</p>
+                    </div>
+
+                    <div id="s12-4" class="chapter-panel">
+                        <h4><span class="step-no">12.4</span>Quick check</h4>
+                        <div class="quiz" id="quiz-graph" data-quiz="graph" data-topic="graph" data-count="6" data-title="Graphs and message passing" data-intro="Six questions drawn from a bank of eleven."></div>
+                    </div>
+
+                    <div class="ledger" data-build="12">
+                        <div class="ledger-head"><span>Chapter 12 ledger</span><strong>Structure decides what can flow where</strong></div>
+                        <div class="ledger-grid">
+                            <div class="kept"><b>What you can now do</b><p>Describe a network by its degrees, clustering and paths; follow information and gradients along edges; and test a wiring claim against a shuffled control.</p></div>
+                            <div class="dropped"><b>What it does not say</b><p>Which weights matter for behaviour. Two networks with the same graph statistics can do completely different things.</p></div>
+                            <div class="price"><b>What it costs</b><p>Message passing is local, so long-range effects need many rounds, and many rounds smooth everything: depth is bought with over-smoothing.</p></div>
+                        </div>
+                    </div>
+                </div>
+            </article>
+
+            <div class="thread-knot">
+                <span>Open question</span>
+                <p>Evolution does not train one network: it keeps a whole population of them, each a descendant of the last. Populations have a graph of their own, the family tree. What happens when it keeps closing in on itself?</p>
+                <a href="#guided-genes">Chapter 13 · Undesired traits ↓</a>
+            </div>
+
+            <!-- ============================ CHAPTER 13 ============================ -->
+            <article id="guided-genes" class="book-chapter" data-title="Undesired traits">
+                <div class="chapter-heading">
+                    <span class="chapter-numeral" aria-hidden="true">13</span>
+                    <div>
+                        <span class="chapter-number">Chapter 13 · The population</span>
+                        <h3>Undesired Traits: Inbreeding, Bottlenecks and Lost Diversity</h3>
+                    </div>
+                    <p class="chapter-question">Question: why do small, closed populations accumulate harmful traits, and what can be done about it, in animals and in an evolutionary algorithm?</p>
+                </div>
+                <div class="chapter-bridge">
+                    <div class="bridge-from"><span>From Chapter 12</span><p>A family tree is a directed acyclic graph, and the questions of Chapter 12 apply: how many paths connect two individuals, and how much do they share? This chapter follows one number, the inbreeding coefficient, from a pedigree on paper to a population in a simulator to the premature convergence of a genetic algorithm.</p></div>
+                    <div class="bridge-plan"><span>In this chapter</span><ol>
+                        <li><a href="#pedigree-lab">Count paths through a pedigree to get the inbreeding coefficient</a></li>
+                        <li><a href="#inbreeding-sim-lab">Run a small population and watch fitness and diversity</a></li>
+                        <li><a href="#beak-lab">Select a beak: the finches, the breeder’s equation and a bottleneck</a></li>
+                        <li><a href="#diversity-lab">Watch an evolutionary algorithm lose diversity, and recover it</a></li>
+                        <li><a href="#quiz-evo">Check yourself</a></li>
+                    </ol></div>
+                </div>
+                <div class="chapter-stack">
+
+                    <div id="part-13a" class="chapter-subhead">
+                        <span>Chapter 13 · Part A</span>
+                        <h4>Why relatives make trouble</h4>
+                        <p>Question: where do undesired traits come from, if inbreeding creates no new genes?</p>
+                    </div>
+
+                    <div id="s13-1" class="chapter-panel formula">
+                        <h4><span class="step-no">13.1</span>Hidden copies, and the chance of two</h4>
+                        <p>Every individual carries two copies of each gene. Most populations carry harmful variants, but mostly as a <em>single</em> copy paired with a working one, where they do no damage (a recessive harmful allele only shows when both copies are bad). Inbreeding does not create such variants; it raises the chance that a child receives <em>the same ancestral copy twice</em>. That chance is the <strong>inbreeding coefficient</strong> $F$, computed by counting the paths from the child’s two parents back to a shared ancestor $A$:</p>
+                        <div class="chapter-equation">
+                            $F_X=\sum_{\text{common ancestors }A}\left(\tfrac12\right)^{n_1+n_2+1}\left(1+F_A\right)$
+                        </div>
+                        <p>$n_1$ and $n_2$ are the numbers of generations from each parent back to $A$. Offspring of full siblings: two ancestors, one generation each side, $2\times(\tfrac12)^3=\tfrac14$.</p>
+                    </div>
+
+                    <div id="pedigree-lab" class="ap-lab">
+                        <div class="ap-lab-heading">
+                            <div>
+                                <span class="chapter-number">Lab 13.1 · The pedigree</span>
+                                <h4>Count Paths to the Inbreeding Coefficient</h4>
+                                <p>Choose a mating. The graph shows the family tree, with the shared ancestors in violet and the offspring X in amber; F is computed by the same recursion breeders use. On the right, see how F climbs when the same mating is repeated generation after generation.</p>
+                            </div>
+                            <span class="ap-status">Kinship by recursion</span>
+                        </div>
+                        <div class="ap-lab-grid">
+                            <div class="ap-canvas-shell"><canvas id="pedCanvas" width="900" height="360" aria-label="A pedigree diagram and inbreeding coefficient curves"></canvas></div>
+                            <div class="ap-controls">
+                                <label for="pdRel"><span>Mating</span></label>
+                                <select id="pdRel">
+                                    <option value="unrelated">Unrelated parents</option>
+                                    <option value="halfsibs">Half-siblings</option>
+                                    <option value="fullsibs" selected>Full siblings</option>
+                                    <option value="cousins">First cousins</option>
+                                    <option value="parentchild">Parent × offspring</option>
+                                    <option value="uncle">Uncle × niece</option>
+                                </select>
+                                <label for="pdN"><span>Population size N (random mating)</span><output id="pdNValue">24</output></label>
+                                <input id="pdN" type="range" min="4" max="200" step="1" value="24">
+                                <div class="ap-readouts">
+                                    <div><span>F of X</span><strong id="pdF">—</strong></div>
+                                    <div><span>Chance</span><strong id="pdFrac">—</strong></div>
+                                    <div><span>Sib mating, 5 gens</span><strong id="pdSib5">—</strong></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="lab-definition">
+                            <div><strong>Close relatives are not equal</strong><span>Parent × offspring and full siblings both give ¼; half-siblings and uncle × niece give ⅛; first cousins 1/16. The ranking falls straight out of path counting.</span></div>
+                            <div><strong>Repetition compounds it</strong><span>Full-sibling mating for five generations reaches F ≈ 0.67: two thirds of the genome is identical by descent. Selfing, available to plants, reaches 0.75 in two.</span></div>
+                            <div><strong>Small random populations drift into it</strong><span>Without any deliberate inbreeding, a population of 24 drifts to F ≈ 0.34 in 20 generations simply because everyone ends up related to everyone. Try N = 200 for contrast: about 0.05.</span></div>
+                        </div>
+                    </div>
+
+                    <div id="part-13b" class="chapter-subhead">
+                        <span>Chapter 13 · Part B</span>
+                        <h4>Small populations</h4>
+                        <p>Question: what happens to fitness and diversity as a population stays small and closed?</p>
+                    </div>
+
+                    <div id="s13-2" class="chapter-panel formula">
+                        <h4><span class="step-no">13.2</span>Drift, effective size and three real cases</h4>
+                        <p>In a finite population, which gene copies get passed on is partly luck, and variation drains away. Heterozygosity falls by a factor $(1-\tfrac1{2N_e})$ per generation, where $N_e$ is the <em>effective</em> size. It is usually well below the head count, because it is set by how evenly individuals contribute offspring:</p>
+                        <div class="chapter-equation">
+                            $H_t=H_0\left(1-\frac1{2N_e}\right)^t,\qquad N_e=\frac{4N_mN_f}{N_m+N_f}$
+                        </div>
+                        <div class="option-cards">
+                            <div class="pick"><b>Florida panther</b><strong>Genetic rescue, 1995</strong><p>A tiny population showed kinked tails and heart defects and was projected to die out within decades. Eight Texas pumas were released. Over nine generations the rescue reduced inbreeding signs and the population grew; follow-up work found the benefit came from restored heterozygosity masking harmful variants, not from deleting them.</p></div>
+                            <div><b>Kākāpō</b><strong>Hatching failure</strong><p>A flightless parrot reduced to a few dozen birds. Studies link greater homozygosity to eggs failing to hatch, and management avoids pairing close relatives. The population has grown from 124 in 2016 to 248 in 2023.</p></div>
+                            <div><b>Darwin’s finches</b><strong>A founder from elsewhere</strong><p>On Daphne Major, a large-billed male <em>Geospiza conirostris</em> arrived in 1981 and bred with local <em>fortis</em>. Its descendants then bred almost only among themselves, with generations 4 to 6 coming from a single brother–sister mating, and about 30 birds remained by 2017. Next section.</p></div>
+                        </div>
+                        <div class="edu-sources"><strong>Sources:</strong> <a href="https://en.wikipedia.org/wiki/Big_Bird_(finch)" target="_blank" rel="noopener noreferrer">Big Bird (finch)</a> · <a href="https://www.princeton.edu/news/2017/11/27/study-darwins-finches-reveals-new-species-can-develop-little-two-generations" target="_blank" rel="noopener noreferrer">Princeton news, 2017</a> · <a href="https://www.ncbi.nlm.nih.gov/pmc/articles/PMC11289468/" target="_blank" rel="noopener noreferrer">Multi-generational benefits of genetic rescue (panther)</a> · <a href="https://www.ncbi.nlm.nih.gov/pmc/articles/PMC12337334/" target="_blank" rel="noopener noreferrer">Genetic rescue of Florida panthers reduced homozygosity</a> · <a href="https://nhm.ac.uk/discover/news/2021/october/breakthrough-offers-lifeline-for-endangered-kakapo.html" target="_blank" rel="noopener noreferrer">Kākāpō breakthrough, NHM</a></div>
+                    </div>
+
+                    <div id="inbreeding-sim-lab" class="ap-lab">
+                        <div class="ap-lab-heading">
+                            <div>
+                                <span class="chapter-number">Lab 13.2 · The simulator</span>
+                                <h4>Run a Small Population for 60 Generations</h4>
+                                <p>Forty gene positions, each with a harmful recessive variant at the frequency you choose. A child that is homozygous for a harmful variant at $k$ positions survives with probability $(1-s)^k$. Choose the herd’s size, how mates are chosen, whether one sire fathers much of the next generation, and how many outsiders arrive each generation. Ten replicate populations run each time.</p>
+                            </div>
+                            <span class="ap-status">10 replicates · 60 generations</span>
+                        </div>
+                        <div class="ap-lab-grid">
+                            <div class="ap-canvas-shell"><canvas id="inbSimCanvas" width="900" height="400" aria-label="Fitness, inbreeding coefficient and diversity over 60 generations for ten populations"></canvas></div>
+                            <div class="ap-controls">
+                                <div class="ap-seg" id="isPresets" role="group" aria-label="Scenarios">
+                                    <button type="button" data-is-n="100" data-is-q="0.25" data-is-s="0.1" data-is-top="100" data-is-sire="0" data-is-mig="0" data-is-rule="random">Large herd</button>
+                                    <button type="button" data-is-n="12" data-is-q="0.25" data-is-s="0.1" data-is-top="100" data-is-sire="0" data-is-mig="0" data-is-rule="random">Small herd</button>
+                                    <button type="button" data-is-n="12" data-is-q="0.25" data-is-s="0.1" data-is-top="100" data-is-sire="0" data-is-mig="0" data-is-rule="kin">Relatives only</button>
+                                    <button type="button" data-is-n="12" data-is-q="0.25" data-is-s="0.1" data-is-top="100" data-is-sire="0" data-is-mig="1" data-is-rule="random">Small + outcross</button>
+                                    <button type="button" data-is-n="24" data-is-q="0.25" data-is-s="0.1" data-is-top="100" data-is-sire="90" data-is-mig="0" data-is-rule="random">Popular sire</button>
+                                    <button type="button" data-is-n="24" data-is-q="0.1" data-is-s="0.5" data-is-top="100" data-is-sire="0" data-is-mig="0" data-is-rule="random">Severe harm: purged</button>
+                                </div>
+                                <label for="isN"><span>Population size</span><output id="isNValue">16</output></label>
+                                <input id="isN" type="range" min="6" max="150" step="1" value="16">
+                                <label for="isQ"><span>Harmful variant frequency</span><output id="isQValue">0.25</output></label>
+                                <input id="isQ" type="range" min="0.05" max="0.4" step="0.01" value="0.25">
+                                <label for="isS"><span>Harm per homozygous position</span><output id="isSValue">0.10</output></label>
+                                <input id="isS" type="range" min="0.02" max="0.8" step="0.01" value="0.1">
+                                <label for="isRule"><span>Mate choice</span></label>
+                                <select id="isRule"><option value="random">Random</option><option value="avoid">Avoid relatives</option><option value="kin">Prefer relatives</option></select>
+                                <label for="isSire"><span>One sire fathers this share</span><output id="isSireValue">0 %</output></label>
+                                <input id="isSire" type="range" min="0" max="90" step="5" value="0">
+                                <label for="isTop"><span>Breed only from the healthiest</span><output id="isTopValue">100 %</output></label>
+                                <input id="isTop" type="range" min="30" max="100" step="5" value="100">
+                                <label for="isMig"><span>Unrelated arrivals per generation</span><output id="isMigValue">0</output></label>
+                                <input id="isMig" type="range" min="0" max="6" step="1" value="0">
+                                <div class="ap-readouts">
+                                    <div><span>Fitness, start</span><strong id="isFit0">—</strong></div>
+                                    <div><span>Lowest</span><strong id="isMin">—</strong></div>
+                                    <div><span>Fitness, end</span><strong id="isFitEnd">—</strong></div>
+                                </div>
+                                <div class="ap-readouts">
+                                    <div><span>F at the end</span><strong id="isFEnd">—</strong></div>
+                                    <div><span>Diversity left</span><strong id="isHet">—</strong></div>
+                                    <div><span>Harmful freq.</span><strong id="isQEnd">—</strong></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="lab-definition">
+                            <div><strong>Size and diversity</strong><span>With 100 animals fitness recovers from about 0.78 to 0.94 and 41 % of the diversity survives 60 generations. With 12, fitness drifts to about 0.65 and only 11 % of the diversity is left.</span></div>
+                            <div><strong>Who mates matters as much as how many</strong><span>In a herd of 24, preferring relatives leaves 2 % of the diversity (23 % under random mating) and drops fitness to 0.62 at its lowest, against 0.73. One popular sire fathering 90 % of the offspring takes the same herd to 0.46, far below a random herd of 12 (0.65). In a herd of 12 the mating rule barely matters: almost everyone is already related.</span></div>
+                            <div><strong>Outsiders buy time</strong><span>One unrelated arrival per generation in the herd of 12 leaves 75 % of the diversity and fitness near 0.79 instead of 0.65. In the simulation the arrivals also bring their own harmful variants (frequency 0.20 against 0.13): rescue is not a free lunch.</span></div>
+                        </div>
+                        <div class="try-list"><strong>Try this</strong><ol>
+                            <li><b>Mild harm is the dangerous kind.</b> Press <em>Severe harm</em>: every position now costs half the individual’s fitness, selection removes the variants within a few generations, and fitness <em>recovers</em> from about 0.84 to 1.0 even though F reaches 0.99. Purging works for severe effects. Now set the harm back to 0.1 and the variant frequency to 0.25: fitness recovers only from about 0.77 to 0.83.</li>
+                            <li><b>Equalise the families.</b> Start from <em>Popular sire</em>, then slide the sire share back to 0. The same herd of 24 ends near 0.83 instead of 0.46: the problem was the breeding scheme, not the animals.</li>
+                            <li><b>Breed only from the healthiest.</b> From the default, set the herd to 24 and this slider to 40 %. Fitness climbs to about 1.0, but the diversity left falls from about 23 % to 0: selection purges the load and empties the gene pool in one move.</li>
+                        </ol></div>
+                        <p class="ap-lab-note">A deliberately small model: independent positions, free recombination, constant size, no new mutation, no heterozygote advantage. It shows the mechanisms, not any species’ numbers. “Fitness” is survival to breeding age; “diversity” is average heterozygosity relative to the start.</p>
+                    </div>
+
+                    <div id="part-13c" class="chapter-subhead">
+                        <span>Chapter 13 · Part C</span>
+                        <h4>The bird with the giant beak</h4>
+                        <p>Question: how fast does a trait move when selection acts on it, and what does a small founding group do to it?</p>
+                    </div>
+
+                    <div id="s13-3" class="chapter-panel formula">
+                        <h4><span class="step-no">13.3</span>Darwin’s finches on Daphne Major</h4>
+                        <p>The medium ground finch, <em>Geospiza fortis</em>, on the Galápagos island of Daphne Major has been followed bird by bird by Peter and Rosemary Grant and colleagues for decades. In 1977 the island had almost no rain (about a fifth of normal). Small, soft seeds ran out, leaving large, hard ones, and birds with larger beaks and bodies survived better; Boag and Grant documented that directional selection, and the beak depth of the next generation was larger because beak size is heritable.</p>
+                        <p>The response to selection is the breeder’s equation, where $S$ is how far the survivors’ mean sits from the original mean and $h^2$ is the heritable fraction of the variation:</p>
+                        <div class="chapter-equation">
+                            $R=h^2\,S$
+                        </div>
+                        <p>The giant-beaked newcomer is a different lesson. In 1981 a male <em>Geospiza conirostris</em>, about 70 % larger than the local birds and singing an unfamiliar song, arrived on the island. It bred with a local <em>fortis</em> female and the resulting lineage, nicknamed “Big Bird”, mated almost only within itself from the second generation on. Genome sequencing identified the founder as a <em>conirostris</em> male from another island and the lineage as a hybrid of the two species, and it became reproductively isolated in about three generations. It did not die out despite repeated close inbreeding, which makes it a useful corrective to the idea that inbreeding always means collapse. It is also a lineage of about thirty birds, which is why “it persisted” is not the same as “it is safe”.</p>
+                        <div class="edu-sources"><strong>Sources:</strong> <a href="https://en.wikipedia.org/wiki/Big_Bird_(finch)" target="_blank" rel="noopener noreferrer">Big Bird (finch)</a> · <a href="https://www.princeton.edu/news/2017/11/27/study-darwins-finches-reveals-new-species-can-develop-little-two-generations" target="_blank" rel="noopener noreferrer">Princeton news</a>. The lab below uses made-up numbers in standard-deviation units, not the Grants’ data.</div>
+                    </div>
+
+                    <div id="beak-lab" class="ap-lab">
+                        <div class="ap-lab-heading">
+                            <div>
+                                <span class="chapter-number">Lab 13.3 · A beak trait</span>
+                                <h4>Select a Beak and Watch Variation Drain</h4>
+                                <p>Beak depth is the sum of thirty gene positions plus environmental noise. Each “drought” kills the stated share of the population, favouring big beaks, and the survivors breed. Watch the mean move, the genetic variation left, and the first year’s response against $h^2S$. Switch to a founding group of four to see a bottleneck.</p>
+                            </div>
+                            <span class="ap-status">Breeder’s equation</span>
+                        </div>
+                        <div class="ap-lab-grid">
+                            <div class="ap-canvas-shell"><canvas id="beakCanvas" width="900" height="380" aria-label="Mean beak depth and genetic variation over generations, with start and end distributions"></canvas></div>
+                            <div class="ap-controls">
+                                <label for="bkMode"><span>Selection regime</span></label>
+                                <select id="bkMode">
+                                    <option value="episodic">Drought every 4th year</option>
+                                    <option value="constant">Selection every year</option>
+                                    <option value="alternate">Direction flips every 4 years</option>
+                                </select>
+                                <label for="bkMort"><span>Share that dies in a drought</span><output id="bkMortValue">60 %</output></label>
+                                <input id="bkMort" type="range" min="10" max="90" step="5" value="60">
+                                <label for="bkH2"><span>Heritability h²</span><output id="bkH2Value">0.60</output></label>
+                                <input id="bkH2" type="range" min="0.1" max="0.95" step="0.05" value="0.6">
+                                <label for="bkN"><span>Population size</span><output id="bkNValue">200</output></label>
+                                <input id="bkN" type="range" min="10" max="400" step="10" value="200">
+                                <label for="bkG"><span>Years</span><output id="bkGValue">24</output></label>
+                                <input id="bkG" type="range" min="5" max="60" step="1" value="24">
+                                <label for="bkMut"><span>New variation per gene position (per 1000)</span><output id="bkMutValue">2.0</output></label>
+                                <input id="bkMut" type="range" min="0" max="10" step="0.5" value="2">
+                                <label class="ap-toggle" for="bkBottle"><input id="bkBottle" type="checkbox"><span><strong>Start from four founders</strong><small>Like a single immigrant lineage</small></span></label>
+                                <div class="ap-readouts">
+                                    <div><span>S (first drought)</span><strong id="bkS">—</strong></div>
+                                    <div><span>R predicted h²S</span><strong id="bkRpred">—</strong></div>
+                                    <div><span>R observed</span><strong id="bkRobs">—</strong></div>
+                                </div>
+                                <div class="ap-readouts">
+                                    <div><span>Variation left</span><strong id="bkVar">—</strong></div>
+                                    <div></div><div></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="lab-definition">
+                            <div><strong>Fast, then thin</strong><span>With the defaults the first drought selects about 1 SD and moves the mean about 0.5 to 0.6 SD, close to $h^2S$. After 24 years the mean is up 3.4 SD and about two thirds of the variation remains.</span></div>
+                            <div><strong>Selection every year burns the fuel</strong><span>Choose <em>Selection every year</em>: the mean runs away (about 6 SD) but only about 4 % of the variation is left. A trait that has used up its variation can no longer respond when conditions change.</span></div>
+                            <div><strong>Fluctuating selection preserves it</strong><span>With the direction flipping every four years the mean ends near +1 SD and about 60 % of the variation survives: shifting pressures prevent the gene pool from emptying. The Grants observed the direction of selection changing from year to year as the weather did.</span></div>
+                        </div>
+                        <div class="try-list"><strong>Try this</strong><ol>
+                            <li><b>Lower the heritability.</b> Set h² to 0.2: the predicted response per drought drops to a third, and after 24 years the mean has moved less than 1 SD instead of 3.4. Same deaths, much less change.</li>
+                            <li><b>Shrink the island.</b> Set the population to 20: the mean moves less (about 2.5 SD) and only a tenth of the variation remains after 24 years, because chance now removes variants as well as selection.</li>
+                            <li><b>Start from four founders.</b> The population begins with only about three quarters of the variation and, in this run, ends with 56 % against 66 % even though the mean moves just as far.</li>
+                        </ol></div>
+                        <p class="ap-lab-note">One simulated population per click, with a fixed random seed; another seed would give slightly different numbers, and the bottleneck effect in particular varies from run to run. The scales are standard deviations of the starting population, not millimetres.</p>
+                    </div>
+
+                    <div id="part-13d" class="chapter-subhead">
+                        <span>Chapter 13 · Part D</span>
+                        <h4>The same disease in algorithms</h4>
+                        <p>Question: what is inbreeding in an evolutionary algorithm, and what are its cures?</p>
+                    </div>
+
+                    <div id="s13-4" class="chapter-panel formula">
+                        <h4><span class="step-no">13.4</span>Premature convergence is inbreeding</h4>
+                        <p>An evolutionary algorithm breeds from the best of its own population, which is selection and a small effective size at once. When every candidate descends from a few early winners, variation collapses onto one peak and the search stops, which is <em>premature convergence</em>. FlyKart’s evolution has the cures built in: elites are protected, offspring come from crossover and mutation, and when progress stalls for several generations a share of the next population is replaced by brand-new random networks (“immigrants”).</p>
+                        <div class="overflow-x-auto"><table class="decision-table"><thead><tr><th>Problem</th><th>In a herd</th><th>In an evolutionary algorithm</th><th>In model training</th></tr></thead><tbody>
+                            <tr><td>Everyone is related</td><td>Few founders, one popular sire</td><td>Population cloned from a few elites</td><td>Dataset made of near-duplicates; a model trained on its own outputs</td></tr>
+                            <tr><td>Lost variation</td><td>Heterozygosity drifts to zero</td><td>Diversity collapses onto one peak</td><td>Rare cases vanish from the tails (“model collapse”)</td></tr>
+                            <tr><td>Fix: add outsiders</td><td>Genetic rescue, outcrossing</td><td>Random immigrants</td><td>Mix in fresh real data every round</td></tr>
+                            <tr><td>Fix: protect niches</td><td>Pair low-kinship animals; equal family sizes</td><td>Fitness sharing, islands, speciation</td><td>Rebalance and de-duplicate</td></tr>
+                            <tr><td>Fix: ease selection</td><td>Do not breed only from show winners</td><td>Weaker truncation, larger population</td><td>Lower the learning rate on a narrow set</td></tr>
+                        </tbody></table></div>
+                    </div>
+
+                    <div id="diversity-lab" class="ap-lab">
+                        <div class="ap-lab-heading">
+                            <div>
+                                <span class="chapter-number">Lab 13.4 · A deceptive landscape</span>
+                                <h4>Find the Narrow Peak Before Diversity Runs Out</h4>
+                                <p>A population of dots starts spread over a map with a broad, easy hill (the decoy) and a taller, narrow one. Each generation the best share breeds with random nudges. Run it, then change the settings and press <em>Run 60 trials</em> to count how often the tall peak is found. Fitness sharing divides a crowded niche’s reward; islands keep four sub-populations apart.</p>
+                            </div>
+                            <span class="ap-status">Diversity versus focus</span>
+                        </div>
+                        <div class="ap-lab-grid">
+                            <div class="ap-canvas-shell"><canvas id="eaCanvas" width="900" height="420" aria-label="A fitness landscape with a moving population and diversity and best-fitness curves"></canvas></div>
+                            <div class="ap-controls">
+                                <div class="ap-seg" id="eaPresets" role="group" aria-label="Scenarios">
+                                    <button type="button" data-ea-top="25" data-ea-sigma="0.04" data-ea-imm="0" data-ea-pop="60" data-niche="0" data-island="0" class="active">Default</button>
+                                    <button type="button" data-ea-top="10" data-ea-sigma="0.04" data-ea-imm="0" data-ea-pop="60" data-niche="0" data-island="0">Greedy</button>
+                                    <button type="button" data-ea-top="60" data-ea-sigma="0.04" data-ea-imm="0" data-ea-pop="60" data-niche="0" data-island="0">Gentle</button>
+                                    <button type="button" data-ea-top="25" data-ea-sigma="0.04" data-ea-imm="3" data-ea-pop="60" data-niche="0" data-island="0">Immigrants</button>
+                                    <button type="button" data-ea-top="25" data-ea-sigma="0.04" data-ea-imm="0" data-ea-pop="60" data-niche="1" data-island="0">Fitness sharing</button>
+                                    <button type="button" data-ea-top="25" data-ea-sigma="0.04" data-ea-imm="0" data-ea-pop="20" data-niche="0" data-island="0">Tiny population</button>
+                                </div>
+                                <div class="ap-buttons three"><button id="eaPlay" type="button">Run</button><button id="eaStepBtn" type="button">Step</button><button id="eaReset" type="button">New run</button></div>
+                                <label for="eaPop"><span>Population</span><output id="eaPopValue">60</output></label>
+                                <input id="eaPop" type="range" min="20" max="200" step="10" value="60">
+                                <label for="eaTop"><span>Breed from the best</span><output id="eaTopValue">25 %</output></label>
+                                <input id="eaTop" type="range" min="10" max="100" step="5" value="25">
+                                <label for="eaSigma"><span>Mutation step</span><output id="eaSigmaValue">0.04</output></label>
+                                <input id="eaSigma" type="range" min="0.01" max="0.15" step="0.01" value="0.04">
+                                <label for="eaImm"><span>Random immigrants per generation</span><output id="eaImmValue">0</output></label>
+                                <input id="eaImm" type="range" min="0" max="10" step="1" value="0">
+                                <label class="ap-toggle" for="eaNiche"><input id="eaNiche" type="checkbox"><span><strong>Fitness sharing</strong><small>Crowded niches split their reward</small></span></label>
+                                <label class="ap-toggle" for="eaIsland"><input id="eaIsland" type="checkbox"><span><strong>Four islands</strong><small>Swap one migrant every 8 generations</small></span></label>
+                                <div class="ap-buttons"><button id="eaTrials" type="button">Run 60 trials</button><span></span></div>
+                                <div class="ap-readouts">
+                                    <div><span>Generation</span><strong id="eaGen">0</strong></div>
+                                    <div><span>Best</span><strong id="eaBest">—</strong></div>
+                                    <div><span>Diversity</span><strong id="eaDiv">—</strong></div>
+                                </div>
+                                <div class="ap-readouts"><div style="grid-column: 1 / -1"><span>Found the tallest peak</span><strong id="eaRate">press “Run 60 trials”</strong></div></div>
+                            </div>
+                        </div>
+                        <div class="lab-definition">
+                            <div><strong>Greed finds less</strong><span>Breeding only from the top 10 % found the tall peak in about 32 % of 60 trials; the top 60 % found it in about 58 %. Weaker selection keeps the dots that are still climbing a narrow hill.</span></div>
+                            <div><strong>Numbers and outsiders both help</strong><span>A population of 20 found it in about 17 %; 150 found it in about 75 %. Three random immigrants per generation, with the default size, reached about 75 %. Fitness sharing got about 62 % and islands about 47 %.</span></div>
+                            <div><strong>These are odds, not guarantees</strong><span>Each figure is a percentage of 60 runs, so it carries a few points of noise. The pattern is what to trust: more diversity, more chance of finding the narrow peak.</span></div>
+                        </div>
+                        <p class="ap-lab-note">A toy landscape with four hills in two dimensions. Real fitness landscapes (for example the 3,360 weights of the kart brain) are far higher-dimensional; the same trade-off between exploiting what you have and keeping variation appears there too.</p>
+                    </div>
+
+                    <div id="s13-5" class="chapter-panel">
+                        <h4><span class="step-no">13.5</span>A summary of methods that actually reduce undesired traits</h4>
+                        <div class="option-cards">
+                            <div class="pick"><b>Know the load</b><strong>Measure before you manage</strong><p>Pedigrees give expected relatedness; genome sequencing gives measured homozygosity. Both are used for the kākāpō, with the caveat that pedigrees are unreliable when the founders are not truly unrelated.</p></div>
+                            <div><b>Equalise</b><strong>Even family sizes, low-kinship pairs</strong><p>The cheapest tool: no new animals needed, only a pairing rule. It slows the loss of diversity and keeps effective size close to head count.</p></div>
+                            <div><b>Outcross</b><strong>Genetic rescue, with care</strong><p>Bring in unrelated individuals. It raised heterozygosity in the Florida panther. It does not delete harmful variants, and sources must be chosen with attention to adaptation.</p></div>
+                            <div><b>Keep it large</b><strong>Effective size, not head count</strong><p>Old rules of thumb asked for $N_e\ge50$ in the short term and 500 in the long term; later work argued for 100 and 1,000. Treat them as warnings rather than guarantees.</p></div>
+                            <div><b>Do not rely on purging</b><strong>It works for severe harm only</strong><p>Selection removes strongly harmful recessives (Lab 13.2, last preset) but barely touches many mild ones, and purging inside a small population also costs diversity.</p></div>
+                            <div><b>In code</b><strong>Immigrants, niching, islands</strong><p>The same list works for evolutionary algorithms, and its data-science echo is to keep fresh real data in every training round.</p></div>
+                        </div>
+                    </div>
+
+                    <div id="s13-6" class="chapter-panel">
+                        <h4><span class="step-no">13.6</span>Quick check</h4>
+                        <div class="quiz" id="quiz-evo" data-quiz="evo" data-topic="evo" data-count="6" data-title="Inbreeding and diversity" data-intro="Six questions drawn from a bank of thirteen."></div>
+                    </div>
+
+                    <div class="ledger" data-build="13">
+                        <div class="ledger-head"><span>Chapter 13 ledger</span><strong>Diversity is the fuel; closing the population burns it</strong></div>
+                        <div class="ledger-grid">
+                            <div class="kept"><b>What you can now do</b><p>Compute an inbreeding coefficient from a pedigree, predict how heterozygosity drains in a small population, apply the breeder’s equation, and name the cures in animals, algorithms and data.</p></div>
+                            <div class="dropped"><b>What the models leave out</b><p>Real genomes have linked genes, new mutation, environmental change and genetic diversity that cannot be summarised by one number. The simulators show mechanisms, not forecasts.</p></div>
+                            <div class="price"><b>What it costs</b><p>Management effort, outsiders who carry their own load, and a lower selection intensity: you trade speed of progress for staying power.</p></div>
+                        </div>
+                    </div>
+                </div>
+            </article>
+
+            <div class="thread-knot">
+                <span>Open question</span>
+                <p>You have the pieces: the score, the graph, the population. Which of the claims in this guide can you now defend, and which did you only nod along with?</p>
+                <a href="#guided-quiz">Chapter 14 · Check yourself ↓</a>
+            </div>
+
+            <!-- ============================ CHAPTER 14 ============================ -->
+            <article id="guided-quiz" class="book-chapter" data-title="Check yourself">
+                <div class="chapter-heading">
+                    <span class="chapter-numeral" aria-hidden="true">14</span>
+                    <div>
+                        <span class="chapter-number">Chapter 14 · The test</span>
+                        <h3>Check Yourself</h3>
+                    </div>
+                    <p class="chapter-question">Question: can you apply what the labs showed to a new situation, without the sliders in front of you?</p>
+                </div>
+                <div class="chapter-stack">
+                    <div id="s14-1" class="chapter-panel">
+                        <h4><span class="step-no">14.1</span>Your progress</h4>
+                        <p>Every quiz in this guide keeps its best score in your browser (and nowhere else). Questions are drawn at random and their answers shuffled, so a second attempt is a different test.</p>
+                        <div class="quiz-hub" id="quizHub"></div>
+                        <div class="quiz-actions"><button id="quizReset" type="button">Reset my scores</button></div>
+                    </div>
+
+                    <div id="final-quiz-lab" class="ap-lab">
+                        <div class="ap-lab-heading">
+                            <div>
+                                <span class="chapter-number">Lab 14.1 · The mixed quiz</span>
+                                <h4>Twelve Questions Across Chapters 10–13</h4>
+                                <p>Four on loss functions, three on graphs, three on inbreeding and diversity, two on the body and the neuron. Wrong answers come back with the reasoning, and you can retry only the ones you missed.</p>
+                            </div>
+                            <span class="ap-status">12 questions</span>
+                        </div>
+                        <div class="quiz" id="quiz-final" data-quiz="final" data-mix="loss:4,graph:3,evo:3,core:2" data-title="Mixed quiz" data-intro="Twelve questions drawn at random from every bank."></div>
+                    </div>
+
+                    <div id="s14-2" class="chapter-panel">
+                        <h4><span class="step-no">14.2</span>A warm-up on the neuron and the body</h4>
+                        <div class="quiz" id="quiz-core" data-quiz="core" data-topic="core" data-count="6" data-title="Neurons and the body" data-intro="Six questions on the neuron update, backpropagation through spikes, the sonar and fusion."></div>
                     </div>
 
                     <div class="finale-cta">
@@ -4686,7 +5630,7 @@
                 </p>
             </div>
             <div class="analogy-card"><strong>Mental model: a wind tunnel for ideas</strong><p>Each lab isolates one force—spiking, breeding, capacity, perception, or reward—so you can change a knob and watch the response. Like a wind tunnel, it builds intuition before the pieces meet in a full vehicle.</p><span class="analogy-limit">Where it breaks: isolated demonstrations remove interactions and failure modes that appear only in the complete system.</span></div>
-            <p class="text-xs text-slate-600">All 29 labs from the guided route, in reading order. Each card jumps to the lab; its chapter explains what to look for.</p>
+            <p class="text-xs text-slate-600">All 42 labs from the guided route, in reading order. Each card jumps to the lab; its chapter explains what to look for.</p>
             <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
                 <a href="#membrane-voltage-lab" class="block p-4 rounded-xl border border-indigo-300 bg-indigo-50 text-sm text-indigo-950 hover:border-indigo-500 transition"><strong>Lab 1.1 · Electrochemistry</strong><span class="block text-xs text-slate-700 mt-1">Move Ions Around and Watch the Vote Change</span><span class="block text-xs text-slate-600 mt-1">Change one ion's inside and outside concentration, then open the sodium doors.</span></a>
                 <a href="#ion-transport-lab" class="block p-4 rounded-xl border border-cyan-300 bg-cyan-50 text-sm text-cyan-950 hover:border-cyan-500 transition"><strong>Lab 1.2 · Chapter 1 in one picture</strong><span class="block text-xs text-slate-700 mt-1">Scrub a Spike Through Na⁺ Influx, K⁺ Efflux, and Propagation</span><span class="block text-xs text-slate-600 mt-1">Drag the spike phase or press play.</span></a>
@@ -6691,6 +7635,11 @@
     <script src="./neural-labs.js"></script>
     <script src="./ion-labs.js"></script>
     <script src="./body-labs.js"></script>
+    <script src="./edu-common.js"></script>
+    <script src="./loss-labs.js"></script>
+    <script src="./graph-labs.js"></script>
+    <script src="./evolution-labs.js"></script>
+    <script src="./quiz-labs.js"></script>
     <script src="./flykart-core.js"></script>
     <script src="./brain-inspector.js"></script>
 </body>
