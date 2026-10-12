@@ -1,3 +1,5 @@
+import {SensorFpv} from './ui/sonar-fpv';
+import {TrackGhostInspector} from './ui/ghost-inspector';
 import {WorldStudio} from './world/studio';
 import {worldBreedingContext} from './world/breeding';
 let worldStudio:WorldStudio|null=null;
@@ -43,7 +45,7 @@ import { controllerCheckpoint, exportAsFlyKartV1, exportVisionBrain, importFile,
 import type { VisionModel } from "./perception";
 import { DriverMode } from "./pipeline";
 import { Assets, loadAssets } from "./ui/assets";
-import { SonarView, drawBrain, drawEstimates, drawEye, drawKenyon, drawSonarTrace, drawTrace, drawTrackMap, drawWorldMap, estimateRows } from "./ui/draw";
+import { SonarView, drawBrain, drawEstimates, drawKenyon, drawSonarTrace, drawTrace, drawTrackMap, drawWorldMap, estimateRows } from "./ui/draw";
 import { renderEvidence } from "./ui/evidence";
 import { HOW_IT_WORKS } from "./ui/how";
 import { LapRecord, TrackSession, TrackSettings, WorldDriverKind, WorldSession, WorldSettings } from "./ui/sessions";
@@ -123,6 +125,7 @@ function updateModeNote(): void {
 let experiment:ReturnType<typeof mountExperimentPanel>;
 let evolutionPanels:Partial<Record<'track'|'world',EvolutionPanel>>={};
 let trackEyePreview:EyePreview,worldEyePreview:EyePreview;
+let trackFpv:SensorFpv,worldFpv:SensorFpv,trackInspector:TrackGhostInspector;
 let previewTrack:TrackSession[]|null=null,previewWorld:WorldSession[]|null=null;
 let cameraTraining=false, cancelTraining=false, trainedCamera:CameraTrainingResult|null=null;
 let trainedExperiment:RacingSettings|null=null;
@@ -242,26 +245,27 @@ function finishLap(): void {
 
 function setStatus(which: "track" | "world", text: string): void { $(`${which}-status`).textContent = text; }
 
-function paintTrack(preview?:TrackSession,ghosts:TrackSession[]=[]): void {
+function paintTrack(preview?:TrackSession,ghosts:TrackSession[]=previewTrack??[]): void {
   if(document.hidden)return;
   evolutionPanels.track?.refresh();
-  const session = preview??state.track; if (!session) return;
+  const selected=trackInspector?.index??0;
+  const session = ghosts.length?(selected<0?state.track:ghosts[selected]??ghosts[0]):preview??state.track; if (!session) return;trackInspector?.view(session);
   const episode = session.episode; const car = episode.car; const driver = session.driver;
   const resolution=session.settings.resolution??'native';$('track-camera-size').textContent=`${resolution==='native'?episode.camera.width+'×'+episode.camera.height:resolution.replace('x','×')} colour pixels · 15 Hz simulation clock`;
   updateStallStatus(session);
   const reading = episode.sonar();
   const spec=episode.sonarUnit?.spec;
   const sonarView: SonarView | null = reading ? { x: car.position.x + Math.cos(car.heading) * (spec?.mountForward??MOUNT.forward), y: car.position.y + Math.sin(car.heading) * (spec?.mountForward??MOUNT.forward), heading: car.heading+(spec?.yawDeg??0)*Math.PI/180, beamDeg:(spec?.lobeSigmaDeg??12)*1.25, rangePx: reading.range, echo: reading.echo, on: state.sonarOn } : null;
-  drawTrackMap($("track-map") as HTMLCanvasElement, session.route, car, episode.cars, episode.camera.hfov, { ghosts:ghosts.map((s,i)=>({x:s.episode.car.position.x,y:s.episode.car.position.y,heading:s.episode.car.heading,label:String(i+1),color:GHOST_COLORS[i%GHOST_COLORS.length]})),checkpointCount:session.settings.checkpointCount,sonar: sonarView, nextGate: episode.nextGate(), label: `progress ${(car.totalProgress * 100).toFixed(0)}%   speed ${car.speed.toFixed(0)}   time ${(car.ticks / 30).toFixed(1)} s   gates ${car.checkpointsPassed}` });
+  drawTrackMap($("track-map") as HTMLCanvasElement, session.route, car, episode.cars, episode.camera.hfov, { ghosts:ghosts.map((s,i)=>({x:s.episode.car.position.x,y:s.episode.car.position.y,heading:s.episode.car.heading,label:String(i+1),color:GHOST_COLORS[i%GHOST_COLORS.length],selected:i===selected})),checkpointCount:session.settings.checkpointCount,sonar: sonarView, nextGate: episode.nextGate(), label: `progress ${(car.totalProgress * 100).toFixed(0)}%   speed ${car.speed.toFixed(0)}   time ${(car.ticks / 30).toFixed(1)} s   gates ${car.checkpointsPassed}` });
   if (!session.perceiver) episode.render();
-  drawEye($("track-eye") as HTMLCanvasElement, lowResolution(episode.frame,episode.camera.width,episode.camera.height,session.settings.resolution??"native"), episode.camera);
+  trackFpv?.paint(lowResolution(episode.frame,episode.camera.width,episode.camera.height,session.settings.resolution??"native"),episode.camera,episode.sonarUnit,{...car.position,heading:car.heading},episode.tick,session.settings.sonarOn!==false,session.controller.inputCount===19,ghosts.length&&selected>=0?`Cart ${selected+1}`:'Live robot');
   trackEyePreview.paint(episode.frame,episode.camera,session.settings,driver.ensemble,session.perceiver?undefined:'no eye network selected');
   const truth = episode.truth(session.lastTruth); const perception = driver.perception;
   const rows = estimateRows(trackDomain, truth, perception ? perception.mean : null, perception ? perception.variance : null, driver.fused.mean, perception ? driver.fused.weights : null, driver.memoryCue ? driver.memoryCue.mean : null, Boolean(driver.memoryCue));
   drawEstimates($("track-estimates") as HTMLCanvasElement, rows);
   const activity = session.controller.activity();
   drawBrain($("brain-canvas") as HTMLCanvasElement, activity.spikes, activity.outputs);
-  const memory = state.memory; const on = $<HTMLInputElement>("memory-on").checked && Boolean(session.perceiver);
+  const memory = session.settings.memory??state.memory; const on = Boolean(session.settings.memory&&session.perceiver);
   const gate = car.checkpointsPassed % memory.config.gates;
   const cells: number[] = []; for (let j = gate; j < memory.kenyonCount; j += memory.config.gates) cells.push(j);
   drawKenyon($("memory-cells") as HTMLCanvasElement, cells, new Set(Array.from(memory.active).filter((j) => j >= 0)), (j) => memory.isTaught(j), (j) => memory.cellDistance(j), on);
@@ -277,10 +281,10 @@ function paintTrack(preview?:TrackSession,ghosts:TrackSession[]=[]): void {
 
 function updateProfileUi(): void {
   const robot = state.profile === "robot";
-  $("sonar-row").hidden = !robot; $("sonar-panel").hidden = state.tab !== "track"; $("world-sonar-box").hidden = !robot;
+  $("sonar-row").hidden = !robot && state.tab !== "world"; $("sonar-panel").hidden = state.tab !== "track"; $("world-sonar-box").hidden = !state.world?.episode.scanSonarUnit;
   $("profile-note").textContent = robot
     ? `Robot scale: ${ROBOT.lengthCm} × ${ROBOT.widthCm} cm body, wheels ${ROBOT.wheelbaseCm} cm apart, and the camera and the HC-SR04 sonar both ${ROBOT.mountHeightCm} cm above the floor (one simulator pixel is ${CM_PER_PIXEL} cm, so the 24 × 14 px kart is about 26 × 15 cm). From that height the road is seen almost edge-on, the ground just ahead of the wheels is hidden, and gantries are raised so the sonar can pass beneath them.${robotAssets()?.vision ? "" : " The robot camera network is not bundled in this build: eyes are off."}`
-    : "The original FlyKart Vision kart: a camera 16 cm up and no sonar inputs. Open world still shows a diagnostic HC-SR04 scan for the observer. The robot profile connects the HC-SR04 to perception and drops the camera to 6.5 cm.";
+    : "Racer camera-only kart: a camera 16 cm up, with no fitted track sonar. Select Robot sensor head to fit the HC-SR04 and lower the camera to 6.5 cm. Open World connects front sonar by default when enabled, including with the higher kart camera; the FPV status shows whether it reaches the brain.";
 }
 
 function setProfile(next: "kart" | "robot"): void {
@@ -335,10 +339,11 @@ function buildWorld(): void {
   paintWorld();
 }
 
-function paintWorld(preview?:WorldSession,ghosts:WorldSession[]=[]): void {
+function paintWorld(preview?:WorldSession,ghosts:WorldSession[]=previewWorld??[]): void {
   if(document.hidden)return;
   evolutionPanels.world?.refresh();
-  const session = ghosts.length?(ghosts[worldStudio?.selectedIndex??0]??preview??ghosts[0]):preview??state.world; if (!session) return;worldStudio?.view(session);
+  const selected=worldStudio?.selectedIndex??0;
+  const session = ghosts.length?(selected<0?state.world:ghosts[selected]??ghosts[0]):preview??state.world; if (!session) return;worldStudio?.view(session);
   const episode = session.episode; const sim = episode.sim; const driver = session.driver;
   $('world-caption').textContent=`world ${session.settings.seed} · target round ${session.searchesCompleted+1} · ${sim.goals.length} active ${sim.goals.length===1?'flag':'flags'}`;
   const truth = episode.truth(session.lastTruth); const perception = driver?.perception ?? null;
@@ -350,7 +355,7 @@ function paintWorld(preview?:WorldSession,ghosts:WorldSession[]=[]): void {
   const spec=episode.scanSonarUnit?.spec;
   const sonarView: SonarView | null = reading ? { x: sim.kart.x + Math.cos(sim.kart.heading) * (spec?.mountForward??MOUNT.forward), y: sim.kart.y + Math.sin(sim.kart.heading) * (spec?.mountForward??MOUNT.forward), heading: sim.kart.heading+(spec?.yawDeg??0)*Math.PI/180,beamDeg:(spec?.lobeSigmaDeg??12)*1.25, rangePx: reading.range, echo: reading.echo, on: state.sonarOn } : null;
   drawWorldMap($("world-map") as HTMLCanvasElement, sim.world, sim.kart, { x: sim.status.goalX, y: sim.status.goalY }, { truth, seen: perception ? perception.mean : null, sigma: perception ? perception.variance : null },
-    `goals ${sim.status.goals}   speed ${sim.kart.speed.toFixed(0)}   ${sim.surface}${sim.status.crashed ? "   " + sim.status.crashReason : ""}`, sonarView,{goals:sim.goals,goalRadius:sim.goalRadius,trail:$<HTMLInputElement>("world-trail-visible").checked?session.trail:undefined,ghosts:ghosts.map((s,i)=>({...s.episode.sim.kart,trail:$<HTMLInputElement>("world-trail-visible").checked?s.trail:undefined,label:String(i+1),color:GHOST_COLORS[i%GHOST_COLORS.length]}))});
+    `goals ${sim.status.goals}   speed ${sim.kart.speed.toFixed(0)}   ${sim.surface}${sim.status.crashed ? "   " + sim.status.crashReason : ""}`, sonarView,{goals:sim.goals,goalRadius:sim.goalRadius,trail:$<HTMLInputElement>("world-trail-visible").checked?session.trail:undefined,ghosts:ghosts.map((s,i)=>({...s.episode.sim.kart,trail:$<HTMLInputElement>("world-trail-visible").checked?s.trail:undefined,label:String(i+1),color:GHOST_COLORS[i%GHOST_COLORS.length],selected:i===selected}))});
   updateScanStatus("world",session);
   const comparison=scanComparison("world-scan",session.sonarMap);
   drawSonarHistory($("world-sonar-map") as HTMLCanvasElement,session.sonarMap,sim.kart,state.sonarOn&&Boolean(episode.scanSonarUnit),{...scanOptions("world"),available:Boolean(episode.scanSonarUnit),extent:sim.world.half+50,opacity:comparison.opacity,reference:comparison.reference?{objects:session.episode.targets()}:undefined});
@@ -361,7 +366,7 @@ function paintWorld(preview?:WorldSession,ghosts:WorldSession[]=[]): void {
   $("world-memory-status").textContent=session.memory?`${session.memory.count} cells · ${session.memory.taught} taught · ${session.memory.recalled?"recalling":"building visual signatures"}`:"Off";
   $("world-sonar").textContent = !reading ? "—" : !state.sonarOn ? "off" : reading.echo ? `${(reading.range * CM_PER_PIXEL).toFixed(0)} cm` : "no echo";
   if (!perception) episode.render();
-  drawEye($("world-eye") as HTMLCanvasElement, lowResolution(episode.frame,episode.camera.width,episode.camera.height,session.settings.resolution??"native"), episode.camera);
+  worldFpv?.paint(lowResolution(episode.frame,episode.camera.width,episode.camera.height,session.settings.resolution??"native"),episode.camera,episode.scanSonarUnit,sim.kart,episode.tick,session.settings.sonarOn!==false,Boolean(episode.sonarUnit)&&session.controller.inputCount===19,ghosts.length&&selected>=0?`Cart ${selected+1}`:'Live robot');
   worldEyePreview.paint(episode.frame,episode.camera,session.settings,driver?.ensemble??null,driver?.options.perceiver&&!driver.options.blind?undefined:`${session.settings.kind} driver does not use camera eyes`);
   const rows = driver ? estimateRows(worldDomain, truth, perception ? perception.mean : null, perception ? perception.variance : null, driver.fused.mean, perception ? driver.fused.weights : null) : estimateRows(worldDomain, truth, null, null, truth, null);
   drawEstimates($("world-estimates") as HTMLCanvasElement, rows, [-1, 1]);
@@ -586,16 +591,19 @@ async function boot(): Promise<void> {
   const mapCard=document.createElement("section");mapCard.className="compact-map-card";mapCard.append($("track-select").closest("label")!);document.querySelector("#tab-track .views")!.after(mapCard);
   trackCurriculum=mountMapCurriculum($<HTMLSelectElement>("track-select"),mapCard,()=>{},true);
   mountMapPicker($<HTMLSelectElement>("track-select"),()=>TRACKS);
+  trackFpv=new SensorFpv('track',$<HTMLCanvasElement>('track-eye'),()=>paintTrack());
+  worldFpv=new SensorFpv('world',$<HTMLCanvasElement>('world-eye'),()=>paintWorld());
+  trackInspector=new TrackGhostInspector($<HTMLCanvasElement>('track-map'),()=>paintTrack());
   organizeVision(()=>{if(state.tab==='track')paintTrack();else if(state.tab==='world')paintWorld();});
   document.querySelector('.profile-bar')!.after(document.querySelector('.settings-history')!);
   buildTrack(); paintTrack();
   const parentHost=document.createElement('div');parentHost.id='evolution-parents';document.querySelector('.brain-file-bar')!.after(parentHost);
   for(const domain of ['track','world'] as const){const panel=new EvolutionPanel(domain,()=>visionBrainText(domain),()=>domain==='track'?currentController():state.importedWorld?.controller??(state.profile==='robot'?state.assets?.robot?.worldController:state.assets?.worldController),()=>$(domain==='track'?'camera-train':'world-train').click(),()=>$(domain==='track'?'camera-train-stop':'world-train-stop').click());evolutionPanels[domain]=panel;panel.element.hidden=domain!==state.tab;parentHost.append(panel.element);await panel.restore();}
-  worldStudio=new WorldStudio({busy:()=>cameraTraining,text:()=>visionBrainText('world'),load:importBrainText,inspect:()=>paintWorld(worldStudio?.selectedSession,worldStudio?.sessions??[]),log:logSensor});document.querySelector('#tab-world .workspace')!.after(worldStudio.element);
+  worldStudio=new WorldStudio({busy:()=>cameraTraining,text:()=>visionBrainText('world'),load:importBrainText,inspect:()=>paintWorld(),log:logSensor});document.querySelector('#tab-world .workspace')!.after(worldStudio.element);
   const wanted = location.hash.replace("#", ""); if (["world", "evidence", "how"].includes(wanted)) showTab(wanted);
   if (problems.length) console.warn("FlyKart Vision: bundled files not found:", problems.join(", "));
   $("boot-screen").setAttribute("hidden", "");
-  (window as unknown as { flykartVision: unknown }).flykartVision = state;Object.defineProperty(state,'studio',{get:()=>worldStudio});
+  (window as unknown as { flykartVision: unknown }).flykartVision = state;Object.defineProperty(state,'studio',{get:()=>worldStudio});Object.defineProperty(state,'inspection',{get:()=>({track:previewTrack?.[trackInspector.index]??state.track,world:previewWorld?.[worldStudio?.selectedIndex??0]??state.world,trackGhosts:previewTrack??[],worldGhosts:previewWorld??[]})});
   requestAnimationFrame(frame);
 }
 
@@ -620,14 +628,14 @@ async function runCameraTraining():Promise<void>{
     if(!Number.isInteger(settings.maxTicks)||settings.maxTicks<300||settings.maxTicks>3000)throw new Error('Training budget must be 300–3000 ticks per lap.');
     const generations=Number($<HTMLInputElement>('camera-generations').value),population=Number($<HTMLInputElement>('camera-population').value);
     if(!Number.isInteger(generations)||generations<1||generations>50||!Number.isInteger(population)||population<2||population>16)throw new Error('Use 1–50 generations and 2–16 candidates.');
-    const controls=Array.from(document.querySelectorAll<HTMLInputElement|HTMLSelectElement|HTMLButtonElement>('main input,main select,main button')).filter(e=>!['camera-train-stop','track-evolve-stop-top','copy-sensor-log','clear-sensor-log','vision-render-mode','vision-refresh'].includes(e.id)),disabled=controls.map(e=>e.disabled);
+    const controls=Array.from(document.querySelectorAll<HTMLInputElement|HTMLSelectElement|HTMLButtonElement>('main input,main select,main button')).filter(e=>!e.closest('.fpv-controls,.vision-ghost-inspector')&&!['camera-train-stop','track-evolve-stop-top','copy-sensor-log','clear-sensor-log','vision-render-mode','vision-refresh'].includes(e.id)),disabled=controls.map(e=>e.disabled);
     controls.forEach(e=>e.disabled=true);$<HTMLButtonElement>('camera-train-stop').disabled=false;
-    try{trainedCamera=await trainCameraController(settings,generations,population,()=>cancelTraining,line=>{$('camera-train-status').textContent=line;logSensor(line);},(sessions,generation,seed)=>{previewTrack=sessions;sessions.forEach(logStall);if(!document.hidden&&runtimeBudget.shouldPaint(performance.now()))paintTrack(sessions[0],sessions);renderGhostScores('camera-ghost-scores',sessions.map((s,i)=>`${i+1} · ${(s.episode.car.totalProgress*100).toFixed(0)}% · ${(s.episode.tick/30).toFixed(1)} s · ${s.episode.car.collisions} contacts`),generation,seed);},Number($<HTMLSelectElement>('camera-train-speed').value),trackCurriculum?.enabled()?trackCurriculum.read():[settings.trackId],()=>runtimeBudget.cohort,c=>evolutionPanels.track!.checkpoint({...c,training:{...c.training,experiment:trainedExperiment,eyes:describeEvolution(visionBrainText('track')).raw.vision?.trainedOn??'current camera',profile:state.profile}}));}
+    try{trainedCamera=await trainCameraController(settings,generations,population,()=>cancelTraining,line=>{$('camera-train-status').textContent=line;logSensor(line);},(sessions,generation,seed)=>{previewTrack=sessions;trackInspector.update(sessions,generation);sessions.forEach(logStall);if(!document.hidden&&runtimeBudget.shouldPaint(performance.now()))paintTrack(sessions[0],sessions);renderGhostScores('camera-ghost-scores',sessions.map((s,i)=>`${i+1} · ${(s.episode.car.totalProgress*100).toFixed(0)}% · ${(s.episode.tick/30).toFixed(1)} s · ${s.episode.car.collisions} contacts`),generation,seed);},Number($<HTMLSelectElement>('camera-train-speed').value),trackCurriculum?.enabled()?trackCurriculum.read():[settings.trackId],()=>runtimeBudget.cohort,c=>evolutionPanels.track!.checkpoint({...c,training:{...c.training,experiment:trainedExperiment,eyes:describeEvolution(visionBrainText('track')).raw.vision?.trainedOn??'current camera',profile:state.profile}}));}
     finally{controls.forEach((e,i)=>e.disabled=disabled[i]);$<HTMLButtonElement>('camera-train-stop').disabled=true;}
     $<HTMLButtonElement>('camera-train-adopt').disabled=!trainedCamera;$<HTMLButtonElement>('camera-report').disabled=!trainedCamera;
     $('camera-train-status').textContent=trainedCamera?`Training complete. Held-out parent ${trainedCamera.validation.parent.toFixed(2)}, offspring ${trainedCamera.validation.offspring.toFixed(2)}. Saved winner is the next evolution parent; review before driving adoption.`:'Training cancelled; last completed generation remains the next evolution parent.';
   }catch(e){$('camera-train-status').textContent=(e as Error).message;}
-  finally{await evolutionPanels.track?.finish(trainedCamera?.validation);cameraTraining=false;previewTrack=null;previewWorld=null;}
+  finally{await evolutionPanels.track?.finish(trainedCamera?.validation);cameraTraining=false;previewTrack=null;previewWorld=null;trackInspector.finish();paintTrack();}
 }
 
 function logFreshPing(session:TrackSession):void{
@@ -783,7 +791,7 @@ async function runWorldTraining():Promise<void>{
     const parent=evolutionPanels.world!.begin();logSensor(`Room evolution parent ${parent.name} · ${parent.id} · generation ${parent.generation}`);
     trainedWorldExperiment=structuredClone(experiment.applied());trainedWorldContext={...session.settings,controller:parent.network,start:session.initialPose,goals:undefined,maxTicks,sensorOnly:true,kind:'vision',fade:0,roomMemory:undefined};await worldStudio?.ready;const breeding=worldStudio?.config();const ancestors=worldStudio?.ancestors()??[];const recoveryState=breeding?worldStudio?.resumeState(parent.network,worldBreedingContext(trainedWorldContext,breeding,{crashWeight,coach:$<HTMLInputElement>('world-reverse-coach').checked,retain:$<HTMLInputElement>('world-retain-forward').checked})):undefined;const runId=await worldStudio?.begin(evolutionBase(visionBrainText('world'),JSON.stringify(parent.raw)));worldParentGeneration=parent.generation;trainedWorldRecipe=parent.raw.controller?.trainingRecipe?structuredClone(parent.raw.controller.trainingRecipe):undefined;trainedWorldProvenance=structuredClone(parent.provenance);
     state.running.track=state.running.world=false;$('track-run').textContent=$('world-run').textContent='Start';cameraTraining=true;
-    const controls=Array.from(document.querySelectorAll<HTMLInputElement|HTMLSelectElement|HTMLButtonElement>('main input,main select,main button')).filter(e=>!(e.closest('.world-studio')&&!e.closest('.world-breeding-config'))&&!e.closest('.world-ghost-inspector')&&!['world-train-speed','world-train-stop','world-evolve-stop-top','copy-sensor-log','clear-sensor-log','world-copy-logs','world-clear-logs','vision-render-mode','vision-refresh'].includes(e.id)),disabled=controls.map(e=>e.disabled);controls.forEach(e=>e.disabled=true);$<HTMLButtonElement>('world-train-stop').disabled=false;restore=()=>{controls.forEach((e,i)=>e.disabled=disabled[i]);$<HTMLButtonElement>('world-train-stop').disabled=true;};
+    const controls=Array.from(document.querySelectorAll<HTMLInputElement|HTMLSelectElement|HTMLButtonElement>('main input,main select,main button')).filter(e=>!e.closest('.fpv-controls')&&!(e.closest('.world-studio')&&!e.closest('.world-breeding-config'))&&!e.closest('.world-ghost-inspector')&&!['world-train-speed','world-train-stop','world-evolve-stop-top','copy-sensor-log','clear-sensor-log','world-copy-logs','world-clear-logs','vision-render-mode','vision-refresh'].includes(e.id)),disabled=controls.map(e=>e.disabled);controls.forEach(e=>e.disabled=true);$<HTMLButtonElement>('world-train-stop').disabled=false;restore=()=>{controls.forEach((e,i)=>e.disabled=disabled[i]);$<HTMLButtonElement>('world-train-stop').disabled=true;};
     trainedWorld=await trainWorldController(trainedWorldContext,generations,population,crashWeight,()=>cancelTraining,line=>{logSensor(line);$('world-training-status').textContent=line;},(sessions,generation,seed)=>{previewWorld=sessions;worldStudio?.setSessions(sessions,generation);sessions.forEach(s=>{logStall(s);logSearchJudge(s);});if(!document.hidden&&runtimeBudget.shouldPaint(performance.now()))paintWorld(sessions[0],sessions);renderGhostScores('world-ghost-scores',sessions.map((s,i)=>s.discovery?`${i+1} · ${s.won?'FOUND / WIN':s.done?(s.found?'seen, no arrival':'not found'):'searching'} · first sight ${s.discovery.firstSightTick===null?'—':(s.discovery.firstSightTick/30).toFixed(2)+' s'} · ${(s.episode.tick/30).toFixed(1)} s · ${s.episode.sim.status.collisions} contacts · pain ${(s.episode.sim.status.pain+s.searchJudge.pain).toFixed(2)} · ${s.discovery.visualViews} views · ${s.searchJudge.cells} cells · −${s.searchJudge.penalty.toFixed(1)} no-progress ${s.searchJudge.disqualified?'· REJECTED':''}`:`${i+1} · ${s.episode.sim.status.goals>=s.episode.sim.goalLimit?'ARRIVED':s.done?'stopped':'driving'} · targets ${s.episode.sim.status.goals}/${s.episode.sim.goalLimit} · ${(s.episode.tick/30).toFixed(1)} s · ${s.episode.sim.status.collisions} contacts · pain ${s.episode.sim.status.pain.toFixed(2)} · reverse ${(s.reverseDistance*CM_PER_PIXEL/100).toFixed(2)} m · ${s.searchJudge.cells} cells · −${s.searchJudge.penalty.toFixed(1)} no-progress ${s.searchJudge.disqualified?'· REJECTED':''}`),generation,seed);},Number($<HTMLSelectElement>('world-train-speed').value),$<HTMLInputElement>('world-reverse-coach').checked,$<HTMLInputElement>('world-retain-forward').checked,()=>runtimeBudget.cohort,{breeding,ancestors,recoveryState,runId,getSpeed:()=>document.hidden||$<HTMLSelectElement>('vision-render-mode').value==='turbo'?0:Number($<HTMLSelectElement>('world-train-speed').value),getGenePool:()=>worldStudio?.pool.donors??[],onPopulation:p=>worldStudio?.setPopulation(p),onMetrics:m=>worldStudio?.record(m),onRecovery:r=>worldStudio?.recovery(r),seed:crypto.getRandomValues(new Uint32Array(1))[0],failureRetries:Number($<HTMLSelectElement>('world-failure-retries').value),onGeneration:c=>evolutionPanels.world!.checkpoint({...c,training:{...c.training,experiment:trainedWorldExperiment,profile:state.profile,eyes:session.settings.vision?.trainedOn,map:$<HTMLSelectElement>('world-map-preset').value,memoryCount:session.memory?.count??0}})});
     if(trainedWorld){
       const v=trainedWorld.validation,search=trainedWorld.task==='explore';
@@ -791,7 +799,7 @@ async function runWorldTraining():Promise<void>{
       $('world-training-status').textContent=`Complete. Adoption gate ${v.passed?'PASS':'FAIL · driving adoption blocked'}. Held-out parent ${v.parent.toFixed(2)}, offspring ${v.offspring.toFixed(2)}. ${search?`Search wins: parent ${parentWins}/${v.seeds.length}, offspring ${childWins}/${v.seeds.length}. ${childWins===0?'No successful held-out search; score changes may reflect ground coverage, camera views or lower no-progress cost; finding is not demonstrated.':v.offspring>v.parent?'Higher score on this small search test.':'No improvement demonstrated.'}`:v.offspring>v.parent?'Improved on this small test.':'No improvement demonstrated.'} ${trainedWorld.retention?`Forward retention ${trainedWorld.retention.passed?'passed':'FAILED · adoption blocked'}. `:''}${trainedWorld.viableGenerations?'Saved winner is the next evolution parent; review report before driving adoption.':'Every generation was rejected; the previous parent remains saved. Increase grace/cutoff or disable Zero chill before retrying.'}`;
     }else $('world-training-status').textContent='Cancelled; last completed generation retained for the next evolution run.';
   }catch(e){$('world-training-status').textContent=(e as Error).message;}
-  finally{restore();await worldStudio?.finish();await evolutionPanels.world?.finish(trainedWorld?{...trainedWorld.validation,retention:trainedWorld.retention}:undefined);cameraTraining=false;previewTrack=null;previewWorld=null;$<HTMLButtonElement>('world-train-adopt').disabled=!trainedWorld||!trainedWorld.viableGenerations||trainedWorld.retention?.passed===false||trainedWorld?.validation.passed===false;$<HTMLButtonElement>('world-train-report').disabled=!trainedWorld;}
+  finally{restore();await worldStudio?.finish();await evolutionPanels.world?.finish(trainedWorld?{...trainedWorld.validation,retention:trainedWorld.retention}:undefined);cameraTraining=false;previewTrack=null;previewWorld=null;paintWorld();$<HTMLButtonElement>('world-train-adopt').disabled=!trainedWorld||!trainedWorld.viableGenerations||trainedWorld.retention?.passed===false||trainedWorld?.validation.passed===false;$<HTMLButtonElement>('world-train-report').disabled=!trainedWorld;}
 }
 
 function logWorldPing(session:WorldSession):void{

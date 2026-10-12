@@ -34,12 +34,12 @@ export function drawEye(canvas: HTMLCanvasElement, frame: Float32Array, config: 
 
 /* ------------------------------ top views ------------------------------ */
 export const GHOST_COLORS=['#ffd166','#83d5ff','#caa5ff','#7cf0b6','#ff87a7','#ffb36b'];
-export type MapGhost={x:number;y:number;heading:number;trail?:{x:number;y:number}[];label:string;color:string};
+export type MapGhost={x:number;y:number;heading:number;trail?:{x:number;y:number}[];label:string;color:string;selected?:boolean};
 function drawCrayon(c:CanvasRenderingContext2D,points:{x:number;y:number}[],color:string):void{
   if(points.length<2)return;c.save();c.lineCap='round';c.lineJoin='round';c.strokeStyle=color;c.globalAlpha=.25;c.lineWidth=6;c.beginPath();points.forEach((p,i)=>i?c.lineTo(p.x,p.y):c.moveTo(p.x,p.y));c.stroke();c.globalAlpha=.65;c.lineWidth=1.5;c.stroke();c.restore();
 }
 function drawGhosts(c:CanvasRenderingContext2D,ghosts:MapGhost[]):void{
-  ghosts.forEach(g=>{if(g.trail)drawCrayon(c,g.trail,g.color);c.save();c.globalAlpha=.8;carShapes(c,g,24,14,g.color,'#ffffff');c.fillStyle=g.color;c.font='bold 13px system-ui';c.fillText(g.label,g.x+14,g.y-10);c.restore();});
+  ghosts.forEach(g=>{if(g.trail)drawCrayon(c,g.trail,g.color);c.save();c.globalAlpha=.8;carShapes(c,g,24,14,g.color,'#ffffff');if(g.selected){c.strokeStyle='#ffffff';c.lineWidth=2;c.beginPath();c.arc(g.x,g.y,21,0,Math.PI*2);c.stroke();}c.fillStyle=g.color;c.font='bold 13px system-ui';c.fillText(g.label,g.x+14,g.y-10);c.restore();});
 }
 
 

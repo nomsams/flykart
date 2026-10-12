@@ -1,0 +1,7 @@
+/* Display controls remain usable while the training configuration is locked. */
+.fpv-controls,.vision-ghost-inspector{display:flex;flex-wrap:wrap;align-items:center;gap:.45rem .75rem;padding:.55rem .7rem;background:#101923;border-bottom:1px solid #2a3a4b;font-size:.8rem}
+.fpv-controls label,.vision-ghost-inspector label{display:flex;align-items:center;gap:.4rem;min-width:0}
+.fpv-controls select,.vision-ghost-inspector select{max-width:100%;font:inherit}
+.fpv-controls small,.vision-ghost-inspector small{flex:1 1 100%;color:#a9bfd2;overflow-wrap:anywhere}
+.fpv-controls details{flex-basis:100%}.fpv-controls summary{cursor:pointer;color:#82c8e5}.fpv-opacity input{width:6rem}
+.fpv-controls [hidden]{display:none!important}
