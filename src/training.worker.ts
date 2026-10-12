@@ -27,7 +27,7 @@ async function run(job:TrainingJob){
     else if(job.kind==='track'){
       job.tracks.forEach(registerTrack);
       report=await trainCameraController(job.settings,job.generations,job.population,cancel,log,progress,job.speed,job.maps,()=>controls.visible?controls.budget:{workMs:32,idleMs:0},checkpoint);
-    }else report=await trainWorldController(job.settings,job.generations,job.population,job.crashWeight,cancel,log,progress,job.speed,job.coach,job.retain,()=>controls.visible?controls.budget:{workMs:32,idleMs:0},{seed:job.seed,failureRetries:job.failureRetries,onGeneration:checkpoint});
+    }else report=await trainWorldController(job.settings,job.generations,job.population,job.crashWeight,cancel,log,progress,job.speed,job.coach,job.retain,()=>controls.visible?controls.budget:{workMs:32,idleMs:0},{seed:job.seed,failureRetries:job.failureRetries,runId:job.runId,getSpeed:rate,breeding:job.breeding,ancestors:job.ancestors,recoveryState:job.recoveryState,getGenePool:()=>donors,onPopulation:population=>port.postMessage({type:'world-population',population}),onMetrics:metrics=>port.postMessage({type:'world-metrics',metrics}),onRecovery:recovery=>port.postMessage({type:'world-recovery',recovery}),onGeneration:checkpoint});
     port.postMessage({type:'result',report});
   }catch(e){port.postMessage({type:'error',message:(e as Error).message});}
 }

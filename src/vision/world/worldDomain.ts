@@ -11,6 +11,7 @@
 // Inputs 15 and 16 are small fixed computations on the estimates (the freest direction, and how much to ease off for what is
 // ahead): the job the fly's central complex does for its motor system. The spiking controller still has to turn them, with
 // the rest, into smooth steering and pedals.
+import {CommandSpeed,type SpeedFeedback,type SonarFeedback} from "./transfer";
 import { Action, clamp, wrapAngle } from "../../core";
 import { CameraConfig, DEFAULT_STYLE, Style, frameLength, randomStyle, renderFrame } from "../camera";
 import type { Domain, VisionEpisode } from "../domain";
@@ -74,7 +75,7 @@ export function worldExpert(s: ArrayLike<number>): Action {
   return { steer, throttle, brake, reverse: 0 };
 }
 
-export type WorldEpisodeOptions = { seed: number; density?: number; styleStrength?: number; maxTicks?: number; camera?: CameraConfig; headless?: boolean; sonar?: SonarSpec | null; scanSonar?: SonarSpec; profile?: SensorProfile;cameraNoise?:number;cameraBrightness?:number; world?:WorldDef; start?:{x:number;y:number;heading:number}; goal?:GoalPoint; goals?:GoalPoint[]; goalPreset?:GoalPreset; goalCount?:GoalCount; goalRadius?:number; goalLimit?:number; hiddenGoalAngle?:number };
+export type WorldEpisodeOptions = { sonarFeedback?:SonarFeedback;speedFeedback?:SpeedFeedback; seed: number; density?: number; styleStrength?: number; maxTicks?: number; camera?: CameraConfig; headless?: boolean; sonar?: SonarSpec | null; scanSonar?: SonarSpec; profile?: SensorProfile;cameraNoise?:number;cameraBrightness?:number; world?:WorldDef; start?:{x:number;y:number;heading:number}; goal?:GoalPoint; goals?:GoalPoint[]; goalPreset?:GoalPreset; goalCount?:GoalCount; goalRadius?:number; goalLimit?:number; hiddenGoalAngle?:number };
 
 export class WorldEpisode implements VisionEpisode {
   readonly sim: WorldSim;
@@ -83,6 +84,7 @@ export class WorldEpisode implements VisionEpisode {
   readonly camera: CameraConfig;
   readonly frame: Float32Array;
   private readonly random: Random;
+  readonly commandSpeed=new CommandSpeed();
   private readonly scan = new Array(SECTORS).fill(0);
   readonly sonarUnit: Sonar | null;
   /** Observer-only ranger for a camera-only brain; never returned by sonar() or proprioception(). */
@@ -109,7 +111,7 @@ export class WorldEpisode implements VisionEpisode {
     this.ping();
   }
 
-  sonar(): SonarReading | null { return this.sonarUnit ? this.sonarUnit.reading : null; }
+  sonar(): SonarReading | null { return this.sonarUnit ? {...this.sonarUnit.reading,validityOnly:this.options.sonarFeedback==='echo-valid'} : null; }
 
   /** Take a reading now, after the kart has been moved by hand. */
   refreshSonar(): void {
@@ -144,8 +146,8 @@ export class WorldEpisode implements VisionEpisode {
 
   proprioception(): Proprioception {
     const { kart } = this.sim;
-    const body: Proprioception = { speed: clamp(kart.speed / 90, -1, 1), lastSteer: clamp(kart.action.steer, -1, 1), lastDrive: clamp(kart.action.throttle - kart.action.brake, -1, 1) };
-    if (this.sonarUnit) { const pair = sonarInputs(this.sonarUnit.reading, SONAR_USEFUL_RANGE_PX); body.sonarCloseness = pair[0]; body.sonarStrength = pair[1]; }
+    const body: Proprioception = { speed: clamp((this.options.speedFeedback==='command'?this.commandSpeed.value:kart.speed) / 90, -1, 1), lastSteer: clamp(kart.action.steer, -1, 1), lastDrive: clamp(kart.action.throttle - kart.action.brake, -1, 1) };
+    if (this.sonarUnit) { const pair = sonarInputs(this.sonar()!, SONAR_USEFUL_RANGE_PX); body.sonarCloseness = pair[0]; body.sonarStrength = pair[1]; }
     return body;
   }
 
@@ -166,5 +168,5 @@ export class WorldEpisode implements VisionEpisode {
     return renderFrame(this.scene, { x: kart.x, y: kart.y, heading: kart.heading }, this.camera, this.frame, this.random);
   }
 
-  step(action: Action): void { this.sim.step(action); this.ping(); }
+  step(action: Action): void { this.commandSpeed.step(action);this.sim.step(action); this.ping(); }
 }

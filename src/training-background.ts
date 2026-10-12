@@ -1,3 +1,4 @@
+import type {WorldPopulation,WorldGeneration,WorldRecovery} from './vision/world/breeding';
 import {TRACKS} from './core';
 import {TrainingPreviews} from './training-preview';
 import type {TrainingSession} from './training-preview';
@@ -10,13 +11,13 @@ import type {trainCameraController,CameraTrainingResult} from './vision/browser-
 import type {trainWorldController,WorldTrainingResult} from './vision/world/training';
 import type {ParkingDonor} from './parking/gene-pool';
 
-type Callbacks={cancel:()=>boolean;log:(text:string)=>void;progress:(s:TrainingSession[],generation:number,seed:number)=>void;metrics?:(m:ParkingGenerationMetrics)=>void;checkpoint?:(c:GenerationCheckpoint)=>void|Promise<void>;genePool?:()=>ParkingDonor[];controls:()=>TrainingControls};
+type Callbacks={worldPopulation?:(p:WorldPopulation)=>void;worldMetrics?:(m:WorldGeneration)=>void|Promise<void>;worldRecovery?:(r:WorldRecovery)=>void;cancel:()=>boolean;log:(text:string)=>void;progress:(s:TrainingSession[],generation:number,seed:number)=>void;metrics?:(m:ParkingGenerationMetrics)=>void;checkpoint?:(c:GenerationCheckpoint)=>void|Promise<void>;genePool?:()=>ParkingDonor[];controls:()=>TrainingControls};
 /** All simulation/inference/selection lives in the worker. Window timers and paint callbacks never gate it. */
 function background(job:TrainingJob,callbacks:Callbacks):Promise<TrainingReport>{
   if(typeof Worker==='undefined')return Promise.reject(new Error('Background workers are unavailable. Use npm run parking:train for browser-free training.'));
   return new Promise((resolve,reject)=>{
     const worker=new Worker(new URL('./training.worker.ts',import.meta.url),{type:'module',name:'FlyKart '+job.kind+' evolution'}),views=new TrainingPreviews(job);
-    let finished=false,sentCancel=false;
+    let finished=false,sentCancel=false;let worldEvents=Promise.resolve();
     let sentPool:ParkingDonor[]|undefined;
     const send=(data:WorkerRequest)=>worker.postMessage(data);
     const syncPool=()=>{const pool=callbacks.genePool?.();if(pool!==sentPool){sentPool=pool;send({type:'gene-pool',donors:pool??[]});}};
@@ -34,8 +35,11 @@ function background(job:TrainingJob,callbacks:Callbacks):Promise<TrainingReport>
         if(data.type==='log')callbacks.log(data.text);
         else if(data.type==='progress'){callbacks.progress(views.update(data.rows),data.generation,data.seed);}
         else if(data.type==='parking-metrics')callbacks.metrics?.(data.metrics);
-        else if(data.type==='checkpoint')Promise.resolve().then(()=>callbacks.checkpoint?.(data.checkpoint)).then(()=>{if(!finished)send({type:'ack',id:data.id});},e=>{if(!finished)send({type:'ack',id:data.id,error:(e as Error).message});});
-        else if(data.type==='result'){cleanup();resolve(data.report);}
+        else if(data.type==='world-population')callbacks.worldPopulation?.(data.population);
+        else if(data.type==='world-recovery')callbacks.worldRecovery?.(data.recovery);
+        else if(data.type==='world-metrics'){worldEvents=worldEvents.then(()=>callbacks.worldMetrics?.(data.metrics));worldEvents.catch(fail);}
+        else if(data.type==='checkpoint')worldEvents.then(()=>callbacks.checkpoint?.(data.checkpoint)).then(()=>{if(!finished)send({type:'ack',id:data.id});},e=>{if(!finished)send({type:'ack',id:data.id,error:(e as Error).message});});
+        else if(data.type==='result'){worldEvents.then(()=>{cleanup();resolve(data.report);},fail);}
         else fail(new Error(data.message));
       }catch(e){fail(e);}
     };
@@ -53,5 +57,5 @@ export function trainCameraBackground(...args:Parameters<typeof trainCameraContr
 }
 export function trainWorldBackground(...args:Parameters<typeof trainWorldController>):Promise<WorldTrainingResult|null>{
   const [settings,generations,population,crashWeight,cancel,log,progress,speed=0,coach=false,retain=true,budget=()=>({workMs:12,idleMs:0}),options={}]=args;
-  return background({kind:'world',settings:{...settings,roomMemory:null},generations,population,speed,crashWeight,coach,retain,seed:options.seed??settings.seed,failureRetries:options.failureRetries??1},{cancel,log,progress:(s,g,seed)=>progress(s as WorldSession[],g,seed),checkpoint:options.onGeneration,controls:()=>({visible:!document.hidden,preview:Array(generations+1).fill([6,12].includes(budget().workMs)),rates:[speed],budget:budget()})}) as Promise<WorldTrainingResult|null>;
+  return background({kind:'world',settings:{...settings,roomMemory:null},generations,population,speed,crashWeight,coach,retain,seed:options.seed??settings.seed,failureRetries:options.failureRetries??1,runId:options.runId,breeding:options.breeding,ancestors:options.ancestors,recoveryState:options.recoveryState},{worldPopulation:options.onPopulation,worldMetrics:options.onMetrics,worldRecovery:options.onRecovery,genePool:options.getGenePool,cancel,log,progress:(s,g,seed)=>progress(s as WorldSession[],g,seed),checkpoint:options.onGeneration,controls:()=>({visible:!document.hidden,preview:Array(generations+1).fill([6,12].includes(budget().workMs)),rates:[options.getSpeed?.(0)??speed],budget:budget()})}) as Promise<WorldTrainingResult|null>;
 }

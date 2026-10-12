@@ -1,0 +1,38 @@
+import {chromium} from '@playwright/test';
+import assert from 'node:assert/strict';
+import {readFile,mkdir} from 'node:fs/promises';
+const browser=await chromium.launch({...(process.platform==='win32'?{channel:'msedge'}:{}),headless:true});
+const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];
+page.setDefaultNavigationTimeout(90000);page.on('pageerror',e=>errors.push(e.message));
+const base=process.env.ROBOT_LAB_URL??'http://127.0.0.1:5173';
+const download=async id=>{const[d]=await Promise.all([page.waitForEvent('download'),page.locator('#'+id).click()]);return JSON.parse(await readFile(await d.path(),'utf8'));};
+const load=async brain=>{await page.locator('#brain-import-always').click();await page.locator('#import-file').setInputFiles({name:'studio-fixture.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(brain))});await page.locator('#import-file-dialog').waitFor({state:'hidden'});};
+try{
+  await page.goto(base+'/vision.html#world');await page.waitForFunction(()=>document.querySelector('#boot-screen').hidden,{},{timeout:90000});
+  assert.equal(await page.locator('#world-speed-feedback').inputValue(),'command');
+  assert.equal(await page.locator('#world-sonar-feedback').inputValue(),'echo-valid');
+  const active=await page.evaluate(()=>({sonar:!!window.flykartVision.world.episode.sonarUnit,width:window.flykartVision.world.controller.inputCount}));assert.deepEqual(active,{sonar:true,width:19});
+  await page.locator('#world-task').selectOption('explore');await page.locator('#world-search-win').selectOption('reach');await page.locator('#world-map-preset').selectOption('clear');await page.locator('#world-goal-preset').selectOption('far');await page.locator('#world-repeat-search').uncheck();
+  const brain=await download('brain-export-always'),n=brain.controller.network;for(const key of ['inputWeights','recurrentWeights','outputWeights'])n[key]=n[key].map(()=>0);n.bias=n.bias.map(()=>-10);if(brain.world)brain.world.controller.network=structuredClone(n);
+  brain.worldTraining={...brain.worldTraining,maxTicks:300,reverseCoach:false,breeding:{autoRecover:true,plateauAfter:2,minGain:100,mutationRate:.01,mutationSize:.01}};
+  await load(brain);await page.locator('#world-generations').fill('4');await page.locator('#world-population').fill('3');await page.locator('#world-failure-retries').selectOption('0');await page.locator('#world-train-speed').selectOption('4');
+  await page.locator('.world-studio .parking-gene-pool>summary').click();await page.locator('#pool-repository').selectOption('visual');await page.locator('#pool-repository-add').click();await page.locator('[data-count]').filter({hasText:'1 donor'}).waitFor();await page.locator('.world-studio .gene-pool-donor button').click();
+  const donor=structuredClone(brain);donor.controller.network.inputWeights[0]=.02;if(donor.world)donor.world.controller.network=structuredClone(donor.controller.network);
+  await page.locator('#pool-file').setInputFiles({name:'donor.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(donor))});await page.locator('[data-count]').filter({hasText:'1 donor'}).waitFor();
+  await page.locator('#world-train').click();await page.waitForFunction(()=>window.flykartVision.studio?.population?.generation===1,{},{timeout:90000});
+  await page.locator('#world-inspect-ghost').selectOption('1');assert.equal(await page.evaluate(()=>window.flykartVision.studio.selectedSession===window.flykartVision.studio.sessions[1]),true);
+  const inspected=await download('world-ghost-export');assert.deepEqual(inspected.controller.network,await page.evaluate(()=>window.flykartVision.studio.population.brains[1]));
+  assert.equal(await page.locator('#world-train-speed').isDisabled(),false);await page.locator('#world-train-speed').selectOption('0');await page.locator('#vision-render-mode').selectOption('turbo');
+  await page.locator('#world-training-status').filter({hasText:'Complete.'}).waitFor({timeout:180000});
+  const report=await download('world-train-report');assert.equal(report.transfer.hardwareValidated,false);assert.equal(report.transfer.speedFeedback,'command');assert.match(report.transfer.sonar,/echo-valid/);assert.equal(typeof report.validation.passed,'boolean');
+  const tree=await download('world-tree-export');assert.equal(tree.events.length,4);assert.ok(tree.nodes.some(x=>x.metrics?.recovery));assert.ok(tree.nodes.some(x=>x.source?.name));assert.ok(tree.nodes.some(x=>x.metrics?.donorParents.some(Boolean)));
+  const past=tree.nodes.find(x=>x.metrics?.generation===1);assert.ok(past);await page.locator('#world-node').selectOption(past.id);const saved=await download('world-node-export');assert.deepEqual(saved.controller.network,past.brain);
+  await page.locator('#world-node-pool').click();assert.ok(await page.locator('[data-count]').textContent());
+  const changed=structuredClone(saved);changed.controller.network.inputWeights[0]+=1;if(changed.world)changed.world.controller.network=structuredClone(changed.controller.network);await load(changed);assert.notDeepEqual((await download('brain-export-always')).controller.network,past.brain);
+  await page.locator('#world-node').selectOption(past.id);await page.locator('#world-use-node').click();await page.waitForFunction(value=>window.flykartVision.world.controller.toJSON().inputWeights[0]===value,past.brain.inputWeights[0]);assert.deepEqual((await download('brain-export-always')).controller.network,past.brain);
+  await page.locator('#world-tree-file').setInputFiles({name:'tree.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(tree))});await page.locator('#world-studio-status').filter({hasText:'Tree merged'}).waitFor();
+  await page.locator('#vision-render-mode').selectOption('full');await mkdir('.cache',{recursive:true});await page.locator('.world-studio').screenshot({path:'.cache/world-studio-desktop.png'});
+  await page.reload();await page.waitForFunction(()=>document.querySelector('#boot-screen').hidden,{},{timeout:90000});await page.waitForFunction(n=>Number(document.querySelector('#world-generation-chart').dataset.generations)===n,4);const persisted=await download('world-tree-export');assert.equal(persisted.events.length,4);assert.equal(persisted.nodes.length,tree.nodes.length);
+  await page.setViewportSize({width:390,height:844});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));await page.locator('.world-studio').screenshot({path:'.cache/world-studio-mobile.png'});assert.deepEqual(errors,[]);
+  console.log('World studio passed: default neural sonar, command feedback, actual ghost DNA/views, live speed, repository/JSON donors, real worker rollback, generation graphs and persistent tree, exact snapshot restore/export, mobile layout and simulation transfer gate.');
+}catch(e){console.error(await page.locator('#world-training-status').textContent().catch(()=>''),await page.locator('#world-studio-status').textContent().catch(()=>''),errors);await page.screenshot({path:'.cache/world-studio-failure.png',fullPage:true}).catch(()=>{});throw e;}finally{await browser.close();}

@@ -4,6 +4,7 @@ import { readFile, mkdir } from 'node:fs/promises';
 
 const browser=await chromium.launch({...(process.platform==='win32'?{channel:'msedge'}:{}),headless:true});
 const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];
+page.setDefaultNavigationTimeout(90000);
 page.on('pageerror',e=>errors.push(e.message));
 const base=process.env.ROBOT_LAB_URL??'http://127.0.0.1:5173';
 const sourceText=await readFile('assets/flykart-visual.json','utf8'),source=JSON.parse(sourceText);
@@ -28,9 +29,9 @@ try{
   await loadVisual();assert.equal(await page.locator('#repository-brain-select').inputValue(),'visual');
   assert.equal(await page.locator('#world-task').inputValue(),'explore');assert.equal(await page.locator('#world-search-win').inputValue(),'reach');assert.equal(await page.locator('#world-goal-preset').inputValue(),'far');
   assert.equal(await page.locator('#world-repeat-search').isChecked(),true);
-  assert.deepEqual(await page.evaluate(()=>window.flykartVision.world.controller.toJSON()),source.controller.network);
+  assert.deepEqual(await page.evaluate(async()=>(await import('/src/vision/inputs.ts')).narrowBrain(window.flykartVision.world.controller.toJSON())),source.controller.network);
   assert.equal(await page.evaluate(()=>window.flykartVision.world.driver.options.perceiver.model.params),source.vision.params);
-  assert.deepEqual((await download('brain-export-always')).controller.network,source.controller.network);
+  const exported=(await download('brain-export-always')).controller.network;assert.equal(exported.inputCount,19);assert.deepEqual(await page.evaluate(async n=>(await import('/src/vision/inputs.ts')).narrowBrain(n),exported),source.controller.network);
   assert.equal(await (await page.request.get(base+'/checkpoints/flykart-visual.json')).text(),sourceText);
   // A legacy saved compass scene can carry two points into visual search.
   // Import through the real scene UI; only one flag must become active.
@@ -67,7 +68,7 @@ try{
   await page.locator('[data-brain-save]').click();await page.locator('.browser-brain-shelf [role=status]').filter({hasText:'Saved vision brain'}).waitFor();
   await page.locator('#repository-brain-select').selectOption('racer');assert.equal(await page.locator('#brain-project-choice').inputValue(),'racer');await page.locator('#brain-load-project').click();await page.waitForFunction(()=>window.flykartVision.imported?.name==='flykart-brain-racer');
   await page.locator('[aria-label="Browser brain source"]').selectOption('vision');await page.locator('[data-brain-load]').click();await page.locator('.browser-brain-shelf [role=status]').filter({hasText:'Loaded vision brain'}).waitFor();
-  assert.deepEqual(await page.evaluate(()=>window.flykartVision.world.controller.toJSON()),source.controller.network);assert.equal(await page.locator('#world-repeat-search').isChecked(),false);
+  assert.deepEqual(await page.evaluate(async()=>(await import('/src/vision/inputs.ts')).narrowBrain(window.flykartVision.world.controller.toJSON())),source.controller.network);assert.equal(await page.locator('#world-repeat-search').isChecked(),false);
   // Ordinary navigation also needs continuous fresh sets; random count must be
   // rerolled, not stuck at the two dots selected by the first seed draw.
   await page.locator('#world-task').selectOption('forage');

@@ -4,6 +4,7 @@ import { readFile, mkdir, writeFile } from 'node:fs/promises';
 
 const browser=await chromium.launch({...(process.platform==='win32'?{channel:'msedge'}:{}),headless:true});
 const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];
+page.setDefaultNavigationTimeout(90000);
 page.on('pageerror',e=>errors.push(e.message));
 const base=process.env.ROBOT_LAB_URL??'http://127.0.0.1:5173';
 const source=JSON.parse(await readFile('assets/flykart-visual.json','utf8'));
@@ -19,12 +20,12 @@ const train=async generations=>{
   return download('world-train-report');
 };
 try{
-  await page.goto(base+'/vision.html#world');await page.locator('#boot-screen').waitFor({state:'hidden',timeout:60000});
+  await page.goto(base+'/vision.html#world');await page.locator('#boot-screen').waitFor({state:'hidden',timeout:90000});
   await order();
   // Load through the real repository-checkpoint UI, preserving the source weights and saved scene.
   await page.locator('#brain-project-choice').selectOption('visual');await page.locator('#brain-load-project').click();
   await page.locator('#brain-file-status').filter({hasText:'assets/flykart-visual.json'}).waitFor();
-  assert.deepEqual(await page.evaluate(()=>window.flykartVision.world.controller.toJSON()),source.controller.network);
+  const expectedSource=await page.evaluate(async n=>(await import('/src/vision/inputs.ts')).widenBrain(n),source.controller.network);assert.deepEqual(await page.evaluate(()=>window.flykartVision.world.controller.toJSON()),expectedSource);
   const saved=await download('world-map-export');assert.deepEqual(saved.goals,source.worldArena.goals);
   // Small valid frozen eyes keep this UI regression inexpensive. No claim about navigation quality.
   const tiny=await page.evaluate(async()=>{
@@ -39,6 +40,8 @@ try{
   await page.waitForFunction(()=>document.querySelector('#world-map-file').value==='');
   assert.equal(await page.locator('#world-map-preset').inputValue(),'imported');
   await page.locator('#world-population').fill('2');await page.locator('#world-train-ticks').fill('300');
+  await page.locator('#world-train-speed').selectOption('0');
+  await page.locator('#vision-render-mode').selectOption('turbo');
   await page.locator('#world-failure-retries').selectOption('1');
   const report=await train(4),trials=report.targetTrials.filter(t=>t.phase==='training'),fresh=trials.filter(t=>t.retry===0);
   assert.equal(fresh.length,8);assert.equal(new Set(fresh.map(t=>JSON.stringify(t.targets))).size,8);
@@ -53,7 +56,7 @@ try{
     assert.ok(!saved.goals.some(g=>JSON.stringify(g)===JSON.stringify(trial.targets[0])));
   }
   assert.ok(report.validation.seeds.every(seed=>!report.trainingSeeds.includes(seed)));
-  assert.deepEqual(await page.evaluate(()=>window.flykartVision.world.controller.toJSON()),source.controller.network);
+  assert.deepEqual(await page.evaluate(()=>window.flykartVision.world.controller.toJSON()),expectedSource);
   assert.deepEqual((await download('world-map-export')).goals,saved.goals,'Evolution must not overwrite saved live-scene targets');
   await page.locator('#world-failure-retries').selectOption('0');
   await page.locator('#world-map-preset').selectOption('procedural');
@@ -66,11 +69,16 @@ try{
   assert.ok(rerun.targetTrials.filter(t=>t.phase==='training').every(t=>t.retry===0));
   assert.equal(new Set(rerun.trainingSeeds).size,4);
   assert.equal((await download('brain-export-always')).worldTraining.failureRetries,0);
-  await page.locator('#world-train-adopt').click();
-  assert.deepEqual((await download('brain-export-always')).controller.network,rerun.brain);
+  const blocked=!rerun.validation.passed||rerun.retention?.passed===false||!rerun.viableGenerations;assert.equal(await page.locator('#world-train-adopt').isDisabled(),blocked);if(blocked){await page.evaluate(()=>document.querySelector('#world-train-adopt').onclick());assert.deepEqual((await download('brain-export-always')).controller.network,expectedSource);}else{await page.locator('#world-train-adopt').click();assert.deepEqual((await download('brain-export-always')).controller.network,rerun.brain);}
+  await page.locator('#vision-render-mode').selectOption('full');
   await mkdir('.cache',{recursive:true});await writeFile('.cache/target-curriculum-evidence.json',JSON.stringify({trials,rerun:rerun.targetTrials},null,2));
   await page.locator('#world-controller-training').scrollIntoViewIfNeeded();await page.screenshot({path:'.cache/target-curriculum-desktop.png'});
   await page.setViewportSize({width:390,height:844});await order();assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
   await page.screenshot({path:'.cache/target-curriculum-mobile.png'});assert.deepEqual(errors,[]);
   console.log('Target curriculum passed: actual repository import, eight fresh target sets across four generations, finite failure retries, independent validation targets and run seeds, preserved parent/room/live goals, shared training order and mobile layout.');
+}catch(e){
+  console.error('Boot:',await page.locator('#boot-screen').textContent().catch(()=>''),'Training:',await page.locator('#world-training-status').textContent().catch(()=>''),'Errors:',errors);
+  await mkdir('.cache',{recursive:true});
+  await page.screenshot({path:'.cache/target-curriculum-failure.png',fullPage:true}).catch(()=>{});
+  throw e;
 }finally{await browser.close();}

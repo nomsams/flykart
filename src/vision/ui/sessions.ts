@@ -98,7 +98,7 @@ export class TrackSession {
 }
 
 export type WorldDriverKind = "vision" | "both" | "feeling" | "expert" | "blind";
-export type WorldSettings = { seed: number; density: number; style: number; kind: WorldDriverKind; scanSonar?:SonarSpec; fade: number; controller: BrainSnapshot; vision: VisionModel | null; profile?: SensorProfile; sonarOn?: boolean; visual?:RacingSettings["visual"]; resolution?:RacingSettings["resolution"]; cameraNoise?:number;cameraBrightness?:number;stall?:StallSettings;maxTicks?:number; goals?:{x:number;y:number}[]; goalPreset?:import("../world/world").GoalPreset; goalCount?:import("../world/world").GoalCount;goalRadius?:number; task?:"forage"|"reverse"|"explore"; searchWin?:SearchWin; world?:WorldDef; start?:{x:number;y:number;heading:number}; memorySettings?:MemorySettings; roomMemory?:RoomMemory|null; sensorOnly?:boolean; practiceForward?:boolean;searchJudge?:SearchJudgeSettings };
+export type WorldSettings = { sonarFeedback?:import("../world/transfer").SonarFeedback;speedFeedback?:import("../world/transfer").SpeedFeedback; seed: number; density: number; style: number; kind: WorldDriverKind; scanSonar?:SonarSpec; fade: number; controller: BrainSnapshot; vision: VisionModel | null; profile?: SensorProfile; sonarOn?: boolean; visual?:RacingSettings["visual"]; resolution?:RacingSettings["resolution"]; cameraNoise?:number;cameraBrightness?:number;stall?:StallSettings;maxTicks?:number; goals?:{x:number;y:number}[]; goalPreset?:import("../world/world").GoalPreset; goalCount?:import("../world/world").GoalCount;goalRadius?:number; task?:"forage"|"reverse"|"explore"; searchWin?:SearchWin; world?:WorldDef; start?:{x:number;y:number;heading:number}; memorySettings?:MemorySettings; roomMemory?:RoomMemory|null; sensorOnly?:boolean; practiceForward?:boolean;searchJudge?:SearchJudgeSettings };
 
 export class WorldSession {
   readonly episode: WorldEpisode;
@@ -126,7 +126,7 @@ export class WorldSession {
     const camera=settings.profile?.worldCamera??WORLD_CAMERA;
     this.discovery=explore?new FlagDiscovery(settings.vision!.spec.width,settings.vision!.spec.height,camera.hfov):null;
     this.controller = SpikingNetwork.fromJSON(settings.controller);
-    this.episode = new WorldEpisode({ seed: settings.seed, density: settings.density, styleStrength: settings.style,cameraNoise:settings.cameraNoise,cameraBrightness:settings.cameraBrightness, camera: WORLD_CAMERA, maxTicks: settings.maxTicks??4200, world:settings.world,start:settings.start,goals,goalCount:explore?1:settings.task==='reverse'?1:settings.goalCount,goalRadius:settings.goalRadius,goalLimit:goals?.length,goalPreset:settings.task==='reverse'?'near':explore&&settings.goalPreset==='pair'?'random':settings.goalPreset,hiddenGoalAngle:explore?Math.min(Math.PI-.01,camera.hfov/2+.25):undefined, scanSonar:settings.scanSonar??HC_SR04, profile: settings.profile });
+    this.episode = new WorldEpisode({ sonarFeedback:settings.sonarFeedback,speedFeedback:settings.speedFeedback,seed: settings.seed, density: settings.density, styleStrength: settings.style,cameraNoise:settings.cameraNoise,cameraBrightness:settings.cameraBrightness, camera: WORLD_CAMERA, maxTicks: settings.maxTicks??4200, world:settings.world,start:settings.start,goals,goalCount:explore?1:settings.task==='reverse'?1:settings.goalCount,goalRadius:settings.goalRadius,goalLimit:goals?.length,goalPreset:settings.task==='reverse'?'near':explore&&settings.goalPreset==='pair'?'random':settings.goalPreset,hiddenGoalAngle:explore?Math.min(Math.PI-.01,camera.hfov/2+.25):undefined, scanSonar:settings.scanSonar??HC_SR04, profile: settings.profile });
     this.initialPose={x:this.episode.sim.kart.x,y:this.episode.sim.kart.y,heading:this.episode.sim.kart.heading};
     if(settings.task==='reverse'||settings.task==='forage'||settings.sensorOnly){
       let goal=goals?.[0]??(settings.task==='reverse'?reverseGoal(this.episode.sim.world,this.episode.sim.kart):{x:this.episode.sim.status.goalX,y:this.episode.sim.status.goalY});
@@ -180,7 +180,7 @@ export class WorldSession {
     if(this.episode.sim.status.pain>=8&&!this.episode.sim.status.crashed)this.episode.sim.status.stopReason='Stall pain limit reached; stop motors and try another policy.';
     const kart=this.episode.sim.kart,travel=Math.hypot(kart.x-before.x,kart.y-before.y);
     const status=this.episode.sim.status,progress=this.discovery?this.discovery.cue()[1]:Math.max(0,1-status.distanceToGoal/Math.max(1,Math.hypot(this.initialPose.x-status.goalX,this.initialPose.y-status.goalY)));
-    const feedback=this.searchJudge.observe(kart.x,kart.y,this.episode.tick,progress,status.goals,this.won,status.collisions);
+    const feedback=this.searchJudge.observe(kart.x,kart.y,this.episode.tick,progress,status.goals,this.won,status.collisions,{visualSearch:Boolean(this.discovery),reverse:kart.speed< -.5||((this.lastAction.reverse??0)>this.lastAction.throttle+.1),targetVisible:this.discovery?.tracker.current.visible??false});
     // Judge pain is a separate training ledger. It must not masquerade as
     // physical impact pain or trigger the simulator's fatal-contact threshold.
     status.score-=feedback.penalty;

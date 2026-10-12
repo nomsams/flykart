@@ -29,6 +29,8 @@ export type SonarPose = { x: number; y: number; heading: number };
 export type SonarReading = {
   /** Distance in pixels; the maximum range when no echo came back. */
   range: number;
+  /** HC-SR04 provides pulse timing / detection, not analogue amplitude. */
+  validityOnly?:boolean;
   /** Whether an echo was heard. */
   echo: boolean;
   /** Echo strength, relative to the detection threshold (1 = just heard). */
@@ -171,6 +173,6 @@ export class Sonar {
 /** The two numbers the controller reads: closeness of the echo (0 when none) and its strength (0..1). */
 export function sonarInputs(reading: SonarReading, usefulRangePx: number, out: number[] = [0, 0]): number[] {
   out[0] = reading.echo ? clamp(1 - reading.range / usefulRangePx, 0, 1) : 0;
-  out[1] = reading.echo ? clamp(Math.log(Math.max(1, reading.strength)) / Math.log(40), 0, 1) : 0;
+  out[1] = reading.echo ? reading.validityOnly?1:clamp(Math.log(Math.max(1, reading.strength)) / Math.log(40), 0, 1) : 0;
   return out;
 }
