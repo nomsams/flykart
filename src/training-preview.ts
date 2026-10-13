@@ -1,4 +1,4 @@
-import {ParkingSession,parkingCamera,parkingDomain,alignedParkingDomain,type ParkingBrain} from './parking/session';
+import {ParkingSession,parkingCamera,parkingInputDomain,type ParkingBrain} from './parking/session';
 import {ParkingEpisode,ParkingCue} from './parking/episode';
 import {RobotPhysics} from './robot/model';
 import {RoomMemory} from './robot/memory';
@@ -43,7 +43,7 @@ function parkingObserver(settings:ParkingSettings,brain:ParkingBrain):ParkingSes
   });
   const s=Object.assign(Object.create(ParkingSession.prototype),{
     settings,brain,episode,cue:new ParkingCue(camera),scan:new SonarHistory(),memory:Object.create(RoomMemory.prototype),network:Object.create(SpikingNetwork.prototype),
-    driver:Object.assign(Object.create(VisionDriver.prototype),{domain:settings.bayAlignment&&!['arrival','exit','switch'].includes(settings.lesson)?alignedParkingDomain:parkingDomain,options:{perceiver:{model:brain.eyes}},ensemble:null,sensors:[]}),
+    driver:Object.assign(Object.create(VisionDriver.prototype),{domain:parkingInputDomain(settings),options:{perceiver:{model:brain.eyes}},ensemble:null,sensors:[]}),
   }) as ParkingSession;
   episode.render=()=>episode.frame;return s;
 }

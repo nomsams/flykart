@@ -10,6 +10,7 @@ export class FlagDiscovery {
   readonly tracker: TargetTracker;
   firstSightTick: number | null = null;
   private lastTick = -Infinity;
+  private ignoreThrough = -Infinity;
   private consecutive = 0;
   private trackId: number | null = null;
   private readonly views = new Set<string>();
@@ -19,11 +20,13 @@ export class FlagDiscovery {
   get visualViews(): number { return this.views.size; }
   /** Timestamp of the most recent processed camera frame, not simulator target data. */
   get sampleTick(): number | null { return Number.isFinite(this.lastTick) ? this.lastTick : null; }
-  reset(): void {
+  reset(ignoreThrough=-Infinity): void {
+    this.ignoreThrough=ignoreThrough;
     this.tracker.reset(); this.firstSightTick = null; this.lastTick = -Infinity;
     this.consecutive = 0; this.trackId = null; this.views.clear();
   }
   observe(pixels: Float32Array, tick: number): void {
+    if (tick <= this.ignoreThrough)return; // Old held pixels belong to the previous flag.
     if (tick === this.lastTick) return; // Held camera frames cannot confirm a sighting twice.
     if (tick < this.lastTick) this.reset();
     this.lastTick = tick;

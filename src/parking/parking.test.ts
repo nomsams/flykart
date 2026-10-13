@@ -197,8 +197,8 @@ describe('camera and sensor-only parking',()=>{
       const restored=parseParkingLab(parkingLab(s.settings,s.episode.scene,s.brain,s.memory,s.scan));expect(restored.settings.sonarOn).toBe(sonarOn);
     }
   });
-  it('matches an open-world visual controller exactly for the same sensor observations',()=>{
-    const b=brain(),s=new ParkingSession({...DEFAULT_PARKING,phase:'frozen'},b),pixels=s.episode.frame.slice();
+  it('legacy hints match an open-world visual controller exactly for the same sensor observations',()=>{
+    const b=brain(),s=new ParkingSession({...DEFAULT_PARKING,gapHints:false,phase:'frozen'},b),pixels=s.episode.frame.slice();
     const reference=new VisionDriver({controller:SpikingNetwork.fromJSON(b.controller),perceiver:new Perceiver(b.eyes),domain:worldDomain,sensorOnly:true,visual:b.visual,resolution:'native',fusion:{fade:0},pixelMission:{reset(){},observe(){},cue(){return [.2,.4];}}});
     s.cue.observe=()=>{};s.cue.cue=()=>[.2,.4,.9,1];s.episode.render=()=>pixels;s.driver.reset();reference.reset();
     for(let i=0;i<8;i++){s.episode.status.ticks=i;const a=s.driver.act(s.episode),r=reference.act(s.episode);expect(a.sensors).toEqual(r.sensors);expect(a.action).toEqual(r.action);}
@@ -209,9 +209,9 @@ describe('camera and sensor-only parking',()=>{
     expect(s.network.toJSON()).toEqual(before);expect(s.driver.sensors).toEqual(inputs);expect(s.network.activity()).toEqual(activity);
   });
   it('bay direction is opt-in and cannot replace navigation in loose arrival lessons',()=>{
-    expect(new ParkingSession({...DEFAULT_PARKING,bayAlignment:true},brain()).driver.domain).toBe(parkingDomain);
-    expect(new ParkingSession({...DEFAULT_PARKING,lesson:'oriented'},brain()).driver.domain).toBe(parkingDomain);
-    expect(new ParkingSession({...DEFAULT_PARKING,lesson:'oriented',bayAlignment:true},brain()).driver.domain).toBe(alignedParkingDomain);
+    expect(new ParkingSession({...DEFAULT_PARKING,gapHints:false,bayAlignment:true},brain()).driver.domain).toBe(parkingDomain);
+    expect(new ParkingSession({...DEFAULT_PARKING,gapHints:false,lesson:'oriented'},brain()).driver.domain).toBe(parkingDomain);
+    expect(new ParkingSession({...DEFAULT_PARKING,gapHints:false,lesson:'oriented',bayAlignment:true},brain()).driver.domain).toBe(alignedParkingDomain);
   });
   it('scan pose stays fixed when commanded motion is physically blocked',()=>{
     const s=new ParkingSession(DEFAULT_PARKING,brain()),a=s.episode.scene.actors[0];s.episode.physics.pose={x:a.pose.x,z:-.5,heading:-Math.PI/2};for(let i=0;i<120;i++)s.step({...idle,throttle:1});expect(s.episode.physics.blocked).toBe(true);const p={...s.episode.physics.pose};for(let i=0;i<20;i++)s.step({...idle,throttle:1});expect(s.episode.physics.pose).toEqual(p);expect(s.episode.proprioception().speed).toBeGreaterThan(.1);const ping=s.scan.samples.at(-1)!;expect(ping.x).toBeCloseTo(p.x*PX);expect(ping.y).toBeCloseTo((p.z-.26*.48)*PX);

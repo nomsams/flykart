@@ -1,3 +1,6 @@
+import {validateGoalRewards,type GoalRewards} from '../world/goal-rewards';
+import {validateGoalCount} from '../world/world';
+import {mulberry32} from '../rng';
 import {SearchJudge,validateSearchJudge,type SearchJudgeSettings} from '../world/search-judge';
 import type { StallSettings } from '../stall';
 import { RoomMemory, MemorySettings } from '../../robot/memory';
@@ -98,7 +101,7 @@ export class TrackSession {
 }
 
 export type WorldDriverKind = "vision" | "both" | "feeling" | "expert" | "blind";
-export type WorldSettings = { sonarFeedback?:import("../world/transfer").SonarFeedback;speedFeedback?:import("../world/transfer").SpeedFeedback; seed: number; density: number; style: number; kind: WorldDriverKind; scanSonar?:SonarSpec; fade: number; controller: BrainSnapshot; vision: VisionModel | null; profile?: SensorProfile; sonarOn?: boolean; visual?:RacingSettings["visual"]; resolution?:RacingSettings["resolution"]; cameraNoise?:number;cameraBrightness?:number;stall?:StallSettings;maxTicks?:number; goals?:{x:number;y:number}[]; goalPreset?:import("../world/world").GoalPreset; goalCount?:import("../world/world").GoalCount;goalRadius?:number; task?:"forage"|"reverse"|"explore"; searchWin?:SearchWin; world?:WorldDef; start?:{x:number;y:number;heading:number}; memorySettings?:MemorySettings; roomMemory?:RoomMemory|null; sensorOnly?:boolean; practiceForward?:boolean;searchJudge?:SearchJudgeSettings };
+export type WorldSettings = {goalRewards?:GoalRewards; sonarFeedback?:import("../world/transfer").SonarFeedback;speedFeedback?:import("../world/transfer").SpeedFeedback; seed: number; density: number; style: number; kind: WorldDriverKind; scanSonar?:SonarSpec; fade: number; controller: BrainSnapshot; vision: VisionModel | null; profile?: SensorProfile; sonarOn?: boolean; visual?:RacingSettings["visual"]; resolution?:RacingSettings["resolution"]; cameraNoise?:number;cameraBrightness?:number;stall?:StallSettings;maxTicks?:number; goals?:{x:number;y:number}[]; goalPreset?:import("../world/world").GoalPreset; goalCount?:import("../world/world").GoalCount;goalRadius?:number; task?:"forage"|"reverse"|"explore"; searchWin?:SearchWin; world?:WorldDef; start?:{x:number;y:number;heading:number}; memorySettings?:MemorySettings; roomMemory?:RoomMemory|null; sensorOnly?:boolean; practiceForward?:boolean;searchJudge?:SearchJudgeSettings };
 
 export class WorldSession {
   readonly episode: WorldEpisode;
@@ -113,26 +116,29 @@ export class WorldSession {
   readonly discovery:FlagDiscovery|null;
   readonly searchJudge:SearchJudge;
   searchesCompleted=0;
+  visualFinds=0;
+  firstFindTick:number|null=null;
   searchStartTick=0;
   reverseDistance=0;
   lastAction: Action = { steer: 0, throttle: 0, brake: 0, reverse: 0 };
 
   constructor(readonly settings: WorldSettings) {
-    const explore=settings.task==='explore';
+    const explore=settings.task==='explore',rewards=validateGoalRewards(settings.goalRewards),adaptive=explore&&rewards.adaptiveTime;
+    const count=validateGoalCount(settings.goalCount),searchLimit=adaptive?(count==='random'?1+Math.floor(mulberry32(settings.seed*977+5)()*6):count??3):1;
     if(explore){settings={...settings,kind:'vision',fade:0,sensorOnly:true};this.settings=settings;if(!settings.vision)throw Error('Exploration requires a world camera network.');}
     // Saved compass scenes may contain multiple dots. Visual search must retain
-    // just its first saved flag and finish one search before generating another.
+    // just its first saved flag. Adaptive search generates each next flag after confirmation.
     const goals=explore?settings.goals?.slice(0,1):settings.goals;
     const camera=settings.profile?.worldCamera??WORLD_CAMERA;
     this.discovery=explore?new FlagDiscovery(settings.vision!.spec.width,settings.vision!.spec.height,camera.hfov):null;
     this.controller = SpikingNetwork.fromJSON(settings.controller);
-    this.episode = new WorldEpisode({ sonarFeedback:settings.sonarFeedback,speedFeedback:settings.speedFeedback,seed: settings.seed, density: settings.density, styleStrength: settings.style,cameraNoise:settings.cameraNoise,cameraBrightness:settings.cameraBrightness, camera: WORLD_CAMERA, maxTicks: settings.maxTicks??4200, world:settings.world,start:settings.start,goals,goalCount:explore?1:settings.task==='reverse'?1:settings.goalCount,goalRadius:settings.goalRadius,goalLimit:goals?.length,goalPreset:settings.task==='reverse'?'near':explore&&settings.goalPreset==='pair'?'random':settings.goalPreset,hiddenGoalAngle:explore?Math.min(Math.PI-.01,camera.hfov/2+.25):undefined, scanSonar:settings.scanSonar??HC_SR04, profile: settings.profile });
+    this.episode = new WorldEpisode({ goalRewards:rewards,goalLimit:explore?searchLimit:goals?.length,sonarFeedback:settings.sonarFeedback,speedFeedback:settings.speedFeedback,seed: settings.seed, density: settings.density, styleStrength: settings.style,cameraNoise:settings.cameraNoise,cameraBrightness:settings.cameraBrightness, camera: WORLD_CAMERA, maxTicks: settings.maxTicks??4200, world:settings.world,start:settings.start,goals,goalCount:explore?1:settings.task==='reverse'?1:settings.goalCount,goalRadius:settings.goalRadius,goalPreset:settings.task==='reverse'?'near':explore&&settings.goalPreset==='pair'?'random':settings.goalPreset,hiddenGoalAngle:explore?Math.min(Math.PI-.01,camera.hfov/2+.25):undefined, scanSonar:settings.scanSonar??HC_SR04, profile: settings.profile });
     this.initialPose={x:this.episode.sim.kart.x,y:this.episode.sim.kart.y,heading:this.episode.sim.kart.heading};
     if(settings.task==='reverse'||settings.task==='forage'||settings.sensorOnly){
       let goal=goals?.[0]??(settings.task==='reverse'?reverseGoal(this.episode.sim.world,this.episode.sim.kart):{x:this.episode.sim.status.goalX,y:this.episode.sim.status.goalY});
       if(settings.practiceForward){try{goal=reverseGoal(this.episode.sim.world,{...this.episode.sim.kart,heading:this.episode.sim.kart.heading+Math.PI});}catch{/* A blocked front corridor retains the ordinary seeded navigation goal. */}}
       // Rebuild a fixed-goal episode so arrival ends the trial rather than moving the flag.
-      this.episode=new WorldEpisode({...this.episode.options,goal,goals:settings.practiceForward?[goal]:goals??(settings.task==='reverse'?[goal]:this.episode.sim.goals),goalLimit:explore||settings.practiceForward?1:goals?.length??(settings.goalCount!==undefined?this.episode.sim.targetCount:(!explore&&settings.task!=='reverse'&&!settings.practiceForward&&settings.goalPreset==='pair'?2:1))});
+      this.episode=new WorldEpisode({...this.episode.options,goal,goals:settings.practiceForward?[goal]:goals??(settings.task==='reverse'?[goal]:this.episode.sim.goals),goalLimit:explore?searchLimit:settings.practiceForward?1:goals?.length??(settings.goalCount!==undefined?this.episode.sim.targetCount:(!explore&&settings.task!=='reverse'&&!settings.practiceForward&&settings.goalPreset==='pair'?2:1))});
     }
     this.searchJudge=new SearchJudge(validateSearchJudge(settings.searchJudge));
     this.searchJudge.reset(this.initialPose.x,this.initialPose.y);
@@ -151,30 +157,45 @@ export class WorldSession {
   }
 
   get found():boolean {return this.discovery?.firstSightTick!=null;}
-  get won():boolean {return !this.searchJudge.disqualified&&(this.discovery?this.found&&((this.settings.searchWin??'sight')==='sight'||this.episode.sim.status.goals>=this.episode.sim.goalLimit)&&!this.episode.sim.status.crashed:this.episode.sim.status.goals>=this.episode.sim.goalLimit&&!this.episode.sim.status.crashed);}
-  get done(): boolean { return this.searchJudge.disqualified || this.episode.done || Boolean(this.discovery&&this.found&&(this.settings.searchWin??'sight')==='sight'); }
+  get adaptiveSearch():boolean{return this.settings.task==='explore'&&this.episode.sim.goalRewards.adaptiveTime;}
+  get won():boolean {return !this.searchJudge.disqualified&&(this.discovery?this.found&&((this.settings.searchWin??'sight')==='sight'&&!this.adaptiveSearch||this.episode.sim.status.goals>=this.episode.sim.goalLimit)&&!this.episode.sim.status.crashed:this.episode.sim.status.goals>=this.episode.sim.goalLimit&&!this.episode.sim.status.crashed);}
+  get done(): boolean { return this.searchJudge.disqualified || this.episode.done || Boolean(this.discovery&&this.found&&!this.adaptiveSearch&&(this.settings.searchWin??'sight')==='sight'); }
 
   /** Keep the robot, neural state, memory and sensor histories; reset only target tracking. */
   continueSearch():boolean {
-    if(this.settings.task==='reverse'||!this.won||!this.episode.sim.renewSearchTarget())return false;
+    const count=this.adaptiveSearch?(this.settings.goalCount==='random'?1+Math.floor(mulberry32(this.settings.seed*977+5+(this.searchesCompleted+1)*7919)()*6):this.settings.goalCount??3):undefined;
+    if(this.settings.task==='reverse'||!this.won||!this.episode.sim.renewSearchTarget(count))return false;
     this.searchesCompleted++;
     this.searchStartTick=this.episode.tick;
-    this.discovery?.reset();
+    this.discovery?.reset(this.episode.tick);this.visualFinds=0;this.firstFindTick=null;
     this.searchJudge.reset(this.episode.sim.kart.x,this.episode.sim.kart.y,this.episode.tick,this.episode.sim.status.goals);
     return true;
   }
 
   step(): void {
     if(this.done)return;
-    const before={x:this.episode.sim.kart.x,y:this.episode.sim.kart.y};
+    const before={x:this.episode.sim.kart.x,y:this.episode.sim.kart.y},goalsBefore=this.episode.sim.status.goals;
     if (this.driver) {
       const frame = this.driver.act(this.episode);
       this.lastAction = frame.action;
-      if(this.discovery&&this.found&&(this.settings.searchWin??'sight')==='sight')return;
+      if(this.discovery&&this.found){
+        this.firstFindTick??=this.discovery.firstSightTick;
+        if((this.settings.searchWin??'sight')==='sight'){
+          if(!this.adaptiveSearch)return;
+          this.episode.sim.collectSighting();this.visualFinds++;
+          if(this.episode.sim.status.goals>=this.episode.sim.goalLimit){this.episode.render();return;}
+          this.discovery.reset(this.episode.tick);
+        }
+      }
+      if(this.discovery)this.episode.sim.arrivalEnabled=(this.settings.searchWin??'sight')==='reach'&&this.found;
       this.episode.step(frame.action);
     } else {
       const sensors = worldDomain.sensors(this.episode.truth(this.lastTruth), this.episode.mission(), this.episode.proprioception());
       this.lastAction = worldExpert(sensors); this.episode.step(this.lastAction);
+    }
+    if(this.discovery&&(this.settings.searchWin??'sight')==='reach'&&this.episode.sim.status.goals>goalsBefore){
+      this.visualFinds+=this.episode.sim.status.goals-goalsBefore;
+      if(this.adaptiveSearch&&this.episode.sim.status.goals<this.episode.sim.goalLimit)this.discovery.reset(this.episode.tick);
     }
     const pain=this.driver?.stall?.painForTick(this.episode.tick)??0;this.stallPain+=pain;this.episode.sim.status.pain+=pain;this.episode.sim.status.score-=pain*12;
     if(this.episode.sim.status.pain>=8&&!this.episode.sim.status.crashed)this.episode.sim.status.stopReason='Stall pain limit reached; stop motors and try another policy.';

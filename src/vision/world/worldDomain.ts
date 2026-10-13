@@ -75,7 +75,7 @@ export function worldExpert(s: ArrayLike<number>): Action {
   return { steer, throttle, brake, reverse: 0 };
 }
 
-export type WorldEpisodeOptions = { sonarFeedback?:SonarFeedback;speedFeedback?:SpeedFeedback; seed: number; density?: number; styleStrength?: number; maxTicks?: number; camera?: CameraConfig; headless?: boolean; sonar?: SonarSpec | null; scanSonar?: SonarSpec; profile?: SensorProfile;cameraNoise?:number;cameraBrightness?:number; world?:WorldDef; start?:{x:number;y:number;heading:number}; goal?:GoalPoint; goals?:GoalPoint[]; goalPreset?:GoalPreset; goalCount?:GoalCount; goalRadius?:number; goalLimit?:number; hiddenGoalAngle?:number };
+export type WorldEpisodeOptions = {goalRewards?:import("./goal-rewards").GoalRewards; sonarFeedback?:SonarFeedback;speedFeedback?:SpeedFeedback; seed: number; density?: number; styleStrength?: number; maxTicks?: number; camera?: CameraConfig; headless?: boolean; sonar?: SonarSpec | null; scanSonar?: SonarSpec; profile?: SensorProfile;cameraNoise?:number;cameraBrightness?:number; world?:WorldDef; start?:{x:number;y:number;heading:number}; goal?:GoalPoint; goals?:GoalPoint[]; goalPreset?:GoalPreset; goalCount?:GoalCount; goalRadius?:number; goalLimit?:number; hiddenGoalAngle?:number };
 
 export class WorldEpisode implements VisionEpisode {
   readonly sim: WorldSim;
@@ -92,7 +92,7 @@ export class WorldEpisode implements VisionEpisode {
   private readonly fixedTargets: SonarTarget[] = [];
 
   constructor(readonly options: WorldEpisodeOptions) {
-    this.sim = new WorldSim(options.seed, { density: options.density, maxTicks: options.maxTicks,world:options.world,start:options.start,goal:options.goal,goals:options.goals,goalPreset:options.goalPreset,goalCount:options.goalCount,goalRadius:options.goalRadius,goalLimit:options.goalLimit,hiddenGoalAngle:options.hiddenGoalAngle });
+    this.sim = new WorldSim(options.seed, {goalRewards:options.goalRewards, density: options.density, maxTicks: options.maxTicks,world:options.world,start:options.start,goal:options.goal,goals:options.goals,goalPreset:options.goalPreset,goalCount:options.goalCount,goalRadius:options.goalRadius,goalLimit:options.goalLimit,hiddenGoalAngle:options.hiddenGoalAngle });
     this.random = mulberry32(options.seed * 31 + 3);
     this.camera = options.profile?.worldCamera ?? options.camera ?? WORLD_CAMERA;
     this.style = (options.styleStrength ?? 0) > 0 ? randomStyle(this.random, options.styleStrength ?? 0) : { ...DEFAULT_STYLE };

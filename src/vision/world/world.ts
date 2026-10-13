@@ -2,6 +2,7 @@
 // trees, rocks, ponds, a fence around the edge and a sequence of goals to
 // reach. The kart keeps the original FlyKart steering, throttle, brake and
 // reverse dynamics; only the surroundings change.
+import {validateGoalRewards,noseArrivalBonus,goalTimeBonus,type GoalRewards} from './goal-rewards';
 import { SonarSurface } from '../sonar-surfaces';
 import { Action, STEP, clamp, wrapAngle } from "../../core";
 import { mulberry32, Random } from "../rng";
@@ -125,7 +126,7 @@ export type WorldKart = {
   action: Action; yaw: number;
 };
 
-export type WorldStatus = { goals: number; collisions: number; pain:number; crashed: boolean; crashReason?: string; stopReason?:string; ticks: number; score: number; distanceToGoal: number; goalX: number; goalY: number; timedOut: boolean };
+export type WorldStatus = {noseReward:number;timeBonusTicks:number; goals: number; collisions: number; pain:number; crashed: boolean; crashReason?: string; stopReason?:string; ticks: number; score: number; distanceToGoal: number; goalX: number; goalY: number; timedOut: boolean };
 
 /** One run in an open world. Pure simulation: no camera, no network. */
 export class WorldSim {
@@ -138,6 +139,10 @@ export class WorldSim {
   private goalTarget: number;
   get goalLimit():number { return this.goalTarget; }
   private deadline: number;
+  private collectionBase=0;
+  get deadlineTicks():number{return this.deadline;}
+  readonly goalRewards:GoalRewards;
+  arrivalEnabled=true;
   private readonly recentGoals:GoalPoint[]=[];
   readonly goalPreset: GoalPreset;
   readonly goals: GoalPoint[] = [];
@@ -148,8 +153,9 @@ export class WorldSim {
   readonly goalRadius:number;
   surface: Surface = "grass";
 
-  constructor(seed: number, options: { density?: number; maxTicks?: number; world?:WorldDef; start?:{x:number;y:number;heading:number}; goal?:GoalPoint; goals?:GoalPoint[]; goalPreset?:GoalPreset; goalCount?:GoalCount; goalRadius?:number; goalLimit?:number; hiddenGoalAngle?:number } = {}) {
+  constructor(seed: number, options: { goalRewards?:GoalRewards; density?: number; maxTicks?: number; world?:WorldDef; start?:{x:number;y:number;heading:number}; goal?:GoalPoint; goals?:GoalPoint[]; goalPreset?:GoalPreset; goalCount?:GoalCount; goalRadius?:number; goalLimit?:number; hiddenGoalAngle?:number } = {}) {
     this.world = options.world ? structuredClone(options.world) : generateWorld(seed, options.density ?? 0.6);
+    this.goalRewards=validateGoalRewards(options.goalRewards);
     this.goalPreset=options.goalPreset??'standard';
     this.goalRadius=validateGoalRadius(options.goalRadius);
     this.hiddenGoalAngle=options.hiddenGoalAngle??0;
@@ -161,8 +167,9 @@ export class WorldSim {
     this.goalTarget=options.goalLimit??(count!==undefined?options.goals?.length??this.targetCount:Infinity);
     this.maxTicks = options.maxTicks ?? 2400;
     this.deadline=this.maxTicks;
+    if(this.goalRewards.adaptiveTime&&!Number.isFinite(this.goalTarget))this.goalTarget=this.targetCount;
     this.kart.heading = (this.random() * 2 - 1) * Math.PI;
-    this.status = { goals: 0, collisions: 0, pain:0, crashed: false, ticks: 0, score: 0, distanceToGoal: 0, goalX: 0, goalY: 0, timedOut: false };
+    this.status = { noseReward:0,timeBonusTicks:0,goals: 0, collisions: 0, pain:0, crashed: false, ticks: 0, score: 0, distanceToGoal: 0, goalX: 0, goalY: 0, timedOut: false };
     if(options.start)Object.assign(this.kart,options.start);
     // Retain legacy scene imports, but settle old radius-only contact poses so
     // their front-mounted sonar never starts on the far side of the fence.
@@ -179,14 +186,29 @@ export class WorldSim {
   get done(): boolean { return this.status.crashed || this.status.timedOut || Boolean(this.status.stopReason) || this.status.goals>=this.goalLimit; }
 
   /** Live target continuation; training never calls this method. */
-  renewSearchTarget():boolean {
+  renewSearchTarget(count?:number):boolean {
+    if(count!==undefined&&(!Number.isInteger(count)||count<1||count>6))throw Error('Visual search sequence must contain 1–6 goals.');
     if(this.status.crashed||this.status.timedOut||this.status.stopReason)return false;
     this.goals.forEach(g=>this.rememberGoal(g));
     if(this.goalCount==='random')this.targetBatchCount=1+Math.floor(this.random()*6);
-    this.goalTarget=this.status.goals+this.targetCount;
+    this.collectionBase=this.status.goals;
+    this.goalTarget=this.status.goals+(count??this.targetCount);
     if(!this.nextGoal(false)){this.status.stopReason='Search complete; no clear new target fits this preset. Choose nearer dots or a clearer map.';return false;}
     this.deadline=this.status.ticks+this.maxTicks;
     return true;
+  }
+  /** Confirmed RGB sightings use this only in a bounded visual multi-target trial. */
+  collectSighting():boolean {
+    if(this.done||!this.goals.length)return false;
+    this.collectGoal(0,0);return true;
+  }
+  private collectGoal(index:number,noseBonus:number):void {
+    const status=this.status;
+    status.goals++;status.score+=100+noseBonus;status.noseReward+=noseBonus;
+    const bonus=goalTimeBonus(this.goalRewards,status.goals-this.collectionBase,this.goalLimit-this.collectionBase);
+    this.deadline+=bonus;status.timeBonusTicks+=bonus;
+    this.rememberGoal(this.goals[index]);this.goals.splice(index,1);
+    if(status.goals<this.goalLimit){if(this.goals.length)this.selectGoal();else if(!this.nextGoal())status.stopReason='Target collected; no clear next target fits this preset. Choose fewer or nearer dots, or shuffle targets.';}
   }
   private rememberGoal(g:GoalPoint):void { this.recentGoals.push({...g});if(this.recentGoals.length>8)this.recentGoals.shift(); }
 
@@ -247,7 +269,7 @@ export class WorldSim {
     kart.speed = clamp(kart.speed + acceleration * STEP, -48, 90);
     if (surface === "mud") kart.speed *= 0.955; else if (surface === "sand") kart.speed *= 0.988;
     if(world.obstacles.some(o=>floorItem(o)&&Math.hypot(kart.x-o.x,kart.y-o.y)<o.radius))kart.speed*=.97;
-    const before = status.distanceToGoal;
+    const before = status.distanceToGoal,arrivalFrom={x:kart.x,y:kart.y};
     kart.x += Math.cos(kart.heading) * kart.speed * STEP; kart.y += Math.sin(kart.heading) * kart.speed * STEP;
     status.ticks += 1; this.cooldown = Math.max(0, this.cooldown - 1);
     let hit = false, contactPain=0;
@@ -277,7 +299,7 @@ export class WorldSim {
     const distance = Math.hypot(status.goalX - kart.x, status.goalY - kart.y);
     status.distanceToGoal = distance; status.score += (before - distance) * 0.05 - 0.002;
     const reached=this.goals.findIndex(g=>Math.hypot(g.x-kart.x,g.y-kart.y)<this.goalRadius);
-    if (reached>=0&&!status.crashed) { status.goals += 1; status.score += 100; this.rememberGoal(this.goals[reached]);this.goals.splice(reached,1); if(status.goals<this.goalLimit){if(this.goals.length)this.selectGoal();else if(!this.nextGoal())status.stopReason='Target collected; no clear next target fits this preset. Choose fewer or nearer dots, or shuffle targets.';} }
+    if (reached>=0&&!status.crashed&&this.arrivalEnabled) { const g=this.goals[reached];this.collectGoal(reached,noseArrivalBonus(this.goalRewards,kart.heading,kart.speed,g.x-arrivalFrom.x,g.y-arrivalFrom.y)); }
     kart.action = { steer: action.steer, throttle: action.throttle, brake: action.brake, reverse: action.reverse ?? 0 };
     if (status.ticks >= this.deadline) status.timedOut = true;
   }

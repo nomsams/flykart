@@ -43,7 +43,7 @@ try{
   await page.locator('#parking-scan-reference').uncheck();await page.locator('#scan-view').click();
   assert.equal(await page.locator('#scan').getAttribute('data-beam-footprint'),beam,'Top and perspective must share physical beam limits');
   await page.locator('#refresh').click();assert.deepEqual(await state(),before,'Observer clipping must not change inputs, raw sonar, brain, learning or scores');
-  assert.match(await page.locator('#sonar-info').innerText(),/no echo.*unknown.*Displayed beam stops at simulated solids/);
+  assert.match(await page.locator('#sonar-info').innerText(),/no echo.*unknown.*Fan = simulated transmission to real bodies/);
   // A retained/imported out-of-room noisy cell stays exported but cannot paint past the wall.
   const cropped=await page.evaluate(()=>{
     const s=window.flykartParking.session,c=document.querySelector('#scan'),ctx=c.getContext('2d'),extent=s.episode.scene.half*100/1.1;

@@ -1,3 +1,4 @@
+import {parkingRobotConfig,validateParkingDrive} from './drive';
 import {ParkingMotionJudge} from './motion-judge';
 import {inParkingArea} from './model';
 import {Action,clamp,wrapAngle} from '../core';
@@ -76,7 +77,7 @@ export class ParkingCue extends FlagDiscovery{
 }
 
 export class ParkingEpisode implements VisionEpisode{
-  readonly scene:ParkingScene;readonly physics=new RobotPhysics({...DEFAULT_ROBOT});readonly frame:Float32Array;readonly sonarUnit:Sonar;
+  readonly scene:ParkingScene;readonly physics:RobotPhysics;readonly frame:Float32Array;readonly sonarUnit:Sonar;
   readonly cameraScene:ParkingCameraScene;readonly effects:ImpactEffect[]=[];readonly trail:{x:number;z:number}[]=[];
   readonly status={negativeReward:0,jigglePain:0,jiggleSeconds:0,reversalCount:0,jiggleActive:false,motionTravelCm:0,motionNetCm:0,eradicationReason:null as ParkingResult['eradicationReason'],disqualified:false,ticks:0,contacts:0,pedestrianHits:0,pain:0,reward:0,pendingReward:0,score:0,success:false,hold:0,approachReward:0,qualityReward:0,reverseReward:0,pathReward:0,progressPenalty:0,idleSeconds:0,slowPenalty:0,slowPain:0,slowSeconds:0};
   readonly coachPath:CoachPath|null;
@@ -85,6 +86,7 @@ export class ParkingEpisode implements VisionEpisode{
   private qualityPotential=0;private pathPotential=0;private bestRemaining=0;private bestAngle=Infinity;private progressTick=0;private progressMark=0;
   private lastCommand:Action={steer:0,throttle:0,brake:0,reverse:0};private lastContact=-Infinity;private potential=0;private cooldown=new Map<string,number>();
   constructor(readonly settings:ParkingSettings,readonly camera:CameraConfig,scene?:ParkingScene,public diagnostics=true){
+    this.physics=new RobotPhysics(parkingRobotConfig(settings.drive));
     this.scene=scene?validateParkingScene(scene):generateParking(settings);this.physics.pose={...this.scene.start};this.physics.odometry={...this.scene.start};this.frame=new Float32Array(frameLength(camera));this.cameraScene=new ParkingCameraScene(this.scene,settings.cars,settings.floor,hasBayDirectionPaint(settings));
     this.sonarUnit=new Sonar({...HC_SR04,mountForward:DEFAULT_ROBOT.length*.48*PX},mulberry32(settings.seed*31));
     this.coachPath=settings.pathReward?planParkingPath(this.scene):null;
@@ -143,7 +145,8 @@ export class ParkingEpisode implements VisionEpisode{
   step(action:Action){
     if(this.done)return;const before={...this.physics.pose},incoming=this.physics.speed,pwm=parkingMotorRequests(action);this.lastCommand={...action};this.traffic();
     const boundary=[-1,1].flatMap(sign=>[{id:'edge-x'+sign,kind:'wall' as const,x:sign*3,z:0,yaw:Math.PI/2,width:6,depth:.025,height:.2},{id:'edge-z'+sign,kind:'wall' as const,x:0,z:sign*3,yaw:0,width:6,depth:.025,height:.2}]);
-    this.physics.step(pwm.left/255,pwm.right/255,[...this.scene.actors.map(actorObject),...boundary],1/30);
+    const reverseScale=validateParkingDrive(this.settings.drive).reverseScale;
+    this.physics.step(pwm.left/255*(pwm.left<0?reverseScale:1),pwm.right/255*(pwm.right<0?reverseScale:1),[...this.scene.actors.map(actorObject),...boundary],1/30);
     const body=bodySolid(this.physics.pose,DEFAULT_ROBOT.length,DEFAULT_ROBOT.width),hit=this.scene.actors.find(a=>overlaps(body,actorSolid(a)))??this.scene.actors.find(a=>a.id===this.physics.contact?.objectId);
     if(this.physics.blocked||hit){
       if(this.settings.strictCrash&&!inParkingArea(this.physics.pose,this.scene.target))this.eradicate('contact');
