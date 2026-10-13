@@ -157,12 +157,17 @@ export class RobotPhysics {
 const PX_PER_METRE = 100 / CM_PER_PIXEL;
 export class RobotSonar {
   reading: SonarReading = { range: 400 / CM_PER_PIXEL, echo: false, strength: 0 };
+  spec = {...HC_SR04};
+  samplePose: {x:number;y:number;heading:number}|null = null;
+  get lastTick():number{return Number.isFinite(this.lastTime)?this.lastTime*30:-1;}
   lastTime = -Infinity;
   count = 0;
   private random = mulberry32(2048);
   update(time: number, pose: Pose, objects: WorldObject[], c: RobotConfig, noise?: NoiseSource): boolean {
     if (time - this.lastTime < .066 - 1e-8) return false;
     this.lastTime = time; this.count++;
+    this.spec={...HC_SR04,lobeSigmaDeg:c.sonarBeam*.8,mountHeight:c.mountHeight*PX_PER_METRE,mountForward:c.length*.48*PX_PER_METRE};
+    this.samplePose={x:pose.x*PX_PER_METRE,y:pose.z*PX_PER_METRE,heading:pose.heading};
     if (!c.sonarEnabled) { this.reading = { range: 400 / CM_PER_PIXEL, echo: false, strength: 0 }; return true; }
     const ox = pose.x + Math.cos(pose.heading) * c.length * .48, oz = pose.z + Math.sin(pose.heading) * c.length * .48;
     // An overhead tabletop outside the useful vertical cone must not occlude
@@ -175,8 +180,7 @@ export class RobotSonar {
     });
     const targets: SonarTarget[] = reachable.map(s => ({ surface:s.sonarSurface,kind: "box" as const, x: s.x * PX_PER_METRE, y: s.z * PX_PER_METRE, heading: s.yaw,
       halfLength: s.width * PX_PER_METRE / 2, halfWidth: s.depth * PX_PER_METRE / 2, z0: s.bottom * PX_PER_METRE, z1: s.top * PX_PER_METRE }));
-    this.reading = ping({ ...HC_SR04, lobeSigmaDeg: c.sonarBeam * .8, mountHeight: c.mountHeight * PX_PER_METRE, mountForward: c.length * .48 * PX_PER_METRE },
-      { x: pose.x * PX_PER_METRE, y: pose.z * PX_PER_METRE, heading: pose.heading }, targets, this.random);
+    this.reading = ping(this.spec,this.samplePose, targets, this.random);
     if (noise) { const measured = noise.sonar(this.metres, this.reading.echo); this.reading = { range: measured.metres * PX_PER_METRE, echo: measured.echo, strength: measured.echo ? this.reading.strength : 0 }; }
     return true;
   }

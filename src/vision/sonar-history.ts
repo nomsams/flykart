@@ -18,7 +18,7 @@ export class SonarHistory{
   private estimator=new MotionRangeFilter();
   private cache:{revision:number;samples:MappedPing[];cells:Map<string,number>;diagnostic:RangeEstimate|null}|null=null;
   clear():void{this.samples.length=0;this.cells.clear();this.lastCount=-1;this.revision++;this.cache=null;this.persistedFiltered=null;this.estimator.reset();}
-  record(unit:Sonar|null,pose:SonarPose,on=true):void{
+  record(unit:Pick<Sonar,'count'|'spec'|'samplePose'|'reading'|'lastTick'>|null,pose:SonarPose,on=true):void{
     if(!unit||unit.count===this.lastCount)return;
     this.lastCount=unit.count;if(!on)return;
     const s=unit.spec;pose=unit.samplePose??pose;

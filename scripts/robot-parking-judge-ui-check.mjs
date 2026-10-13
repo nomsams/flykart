@@ -40,7 +40,9 @@ try{
   await page.mouse.click(click.x,click.y);await page.waitForFunction(()=>window.flykartParking.selectedGhost===1,{},{timeout:5000});
   await page.locator('#headless-again').click();await page.locator('#training-speed').selectOption('1');await page.locator('#inspect-ghost').selectOption('0');assert.equal(await page.locator('#preview').inputValue(),'low');
   await page.locator('#cancel').click();await page.waitForFunction(()=>!window.flykartParking.busy,{},{timeout:60000});
-  assert.equal(await page.locator('#camera').getAttribute('data-ghost'),'live');assert.equal(await page.locator('#inspect-ghost').isDisabled(),true);
+  assert.equal(await page.locator('#camera').getAttribute('data-ghost'),'1');assert.equal(await page.locator('#inspect-ghost').isDisabled(),false);assert.match(await page.locator('#ghost-inspection-note').innerText(),/frozen comparison/);
+  const frozen=await page.evaluate(()=>window.flykartParking.ghosts[0].episode.tick);await page.waitForTimeout(200);assert.equal(await page.evaluate(()=>window.flykartParking.ghosts[0].episode.tick),frozen);
+  await page.locator('#inspect-ghost').selectOption('-1');assert.equal(await page.locator('#camera').getAttribute('data-ghost'),'live');
   await mkdir('.cache',{recursive:true});await page.locator('.world-foot').screenshot({path:'.cache/parking-motion-judge.png'});await page.setViewportSize({width:390,height:844});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));assert.deepEqual(errors,[]);
   console.log('Parking judge passed: combined pain/negative sugar and exports, oscillation eradication and invisible rejected bodies, refreshed in-place car geometry, visible-flag/near-car sonar explanation, selectable actual ghost FPV/sonar/controls, 2D/3D click selection, headless inspection and mobile fit.');
 }finally{await browser.close();}

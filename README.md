@@ -157,6 +157,8 @@ npm run dev
 
 Open the local URL printed by Vite.
 
+Camera/sonar display layers, selectable final ghost comparisons, portable view and memory settings, and shared simulation motion judges are described in [Inspecting and transferring a trained fly](docs/observer-parity.md). View changes follow across labs; you choose when to load a different brain.
+
 ## Test and build
 
 ```bash

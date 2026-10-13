@@ -1,3 +1,5 @@
+import {observerSettings,applyObserverSettings} from '../observer-settings';
+import {ScanDisplay} from './scan-display';
 import {validateGoalRewards,type GoalRewards} from './world/goal-rewards';
 import {SensorFpv} from './ui/sonar-fpv';
 import {TrackGhostInspector} from './ui/ghost-inspector';
@@ -126,7 +128,7 @@ function updateModeNote(): void {
 let experiment:ReturnType<typeof mountExperimentPanel>;
 let evolutionPanels:Partial<Record<'track'|'world',EvolutionPanel>>={};
 let trackEyePreview:EyePreview,worldEyePreview:EyePreview;
-let trackFpv:SensorFpv,worldFpv:SensorFpv,trackInspector:TrackGhostInspector;
+let trackFpv:SensorFpv,worldFpv:SensorFpv,trackInspector:TrackGhostInspector;const scanDisplays:Partial<Record<'track'|'world',ScanDisplay>>={};
 let previewTrack:TrackSession[]|null=null,previewWorld:WorldSession[]|null=null;
 let cameraTraining=false, cancelTraining=false, trainedCamera:CameraTrainingResult|null=null;
 let trainedExperiment:RacingSettings|null=null;
@@ -207,6 +209,7 @@ function boundedInput(id:string,min:number,max:number,fallback:number):number {
   input.value=String(value);return value;
 }
 function buildTrack(options: { keepMemory?: boolean } = {}): void {
+  previewTrack=null;trackInspector?.finish();
   state.running.track=false;$("track-run").textContent="Start";setStatus("track","ready");
   const gates=boundedInput('race-checkpoints',2,64,8),variation=boundedInput('race-variation',0,35,0)/100;
   if(state.memory.config.gates!==gates){state.memory=new MushroomBody({...state.memory.config,gates});options.keepMemory=false;}
@@ -273,7 +276,7 @@ function paintTrack(preview?:TrackSession,ghosts:TrackSession[]=previewTrack??[]
   if (reading) { drawSonarTrace($("sonar-canvas") as HTMLCanvasElement, session.sonarTrace, state.sonarOn); const age=(episode.tick-(episode.sonarUnit?.lastTick??0))/30;$("sonar-status").textContent = `${!state.sonarOn ? 'ignored by controller' : reading.echo ? `${(reading.range*CM_PER_PIXEL).toFixed(1)} cm · strength ${reading.strength.toFixed(1)}` : 'no echo (not zero distance)'} · ping ${episode.sonarUnit!.count} · age ${(age*1000).toFixed(0)} ms · ${state.running.track?'15 Hz simulation clock':'paused; held sample'}`;logFreshPing(session); }
   updateScanStatus("track",session);
   const comparison=scanComparison("track-scan",session.sonarMap);
-  drawSonarHistory($("track-sonar-map") as HTMLCanvasElement,session.sonarMap,{x:car.position.x,y:car.position.y,heading:car.heading},state.sonarOn&&Boolean(episode.sonarUnit),{...scanOptions("track"),available:Boolean(episode.sonarUnit),opacity:comparison.opacity,reference:comparison.reference?{objects:episode.sonarTargets(),path:session.route.points}:undefined});
+  drawSonarHistory($("track-sonar-map") as HTMLCanvasElement,session.sonarMap,{x:car.position.x,y:car.position.y,heading:car.heading},state.sonarOn&&Boolean(episode.sonarUnit),{...scanOptions("track"),available:Boolean(episode.sonarUnit),occluders:episode.sonarTargets(),opacity:comparison.opacity,reference:comparison.reference?{objects:episode.sonarTargets(),path:session.route.points}:undefined});
   drawTrace($("memory-trace") as HTMLCanvasElement, session.trace, "bend 150 px ahead   white: truth · blue: camera · violet: memory · green: used");
   $("memory-status").textContent = on ? `lap ${Math.max(1,memory.lap)} · ${memory.taughtCells} of ${memory.kenyonCount} cells taught · ${memory.remembering ? "recalling an earlier lap" : "nothing remembered here yet"}` : "off";
 }
@@ -326,6 +329,7 @@ function savedScene(){const s=state.world!;return validateArena({format:"flykart
 function readSearchJudge():SearchJudgeSettings{return validateSearchJudge({enabled:$<HTMLInputElement>('world-progress-on').checked,zeroChill:$<HTMLInputElement>('world-zero-chill').checked,delaySeconds:Number($<HTMLInputElement>('world-progress-delay').value),cutoffSeconds:Number($<HTMLInputElement>('world-progress-cutoff').value),weight:Number($<HTMLInputElement>('world-progress-weight').value),loopGuard:$<HTMLInputElement>('world-loop-guard').checked,blindReverse:$<HTMLInputElement>('world-blind-reverse').checked,antiJitter:$<HTMLInputElement>('world-anti-jitter').checked,jitterWindowSeconds:Number($<HTMLInputElement>('world-jitter-window').value),jitterWeight:Number($<HTMLInputElement>('world-jitter-weight').value)});}
 function writeSearchJudge(raw?:SearchJudgeSettings){const s=validateSearchJudge(raw);$<HTMLInputElement>('world-loop-guard').checked=s.loopGuard!==false;$<HTMLInputElement>('world-blind-reverse').checked=s.blindReverse!==false;$<HTMLInputElement>('world-anti-jitter').checked=s.antiJitter!==false;$<HTMLInputElement>('world-progress-on').checked=s.enabled;$<HTMLInputElement>('world-zero-chill').checked=s.zeroChill;for(const [id,v] of Object.entries({'world-progress-delay':s.delaySeconds,'world-progress-cutoff':s.cutoffSeconds,'world-progress-weight':s.weight,'world-jitter-window':s.jitterWindowSeconds,'world-jitter-weight':s.jitterWeight}))$<HTMLInputElement>(id).value=String(v);}
 function buildWorld(): void {
+  previewWorld=null;worldStudio?.clearInspection();
   state.running.world=false;$("world-run").textContent="Start";
   const assets = state.assets!; syncWorldTaskUi(); const kind = $<HTMLSelectElement>("world-driver").value as WorldDriverKind;
   const robotWorld = state.profile === "robot" ? robotAssets() : null;
@@ -347,6 +351,7 @@ function paintWorld(preview?:WorldSession,ghosts:WorldSession[]=previewWorld??[]
   evolutionPanels.world?.refresh();
   const selected=worldStudio?.selectedIndex??0;
   const session = ghosts.length?(selected<0?state.world:ghosts[selected]??ghosts[0]):preview??state.world; if (!session) return;worldStudio?.view(session);
+  for(const id of ['world-eye','world-sonar-map','world-brain','world-estimates'])$(id).dataset.cart=ghosts.length&&selected>=0?'Cart '+(selected+1):'Live robot';
   const episode = session.episode; const sim = episode.sim; const driver = session.driver;
   $('world-caption').textContent=`world ${session.settings.seed} · target round ${session.searchesCompleted+1} · ${sim.goals.length} active ${sim.goals.length===1?'flag':'flags'}`;
   const truth = episode.truth(session.lastTruth); const perception = driver?.perception ?? null;
@@ -361,7 +366,7 @@ function paintWorld(preview?:WorldSession,ghosts:WorldSession[]=previewWorld??[]
     `goals ${sim.status.goals}   speed ${sim.kart.speed.toFixed(0)}   ${sim.surface}${sim.status.crashed ? "   " + sim.status.crashReason : ""}`, sonarView,{goals:sim.goals,goalRadius:sim.goalRadius,trail:$<HTMLInputElement>("world-trail-visible").checked?session.trail:undefined,ghosts:ghosts.map((s,i)=>({...s.episode.sim.kart,trail:$<HTMLInputElement>("world-trail-visible").checked?s.trail:undefined,label:String(i+1),color:GHOST_COLORS[i%GHOST_COLORS.length],selected:i===selected}))});
   updateScanStatus("world",session);
   const comparison=scanComparison("world-scan",session.sonarMap);
-  drawSonarHistory($("world-sonar-map") as HTMLCanvasElement,session.sonarMap,sim.kart,state.sonarOn&&Boolean(episode.scanSonarUnit),{...scanOptions("world"),available:Boolean(episode.scanSonarUnit),extent:sim.world.half+50,opacity:comparison.opacity,reference:comparison.reference?{objects:session.episode.targets()}:undefined});
+  drawSonarHistory($("world-sonar-map") as HTMLCanvasElement,session.sonarMap,sim.kart,state.sonarOn&&Boolean(episode.scanSonarUnit),{...scanOptions("world"),available:Boolean(episode.scanSonarUnit),occluders:episode.targets(),boundary:sim.world.half,extent:sim.world.half+50,opacity:comparison.opacity,reference:comparison.reference?{objects:session.episode.targets()}:undefined});
   const discovery=session.discovery, sight=$('world-discovery-status');sight.hidden=!discovery;
   if(discovery){const cue=discovery.cue(),first=discovery.firstSightTick; sight.textContent=`${session.won?'WINNER · ':''}${discovery.tracker.current.visible?'Flag visible':'Searching · flag not visible'} · ${session.searchesCompleted} searches completed · current first sight ${first===null?'not yet':((first-session.searchStartTick)/30).toFixed(2)+' s'} · pixel bearing ${(cue[0]*180).toFixed(1)}° · apparent size ${cue[1].toFixed(3)} · ${discovery.visualViews} coarse views. No compass or true range; map is for the observer.`;}
   $('world-goal-reward-status').textContent=`Goals ${sim.status.goals}/${Number.isFinite(sim.goalLimit)?sim.goalLimit:'continuous'} · nose-first bonus +${sim.status.noseReward.toFixed(1)} · time earned +${(sim.status.timeBonusTicks/30).toFixed(1)} s · remaining ${Math.max(0,(sim.deadlineTicks-sim.status.ticks)/30).toFixed(1)} s. ${session.adaptiveSearch?'Sequential visual search · no compass.':''}`;
@@ -487,8 +492,8 @@ async function importBrainText(text: string, name: string): Promise<void> {
   }else if(imported.vision?.domain==='world'){const source=state.importedWorld??worldExportSource();if(source)state.importedWorld={...source,vision:imported.vision};}
   if(full||world){
     state.arena=imported.worldArena??null;writeWorldSetup(setup);
-    const t=imported.worldTraining;writeGoalRewards(t?.goalRewards??imported.worldSetup?.goalRewards);$<HTMLSelectElement>("world-sonar-feedback").value=t?.sonarFeedback??"amplitude";$<HTMLSelectElement>("world-speed-feedback").value=t?.speedFeedback??"measured";writeSearchJudge(t?.searchJudge);worldStudio?.writeConfig(t?.breeding);$<HTMLSelectElement>('world-task').value=t?.task??'forage';$<HTMLSelectElement>('world-search-win').value=t?.searchWin??'sight';$<HTMLInputElement>('world-crash-weight').value=String((t?.crashWeight??.2)*100);$('world-crash-weight').dispatchEvent(new Event('input'));$<HTMLInputElement>('world-train-ticks').value=String(t?.maxTicks??900);$<HTMLInputElement>('world-reverse-coach').checked=t?.reverseCoach??true;$<HTMLInputElement>('world-retain-forward').checked=t?.retainForward??true;$<HTMLSelectElement>('world-failure-retries').value=String(t?.failureRetries??1);
-    state.worldMemory=imported.worldMemory?RoomMemory.fromJSON(imported.worldMemory):null;$<HTMLInputElement>('world-memory-on').checked=t?.memoryEnabled??Boolean(imported.worldMemory);
+    const t=imported.worldTraining;writeGoalRewards(t?.goalRewards??imported.worldSetup?.goalRewards);$<HTMLSelectElement>("world-sonar-feedback").value=t?.sonarFeedback??"amplitude";$<HTMLSelectElement>("world-speed-feedback").value=t?.speedFeedback??"measured";writeSearchJudge(imported.progressJudge??t?.searchJudge);worldStudio?.writeConfig(t?.breeding);$<HTMLSelectElement>('world-task').value=t?.task??'forage';$<HTMLSelectElement>('world-search-win').value=t?.searchWin??'sight';$<HTMLInputElement>('world-crash-weight').value=String((t?.crashWeight??.2)*100);$('world-crash-weight').dispatchEvent(new Event('input'));$<HTMLInputElement>('world-train-ticks').value=String(t?.maxTicks??900);$<HTMLInputElement>('world-reverse-coach').checked=t?.reverseCoach??true;$<HTMLInputElement>('world-retain-forward').checked=t?.retainForward??true;$<HTMLSelectElement>('world-failure-retries').value=String(t?.failureRetries??1);
+    state.worldMemory=imported.worldMemory?RoomMemory.fromJSON(imported.worldMemory):null;$<HTMLInputElement>('world-memory-on').checked=imported.roomMemoryEnabled??t?.memoryEnabled??Boolean(imported.worldMemory);
     if(state.worldMemory)$<HTMLSelectElement>('world-memory-count').value=String(state.worldMemory.count);
   }
   if(imported.experiment)experiment.write(imported.experiment);
@@ -505,6 +510,7 @@ async function importBrainText(text: string, name: string): Promise<void> {
   refreshBrainSelects(prefer);buildTrack({keepMemory:Boolean(track?.memory)});
   if(full||world||imported.vision?.domain==='world'){buildWorld();if(imported.worldScan){state.world!.sonarMap.restore(imported.worldScan);$<HTMLSelectElement>('world-scan-filter').value=state.world!.sonarMap.filterMode;}}
   if(imported.trackScan){state.track!.sonarMap.restore(imported.trackScan);$<HTMLSelectElement>('track-scan-filter').value=state.track!.sonarMap.filterMode;}
+  if(imported.observerSettings)applyObserverSettings(imported.observerSettings);
   evolutionPanels.track?.useActive();evolutionPanels.world?.useActive();
   showTab(imported.controller?.domain==='world'||imported.vision?.domain==='world'?'world':'track');paintTrack();paintWorld();
   $('brain-info').textContent=`${imported.name}: ${imported.warnings.join(' ')}`;$('brain-file-status').textContent=`Imported ${imported.name}. Import remains available to replace it again.`;
@@ -526,7 +532,7 @@ function selectedCheckpoint() {
 }
 function visionBrainText(domain=state.activeDomain):string {
   const source=state.importedWorld??worldExportSource();const world=source?{...source,controller:state.sonarOn?widenBrain(source.controller):source.controller}:null;
-  return exportVisionBrain({...(domain==='world'?state.robotExtensions??{}:{}),experiment:experiment.applied(),name:domain==='world'?(state.importedWorld?.name??'Bundled '+state.profile+' world brain'):($<HTMLSelectElement>('track-controller').value==='imported'?state.imported?.name??'Imported racer':$<HTMLSelectElement>('track-controller').selectedOptions[0]?.text??'Visual racer'),profile:state.profile,worldSetup:readWorldSetup(),trackSetup:{version:1,trainingMaps:trackCurriculum?.read(),generalist:trackCurriculum?.enabled(),trackId:$<HTMLSelectElement>('track-select').value,rivals:Number($<HTMLSelectElement>('track-rivals').value),style:Number($<HTMLInputElement>('track-style').value),memoryCount:state.memory.kenyonCount,memoryEnabled:$<HTMLInputElement>('memory-on').checked},worldScan:state.world?.sonarMap.toJSON(),trackScan:state.track?.sonarMap.toJSON(),racer:domain==='world'?{controller:selectedCheckpoint(),vision:currentVision(),memory:$<HTMLInputElement>('memory-on').checked?state.memory.toJSON():null}:undefined,worldMemory:state.worldMemory?.toJSON()??null,worldArena:state.world?savedScene():state.arena,worldTraining:{version:1,goalRewards:readGoalRewards(),sonarFeedback:$<HTMLSelectElement>("world-sonar-feedback").value as "echo-valid"|"amplitude",speedFeedback:$<HTMLSelectElement>("world-speed-feedback").value as "command"|"measured",task:$<HTMLSelectElement>('world-task').value as 'forage'|'reverse'|'explore',searchWin:$<HTMLSelectElement>('world-search-win').value as 'sight'|'reach',crashWeight:Number($<HTMLInputElement>('world-crash-weight').value)/100,maxTicks:boundedInput('world-train-ticks',300,3000,900),memoryEnabled:$<HTMLInputElement>('world-memory-on').checked,reverseCoach:$<HTMLInputElement>('world-reverse-coach').checked,retainForward:$<HTMLInputElement>('world-retain-forward').checked,failureRetries:Number($<HTMLSelectElement>('world-failure-retries').value),searchJudge:readSearchJudge(),breeding:worldStudio?.config()},
+  return exportVisionBrain({roomMemoryEnabled:$<HTMLInputElement>("world-memory-on").checked,progressJudge:domain==='world'?readSearchJudge():undefined,observerSettings:observerSettings(),...(domain==='world'?state.robotExtensions??{}:{}),experiment:experiment.applied(),name:domain==='world'?(state.importedWorld?.name??'Bundled '+state.profile+' world brain'):($<HTMLSelectElement>('track-controller').value==='imported'?state.imported?.name??'Imported racer':$<HTMLSelectElement>('track-controller').selectedOptions[0]?.text??'Visual racer'),profile:state.profile,worldSetup:readWorldSetup(),trackSetup:{version:1,trainingMaps:trackCurriculum?.read(),generalist:trackCurriculum?.enabled(),trackId:$<HTMLSelectElement>('track-select').value,rivals:Number($<HTMLSelectElement>('track-rivals').value),style:Number($<HTMLInputElement>('track-style').value),memoryCount:state.memory.kenyonCount,memoryEnabled:$<HTMLInputElement>('memory-on').checked},worldScan:state.world?.sonarMap.toJSON(),trackScan:state.track?.sonarMap.toJSON(),racer:domain==='world'?{controller:selectedCheckpoint(),vision:currentVision(),memory:$<HTMLInputElement>('memory-on').checked?state.memory.toJSON():null}:undefined,worldMemory:state.worldMemory?.toJSON()??null,worldArena:state.world?savedScene():state.arena,worldTraining:{version:1,goalRewards:readGoalRewards(),sonarFeedback:$<HTMLSelectElement>("world-sonar-feedback").value as "echo-valid"|"amplitude",speedFeedback:$<HTMLSelectElement>("world-speed-feedback").value as "command"|"measured",task:$<HTMLSelectElement>('world-task').value as 'forage'|'reverse'|'explore',searchWin:$<HTMLSelectElement>('world-search-win').value as 'sight'|'reach',crashWeight:Number($<HTMLInputElement>('world-crash-weight').value)/100,maxTicks:boundedInput('world-train-ticks',300,3000,900),memoryEnabled:$<HTMLInputElement>('world-memory-on').checked,reverseCoach:$<HTMLInputElement>('world-reverse-coach').checked,retainForward:$<HTMLInputElement>('world-retain-forward').checked,failureRetries:Number($<HTMLSelectElement>('world-failure-retries').value),searchJudge:readSearchJudge(),breeding:worldStudio?.config()},
     controller:domain==='world'&&world?controllerCheckpoint(world.controller,{domain:'world',fitness:world.fitness,generation:world.generation,trainingRecipe:world.trainingRecipe,provenance:world.provenance}):selectedCheckpoint(),
     vision:domain==='world'&&world?world.vision:currentVision(),fusion:{fade:state.fade,mode:state.mode,visionTemperature:1},memory:domain!=='world'&&$<HTMLInputElement>('memory-on').checked?state.memory.toJSON():null,
     world:world?{controller:controllerCheckpoint(world.controller,{domain:'world',track:'open world',fitness:world.fitness,generation:world.generation,trainingRecipe:world.trainingRecipe,provenance:world.provenance}),vision:world.vision}:null});
@@ -624,7 +630,7 @@ async function runCameraTraining():Promise<void>{
   try{
     showTab('track');
     if(!currentVision())throw new Error('Choose a camera network first.');
-    trainedMapChoice={maps:trackCurriculum?.read()??TRAINING_MAPS.map(t=>t.id),enabled:trackCurriculum?.enabled()??false};trainedExperiment=structuredClone(experiment.read());state.running.track=false;state.running.world=false;$("track-run").textContent="Start";$("world-run").textContent="Start";trainedParentGeneration=$<HTMLSelectElement>('track-controller').value==='imported'?(state.imported?.generation??0):0;cameraTraining=true;cancelTraining=false;trainedCamera=null;
+    trainedMapChoice={maps:trackCurriculum?.read()??TRAINING_MAPS.map(t=>t.id),enabled:trackCurriculum?.enabled()??false};trainedExperiment=structuredClone(experiment.read());state.running.track=false;state.running.world=false;$("track-run").textContent="Start";$("world-run").textContent="Start";trainedParentGeneration=$<HTMLSelectElement>('track-controller').value==='imported'?(state.imported?.generation??0):0;cameraTraining=true;cancelTraining=false;trainedCamera=null;previewTrack=null;trackInspector.finish();
     const parent=evolutionPanels.track!.begin();trainedParentGeneration=parent.generation;
     logSensor(`Camera evolution parent ${parent.name} · ${parent.id} · generation ${parent.generation}`);
     const settings={...state.track!.settings,controller:parent.network,vision:currentVision(),maxTicks:Number($<HTMLInputElement>('camera-train-ticks').value)};
@@ -639,7 +645,7 @@ async function runCameraTraining():Promise<void>{
     $<HTMLButtonElement>('camera-train-adopt').disabled=!trainedCamera;$<HTMLButtonElement>('camera-report').disabled=!trainedCamera;
     $('camera-train-status').textContent=trainedCamera?`Training complete. Held-out parent ${trainedCamera.validation.parent.toFixed(2)}, offspring ${trainedCamera.validation.offspring.toFixed(2)}. Saved winner is the next evolution parent; review before driving adoption.`:'Training cancelled; last completed generation remains the next evolution parent.';
   }catch(e){$('camera-train-status').textContent=(e as Error).message;}
-  finally{await evolutionPanels.track?.finish(trainedCamera?.validation);cameraTraining=false;previewTrack=null;previewWorld=null;trackInspector.finish();paintTrack();}
+  finally{await evolutionPanels.track?.finish(trainedCamera?.validation);cameraTraining=false;trackInspector.finish(true);paintTrack();}
 }
 
 function logFreshPing(session:TrackSession):void{
@@ -684,16 +690,16 @@ function writeWorldSetup(s:WorldSetup):void{
   $<HTMLSelectElement>('world-map-preset').querySelector<HTMLOptionElement>('option[value=imported]')!.disabled=!state.arena;
   state.sonarOn=s.sonarOn;$<HTMLInputElement>('sonar-on').checked=s.sonarOn;$<HTMLInputElement>('world-trail-visible').checked=s.trailVisible;
 }
-function scanOptions(domain:'track'|'world'):{mode:'perspective'|'top';history:boolean;beam:boolean}{return{mode:$<HTMLSelectElement>(domain+'-scan-view').value as 'perspective'|'top',history:$<HTMLInputElement>(domain+'-scan-history').checked,beam:$<HTMLInputElement>(domain+'-scan-beam').checked};}
+function scanOptions(domain:'track'|'world'){return{...scanDisplays[domain]?.options(),mode:$<HTMLSelectElement>(domain+'-scan-view').value as 'perspective'|'top',history:$<HTMLInputElement>(domain+'-scan-history').checked,beam:$<HTMLInputElement>(domain+'-scan-beam').checked};}
 function mountScanControls():void{
   for(const domain of ['track','world'] as const){
     const paint=()=>domain==='track'?paintTrack():paintWorld();
     $(domain+'-scan-view').closest('.scan-tools')!.append(Object.assign(document.createElement('div'),{innerHTML:scanComparisonControls(domain+'-scan')}));
-    bindScanComparison(domain+'-scan',paint);
+    bindScanComparison(domain+'-scan',paint);scanDisplays[domain]=new ScanDisplay(domain+'-scan',$(domain+'-scan-view').closest('.scan-tools')!,paint);
     $(domain+'-scan-enable').onclick=()=>{if(cameraTraining)return;if(state.profile!=='robot')setProfile('robot');state.sonarOn=true;$<HTMLInputElement>('sonar-on').checked=true;$('sonar-on').dispatchEvent(new Event('change'));paint();};
     for(const id of ['view','history','beam'])$(domain+'-scan-'+id).addEventListener('change',paint);
-    $(domain+'-scan-clear').onclick=()=>{state[domain]?.sonarMap.clear();paint();};
-    $(domain+'-scan-export').onclick=()=>{const map=state[domain]?.sonarMap;if(map)download('flykart-'+domain+'-scan-map.json',JSON.stringify(map.toJSON(),null,2));};
+    $(domain+'-scan-clear').onclick=()=>{(domain==='world'?worldStudio?.selectedSession??state.world:previewTrack?.[trackInspector.index]??state.track)?.sonarMap.clear();paint();};
+    $(domain+'-scan-export').onclick=()=>{const selected=domain==='world'?worldStudio?.selectedSession:previewTrack?.[trackInspector.index];const map=(selected??state[domain])?.sonarMap;if(map)download('flykart-'+domain+'-scan-map.json',JSON.stringify(map.toJSON(),null,2));};
   }
 }
 function mountBrainFiles():void{
@@ -806,7 +812,7 @@ async function runWorldTraining():Promise<void>{
       $('world-training-status').textContent=`Complete. Adoption gate ${v.passed?'PASS':'FAIL · driving adoption blocked'}. Held-out parent ${v.parent.toFixed(2)}, offspring ${v.offspring.toFixed(2)}. ${search?`Search wins: parent ${parentWins}/${v.seeds.length}, offspring ${childWins}/${v.seeds.length}. ${childWins===0?'No successful held-out search; score changes may reflect ground coverage, camera views or lower no-progress cost; finding is not demonstrated.':v.offspring>v.parent?'Higher score on this small search test.':'No improvement demonstrated.'}`:v.offspring>v.parent?'Improved on this small test.':'No improvement demonstrated.'} ${trainedWorld.retention?`Forward retention ${trainedWorld.retention.passed?'passed':'FAILED · adoption blocked'}. `:''}${trainedWorld.viableGenerations?'Saved winner is the next evolution parent; review report before driving adoption.':'Every generation was rejected; the previous parent remains saved. Increase grace/cutoff or disable Zero chill before retrying.'}`;
     }else $('world-training-status').textContent='Cancelled; last completed generation retained for the next evolution run.';
   }catch(e){$('world-training-status').textContent=(e as Error).message;}
-  finally{restore();await worldStudio?.finish();await evolutionPanels.world?.finish(trainedWorld?{...trainedWorld.validation,retention:trainedWorld.retention}:undefined);cameraTraining=false;previewTrack=null;previewWorld=null;paintWorld();$<HTMLButtonElement>('world-train-adopt').disabled=!trainedWorld||!trainedWorld.viableGenerations||trainedWorld.retention?.passed===false||trainedWorld?.validation.passed===false;$<HTMLButtonElement>('world-train-report').disabled=!trainedWorld;}
+  finally{restore();await worldStudio?.finish();await evolutionPanels.world?.finish(trainedWorld?{...trainedWorld.validation,retention:trainedWorld.retention}:undefined);cameraTraining=false;paintWorld();$<HTMLButtonElement>('world-train-adopt').disabled=!trainedWorld||!trainedWorld.viableGenerations||trainedWorld.retention?.passed===false||trainedWorld?.validation.passed===false;$<HTMLButtonElement>('world-train-report').disabled=!trainedWorld;}
 }
 
 function logWorldPing(session:WorldSession):void{

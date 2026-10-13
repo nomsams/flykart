@@ -7,7 +7,7 @@ import {DEFAULT_MEMORY} from './robot/memory';
 import {DEFAULT_VISION} from './robot/vision-workbench';
 import {DEFAULT_PARKING} from './parking/model';
 import {ParkingSession,type ParkingBrain} from './parking/session';
-import {capturePreview,TrainingPreviews} from './training-preview';
+import {capturePreview,TrainingPreviews,inspectedGenotype} from './training-preview';
 import {WorldSession,TrackSession} from './vision/ui/sessions';
 import {cohortYield} from './vision/cohort-yield';
 
@@ -15,6 +15,11 @@ const spec={...defaultSpec(2,10,'rgb',false,5),channels:[2,2,2] as [number,numbe
 const eyes=serialiseModel(new VisionCnn(spec,7),ROBOT_WORLD_CAMERA,new Array(10).fill(1),'preview test',undefined,undefined,'world');
 const brain:ParkingBrain={controller:new SpikingNetwork(13,19).toJSON(),eyes,visual:{...DEFAULT_VISION},memory:{...DEFAULT_MEMORY,count:512}};
 describe('worker observer snapshots',()=>{
+  it('captures the actual final genotype once without installing it as a runnable preview brain',()=>{
+    const child={...brain,controller:SpikingNetwork.fromJSON(brain.controller).mutate(.5,.4,77).toJSON()},s=new ParkingSession({...DEFAULT_PARKING,maxTicks:120},child);
+    const light=capturePreview(s,9,false),final=capturePreview(s,9,true,true);expect(light.genotype).toBeUndefined();expect(final.genotype).toEqual(s.network.toJSON());
+    const v=new TrainingPreviews({kind:'parking',brain,settings:s.settings}).update([structuredClone(final)])[0];expect(inspectedGenotype(v)).toEqual(s.network.toJSON());expect(()=>v.step()).toThrow('previews cannot');
+  });
   it('round-trips real parking frames, sonar, physics, cues, activity and scores without transporting models',()=>{
     const s=new ParkingSession({...DEFAULT_PARKING,maxTicks:120},brain);for(let i=0;i<45;i++)s.step();
     const raw=capturePreview(s,1,true),row=structuredClone(raw),views=new TrainingPreviews({kind:'parking',brain,settings:s.settings}),v=views.update([row])[0] as ParkingSession;

@@ -10,7 +10,9 @@ import {TrackSession,WorldSession,type TrackSettings,type WorldSettings} from '.
 import type {ParkingSettings} from './parking/model';
 
 export type TrainingSession=ParkingSession|TrackSession|WorldSession;
-export type PreviewState={id:number;settings:Record<string,unknown>;state:Record<string,unknown>;activity:ReturnType<ParkingSession['network']['activity']>;memory?:{count:number;taught:number;confidence:number;recalled:boolean}};
+export type PreviewState={id:number;settings:Record<string,unknown>;state:Record<string,unknown>;activity:ReturnType<ParkingSession['network']['activity']>;genotype?:ReturnType<SpikingNetwork['toJSON']>;memory?:{count:number;taught:number;confidence:number;recalled:boolean}};
+const inspectedBrains=new WeakMap<TrainingSession,ReturnType<SpikingNetwork['toJSON']>>();
+export function inspectedGenotype(s:TrainingSession){return inspectedBrains.get(s);}
 // Observer snapshots omit models, functions and projection banks. They can never drive an agent.
 const omit=new Set(['settings','brain','controller','network','perceiver','options','domain','memory','roomMemory','prepared','readers','primary','random']);
 const pictures=new Set(['frame','frames','processed','trace','sonarTrace','sonarMap','scan','trail','effects','cameraScene']);
@@ -24,7 +26,7 @@ function copy(value:unknown,detailed:boolean):unknown{
   for(const [key,v] of Object.entries(value))if(!omit.has(key)&&(detailed||!pictures.has(key))){const next=copy(v,detailed);if(next!==undefined)out[key]=next;}
   return out;
 }
-export function capturePreview(s:TrainingSession,id:number,detailed:boolean):PreviewState{
+export function capturePreview(s:TrainingSession,id:number,detailed:boolean,genotype=false):PreviewState{
   const settings=Object.fromEntries(Object.entries(s.settings).filter(([k])=>!['controller','vision','memory','roomMemory'].includes(k)));
   const network=s instanceof ParkingSession?s.network:s.controller,memory=s instanceof TrackSession?null:s.memory;
   // Headless parking only needs counters and the latest requests. Do not stream
@@ -32,7 +34,7 @@ export function capturePreview(s:TrainingSession,id:number,detailed:boolean):Pre
   const state=!detailed&&s instanceof ParkingSession?{
     lastAction:s.lastAction,episode:copy(Object.fromEntries(Object.entries(s.episode).filter(([k])=>!['cameraScene','frame','coachPath','trail','effects','cooldown'].includes(k))),false),driver:{sensors:s.driver.sensors},
   }:copy(s,detailed);
-  return{id,settings,state:state as Record<string,unknown>,activity:network.activity(),...(memory?{memory:{count:memory.count,taught:memory.taught,confidence:memory.confidence,recalled:memory.recalled}}:{})};
+  return{id,settings,state:state as Record<string,unknown>,activity:network.activity(),...(genotype?{genotype:network.toJSON()}:{}),...(memory?{memory:{count:memory.count,taught:memory.taught,confidence:memory.confidence,recalled:memory.recalled}}:{})};
 }
 /** A display observer has prototypes and data, but no CNN, recurrent state or
  * Kenyon projection allocation. Instantiating a runnable session here used to
@@ -72,6 +74,7 @@ export class TrainingPreviews{
         s.step=()=>{throw Error('Training previews cannot advance simulation.');};this.cache.set(row.id,s);
       }
       patch(s as unknown as Record<string,unknown>,row.state);
+      if(row.genotype)inspectedBrains.set(s,row.genotype);
       const network=s instanceof ParkingSession?s.network:s.controller;network.activity=()=>row.activity;
       if(row.memory&&!(s instanceof TrackSession)&&s.memory)for(const [key,value] of Object.entries(row.memory))Object.defineProperty(s.memory,key,{value,configurable:true});
       return s;

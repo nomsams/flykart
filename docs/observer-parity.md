@@ -1,0 +1,19 @@
+# Inspecting and transferring a trained fly
+
+Racer V2, Open World and Parking offer an **Inspect cart** selector and Previous/Next buttons. The camera, sonar history, neural activity and motor requests follow that cart. Click overlapping Open World carts repeatedly to cycle through them. **Live robot** returns to the driving session. Completed comparisons stay available until the scene/controller is rebuilt or another evolution run starts; their labels say **frozen comparison** and viewing them never advances them.
+
+Open World's **Export inspected brain** saves the actual inspected controller, including final held-out snapshots. The regular import/export controls still operate on the active driving brain. Scan export/clear operate on the inspected cart. Headless evolution sends one full final observer snapshot; it does not reconstruct scan history that was disabled during training.
+
+The 3D habitat has one embodied robot. Its virtual eye swarm shares that body, rather than creating additional robots. Use Replay for recorded trials. Its camera, sonar-only and camera-overlay modes use a separate display canvas, preserving the raw RGB565 camera pixels used by perception and the firmware bridge. Paused capture can recall memory but cannot teach new Kenyon prototypes or visual places; learning requires an executed simulation tick.
+
+FPV mode/opacity and sonar evidence/transmission choices are shared between labs in browser storage. Combined brain exports include versioned `observerSettings`; explicit imports restore those preferences. Other open labs can follow display changes, but active brains never switch automatically. If storage is unavailable, preferences remain usable for the current page.
+
+All labs offer echo uncertainty arcs and coarse legacy cells. The HC-SR04 reports one range, not the direction of each reflecting point: a coarse map can bridge narrow openings. The optional simulated transmission fan uses actual bodies for a diagnostic illustration, independently of the acoustic echo. Neither the fan, scene overlay nor scan history is a neural input. The 3D habitat now records acquisition poses and shares this renderer; saved labs retain the new `roomScan` alongside the previous room-memory format.
+
+Combined world brains also carry `progressJudge` and `roomMemoryEnabled`. Parking transfers the common contact/futile-motion policy while preserving its local task rewards and reverse allowance. Eyes/swarm preprocessing and Kenyon memory are restored only when loading a brain or lab. Coordinate systems, controller input meanings and camera training still differ between modes; this is a settings transfer, not proof of hardware performance.
+
+The 3D training bench adds an opt-in **Simulation progress judge**, anti-jitter, circling detection and **Zero chill**. Old 3D saves retain their existing scores with the judge off. Zero chill ends a trial after contact or persistent futile motion. Pain and negative reward are recorded separately as evaluation labels; negative reward lowers fitness, and rejected candidates cannot breed. If every candidate fails, the previous controller and visual task network remain intact. Live rejected runs require Reset; no stored brain is destroyed.
+
+These checks use simulated motion and are bypassed for an active USB hardware session, drivetrain check or marked calibration routine. They are not physical stall sensors or measured odometry. Productive reverse travel and visual approach are allowed; the robot still needs transferable camera/sonar/impact observations and real calibration to handle a real collision.
+
+Validation: `src/observer-parity.test.ts`, `src/training-preview.test.ts` and `scripts/robot-observer-parity-ui-check.mjs`, plus existing sensor FPV, sonar comparison, motion-judge, background-training and workbench regressions. No physical hardware is operated by these checks.

@@ -1,4 +1,5 @@
 import {validateGoalRewards,type GoalRewards} from './world/goal-rewards';
+import {validateObserverSettings,type ObserverSettings} from '../observer-settings';
 import { ArenaFile, validateArena } from './world/arena';
 import { RoomMemory, RoomMemorySnapshot } from '../robot/memory';
 import { SonarHistory, ScanSnapshot } from './sonar-history';
@@ -49,7 +50,7 @@ export function validateWorldSetup(raw:unknown):WorldSetup{
 export type TrackSetup={trainingMaps?:string[];generalist?:boolean;version:1;trackId:string;rivals:number;style:number;memoryCount:number;memoryEnabled:boolean};
 export function validateTrackSetup(raw:unknown):TrackSetup{const s=raw as TrackSetup;if(!s||s.version!==1||typeof s.trackId!=='string'||s.trackId.length>100||!Number.isInteger(s.rivals)||s.rivals<0||s.rivals>20||!Number.isFinite(s.style)||s.style<0||s.style>1||!Number.isInteger(s.memoryCount)||s.memoryCount<64||s.memoryCount>64000||typeof s.memoryEnabled!=='boolean')throw Error('Invalid Track setup.');if(s.generalist!==undefined&&typeof s.generalist!=='boolean')throw Error('Invalid generalist mode.');return {...s,...(s.trainingMaps?{trainingMaps:validateTrainingMaps(s.trainingMaps)}:{})};}
 
-export type VisionBrainFile = {
+export type VisionBrainFile = {observerSettings?:ObserverSettings;progressJudge?:SearchJudgeSettings;roomMemoryEnabled?:boolean;
   format: "flykart-vision-brain"; version: 1; savedAt: string; name: string;
   controller: ControllerCheckpoint;
   /** Which sensor head the file was made for; files from before the sonar omit it and mean "kart". */
@@ -73,7 +74,7 @@ export type VisionBrainFile = {
   robotMission?: unknown;
 };
 
-export type Imported = {
+export type Imported = {observerSettings?:ObserverSettings;progressJudge?:SearchJudgeSettings;roomMemoryEnabled?:boolean;
   trainingRecipe?: TrainingRecipe;
   kind: "v1-brain" | "vision-brain" | "vision-net";
   name: string;
@@ -112,6 +113,8 @@ export function importFile(text: string): Imported {
     const domain=file.controller?.domain??'track';
     if(!['track','world'].includes(domain)||typeof file.name!=='string')throw new Error('Invalid vision brain name or domain.');
     const controller = parseBrainFile(JSON.stringify(file.controller), { allowSonar: true });
+    if(file.roomMemoryEnabled!==undefined&&typeof file.roomMemoryEnabled!=="boolean")throw Error("Invalid room memory enabled setting.");
+  if(file.observerSettings!==undefined)validateObserverSettings(file.observerSettings);if(file.progressJudge!==undefined)validateSearchJudge(file.progressJudge);
     if(file.profile!==undefined&&!['kart','robot'].includes(file.profile))throw Error('Invalid sensor profile.');
     if(file.worldSetup)validateWorldSetup(file.worldSetup);
     if(file.trackSetup)validateTrackSetup(file.trackSetup);
@@ -128,7 +131,7 @@ export function importFile(text: string): Imported {
     const warnings: string[] = [];
     if (!file.vision) warnings.push("This file has a controller but no eyes; select a camera network before using visual control.");
     return {
-      kind: "vision-brain", name: file.name ?? "vision brain", profile: file.profile === "robot" ? "robot" : "kart",
+      roomMemoryEnabled:file.roomMemoryEnabled,progressJudge:file.progressJudge?validateSearchJudge(file.progressJudge):undefined,observerSettings:file.observerSettings?validateObserverSettings(file.observerSettings):undefined,kind: "vision-brain", name: file.name ?? "vision brain", profile: file.profile === "robot" ? "robot" : "kart",
       trainingRecipe: file.controller.trainingRecipe === undefined ? undefined : validateRecipe(file.controller.trainingRecipe),
       controller: { snapshot: controller.snapshot, meta: controller.meta, domain: file.controller.domain ?? "track" },
       vision: file.vision ?? null, fusion: file.fusion, memory: file.memory ?? null,worldMemory:file.worldMemory??null,worldArena:file.worldArena?validateArena(file.worldArena):null,worldTraining:file.worldTraining?validateRoomTraining(file.worldTraining):undefined,
@@ -156,6 +159,9 @@ export function controllerCheckpoint(network: SpikingNetwork | BrainSnapshot, op
 }
 
 export function exportVisionBrain(file: Omit<VisionBrainFile, "format" | "version" | "savedAt">): string {
+  if(file.roomMemoryEnabled!==undefined&&typeof file.roomMemoryEnabled!=="boolean")throw Error("Invalid room memory enabled setting.");
+  if(file.observerSettings!==undefined)validateObserverSettings(file.observerSettings);
+  if(file.progressJudge!==undefined)validateSearchJudge(file.progressJudge);
   const full: VisionBrainFile = { format: "flykart-vision-brain", version: 1, savedAt: new Date().toISOString(), ...file };
   return JSON.stringify(full);
 }

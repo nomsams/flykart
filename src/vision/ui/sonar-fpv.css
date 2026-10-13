@@ -5,3 +5,6 @@
 .fpv-controls small,.vision-ghost-inspector small{flex:1 1 100%;color:#a9bfd2;overflow-wrap:anywhere}
 .fpv-controls details{flex-basis:100%}.fpv-controls summary{cursor:pointer;color:#82c8e5}.fpv-opacity input{width:6rem}
 .fpv-controls [hidden]{display:none!important}
+.cart-navigation{display:flex;gap:.35rem}.cart-navigation button{font:inherit;padding:.3rem .5rem}
+.scan-display-controls{display:flex;flex-wrap:wrap;gap:.4rem .7rem;font-size:.8rem}.scan-display-controls label{display:flex;align-items:center;gap:.35rem}.scan-display-controls small{flex-basis:100%;color:#9db6c7;overflow-wrap:anywhere}
+.world-ghost-inspector{display:flex;flex-wrap:wrap;align-items:center;gap:.4rem;padding:.5rem}.world-ghost-inspector small{flex-basis:100%}

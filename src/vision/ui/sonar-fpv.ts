@@ -4,6 +4,8 @@ import type {Sonar,SonarPose} from '../sonar';
 import type {SonarSpec} from '../robot';
 import {CM_PER_PIXEL} from '../robot';
 import {drawEye} from './draw';
+import {observerSettings,applyObserverSettings,watchObserverSettings} from '../../observer-settings';
+export type FpvSonar=Pick<Sonar,'spec'|'reading'|'samplePose'|'lastTick'>;
 
 export type FpvMode='camera'|'sonar'|'overlay';
 type Point={x:number;y:number};
@@ -37,18 +39,21 @@ export function cameraOutline(camera:CameraConfig,view:CameraConfig):Array<Point
 }
 export class SensorFpv{
   readonly controls=document.createElement('div');private readonly select:HTMLSelectElement;private readonly note:HTMLElement;private readonly opacity:HTMLInputElement;
-  constructor(readonly prefix:string,readonly canvas:HTMLCanvasElement,repaint:()=>void){
+  constructor(readonly prefix:string,readonly canvas:HTMLCanvasElement,repaint:()=>void,private rawCanvas?:HTMLCanvasElement){
     this.controls.className='fpv-controls';
     this.controls.innerHTML=`<label>Front view <select id="${prefix}-fpv-mode"><option value="camera">Camera RGB</option><option value="sonar">Sonar only</option><option value="overlay">Camera + sonar overlay</option></select></label><label class="fpv-opacity" hidden>Layer <input id="${prefix}-fpv-opacity" type="range" min="10" max="80" value="35" aria-label="Sonar overlay opacity"></label><small id="${prefix}-fpv-status" role="status"></small><details><summary>What this view means</summary><small>Amber shows the sonar’s main lobe (~15° at default calibration), with a soft outer sensitivity guide. One echo gives a range, not a pixel image or exact direction: the return could be anywhere within the beam. Grey/outside the beam is unknown; no echo does not mean clear. Mount height, yaw, pitch and held-sample pose affect alignment. Sonar-only can widen the viewport to include coverage outside the camera. These display layers never enter the brain’s RGB or neural inputs.</small></details>`;
     const wrap=canvas.closest('.canvas-wrap');if(wrap)wrap.before(this.controls);else canvas.before(this.controls);
     this.select=this.controls.querySelector('select')!;this.note=this.controls.querySelector('[role=status]')!;this.opacity=this.controls.querySelector('input')!;
-    try{const mode=localStorage.getItem('flykart.fpv.'+prefix);if(['camera','sonar','overlay'].includes(mode??''))this.select.value=mode!;}catch{/* optional */}
-    this.select.onchange=()=>{try{localStorage.setItem('flykart.fpv.'+prefix,this.select.value);}catch{/* optional */}repaint();};this.opacity.oninput=repaint;
+    const fill=(s=observerSettings())=>{this.select.value=s.fpv.mode;this.opacity.value=String(s.fpv.opacity);};fill();
+    this.select.onchange=this.opacity.oninput=()=>applyObserverSettings({...observerSettings(),fpv:{mode:this.select.value as FpvMode,opacity:Number(this.opacity.value)}});
+    watchObserverSettings(s=>{fill(s);repaint();});
+    this.controls.querySelector('details small')!.append(' View preferences are shared across labs and included in exports; the active brain is loaded separately.');
   }
-  paint(frame:Float32Array,camera:CameraConfig,unit:Sonar|null,pose:SonarPose,tick:number,on:boolean,neural:boolean,cart:string):void{
+  paint(frame:Float32Array,camera:CameraConfig,unit:FpvSonar|null,pose:SonarPose,tick:number,on:boolean,neural:boolean,cart:string):void{
     const mode=this.select.value as FpvMode,ctx=this.canvas.getContext('2d')!,W=this.canvas.width,H=this.canvas.height;
-    const title=this.canvas.closest('.view-box,.monitor')?.querySelector('.view-title > span:first-child,h2');
-    if(title?.firstChild?.nodeType===3)title.firstChild.nodeValue=(this.prefix==='parking'?'01 / ':'')+(mode==='camera'?'Camera RGB':mode==='sonar'?'Sonar front view':'Camera + sonar overlay')+' ';
+    const title=this.canvas.closest('.view-box,.monitor,.sensor-card')?.querySelector('.view-title > span:first-child,h2,.sensor-title');
+    if(title?.firstChild?.nodeType===3)title.firstChild.nodeValue=(['parking','robot'].includes(this.prefix)?'01 / ':'')+(mode==='camera'?'Camera RGB':mode==='sonar'?'Sonar front view':'Camera + sonar overlay')+' ';
+    if(this.rawCanvas){this.rawCanvas.hidden=mode!=='camera';this.canvas.hidden=mode==='camera';}
     this.controls.querySelector<HTMLElement>('.fpv-opacity')!.hidden=mode!=='overlay';
     this.canvas.dataset.fpvMode=mode;this.canvas.dataset.cart=cart;
     if(mode!=='sonar')drawEye(this.canvas,frame,camera);else{ctx.clearRect(0,0,W,H);ctx.fillStyle='#101a23';ctx.fillRect(0,0,W,H);}
