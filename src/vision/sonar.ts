@@ -37,7 +37,6 @@ export type SonarReading = {
   strength: number;
 };
 
-const SLICE = (2 * Math.PI) / 180;
 const SPAN = 30; // degrees either side of the axis that are worth tracing
 const REFERENCE = 60; // px: range at which a perfect flat target returns an echo of 1
 const BIN = 3;
@@ -63,16 +62,23 @@ function rayCircle(ox: number, oy: number, dx: number, dy: number, target: Extra
   return { surface:target.surface,distance: along - Math.sqrt(r2 - d2), roundish: true, incidence: Math.asin(Math.sqrt(clamp(d2/r2,0,1))), z0: target.z0, z1: target.z1 };
 }
 
-function rayBox(ox: number, oy: number, dx: number, dy: number, target: Extract<SonarTarget, { kind: "box" }>): Hit | null {
-  const c = Math.cos(target.heading), s = Math.sin(target.heading);
+function rayBox(ox: number, oy: number, dx: number, dy: number, target: Extract<SonarTarget, { kind: "box" }>, c = Math.cos(target.heading), s = Math.sin(target.heading)): Hit | null {
   // Into the box's frame.
   const px = (ox - target.x) * c + (oy - target.y) * s, py = -(ox - target.x) * s + (oy - target.y) * c;
   const vx = dx * c + dy * s, vy = -dx * s + dy * c;
   let tMin = -Infinity, tMax = Infinity; let axis = 0;
-  for (const [p, v, half, which] of [[px, vx, target.halfLength, 1], [py, vy, target.halfWidth, 2]] as const) {
-    if (Math.abs(v) < 1e-9) { if (Math.abs(p) > half) return null; continue; }
-    let t1 = (-half - p) / v, t2 = (half - p) / v; if (t1 > t2) [t1, t2] = [t2, t1];
-    if (t1 > tMin) { tMin = t1; axis = which; }
+  // The two box axes, unrolled (this runs for every beam ray against every nearby target).
+  if (Math.abs(vx) < 1e-9) { if (Math.abs(px) > target.halfLength) return null; }
+  else {
+    let t1 = (-target.halfLength - px) / vx, t2 = (target.halfLength - px) / vx; if (t1 > t2) { const t = t1; t1 = t2; t2 = t; }
+    if (t1 > tMin) { tMin = t1; axis = 1; }
+    tMax = Math.min(tMax, t2);
+    if (tMin > tMax) return null;
+  }
+  if (Math.abs(vy) < 1e-9) { if (Math.abs(py) > target.halfWidth) return null; }
+  else {
+    let t1 = (-target.halfWidth - py) / vy, t2 = (target.halfWidth - py) / vy; if (t1 > t2) { const t = t1; t1 = t2; t2 = t; }
+    if (t1 > tMin) { tMin = t1; axis = 2; }
     tMax = Math.min(tMax, t2);
     if (tMin > tMax) return null;
   }
@@ -83,22 +89,65 @@ function rayBox(ox: number, oy: number, dx: number, dy: number, target: Extract<
   return { surface:target.surface,distance: tMin, roundish: false, incidence: Math.acos(clamp(cosIncidence, 0, 1)), z0: target.z0, z1: target.z1 };
 }
 
+let scratchBins = new Float32Array(0), scratchWeighted = new Float32Array(0);
 /** One ping. `random` supplies speckle, noise and false echoes; `soundScale` is the run's speed-of-sound error. */
 export function ping(spec: SonarSpec, pose: SonarPose, targets: readonly SonarTarget[], random: Random, soundScale = 1): SonarReading {
   const maxPx = spec.maxRangeCm / CM_PER_PIXEL, minPx = spec.minRangeCm / CM_PER_PIXEL;
   const sigma = (spec.lobeSigmaDeg * Math.PI) / 180;
   const ox = pose.x + Math.cos(pose.heading) * spec.mountForward, oy = pose.y + Math.sin(pose.heading) * spec.mountForward;
-  const near = targets.filter((t) => Math.hypot(t.x - ox, t.y - oy) < maxPx + (t.kind === "circle" ? t.radius : Math.hypot(t.halfLength, t.halfWidth)));
-  const bins = new Float32Array(Math.ceil(maxPx / BIN) + 2); const weighted = new Float32Array(bins.length);
+  // Only targets that can touch the beam: in range, inside the swept cone and not wholly above its vertical lobe.
+  const axis = pose.heading + (spec.yawDeg ?? 0) * Math.PI / 180, sweep = (Math.min(60, Math.max(SPAN, spec.lobeSigmaDeg * 2.5)) * Math.PI) / 180;
+  const pitch0 = (spec.pitchDeg ?? 0) * Math.PI / 180, lobeLimit = 2.5 * sigma;
+  let near: SonarTarget[] = [], lowAngle: number[] = [], highAngle: number[] = [], closest: number[] = [];
+  const cosAxis = Math.cos(axis), sinAxis = Math.sin(axis), cosSweep = Math.cos(sweep), sinSweep = Math.sin(sweep);
+  for (const t of targets) {
+    const bound = t.kind === "circle" ? t.radius : Math.hypot(t.halfLength, t.halfWidth);
+    const tx = t.x - ox, ty = t.y - oy, d2 = tx * tx + ty * ty, reach = maxPx + bound;
+    if (d2 >= reach * reach) continue;
+    // The angular interval (relative to the beam axis) this target covers; rays outside it cannot hit it.
+    let lo = -Math.PI, hi = Math.PI;
+    if (d2 > (bound + 1e-6) * (bound + 1e-6)) {
+      const dist = Math.sqrt(d2), forward = tx * cosAxis + ty * sinAxis, side = -tx * sinAxis + ty * cosAxis;
+      // Cheap reject first: is the circle clear of the swept cone's nearer edge?
+      if (Math.abs(side) * cosSweep - forward * sinSweep > bound) continue;
+      const off = Math.atan2(side, forward), half = Math.asin(Math.min(1, bound / dist));
+      if (Math.abs(off) > sweep + half) continue;
+      lo = off - half; hi = off + half;
+    }
+    if (Math.atan2(t.z0 - spec.mountHeight, Math.max(minPx, Math.sqrt(d2) - bound)) + pitch0 > lobeLimit) continue;
+    near.push(t); lowAngle.push(lo); highAngle.push(hi); closest.push(Math.max(0, Math.sqrt(d2) - bound));
+  }
+  // Nearest first: a ray skips every target that cannot be nearer than the hit it already holds. The order only affects speed
+  // (skipped targets are still compared with the exact distance), so packing index and rounded distance into one number is safe.
+  if (near.length > 1 && near.length < 1024) {
+    const keys = new Float64Array(near.length);
+    for (let i = 0; i < near.length; i += 1) keys[i] = Math.round(closest[i] * 16) * 1024 + i;
+    keys.sort();
+    const nextNear: SonarTarget[] = new Array(near.length), nextLow: number[] = new Array(near.length), nextHigh: number[] = new Array(near.length), nextClosest: number[] = new Array(near.length);
+    for (let k = 0; k < keys.length; k += 1) { const i = keys[k] % 1024; nextNear[k] = near[i]; nextLow[k] = lowAngle[i]; nextHigh[k] = highAngle[i]; nextClosest[k] = closest[i]; }
+    near = nextNear; lowAngle = nextLow; highAngle = nextHigh; closest = nextClosest;
+  }
+  const cosines = new Float64Array(near.length), sines = new Float64Array(near.length);
+  for (let n = 0; n < near.length; n += 1) { const t = near[n]; if (t.kind === "box") { cosines[n] = Math.cos(t.heading); sines[n] = Math.sin(t.heading); } }
+  const binCount = Math.ceil(maxPx / BIN) + 2;
+  if (scratchBins.length !== binCount) { scratchBins = new Float32Array(binCount); scratchWeighted = new Float32Array(binCount); } else { scratchBins.fill(0); scratchWeighted.fill(0); }
+  const bins = scratchBins, weighted = scratchWeighted;
   const norm = sigma * Math.sqrt(Math.PI / 2);
   const span=Math.min(60,Math.max(SPAN,spec.lobeSigmaDeg*2.5));
-  for (let degrees = -span; degrees <= span; degrees += 2) {
+  // The beam is sampled every `rayStepDeg` (2 by default); the lobe is 12 degrees wide, so 3 is a close, cheaper stand-in.
+  const step = Math.max(1, spec.rayStepDeg ?? 2), slice = (step * Math.PI) / 180;
+  for (let degrees = -span; degrees <= span; degrees += step) {
     const azimuth = degrees * (Math.PI / 180);
     const dx = Math.cos(pose.heading + (spec.yawDeg ?? 0) * Math.PI / 180 + azimuth), dy = Math.sin(pose.heading + (spec.yawDeg ?? 0) * Math.PI / 180 + azimuth);
     let best: Hit | null = null;
-    for (const target of near) {
-      const hit = target.kind === "circle" ? rayCircle(ox, oy, dx, dy, target) : rayBox(ox, oy, dx, dy, target);
+    for (let n = 0; n < near.length; n += 1) {
+      if (best !== null && closest[n] > best.distance) continue;
+      if (azimuth < lowAngle[n] || azimuth > highAngle[n]) continue;
+      const target = near[n];
+      const hit = target.kind === "circle" ? rayCircle(ox, oy, dx, dy, target) : rayBox(ox, oy, dx, dy, target, cosines[n], sines[n]);
       if(!hit||hit.distance<0||hit.distance>=maxPx||hit.z1<FLOOR_LEVEL)continue;
+      // Something far above the lobe (a canopy, a ceiling lamp) cannot echo and must not hide what is behind it.
+      if(hit.distance>minPx&&Math.atan2(hit.z0-spec.mountHeight,hit.distance)+pitch0>lobeLimit)continue;
       if(hit.distance<=minPx){
         // A blind-zone obstacle can still block a farther reflector. Ignore only
         // near geometry outside the vertical beam (e.g. a tabletop above it).
@@ -118,7 +167,7 @@ export function ping(spec: SonarSpec, pose: SonarPose, targets: readonly SonarTa
     const low = Math.atan2(best.z0 - spec.mountHeight, r) + pitch, high = Math.atan2(best.z1 - spec.mountHeight, r) + pitch;
     const vertical = 0.5 * (erf(a * high) - erf(a * low));
     if (vertical <= 0) continue;
-    const horizontal = (Math.exp(-2 * (azimuth / sigma) ** 2) * SLICE) / norm;
+    const horizontal = (Math.exp(-2 * (azimuth / sigma) ** 2) * slice) / norm;
     const slant = reflectionGain(best.surface,best.incidence,best.roundish);
     const amplitude = horizontal * vertical * slant * Math.min(1.6, (REFERENCE / r) ** 2);
     const bin = Math.floor(r / BIN);

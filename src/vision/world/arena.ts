@@ -1,7 +1,7 @@
 import {validateGoalRewards,type GoalRewards} from './goal-rewards';
-import { validateSonarSurface } from '../sonar-surfaces';
+import { validateSonarSurface, SONAR_SURFACES } from '../sonar-surfaces';
 import { WorldDef, KART_RADIUS, surfaceAt, GoalCount, validateGoalCount, validateGoalRadius } from './world';
-import { OBJECT_KINDS, blocked, furniture, clearance } from './objects';
+import { OBJECT_KINDS, blocked, furniture, clearance, type PropPart } from './objects';
 
 export type ArenaFile={format:'flykart-world';version:1;world:WorldDef;start:{x:number;y:number;heading:number};goals?:{x:number;y:number}[];exercise?:{goalRewards?:GoalRewards;task:'forage'|'reverse'|'explore';searchWin:'sight'|'reach';goalPreset:'standard'|'near'|'far'|'random'|'pair';goalCount?:GoalCount;goalRadius?:number;repeatSearch?:boolean}};
 export function validateArena(raw:unknown):ArenaFile{
@@ -11,7 +11,12 @@ export function validateArena(raw:unknown):ArenaFile{
   const w=a.world;
   if(!finite(w.seed)||!finite(w.half)||w.half<100||w.half>1000||!Array.isArray(w.obstacles)||w.obstacles.length>500||!Array.isArray(w.patches)||w.patches.length>500)throw Error('Invalid world size or item count.');
   const circle=(o:{x:number;y:number;radius:number})=>finite(o.x)&&finite(o.y)&&finite(o.radius)&&o.radius>0&&o.radius<=w.half&&Math.abs(o.x)<=w.half&&Math.abs(o.y)<=w.half;
-  if(w.obstacles.some(o=>!o||!circle(o)||!OBJECT_KINDS.includes(o.kind)||!finite(o.height)||o.height<=0||o.height>200||!finite(o.tone)||(o.clearance!==undefined&&(!furniture(o)||!finite(o.clearance)||o.clearance<0||o.clearance>=o.height))||(furniture(o)&&(clearance(o)>=o.height||o.radius<10)))||w.patches.some(p=>!p||!circle(p)||!['water','mud','sand'].includes(p.kind)))throw Error('Invalid world objects.');
+  const FLOORS=['water','mud','sand','asphalt','pavement','parquet','tile','carpet'];
+  const validPart=(p:PropPart)=>p&&['box','cyl'].includes(p.shape)&&finite(p.x)&&finite(p.y)&&finite(p.halfLength)&&p.halfLength>0&&p.halfLength<=w.half&&(p.shape==='cyl'||finite(p.halfWidth)&&p.halfWidth>0&&p.halfWidth<=w.half)&&finite(p.z0)&&finite(p.z1)&&p.z0>=0&&p.z1>p.z0&&p.z1<=600&&(p.heading===undefined||finite(p.heading))&&(p.sonarSurface===undefined||SONAR_SURFACES.some(s=>s.id===p.sonarSurface))&&(p.color===undefined||Array.isArray(p.color)&&p.color.length===3&&p.color.every(c=>finite(c)&&c>=0&&c<=1));
+  if(w.obstacles.some(o=>!o||!circle(o)||!OBJECT_KINDS.includes(o.kind)||!finite(o.height)||o.height<=0||o.height>600||!finite(o.tone)||(o.kind==='prop'?!Array.isArray(o.parts)||!o.parts.length||o.parts.length>64||!o.parts.every(validPart):o.parts!==undefined)||(o.clearance!==undefined&&(!furniture(o)||!finite(o.clearance)||o.clearance<0||o.clearance>=o.height))||(furniture(o)&&(clearance(o)>=o.height||o.radius<10)))||w.patches.some(p=>!p||!circle(p)||!FLOORS.includes(p.kind)))throw Error('Invalid world objects.');
+  if(w.base!==undefined&&!['grass',...FLOORS].includes(w.base))throw Error('Invalid base floor.');
+  if(w.boundary!==undefined&&!['fence','wall','kerb'].includes(w.boundary))throw Error('Invalid boundary style.');
+  if(w.zones!==undefined&&(!Array.isArray(w.zones)||w.zones.length>200||w.zones.some(z=>!z||![z.x0,z.y0,z.x1,z.y1].every(finite)||z.x1<=z.x0||z.y1<=z.y0||!['grass',...FLOORS].includes(z.kind))))throw Error('Invalid floor zones.');
   if(!finite(a.start.x)||!finite(a.start.y)||!finite(a.start.heading)||!clearPoint(w,a.start.x,a.start.y,KART_RADIUS))throw Error('Start pose must be on clear ground inside the fence.');
   if(a.goals!==undefined&&(!Array.isArray(a.goals)||!a.goals.length||a.goals.length>30||a.goals.some(g=>!g||!finite(g.x)||!finite(g.y)||!clearPoint(w,g.x,g.y))))throw Error('Saved target points must be on clear ground inside the fence.');
   if(a.exercise&&(!['forage','reverse','explore'].includes(a.exercise.task)||!['sight','reach'].includes(a.exercise.searchWin)||!['standard','near','far','random','pair'].includes(a.exercise.goalPreset)))throw Error('Invalid scene exercise.');

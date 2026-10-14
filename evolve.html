@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FlyKart Evolve — overnight breeding for the real robot</title>
+  </head>
+  <body class="evolve">
+    <main class="evo-shell">
+      <header class="evo-hero">
+        <div>
+          <p class="eyebrow">FLYKART · EVOLVE · NO COMPASS · CAMERA + SONAR</p>
+          <h1>FlyKart Evolve</h1>
+          <p class="lede">Press play and leave it. One brain is bred through six stages, across lawns, pavements and flats, with the real robot's flaws drawn fresh for every trial. Local maxima are filed, compared, and the best one wins.</p>
+        </div>
+        <nav class="evo-links" aria-label="FlyKart pages">
+          <a href="./vision.html">Vision · open world</a>
+          <a href="./robot.html">Robot habitat · 3D</a>
+          <a href="./index.html">Racer · v1</a>
+        </nav>
+      </header>
+
+      <section class="evo-panel evo-controls" aria-label="Run control">
+        <div class="evo-run-row">
+          <button id="evo-play" class="evo-primary" type="button">▶ Start</button>
+          <div class="evo-mode" role="group" aria-label="Display mode">
+            <button id="evo-mode-headless" type="button" aria-pressed="true">Headless</button>
+            <button id="evo-mode-watch" type="button" aria-pressed="false">Watch</button>
+          </div>
+          <span id="evo-status" class="evo-status" role="status">Idle. Nothing has been evolved yet.</span>
+        </div>
+        <div class="evo-fields">
+          <label>Run name<input id="evo-name" value="night1" maxlength="40" /></label>
+          <label>Resources<select id="evo-profile">
+              <option value="sparse" selected>Resource sparse · low load, usable laptop (default)</option>
+              <option value="standard">Standard · most cores</option>
+              <option value="thorough">Thorough · all but one core, bigger batteries</option>
+            </select></label>
+          <label>Start from<select id="evo-from">
+              <option value="bundled">Bundled robot world brain (19 → 48 → 4)</option>
+              <option value="file">A brain file I choose…</option>
+            </select></label>
+          <label class="evo-file" hidden id="evo-file-wrap">Brain file<input id="evo-file" type="file" accept=".json,application/json" /></label>
+          <label>Workers<input id="evo-workers" type="number" min="1" max="16" value="3" /></label>
+          <label>Stop after (hours, 0 = never)<input id="evo-hours" type="number" min="0" max="48" step="0.5" value="8" /></label>
+          <label>Last stage<select id="evo-last"></select></label>
+          <label>Population<input id="evo-pop" type="number" min="6" max="64" value="12" /></label>
+          <label>Trials per generation<input id="evo-battery" type="number" min="2" max="16" value="4" /></label>
+          <label>Neurons added per stage (from stage 3)<input id="evo-layer" type="number" min="0" max="32" step="4" value="8" /></label>
+        </div>
+        <div class="evo-run-row evo-small">
+          <button id="evo-resume" type="button">Resume a saved run…</button>
+          <select id="evo-saved" aria-label="Saved runs" hidden></select>
+          <button id="evo-save" type="button">Save now</button>
+          <button id="evo-import" type="button">Open a run file…</button>
+          <input id="evo-import-file" type="file" accept=".json,application/json" hidden />
+          <label class="evo-check"><input id="evo-keep" type="checkbox" checked /> Keep the screen awake</label>
+          <label class="evo-check"><input id="evo-poll" type="checkbox" /> Follow a command-line run <code>runs/<span id="evo-poll-name">night1</span>/progress.json</code></label>
+        </div>
+        <p id="evo-profile-note" class="evo-note"></p>
+        <p id="evo-note" class="evo-note">Headless means no trial is drawn: the page only counts, plots and saves, so all the processor time goes to evolution. A tab that is hidden or a laptop that sleeps pauses a browser run; for a whole night the command-line runner (<code>npm run evolve</code>) is steadier, and this page can follow it.</p>
+      </section>
+
+      <section class="evo-panel evo-summary" aria-label="Run summary">
+        <div class="evo-stat"><span>Stage</span><strong id="s-stage">—</strong></div>
+        <div class="evo-stat"><span>Climb</span><strong id="s-branch">—</strong></div>
+        <div class="evo-stat"><span>Generation</span><strong id="s-gen">0</strong></div>
+        <div class="evo-stat"><span>Local maxima</span><strong id="s-max">0</strong></div>
+        <div class="evo-stat"><span>Leader (flags found)</span><strong id="s-reach">—</strong></div>
+        <div class="evo-stat"><span>Brain</span><strong id="s-brain">48 neurons</strong></div>
+        <div class="evo-stat"><span>Trials run</span><strong id="s-trials">0</strong></div>
+        <div class="evo-stat"><span>Elapsed</span><strong id="s-time">0:00:00</strong></div>
+      </section>
+
+      <section class="evo-panel" aria-label="Progress">
+        <div class="evo-title"><div><span class="evo-kicker">PROGRESS</span><strong>What the run is aiming at, and how close it is</strong></div><span id="evo-hover" class="evo-muted"></span></div>
+        <canvas id="evo-progress" width="1100" height="360" aria-label="Score and flags-found progress per generation"></canvas>
+        <p class="evo-note">Upper panel: score per trial of every candidate (yellow dots: best of the generation; grey: average), the smoothed leader (green) and the leader's exam on fresh trials (blue, with its standard error). Lower: share of flags found on the exam, with each stage's goal dashed. Triangles are local maxima. Shaded bands are stages; dotted verticals are new climbs.</p>
+      </section>
+
+      <section class="evo-grid-2">
+        <div class="evo-panel" aria-label="Map of generations">
+          <div class="evo-title"><div><span class="evo-kicker">3D MAP</span><strong>Generations, hills and flags</strong></div>
+            <div class="evo-inline"><label class="evo-check"><input id="evo-spin" type="checkbox" checked /> turn</label><button id="evo-view-reset" type="button">Reset view</button></div></div>
+          <canvas id="evo-landscape" width="720" height="460" aria-label="Three dimensional map of the evolution: generations as points, local maxima as flags"></canvas>
+          <p class="evo-note">Drag to turn, wheel to zoom, click a flag to select its local maximum. A gold flag is the current champion.</p>
+        </div>
+        <div class="evo-panel" aria-label="Local maxima">
+          <div class="evo-title"><div><span class="evo-kicker">ARCHIVE</span><strong>Local maxima, filed when a climb stalls</strong></div></div>
+          <div class="evo-table-wrap"><table id="evo-maxima" class="evo-table"><thead><tr><th>#</th><th>Stage</th><th>How found</th><th>Neurons</th><th>Exam</th><th>Flags</th><th>Tournament</th></tr></thead><tbody></tbody></table></div>
+          <div id="evo-selected" class="evo-selected" hidden></div>
+          <div class="evo-run-row evo-small">
+            <button id="evo-export-best" type="button">Download best brain</button>
+            <button id="evo-export-48" type="button">Download as 48-neuron brain</button>
+            <button id="evo-export-run" type="button">Download whole run</button>
+            <button id="evo-final" type="button">Compare all maxima now</button>
+          </div>
+          <pre id="evo-final-out" class="evo-pre" hidden></pre>
+        </div>
+      </section>
+
+      <section class="evo-panel" aria-label="Stages">
+        <div class="evo-title"><div><span class="evo-kicker">CURRICULUM</span><strong>Six stages, each starting from the previous stage's winner</strong></div></div>
+        <ol id="evo-stages" class="evo-stages"></ol>
+      </section>
+
+      <section class="evo-panel" id="evo-watch" aria-label="Watch a trial" hidden>
+        <div class="evo-title"><div><span class="evo-kicker">WATCH</span><strong>Run the chosen brain through a trial</strong></div><span id="evo-watch-status" class="evo-muted"></span></div>
+        <div class="evo-fields">
+          <label>Brain<select id="w-brain"></select></label>
+          <label>Stage<select id="w-stage"></select></label>
+          <label>Place<select id="w-habitat"><option value="auto">As the stage says</option><option value="lawn">Lawn</option><option value="street">Pavement and road</option><option value="apartment">Apartment</option></select></label>
+          <label>Trial seed<input id="w-seed" type="number" min="1" value="1" /></label>
+          <label>Reality severity<input id="w-severity" type="number" min="0" max="2.5" step="0.1" value="1" /></label>
+          <label>Speed<select id="w-speed"><option value="1">real time</option><option value="3" selected>3×</option><option value="8">8×</option></select></label>
+        </div>
+        <div class="evo-run-row evo-small"><button id="w-run" class="evo-primary" type="button">▶ Run trial</button><button id="w-next" type="button">Next seed</button><label class="evo-check"><input id="w-3d" type="checkbox" /> 3D view</label></div>
+        <div class="evo-watch-grid">
+          <div><canvas id="w-top" width="520" height="520" aria-label="Top-down view of the trial"></canvas><canvas id="w-3d-canvas" width="520" height="520" hidden aria-label="3D view of the trial"></canvas></div>
+          <div>
+            <canvas id="w-eye" width="384" height="192" aria-label="The robot's own 48 by 24 camera"></canvas>
+            <p class="evo-note">The robot's own picture: 48 × 24 colour pixels from 6.5 cm up. The pink flag is detected here, not looked up.</p>
+            <pre id="w-readout" class="evo-pre"></pre>
+          </div>
+        </div>
+      </section>
+
+      <section class="evo-grid-2">
+        <div class="evo-panel" aria-label="Habitats">
+          <div class="evo-title"><div><span class="evo-kicker">PLACES</span><strong>What the simulator now builds</strong></div><div class="evo-inline"><button id="g-reroll" type="button">New seeds</button><label class="evo-check"><input id="g-3d" type="checkbox" /> 3D</label></div></div>
+          <div id="evo-gallery" class="evo-gallery"></div>
+          <canvas id="g-3d-canvas" width="720" height="380" hidden aria-label="3D preview of a generated place"></canvas>
+          <p class="evo-note">Tables have apron rails and tapered legs, sofas stand on feet the robot can drive under, trees carry forked low branches, rocks are stacked slabs at odd angles, laundry stands cross in an X. Faded shapes are above the robot's body: it rolls beneath them, the camera still sees them.</p>
+        </div>
+        <div class="evo-panel" aria-label="Reality gap and brain size">
+          <div class="evo-title"><div><span class="evo-kicker">TRANSFER</span><strong>Reality gap and brain size</strong></div></div>
+          <p class="evo-note" id="evo-size-note"></p>
+          <div class="evo-run-row evo-small"><button id="evo-gauntlet" type="button">Run the reality gauntlet on the champion</button></div>
+          <div id="evo-gauntlet-out" class="evo-gauntlet"></div>
+          <p class="evo-note" id="evo-reality-note"></p>
+        </div>
+      </section>
+
+      <section class="evo-panel evo-log-panel" aria-label="Log">
+        <div class="evo-title"><div><span class="evo-kicker">LOG</span><strong>Events</strong></div></div>
+        <pre id="evo-log" class="evo-pre evo-log"></pre>
+      </section>
+    </main>
+    <script type="module" src="/src/evolve/app.ts"></script>
+  </body>
+</html>

@@ -180,15 +180,19 @@ export function drawEstimates(canvas: HTMLCanvasElement, rows: EstimateRow[], ra
 
 /* ------------------------------ controller activity ------------------------------ */
 
-const flash = new Float32Array(48);
+let flash = new Float32Array(48);
 export function drawBrain(canvas: HTMLCanvasElement, spikes: ArrayLike<number> | null, readouts: ArrayLike<number> | null): void {
   const context = fit(canvas); const W = Number(canvas.dataset.w), H = Number(canvas.dataset.h);
   context.clearRect(0, 0, W, H);
-  const cols = 8, cell = 20, ox = 8, oy = 12;
-  for (let n = 0; n < 48; n += 1) {
+  // 48 neurons in the usual grid; a grown brain gets more columns and smaller dots in the same space.
+  const count = Math.max(48, spikes?.length ?? 48);
+  if (flash.length !== count) flash = new Float32Array(count);
+  const cols = count > 48 ? Math.ceil(Math.sqrt(count * 1.6)) : 8, rows = Math.ceil(count / cols), oy = 12, ox = 8;
+  const cell = Math.min(20, (H - oy - 6) / rows, 200 / cols);
+  for (let n = 0; n < count; n += 1) {
     if (spikes && spikes[n]) flash[n] = 1; else flash[n] *= 0.82;
     const cx = ox + (n % cols) * cell + cell / 2, cy = oy + Math.floor(n / cols) * cell + cell / 2;
-    context.fillStyle = `rgba(124,240,182,${0.1 + 0.9 * flash[n]})`; context.beginPath(); context.arc(cx, cy, 6.8, 0, Math.PI * 2); context.fill();
+    context.fillStyle = `rgba(124,240,182,${0.1 + 0.9 * flash[n]})`; context.beginPath(); context.arc(cx, cy, Math.max(2, cell * 0.34), 0, Math.PI * 2); context.fill();
   }
   const labels = ["steer", "gas", "brake", "reverse"]; const bx = 218, bw = 56;
   context.font = "10px system-ui, sans-serif"; context.textBaseline = "middle";

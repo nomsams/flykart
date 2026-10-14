@@ -18,6 +18,10 @@ export function convexHull(points: Point[]): Point[] {
   lower.pop(); upper.pop(); return lower.concat(upper);
 }
 
+/** A twelve-sided stand-in for a round post or pot. */
+export function disc(s: Pick<Solid, "x" | "z" | "width">): Point[] {
+  return Array.from({ length: 12 }, (_, k) => ({ x: s.x + Math.cos((k / 12) * Math.PI * 2) * s.width / 2, z: s.z + Math.sin((k / 12) * Math.PI * 2) * s.width / 2 }));
+}
 export function rectangle(s: Pick<Solid, "x" | "z" | "yaw" | "width" | "depth">): Point[] {
   const c = Math.cos(s.yaw), t = Math.sin(s.yaw);
   return [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([x, z]) => ({ x: s.x + x * s.width / 2 * c - z * s.depth / 2 * t, z: s.z + x * s.width / 2 * t + z * s.depth / 2 * c }));
@@ -48,10 +52,15 @@ function clippedProjection(vertices: Vertex[], triangles: number[], bottom: numb
   return convexHull(points);
 }
 
+/** Parts are replaced, never edited in place, so identity is a cheap stand-in for their content. */
+const partTokens = new WeakMap<object, number>();
+let partTokenCount = 0;
+function partsToken(parts: object): number { let t = partTokens.get(parts); if (t === undefined) { t = ++partTokenCount; partTokens.set(parts, t); } return t; }
+
 // Bounded cache invalidates when an inspector edit changes any shape dimension.
 const cache = new Map<string, { key: string; parts: ContactPart[] }>();
 export function contactParts(o: WorldObject, solids: Solid[], robotTop: number): ContactPart[] {
-  const key = `${o.kind}/${o.x}/${o.z}/${o.yaw}/${o.width}/${o.depth}/${o.height}/${robotTop}/${JSON.stringify(o.visual?.boxes??[])}`;
+  const key = `${o.kind}/${o.x}/${o.z}/${o.yaw}/${o.width}/${o.depth}/${o.height}/${robotTop}/${JSON.stringify(o.visual?.boxes??[])}/${o.parts?partsToken(o.parts):""}`;
   const existing = cache.get(o.id); if (existing?.key === key) return existing.parts;
   const shapes = naturalShapes(o), parts: ContactPart[] = [];
   if (shapes.length) {
@@ -74,6 +83,7 @@ export function contactParts(o: WorldObject, solids: Solid[], robotTop: number):
   } else {
     for (const [i, solid] of solids.entries()) if (solid.bottom < robotTop && solid.top > 0) {
       const furniture = ["table", "chair", "bed"].includes(o.kind);
+      if (solid.name) { parts.push({ objectId: o.id, kind: o.kind, part: solid.name, polygon: solid.round ? disc(solid) : rectangle(solid), bottom: Math.max(0, solid.bottom), top: Math.min(robotTop, solid.top) }); continue; }
       const part = !furniture ? `${o.kind} body` : i === 0 ? o.kind === "table" ? "tabletop underside" : o.kind === "bed" ? "bed frame underside" : "chair seat" : i < 5 ? `${o.kind} leg ${i}` : o.kind === "bed" ? i === 5 ? "bed mattress" : "bed headboard" : "chair back";
       parts.push({ objectId: o.id, kind: o.kind, part, polygon: rectangle(solid), bottom: Math.max(0, solid.bottom), top: Math.min(robotTop, solid.top) });
     }

@@ -1,5 +1,5 @@
 import {GuardSettings,validateGuard} from './collision-guard';
-import { SonarSurface } from '../vision/sonar-surfaces';
+import { SonarSurface, validateSonarSurface } from '../vision/sonar-surfaces';
 import { ObjectVisual } from './imported-assets';
 import { DEFAULT_VIBRATION, VibrationSettings, validateVibration } from "./vibration";
 import { clamp } from "../core";
@@ -8,8 +8,9 @@ import { ping, SonarReading, SonarTarget } from "../vision/sonar";
 import { mulberry32 } from "../vision/rng";
 import { NoiseSource } from "./noise";
 import { contactParts, polygonsOverlap, rectangle } from "./contacts";
+import { habitatPreset } from "./habitat-bridge";
 
-export type ObjectKind = "wall" | "table" | "chair" | "rock" | "stone" | "bush" | "tree" | "water" | "block" | "cable" | "shoe" | "doormat" | "bed" | "ball" | "image" | "model" | "pod";
+export type ObjectKind = "prop" | "floor" | "wall" | "table" | "chair" | "rock" | "stone" | "bush" | "tree" | "water" | "block" | "cable" | "shoe" | "doormat" | "bed" | "ball" | "image" | "model" | "pod";
 export const OBJECT_TYPES: { kind: ObjectKind; label: string }[] = [
   { kind: "ball", label: "Blue ball · visual target" },
   { kind: "pod", label: "Charging pod · virtual food" }, { kind: "image", label: "Image card · import target" }, { kind: "model", label: "3D model · import GLB" },
@@ -23,9 +24,24 @@ export const ROOM_TYPES = [
   { id: "living", label: "Living room", floor: "#bcb29c" }, { id: "office", label: "Office", floor: "#a9b6bd" },
   { id: "maze", label: "Wall maze", floor: "#929e99" }, { id: "clutter", label: "Clutter challenge", floor: "#b8a58e" },
   { id: "garden", label: "Garden", floor: "#b7bea7" }, { id: "empty", label: "Empty floor", floor: "#b7bea7" },
+  { id: "evolve-apartment", label: "Evolved flat · parquet, tile, sofa feet", floor: "#c99a63" },
+  { id: "evolve-lawn", label: "Evolved lawn · branches, rocks, mud", floor: "#4f9a4a" },
+  { id: "evolve-street", label: "Evolved pavement · kerb, bollards, tarmac", floor: "#b4b3ad" },
 ];
-export type WorldObject = { id: string; kind: ObjectKind; x: number; z: number; yaw: number; width: number; depth: number; height: number; visual?:ObjectVisual;sonarSurface?:SonarSurface };
-export type Solid = { x: number; z: number; yaw: number; width: number; depth: number; bottom: number; top: number; soft?: boolean;sonarSurface?:SonarSurface };
+/** One piece of a compound object, in metres, relative to the object's origin: a table leg, a sofa foot, a branch. */
+export type ObjectPart = { shape: "box" | "cyl"; x: number; z: number; yaw: number; width: number; depth: number; bottom: number; top: number; colour?: number; surface?: SonarSurface; name?: string };
+export type WorldObject = { id: string; kind: ObjectKind; x: number; z: number; yaw: number; width: number; depth: number; height: number; visual?:ObjectVisual;sonarSurface?:SonarSurface; parts?: ObjectPart[] };
+export type Solid = { x: number; z: number; yaw: number; width: number; depth: number; bottom: number; top: number; soft?: boolean;sonarSurface?:SonarSurface; round?: boolean; name?: string };
+/** Anything whose top is below this rolls under the wheels: floor patches, thresholds, a flat cable. */
+export const STEP_OVER_M = 0.013;
+export function validateParts(raw: unknown): ObjectPart[] {
+  if (!Array.isArray(raw) || raw.length > 120) throw new Error("A compound object has at most 120 parts.");
+  return raw.map((p) => {
+    if (!p || !["box", "cyl"].includes(p.shape) || ![p.x, p.z, p.yaw, p.width, p.depth, p.bottom, p.top].every(Number.isFinite) || p.width <= 0 || p.depth <= 0 || p.top <= p.bottom || p.bottom < 0 || p.top > 6 || Math.abs(p.x) > 8 || Math.abs(p.z) > 8) throw new Error("Invalid object part.");
+    if (p.surface !== undefined) validateSonarSurface(p.surface);
+    return { shape: p.shape, x: p.x, z: p.z, yaw: p.yaw, width: p.width, depth: p.depth, bottom: p.bottom, top: p.top, ...(Number.isInteger(p.colour) ? { colour: p.colour } : {}), ...(p.surface ? { surface: p.surface } : {}), ...(typeof p.name === "string" ? { name: p.name.slice(0, 60) } : {}) };
+  });
+}
 export type RobotConfig = {
   guard?:GuardSettings;
   vibration?: VibrationSettings;
@@ -71,13 +87,20 @@ export function wiringIssues(w: Wiring): { errors: string[]; notes: string[] } {
 
 let sequence = 0;
 export function makeObject(kind: ObjectKind, x = 0, z = 0): WorldObject {
-  const dims: Record<ObjectKind, number[]> = { image:[.03,.2,.2], model:[.2,.2,.2], pod:[.12,.22,.18], ball: [.06,.06,.06], wall: [1.6, .09, .7], table: [1.05, .7, .72], chair: [.42, .42, .8], rock: [.4, .34, .28], stone: [.15, .12, .045], bush: [.5, .5, .4], tree: [.65, .65, 1.6], water: [.9, .7, .008], block: [.25, .25, .25], cable: [.7, .02, .01], shoe: [.28, .11, .1], doormat: [.75, .45, .008], bed: [1.9, .95, .5] };
+  const dims: Record<ObjectKind, number[]> = { prop: [1, 1, .5], floor: [1, 1, .002], image:[.03,.2,.2], model:[.2,.2,.2], pod:[.12,.22,.18], ball: [.06,.06,.06], wall: [1.6, .09, .7], table: [1.05, .7, .72], chair: [.42, .42, .8], rock: [.4, .34, .28], stone: [.15, .12, .045], bush: [.5, .5, .4], tree: [.65, .65, 1.6], water: [.9, .7, .008], block: [.25, .25, .25], cable: [.7, .02, .01], shoe: [.28, .11, .1], doormat: [.75, .45, .008], bed: [1.9, .95, .5] };
   const [width, depth, height] = dims[kind];
   return { id: `object-${Date.now()}-${sequence++}`, kind, x, z, yaw: 0, width, depth, height };
 }
 
 /** Furniture is decomposed into real-height solids, shared by collision and sonar. */
 export function solidsFor(o: WorldObject): Solid[] {
+  if (o.parts) {
+    const c = Math.cos(o.yaw), s = Math.sin(o.yaw);
+    return o.parts.filter(p => p.top > STEP_OVER_M && p.bottom < 1.2).map(p => ({
+      sonarSurface: p.surface ?? o.sonarSurface, x: o.x + p.x * c - p.z * s, z: o.z + p.x * s + p.z * c, yaw: o.yaw + p.yaw, width: p.width, depth: p.depth, bottom: p.bottom, top: p.top,
+      soft: p.surface === "foliage" || p.surface === "soft", round: p.shape === "cyl", name: p.name,
+    }));
+  }
   const part = (x: number, z: number, width: number, depth: number, bottom: number, top: number): Solid => ({
     sonarSurface:o.sonarSurface,x: o.x + x * Math.cos(o.yaw) - z * Math.sin(o.yaw), z: o.z + x * Math.sin(o.yaw) + z * Math.cos(o.yaw), yaw: o.yaw, width, depth, bottom, top,
   });
@@ -178,8 +201,10 @@ export class RobotSonar {
       const spread = Math.tan(c.sonarBeam * Math.PI / 360) * Math.min(4, far);
       return s.bottom <= c.mountHeight + spread && s.top >= c.mountHeight - spread;
     });
-    const targets: SonarTarget[] = reachable.map(s => ({ surface:s.sonarSurface,kind: "box" as const, x: s.x * PX_PER_METRE, y: s.z * PX_PER_METRE, heading: s.yaw,
-      halfLength: s.width * PX_PER_METRE / 2, halfWidth: s.depth * PX_PER_METRE / 2, z0: s.bottom * PX_PER_METRE, z1: s.top * PX_PER_METRE }));
+    const targets: SonarTarget[] = reachable.map(s => s.round
+      ? { surface:s.sonarSurface,kind: "circle" as const, x: s.x * PX_PER_METRE, y: s.z * PX_PER_METRE, radius: s.width * PX_PER_METRE / 2, z0: s.bottom * PX_PER_METRE, z1: s.top * PX_PER_METRE }
+      : { surface:s.sonarSurface,kind: "box" as const, x: s.x * PX_PER_METRE, y: s.z * PX_PER_METRE, heading: s.yaw,
+      halfLength: s.width * PX_PER_METRE / 2, halfWidth: s.depth * PX_PER_METRE / 2, z0: s.bottom * PX_PER_METRE, z1: s.top * PX_PER_METRE });
     this.reading = ping(this.spec,this.samplePose, targets, this.random);
     if (noise) { const measured = noise.sonar(this.metres, this.reading.echo); this.reading = { range: measured.metres * PX_PER_METRE, echo: measured.echo, strength: measured.echo ? this.reading.strength : 0 }; }
     return true;
@@ -191,6 +216,8 @@ export class RobotSonar {
 
 export function preset(name: string): WorldObject[] {
   const items: WorldObject[] = [];
+  const evolved = name.match(/^evolve-(apartment|lawn|street)(?::(\d+))?$/);
+  if (evolved) return habitatPreset(evolved[1] as "apartment" | "lawn" | "street", evolved[2] ? Number(evolved[2]) : 3, 0.55);
   const add = (kind: ObjectKind, x: number, z: number, config: Partial<WorldObject> = {}) => items.push({ ...makeObject(kind, x, z), ...config });
   if (name !== "empty") {
     add("wall", 0, -2.3, { width: 5, height: .6 }); add("wall", 2.5, 0, { width: 4.6, yaw: Math.PI / 2, height: .6 });
