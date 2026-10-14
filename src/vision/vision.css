@@ -177,3 +177,12 @@ body.vision .lede{margin-top:5px;font-size:12px}
 @media(max-width:620px){body.vision .hero{gap:7px}body.vision .hero-links{gap:5px}.vision-control-deck button,.vision-control-deck select{min-height:36px}.vision-control-deck .brain-file-bar .button-row button{flex:1 1 140px}.vision-control-deck .settings-history small{flex-basis:100%}.vision-control-deck .vision-runtime select{min-width:0;max-width:100%}.vision-control-deck .brain-storage-controls label{flex-basis:100%}.vision-control-deck .brain-storage-controls select{max-width:none}.vision-control-deck #load-racer-checkpoint{flex-basis:100%}}
 
 .scan-compare{display:grid;gap:7px;width:100%;min-width:0}.scan-compare label{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.scan-compare input[type=range]{width:110px;max-width:100%}.scan-compare input[type=checkbox]{width:auto}.scan-compare small,.scan-compare .note{font-size:11px;line-height:1.5;overflow-wrap:anywhere}
+
+/* Keep the camera picture in the first screen: its view controls sit under the image instead of above it. */
+#tab-world .view-box:has(>.fpv-controls),#tab-track .view-box:has(>.fpv-controls){display:flex;flex-direction:column}
+#tab-world .view-box:has(>.fpv-controls)>.view-title,#tab-track .view-box:has(>.fpv-controls)>.view-title{order:-2}
+#tab-world .view-box:has(>.fpv-controls)>.canvas-wrap,#tab-track .view-box:has(>.fpv-controls)>.canvas-wrap{order:-1}
+#tab-world .view-box>.fpv-controls,#tab-track .view-box>.fpv-controls{margin-top:8px}
+body.vision #evolution-parents .evolution-parent{display:flex;flex-wrap:wrap;align-items:center;gap:2px 14px}
+body.vision #evolution-parents .evolution-parent>.evolution-row{flex:0 1 auto;width:auto}
+body.vision #evolution-parents .evolution-parent>p[role=status]{flex:1 1 320px;margin:0}
