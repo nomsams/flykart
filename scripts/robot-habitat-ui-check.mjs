@@ -23,7 +23,7 @@ const recapture = async () => {
 try {
   await page.goto(`${base}/robot.html?tools=all`, { waitUntil: "domcontentloaded", timeout: 60000 });
   await page.locator("#status").filter({ hasText: "Ready." }).waitFor({ timeout: 60000 });
-  assert.equal(await page.locator("#preset option").count(), 8);
+  assert.equal(await page.locator("#preset option").count(), 11);
   assert.equal(await page.locator("#object-kind option").count(), 17);
   assert.equal(await page.locator('#object-kind option[value="ball"]').count(),1);
   for (const room of ["bedroom", "living", "office", "maze", "clutter"]) {
