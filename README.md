@@ -127,6 +127,131 @@ npm run robot:camera                 # a sheet of what the 6.5 cm camera sees
 | Does the echo make the camera network more accurate? | **Not measurably.** Same teacher and data, with and without the echo as an input: traffic closeness R² 0.81 against 0.80, obstacle 0.41 against 0.43. Its value here is that the whole stack is trained with the sonar in the loop. From 6.5 cm the road geometry is harder to read than from 16 cm (curvature R² roughly 0 to 0.4 against 0.59) while traffic is easier (closeness 0.8). |
 | Open world | Camera + sonar 3.44 goals per run and 6/16 crashes against 2.88 and 7/16 camera only. |
 
+## FlyKart Evolve: overnight breeding for the real robot
+
+`evolve.html` (and `npm run evolve` for the command line) breeds one brain through six stages for hours, unattended, and keeps a record of every
+hill it climbs. It is a new part of the project: the racer, Vision and the 3D habitat keep working, and they can all open what it produces.
+
+**The task, as the real robot has it.** One 19-input brain (17 sensor inputs + the HC-SR04's echo closeness and a validity bit) drives 4 outputs. There is
+**no compass**: the flag's bearing and apparent size come only from the 48 x 24 camera picture (a pink-colour detector), zero when it is not in view,
+hidden behind something, or smaller than two pixels. The clearance sectors are what the camera could make out (twigs and chair legs vanish with range; the
+sonar still hears them). Speed is the brain's own commanded speed (the ESP32 has no encoders). Position, goal distance and score are never inputs.
+
+### What was added
+
+| Part | Where | What it does |
+|---|---|---|
+| Real props | `src/evolve/props.ts` | Tables with aprons and splayed legs, sofas on feet the robot can drive under, chairs with stretchers, round tables with a cross foot, X-legged ironing stands, tripod lamps, trees with forked low branches, fallen limbs with twigs, boulders of stacked slabs at angles, kerbs, bollards, benches, fences, steps. Every piece has a true footprint and height, so collision, sonar, camera and 3D agree. |
+| Habitats | `src/evolve/habitats.ts` | Lawn (grass, mud, sand, paved path, pond), pavement beside a road (slabs, tarmac, kerb with dropped crossings, grass verge, tree grates), flat (light-brown parquet, dark-grey tile, rug, partition walls with doorways). 7 x 7 m, the habitat's footprint. |
+| Oriented solids | `src/vision/world/objects.ts`, `world.ts` | The open world's contact and ray tests now take boxes of any heading; new floors (asphalt, pavement, parquet, tile, carpet) with their own grip and drag. Old scenes are unchanged. |
+| Reality gap | `src/evolve/reality.ts`, `PlantSpec` in `world.ts` | Per trial: motor dead zone, motor lag, unequal sides, battery sag, command latency, camera frame rate and dropped frames, estimate noise and delay, a noisier and ghostlier HC-SR04, exposure that changes how far the flag can be seen. Severity 0 is the ideal simulator, 1 a typical cheap robot, 2 a bad day. Ranges are plausible engineering values, not measurements. |
+| Engine | `src/evolve/engine.ts` | Stages, replay of earlier stages (against forgetting), plateau detection, local-maximum archive, tournaments, brain growth. Deterministic from the run seed; resumable. |
+| Headless runners | `scripts/evolve-overnight.ts`, `src/evolve/app.ts` | Command line (worker threads, keeps Windows awake, STOP file, resumes) and browser page (Web Workers, IndexedDB saves, wake lock). |
+| 3D | `src/evolve/part-mesh.ts`, `src/robot/habitat-bridge.ts` | The same parts as Three.js meshes, in the Evolve page and in the robot habitat (choose "Evolved flat / lawn / pavement" in the habitat list). |
+
+### How the evolution works
+
+1. **Stages.** 1 empty lawn, 2 light clutter, 3 lawn and pavement with branches and kerbs, 4 a flat, 5 everywhere with the real robot's flaws and no speed sensor, 6 a bad day.
+   Each stage starts from the previous stage's winner and replays 30 % earlier-stage trials each generation, so a skill that is not exercised is still scored.
+2. **A climb** is ordinary evolution: 20 candidates, tested on the same fresh trials (common random numbers), best few bred by mutation and neuron-wise crossover,
+   exact elites kept. Parents with a >50 % crash rate or visible twitching are removed from the breeding pool ("eugenics"); a partner is chosen for the skills the first parent lacks.
+3. **Plateau = local maximum.** The leader sits a fresh exam every few generations. When a three-exam moving average stops rising for `patience` exams the climb is declared
+   finished. The leaders of that climb then meet again on trials none was picked on (the winner's-curse guard) and the best is filed as **L1, L2, ...** with its traits and
+   behaviour descriptor.
+4. **Looking in other directions.** The next climb starts differently: a *kick* (heavy mutation of the best), a *crossbreed* of the two best maxima, an *ancestor* restart from the
+   stage's start under another emphasis (search harder, careful, fast, no jitter), *growth* (+8 neurons that start with no influence) or *scouts* (unrelated brains).
+5. **Tournament.** After `branchesPerStage` maxima, all of them (and the stage's starting brain) are compared on unseen trials with earlier stages mixed in; the winner is the global
+   maximum of that stage and seeds the next. Losers stay in the archive.
+6. **Headless.** Nothing is drawn while it runs. "Watch" shows the progress chart, the 3D map (generations, local maxima as flags), the archive and a replay of any maximum;
+   "Headless" goes back to counting.
+
+### Breeding with some eugenics, and its limits
+
+* **Genetic screening** (`src/evolve/screen.ts`). Before a candidate may breed it takes three tiny tests of known failure modes: *wall* (facing a fence 66 px away, must slow or turn),
+  *circle* (20 s in an empty field with the flag out of sight, must cover ground and not spin in one patch) and *stuck* (a dead-end pocket). Failing *wall* or *circle* keeps a brain out of the pool while
+  a clean one exists; *stuck* is reported only, because no brain bred so far gets out of the pocket (the bundled brain, two evolved ones and a random one all fail it).
+* **Inbreeding guard.** Each candidate carries its last few ancestors; mates with more than half their ancestry in common are avoided while any other partner exists, and about one in ten
+  offspring is a cross with a local maximum from another climb of the same stage (gene flow). The generation record shows the pool's mean kinship.
+* **Trait-complementary mating**: the partner is chosen for the skills the first parent lacks (search, safety, speed, smoothness).
+* **Limits.** Selection that is too hard is how the earlier runs became one family circling a hill. The screens are cheap and crude: thresholds were set by looking at six brains, not
+  tuned on a long run, and a brain can pass them and still be poor. Treat them as a guard against known defects, not as a measure of quality.
+
+### Long-run helpers (all on by default, each can be switched off)
+
+| Helper | What it does | Switch |
+|---|---|---|
+| Hard-example mining | Trials the leader failed are kept (up to 40) and 30 % of each battery is drawn from them until the leader solves a trial twice. | `--hard-share=0` |
+| Dead-end pockets | 15 % of trials from stage 2 on start inside a three-walled pocket facing the closed end, so reversing out is trained rather than hoped for. | `--pocket-share=0` |
+| Racing and extra trials | After half a battery only candidates that are clearly worse than the front-runner on the same trials (paired difference, one standard error) stop; when the top three are within one standard error they get half a battery more. | `--no-extra-trials`, `--two-phase=false` |
+| Behaviour archive | The best brain per cell of (speed, straightness, turning, ground covered), three bins each, is kept for the stage and used as an outbreeding donor, so parents that behave differently from the leader keep arriving. | `--no-qd` |
+| Lifetime learning | At the end of a climb the best brain's readout is nudged toward its own successful trials (delta rule). The polished copy is only a candidate in the confirmation round and is adopted only if it wins on unseen trials. | `--no-polish` |
+| Sensor outages | From severity 1.2, a trial may have a few seconds with the sonar silent or the camera frozen. Milder realities are drawn exactly as before. | (severity) |
+| Measured flaws | `--reality=measured.json` with `{"deadband":[lo,hi],"tau":[lo,hi],"camEvery":[3,6]}` replaces the plausible ranges for the motor dead zone, motor time constant (s) and camera frame interval (ticks). | `--reality=` |
+
+None of these has been run for a full night yet. The mechanics are tested (draws unchanged when a helper is off, the pocket is closed ahead and open behind, the polish only moves
+the readout, resume is exact); whether each one pays for its trials is something a long run has to show, and the generation record (`hard`, `qdCells`, `extra`) is there to look at.
+
+### Why not just 48 neurons? Layered brains, built afterwards
+
+48 is not a limit of the engine (8 to 512 neurons work, `maxHidden` defaults to 80 in the sparse profile). It is what the racer's inspector, Vision's 48-dot display and the
+habitat's brain panel were written for, so a bigger brain is refused there with a message and `best-brain-48.json` is offered instead. (In the habitat's hardware panel the brain runs in the browser and
+the ESP32 only streams sensors and receives motor commands, so a larger brain does not need larger firmware.)
+
+The brain is built in **layers, oldest first**, like a mammal's: from the third stage on, every stage adds a layer of 8 neurons on top of the winner (`layerPerStage`, `layerFromStage`).
+Two rules make it a hierarchy (`src/evolve/layers.ts`):
+
+1. A neuron listens to its own layer and older ones, never newer ones, so an older layer stays a complete little brain that the newer one rides on.
+2. Each layer has a plasticity: when a layer is added the older ones are made stiffer (`protect`, 0.25 each time), so a mutation moves an old neuron a quarter as far and learning the next
+   skill does not overwrite the last. The new layer is free and starts with no influence, so the brain drives exactly as before until it earns something.
+
+It is still one ordinary 19 → N → 4 spiking network and a normal brain file; the layers are a plan the engine enforces while breeding (tested: the core cannot hear a new layer,
+a mating cannot break that, a layer at plasticity 0 does not move at all). A "grow" climb inside a stage adds a layer the same way. Whether layers beat one flat brain is not settled by any run so far.
+
+### Resource-sparse mode (the default)
+
+`--profile=sparse` (also the page's "Resources" selector) runs one worker at low priority with about 60 % duty, 12 candidates, 4 trials per generation, exams of 12, a 3-degree echo beam and layers
+capped at 80 neurons, so the laptop stays usable and cool. `standard` and `thorough` use more of the machine; any single flag (`--workers`, `--duty`, `--pop`, ...) overrides the profile.
+
+### Using it
+
+```bash
+npm run dev                         # then open /evolve.html, press Start
+npm run evolve -- --name=night1 --hours=8     # headless, writes runs/night1/*; run it again to resume
+npm run evolve -- --name=night2 --from=my-brain.json --last-stage=3 --workers=3
+```
+
+`runs/<name>/best-brain.json` is a plain `flykart-brain` file (19 inputs) that Vision and the habitat import; `best-brain-48.json` keeps the 48 most influential neurons if the
+brain was grown. The Evolve page can follow a command-line run by polling `runs/<name>/progress.json`.
+
+Laptops sleep. The command-line runner asks Windows to keep the system awake (`--allow-sleep` to opt out); the browser page uses a screen wake lock and a held Web Lock, which only
+work while the tab is open and visible. Working time is counted from generation to generation, so a night asleep does not spend the budget.
+
+### Measured, and what it does not show
+
+* **Speed.** The neuron update now runs on typed arrays and visits only the neurons that spiked: 21 -> 9 microseconds per tick, with bit-identical results (checked against a checksum of 15 trials).
+  The echo model prunes targets that cannot be nearest and reuses its buffers; a whole trial went from about 145 to about 90 microseconds per tick (JavaScript, one core, noisy machine), the echo
+  model being the largest remaining cost. WebAssembly was not tried: it would need a toolchain and would not reproduce JavaScript's `atan2`/`exp` bit for bit.
+  About 0.1-0.3 s of one core per 1500-tick trial in the fast model; a generation of 20 candidates x 6 trials takes roughly 2 s on 3 workers at stage 1 and more in cluttered stages.
+* **Fast model versus the renderer.** The fast sensors (analytic flag cue, clearance with a visibility filter) were calibrated against the real software camera and `FlagDiscovery`
+  on 280 poses: they agree on visible / not visible for 85 % of poses (the rest are 1-3-pixel blobs at the edge of detection, which alias differently), bearing error 0.011 pi (about 2 degrees, one pixel),
+  mean size error -0.002. The calibration is `scripts/evolve-calibrate.ts`; rerun it after any camera or flag change.
+* **A flag that is 50 cm tall leaves the 48 x 24 picture when the robot is within about 65 px (70 cm)**, because the lens is 6.5 cm up and tilted 7 degrees. So the last stretch of every approach is
+  blind, and the brain has to carry the bearing in its recurrent state. A pink marker lying on the floor, or a lower flag, would be easier; this is a property of the setup, not of the brain.
+* **Winner's curse is real.** With one fixed 16-trial exam, the "best" brain of a climb scored 20-25 points higher on its own exam than on fresh trials (standard error about 9 points). The
+  current design uses a new set of trials for every exam and a confirmation round; the numbers in the table of local maxima are the confirmed ones.
+* **Nothing here is hardware-validated.** The reality-gap ranges are not measurements of your robot. Run the gauntlet panel, then a supervised low-speed trial, before believing a number.
+
+### How big should the brain be, and how many Kenyon cells?
+
+* **Controller neurons.** 48 hidden neurons cost 3,400 multiply-adds per 33 ms tick and 13.5 KB of weights: nothing for an ESP32. The limit is the search, not the chip. The engine can
+  add neurons that start with no influence (`growBrain`, function preserving, tested) when a climb stalls and keeps them only if they win; the archive records each maximum's size, and the page prints the
+  comparison between grown and same-size climbs once both exist. No run so far was long enough to say that 48 is too few; treat any size claim as a measurement of that run only.
+* **Kenyon cells (the robot's visual memory, `src/robot/memory.ts`).** `npx vite-node scripts/kenyon-sweep.ts` taught the memory four routes (about 1,100 observations over the flat, a lawn and a street), then asked it
+  from poses a few pixels off and a different brightness. On that much material, **512 cells at 0.5-1 % activity did as well as 40,000**: it answered 73-81 % of the time and cut the clearance error by about 40 % against
+  answering with the route average, while roughly 15 % of its answers were worse than that average. More cells did not help and cost linearly more (a 40,000-cell observation is about 100x a 512-cell one in this
+  JavaScript); denser codes (2-5 %) were slightly worse. The sweep does not test many *places* at once, which is what a bigger bank is for; with more rooms than this, re-run it. Data: `public/vision/robot/kenyon-sweep.json`.
+
+
 ## Run locally
 
 ### Three.js robot habitat

@@ -29,7 +29,10 @@
     "robot:camera": "vite-node scripts/preview-camera.ts robot-camera-preview.png robot",
     "robot:ui-check": "node scripts/robot-ui-check.mjs",
     "parking:ui-check": "node scripts/robot-parking-ui-check.mjs",
-    "vision:world-camera": "vite-node scripts/preview-world.ts world-preview.png"
+    "vision:world-camera": "vite-node scripts/preview-world.ts world-preview.png",
+    "evolve": "vite-node scripts/evolve-overnight.ts",
+    "evolve:ui-check": "node scripts/evolve-ui-check.mjs",
+    "evolve:kenyon": "vite-node scripts/kenyon-sweep.ts --out=public/vision/robot/kenyon-sweep.json"
   },
   "devDependencies": {
     "@playwright/test": "^1.63.0",

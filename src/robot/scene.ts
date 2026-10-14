@@ -7,7 +7,7 @@ import { NoiseSource } from "./noise";
 import { naturalGeometry, naturalShapes } from "./natural-shapes";
 import type { MissionSnapshot } from "./objectives";
 
-const COLORS = { image:0xffffff,model:0x879ba3,pod:0x164de2,ball: 0x1459ee, wall: 0xcac5b8, table: 0xb58b60, chair: 0x859989, rock: 0x969c96, stone: 0xb3ada1, bush: 0x527e5b, tree: 0x557a56, water: 0x679faa, bed: 0x97775d, block: 0xcb805e, cable: 0x303b43, shoe: 0x63839e, doormat: 0xc49a62 };
+const COLORS = { prop:0x9a9a9a,floor:0x9a9a9a,image:0xffffff,model:0x879ba3,pod:0x164de2,ball: 0x1459ee, wall: 0xcac5b8, table: 0xb58b60, chair: 0x859989, rock: 0x969c96, stone: 0xb3ada1, bush: 0x527e5b, tree: 0x557a56, water: 0x679faa, bed: 0x97775d, block: 0xcb805e, cable: 0x303b43, shoe: 0x63839e, doormat: 0xc49a62 };
 export class HabitatScene {
   readonly scene = new THREE.Scene();
   readonly renderer: THREE.WebGLRenderer;
@@ -71,6 +71,18 @@ export class HabitatScene {
       if(o.visual){const group=new THREE.Group();group.userData.id=o.id;group.position.set(o.x,0,o.z);group.rotation.y=-o.yaw;this.objects.add(group);const attach=()=>{if(!this.objects.children.includes(group))return;const mesh=visualMesh(o.visual!);if(mesh){mesh.scale.set(o.width,o.height,o.depth);group.add(mesh);return true;}return false;};if(!attach())void prepareVisual(o.visual).then(attach).catch(()=>{});continue;}
 
       const group = new THREE.Group(); group.userData.id = o.id; this.objects.add(group);
+      if (o.parts) {
+        // A compound object: every part is a real box or post at its own height, so legs, feet and branches show.
+        for (const part of o.parts) {
+          const height = Math.max(.002, part.top - part.bottom);
+          const geometry = part.shape === "cyl" ? new THREE.CylinderGeometry(part.width / 2, part.width / 2, height, part.surface === "foliage" ? 9 : 14) : new THREE.BoxGeometry(part.width, height, part.depth);
+          const mesh = this.mesh(geometry, part.colour ?? 0x9a9a9a, group, o.x * Math.cos(o.yaw) * 0 + this.partX(o, part), (part.bottom + part.top) / 2, this.partZ(o, part));
+          mesh.rotation.y = -(o.yaw + part.yaw);
+          if (o.kind === "floor") { mesh.castShadow = false; (mesh.material as THREE.MeshStandardMaterial).roughness = .85; }
+          if (part.surface === "foliage") (mesh.material as THREE.MeshStandardMaterial).flatShading = true;
+        }
+        continue;
+      }
       const shapes = naturalShapes(o);
       if (!shapes.length) {
         for (const [i, s] of solidsFor(o).entries()) { const colour = o.kind === "bed" && i === 5 ? 0xded7c6 : COLORS[o.kind]; const m = this.mesh(new THREE.BoxGeometry(s.width, s.top - s.bottom, s.depth), colour, group, s.x, (s.top + s.bottom) / 2, s.z); m.rotation.y = -s.yaw; }
@@ -86,6 +98,8 @@ export class HabitatScene {
     }
     this.rebuildContacts();
   }
+  private partX(o: WorldObject, p: { x: number; z: number }): number { return o.x + p.x * Math.cos(o.yaw) - p.z * Math.sin(o.yaw); }
+  private partZ(o: WorldObject, p: { x: number; z: number }): number { return o.z + p.x * Math.sin(o.yaw) + p.z * Math.cos(o.yaw); }
   setFloorColour(colour: string): void { this.floorMaterial.color.set(colour); }
   moveBall(ball:WorldObject):void {const group=this.objects.children.find(o=>o.userData.id===ball.id);if(group){group.position.set(ball.x,0,ball.z);if(this.contactView.visible)this.rebuildContacts();}}
   rebuildMission(mission: MissionSnapshot, collected: Set<string> = new Set()): void {

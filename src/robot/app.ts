@@ -22,7 +22,7 @@ import {validateVisual,prepareVisual} from './imported-assets';
 import { DEFAULT_VIBRATION, validateVibration, VibrationSensor } from "./vibration";
 import { RobotWorkbench } from "./workbench";
 import { setupMonitorLayout } from "./monitor-layout";
-import { solidsFor, validateRobotConfig } from "./model";
+import { solidsFor, validateRobotConfig, validateParts } from "./model";
 import "./robot.css";
 import { Action, SpikingNetwork, clamp } from "../core";
 import { controllerCheckpoint, exportVisionBrain, importFile } from "../vision/format";
@@ -65,7 +65,7 @@ import { TASK_HUNGER, usesVibration, taskContract, fingerprint } from './sensor-
 const root = document.querySelector<HTMLDivElement>("#robot-app")!;
 root.innerHTML = `
 <header><div><p class="eyebrow">FLYKART / EMBODIED INTELLIGENCE</p><h1>Robot habitat<span style="color:var(--accent)">.</span></h1><p class="subtitle">A little fly. A real-sized robot. A world to learn.</p></div>
-<nav aria-label="FlyKart pages"><a href="./index.html">Race lab ↗</a><a href="./vision.html">Vision lab ↗</a><a href="./parking.html">Parking lab ↗</a><span class="pill">ESP32-CAM · FOUR WHEELS</span></nav></header>
+<nav aria-label="FlyKart pages"><a href="./index.html">Race lab ↗</a><a href="./vision.html">Vision lab ↗</a><a href="./evolve.html">Evolve ↗</a><a href="./parking.html">Parking lab ↗</a><span class="pill">ESP32-CAM · FOUR WHEELS</span></nav></header>
 <main class="shell">
   <div class="toolbar"><div class="toolbar-group"><button id="run" class="primary">▶ Run simulation</button><button id="step">Step</button><button id="reset" class="quiet">Reset robot</button><label>Habitat <select id="preset"><option value="room">Workshop room</option><option value="garden">Garden</option><option value="empty">Empty floor</option></select></label></div><div class="toolbar-group"><button id="save-scene">Save scene + targets</button><button id="load-scene">Load scene</button><input id="scene-file" class="scene-file" type="file" accept=".json,application/json" hidden><button id="save-lab">Export lab</button><label class="import-label">Import lab<input id="lab-file" class="scene-file" type="file" accept=".json,application/json"></label><button id="advanced">⚙ Components & wiring</button></div></div>
   <section class="experiment"><div class="program-controls"><label>Program <select id="program" aria-label="Controller preset">${PROGRAMS.map(p => `<option value="${p.id}">${p.title}</option>`).join("")}</select></label><details class="program-help"><summary>Preset details</summary><p id="program-note"></p></details></div><div class="experiment-actions"><button id="bench-check">Clear floor & run drive check</button><button id="show-code" class="quiet">Hide code</button><a href="#sensor-console">Sensor console ↓</a></div></section>
@@ -307,15 +307,16 @@ function bindSceneEditing():void {
   canvas.addEventListener("pointercancel",finish);
 }
 function validateObjects(raw: unknown): WorldObject[] {
-  const kinds = OBJECT_TYPES.map(o => o.kind);
+  const kinds: string[] = [...OBJECT_TYPES.map(o => o.kind), "prop", "floor"];
   if (!Array.isArray(raw) || raw.length > 200) throw new Error("A habitat must contain at most 200 objects.");
   const ids = new Set<string>();
   return raw.map(o => {
     if (!o || typeof o.id !== "string" || !o.id || o.id === "@robot" || o.id.length > 100 || ids.has(o.id) || !kinds.includes(o.kind)) throw new Error("Invalid habitat object."); ids.add(o.id);
-    if (![o.x, o.z, o.yaw, o.width, o.depth, o.height].every(Number.isFinite) || Math.abs(o.x) > 3.5 || Math.abs(o.z) > 3.5 || Math.abs(o.yaw) > Math.PI * 100 || o.width < .02 || o.width > 6 || o.depth < .02 || o.depth > 6 || o.height < .002 || o.height > 4) throw new Error("Object position or dimensions are out of range.");
+    if (![o.x, o.z, o.yaw, o.width, o.depth, o.height].every(Number.isFinite) || Math.abs(o.x) > 3.5 || Math.abs(o.z) > 3.5 || Math.abs(o.yaw) > Math.PI * 100 || o.width < .02 || o.width > 8 || o.depth < .02 || o.depth > 8 || o.height < .002 || o.height > 4) throw new Error("Object position or dimensions are out of range.");
+    if ((o.kind === "prop" || o.kind === "floor") && o.parts === undefined) throw new Error("A compound object needs its parts.");
     if(o.sonarSurface!==undefined)validateSonarSurface(o.sonarSurface);
     if(o.visual&&((o.kind==='image'&&o.visual.type!=='image')||(o.kind==='model'&&o.visual.type!=='glb')||!['image','model'].includes(o.kind)))throw new Error('Imported visual does not match the object type.');
-    return { id: o.id, kind: o.kind, x: o.x, z: o.z, yaw: o.yaw, width: o.width, depth: o.depth, height: o.height,...(o.sonarSurface?{sonarSurface:o.sonarSurface}:{}),...(o.visual?{visual:validateVisual(o.visual)}:{}) };
+    return { id: o.id, kind: o.kind, x: o.x, z: o.z, yaw: o.yaw, width: o.width, depth: o.depth, height: o.height,...(o.sonarSurface?{sonarSurface:o.sonarSurface}:{}),...(o.visual?{visual:validateVisual(o.visual)}:{}),...(o.parts?{parts:validateParts(o.parts)}:{}) };
   });
 }
 const PHYSICS_FIELDS: [keyof RobotConfig, string, number, number, number][] = [
@@ -760,7 +761,10 @@ function telemetry(): void {
   setText("camera-rate", String(physics.config.cameraHz)); setText("camera-height", (physics.config.mountHeight * 100).toFixed(1));
   setText("perception-note", !physics.config.cameraEnabled ? "Camera disconnected · visual estimates zero" : perceiver ? `${brainDomain === "world" ? "9 obstacle sectors + surface" : "13 racing estimates"} → ${controller?.inputCount ?? 17} brain inputs` : "No eyes loaded · import a vision brain");
   const spikes = controller?.activity().spikes;
-  el("spikes").querySelectorAll("i").forEach((dot, i) => dot.classList.toggle("active", !!spikes?.[i]));
+  // A grown brain has more than the usual 48 neurons: keep one dot per neuron and say how many.
+  const neurons = controller?.hiddenCount ?? 48, dotHost = el("spikes");
+  if (dotHost.children.length !== neurons) { dotHost.innerHTML = Array.from({ length: neurons }, () => "<i></i>").join(""); const label = dotHost.nextElementSibling?.querySelector("span"); if (label) label.textContent = `${neurons} SPIKING NEURONS`; }
+  dotHost.querySelectorAll("i").forEach((dot, i) => dot.classList.toggle("active", !!spikes?.[i]));
   const bars = el("input-bars"); if (bars.children.length !== sensors.length) bars.innerHTML = sensors.map(() => "<i></i>").join("");
   Array.from(bars.children).forEach((bar, i) => { (bar as HTMLElement).style.height = `${Math.max(5, Math.abs(sensors[i]) * 100)}%`; (bar as HTMLElement).title = `Input ${i}: ${sensors[i].toFixed(3)}`; });
   setText("pins", ["in1", "in2", "in3", "in4", "ena", "enb"] .map(k => { const pin = wiring[k as keyof Wiring] as number; return `${k.toUpperCase().padEnd(4)} GPIO ${String(pin).padStart(2)}  ${pin < 0 ? "JUMPER HIGH" : String(Math.round(firmware.pins.get(pin) ?? 0)).padStart(3) + " / 255"}`; }).join("\n"));

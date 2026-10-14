@@ -6,7 +6,7 @@ import {validateGoalRewards,noseArrivalBonus,goalTimeBonus,type GoalRewards} fro
 import { SonarSurface } from '../sonar-surfaces';
 import { Action, STEP, clamp, wrapAngle } from "../../core";
 import { mulberry32, Random } from "../rng";
-import { OBJECT_KINDS, solids, contact, movable, floorItem, blocked } from './objects';
+import { OBJECT_KINDS, solids, contact, movable, floorItem, blocked, type PropPart } from './objects';
 
 export const WORLD_HALF = 460;
 export const KART_RADIUS = 8;
@@ -31,10 +31,21 @@ export const SECTORS = 9;
 export const SECTOR_SPAN = (50 * Math.PI) / 180;
 export const SECTOR_RANGE = 220;
 
-export type Surface = "grass" | "sand" | "mud" | "water";
-export type Obstacle = { x: number; y: number; radius: number; kind: typeof OBJECT_KINDS[number]; height: number; tone: number; clearance?:number;sonarSurface?:SonarSurface };
+export type Surface = "grass" | "sand" | "mud" | "water" | "asphalt" | "pavement" | "parquet" | "tile" | "carpet";
+/** A compound prop (`kind: "prop"`) carries its own `parts`; `radius` is then its bounding radius and `height` its tallest part. */
+export type Obstacle = { x: number; y: number; radius: number; kind: typeof OBJECT_KINDS[number]; height: number; tone: number; clearance?:number;sonarSurface?:SonarSurface;parts?:PropPart[];label?:string };
 export type Patch = { x: number; y: number; radius: number; kind: Exclude<Surface, "grass"> };
-export type WorldDef = { seed: number; half: number; obstacles: Obstacle[]; patches: Patch[] };
+/** A rectangular floor area (a room's parquet, a pavement strip). Later zones paint over earlier ones; patches paint over zones. */
+export type Zone = { x0: number; y0: number; x1: number; y1: number; kind: Surface };
+export type WorldDef = {
+  seed: number; half: number; obstacles: Obstacle[]; patches: Patch[];
+  /** Floor outside every zone and patch. Omitted means grass, as in the original open world. */
+  base?: Surface;
+  zones?: Zone[];
+  /** What the perimeter looks like to the camera: the striped fence of the field, a plain wall, or a kerb. */
+  boundary?: "fence" | "wall" | "kerb";
+  name?: string;
+};
 
 /** How cluttered the world is, from 0 (a few trees) to 1 (a thicket with ponds). */
 export function generateWorld(seed: number, density = 0.6): WorldDef {
@@ -59,7 +70,8 @@ export function generateWorld(seed: number, density = 0.6): WorldDef {
 }
 
 export function surfaceAt(world: WorldDef, x: number, y: number): Surface {
-  let result: Surface = "grass";
+  let result: Surface = world.base ?? "grass";
+  if (world.zones) for (const zone of world.zones) if (x >= zone.x0 && x <= zone.x1 && y >= zone.y0 && y <= zone.y1) result = zone.kind;
   for (const patch of world.patches) {
     const d = Math.hypot(x - patch.x, y - patch.y);
     if (d < patch.radius) { if (patch.kind === "water") return "water"; result = patch.kind; }
@@ -68,7 +80,12 @@ export function surfaceAt(world: WorldDef, x: number, y: number): Surface {
 }
 
 /** The surface under a point as one number the camera can be asked for. */
-export const SURFACE_VALUE: Record<Surface, number> = { grass: 0.5, sand: -0.2, mud: -0.7, water: -1 };
+export const SURFACE_VALUE: Record<Surface, number> = { grass: 0.5, sand: -0.2, mud: -0.7, water: -1, asphalt: 0.55, pavement: 0.5, parquet: 0.45, tile: 0.4, carpet: 0.3 };
+/** Traction for steering and the fraction of speed lost each tick. Grass, sand and mud keep the original FlyKart numbers. */
+export const SURFACE_PHYSICS: Record<Surface, { grip: number; drag: number }> = {
+  grass: { grip: 1, drag: 0 }, sand: { grip: 0.78, drag: 0.012 }, mud: { grip: 0.6, drag: 0.045 }, water: { grip: 1, drag: 0 },
+  asphalt: { grip: 1.04, drag: 0 }, pavement: { grip: 1.02, drag: 0 }, parquet: { grip: 0.94, drag: 0 }, tile: { grip: 0.88, drag: 0 }, carpet: { grip: 1, drag: 0.02 },
+};
 
 /**
  * Distance from (x, y) along `angle` to the first thing that would stop a kart:
@@ -88,16 +105,18 @@ export function castRay(world: WorldDef, x: number, y: number, angle: number, ma
   for (const o of world.obstacles) for(const b of solids(o)) {
     if(b.halfLength===undefined)circle(b.x,b.y,b.radius+KART_RADIUS);
     else {
-      // Minkowski sum: two rectangular strips plus the four rounded corners.
+      // Minkowski sum: two rectangular strips plus the four rounded corners, in the box's own frame.
+      const h=b.heading??0,c=h?Math.cos(h):1,s=h?Math.sin(h):0;
+      const rx=x-b.x,ry=y-b.y,ox=h?rx*c+ry*s:rx,oy=h?-rx*s+ry*c:ry,ldx=h?dx*c+dy*s:dx,ldy=h?-dx*s+dy*c:dy;
       const box=(hx:number,hy:number)=>{
         let lo=0,hi=best;
-        for(const [at,dir,size] of [[x-b.x,dx,hx],[y-b.y,dy,hy]]){
-          if(Math.abs(dir)<1e-9){if(Math.abs(at)>size)return;}else{const a=(-size-at)/dir,c=(size-at)/dir;lo=Math.max(lo,Math.min(a,c));hi=Math.min(hi,Math.max(a,c));}
+        for(const [at,dir,size] of [[ox,ldx,hx],[oy,ldy,hy]]){
+          if(Math.abs(dir)<1e-9){if(Math.abs(at)>size)return;}else{const a=(-size-at)/dir,e=(size-at)/dir;lo=Math.max(lo,Math.min(a,e));hi=Math.min(hi,Math.max(a,e));}
         }
         if(lo<=hi)best=Math.min(best,lo);
       };
       box(b.halfLength+KART_RADIUS,b.halfWidth!);box(b.halfLength,b.halfWidth!+KART_RADIUS);
-      for(const sx of [-1,1])for(const sy of [-1,1])circle(b.x+sx*b.halfLength,b.y+sy*b.halfWidth!,KART_RADIUS);
+      for(const sx of [-1,1])for(const sy of [-1,1]){const lx=sx*b.halfLength,ly=sy*b.halfWidth!;circle(b.x+(h?lx*c-ly*s:lx),b.y+(h?lx*s+ly*c:ly),KART_RADIUS);}
     }
   }
   for (const p of world.patches) if (p.kind === "water") circle(p.x, p.y, p.radius + 2);
@@ -120,6 +139,22 @@ export function clearanceScan(world: WorldDef, x: number, y: number, heading: nu
   }
   return out;
 }
+
+/**
+ * What a real drivetrain does that the ideal simulator does not: motors that need a minimum duty to turn, a
+ * left and a right side that are not identical, a battery that sags, a driver chip with latency and a rough floor.
+ * Applied between the controller's command and the physics; every field at its neutral value gives the original behaviour.
+ */
+export type PlantSpec = {
+  steerGain: number; steerBias: number; powerScale: number; brakeScale: number;
+  /** Throttle (0..1) below which the motors do not turn at all. */
+  deadband: number;
+  /** Fraction of the gap between commanded and delivered drive that is NOT closed each tick (0 = instant). */
+  motorLag: number;
+  delayTicks: number;
+  gripScale: number; dragScale: number;
+};
+export const IDEAL_PLANT: PlantSpec = { steerGain: 1, steerBias: 0, powerScale: 1, brakeScale: 1, deadband: 0, motorLag: 0, delayTicks: 0, gripScale: 1, dragScale: 1 };
 
 export type WorldKart = {
   x: number; y: number; heading: number; speed: number; steering: number;
@@ -152,8 +187,12 @@ export class WorldSim {
   private readonly goalCount:GoalCount|undefined;
   readonly goalRadius:number;
   surface: Surface = "grass";
+  /** Drivetrain imperfections; null is the ideal original kart. */
+  readonly plant: PlantSpec | null;
+  private readonly commandQueue: Action[] = [];
+  private motorThrottle = 0; private motorReverse = 0;
 
-  constructor(seed: number, options: { goalRewards?:GoalRewards; density?: number; maxTicks?: number; world?:WorldDef; start?:{x:number;y:number;heading:number}; goal?:GoalPoint; goals?:GoalPoint[]; goalPreset?:GoalPreset; goalCount?:GoalCount; goalRadius?:number; goalLimit?:number; hiddenGoalAngle?:number } = {}) {
+  constructor(seed: number, options: { plant?: PlantSpec | null; goalRewards?:GoalRewards; density?: number; maxTicks?: number; world?:WorldDef; start?:{x:number;y:number;heading:number}; goal?:GoalPoint; goals?:GoalPoint[]; goalPreset?:GoalPreset; goalCount?:GoalCount; goalRadius?:number; goalLimit?:number; hiddenGoalAngle?:number } = {}) {
     this.world = options.world ? structuredClone(options.world) : generateWorld(seed, options.density ?? 0.6);
     this.goalRewards=validateGoalRewards(options.goalRewards);
     this.goalPreset=options.goalPreset??'standard';
@@ -161,6 +200,7 @@ export class WorldSim {
     this.hiddenGoalAngle=options.hiddenGoalAngle??0;
     if(!Number.isFinite(this.hiddenGoalAngle)||this.hiddenGoalAngle<0||this.hiddenGoalAngle>=Math.PI)throw Error('Invalid hidden goal angle.');
     this.random = mulberry32(seed * 977 + 5);
+    this.plant = options.plant ?? null;
     const count=validateGoalCount(options.goalCount);
     this.goalCount=count;
     this.targetBatchCount=count==='random'?1+Math.floor(this.random()*6):count??(this.goalPreset==='pair'?2:1);
@@ -253,21 +293,34 @@ export class WorldSim {
     return out;
   }
 
+  private throughPlant(command: Action, plant: PlantSpec): Action {
+    this.commandQueue.push(command);
+    const delayed = this.commandQueue.length > plant.delayTicks ? this.commandQueue.shift()! : { steer: 0, throttle: 0, brake: 0, reverse: 0 };
+    const drive = (raw: number): number => { const v = clamp(raw, 0, 1); return v < plant.deadband ? 0 : (v - plant.deadband) / (1 - plant.deadband); };
+    const keep = clamp(plant.motorLag, 0, 0.95);
+    this.motorThrottle += (drive(delayed.throttle) * plant.powerScale - this.motorThrottle) * (1 - keep);
+    this.motorReverse += (drive(delayed.reverse ?? 0) * plant.powerScale - this.motorReverse) * (1 - keep);
+    return { steer: clamp(delayed.steer * plant.steerGain + plant.steerBias, -1, 1), throttle: this.motorThrottle, brake: clamp(delayed.brake * plant.brakeScale, 0, 1), reverse: this.motorReverse };
+  }
+
   step(action: Action): void {
     if (this.done) return;
     const { kart, status, world } = this;
     const surface = surfaceAt(world, kart.x, kart.y); this.surface = surface;
-    const grip = surface === "mud" ? 0.6 : surface === "sand" ? 0.78 : 1;
+    const physics = SURFACE_PHYSICS[surface], plant = this.plant;
+    const grip = physics.grip * (plant ? plant.gripScale : 1);
+    const commanded = action;
+    if (plant) action = this.throughPlant(action, plant);
     const requested = clamp(action.steer, -1, 1);
     kart.steering += (requested - kart.steering) * 0.24; if (Math.abs(kart.steering) < 1e-4) kart.steering = 0;
     const lowSpeed = clamp(Math.abs(kart.speed) / 18, 0.18, 1);
     const turn = kart.steering * (0.65 + Math.abs(kart.speed) / 150) * grip * (kart.speed < -0.5 ? -1 : 1) * lowSpeed * STEP;
     kart.heading += turn; kart.yaw = turn / STEP;
     const throttle = clamp(action.throttle, 0, 1), reverse = clamp(action.reverse ?? 0, 0, 1), brake = clamp(action.brake, 0, 1);
-    let acceleration = throttle * 55 - reverse * 45 - kart.speed * 0.23;
+    let acceleration = throttle * 55 - reverse * 45 - kart.speed * 0.23 * (plant ? plant.dragScale : 1);
     if (kart.speed > 0) acceleration -= brake * 75; else if (kart.speed < 0) acceleration += brake * 75;
     kart.speed = clamp(kart.speed + acceleration * STEP, -48, 90);
-    if (surface === "mud") kart.speed *= 0.955; else if (surface === "sand") kart.speed *= 0.988;
+    if (physics.drag > 0) kart.speed *= 1 - physics.drag * (plant ? plant.dragScale : 1);
     if(world.obstacles.some(o=>floorItem(o)&&Math.hypot(kart.x-o.x,kart.y-o.y)<o.radius))kart.speed*=.97;
     const before = status.distanceToGoal,arrivalFrom={x:kart.x,y:kart.y};
     kart.x += Math.cos(kart.heading) * kart.speed * STEP; kart.y += Math.sin(kart.heading) * kart.speed * STEP;
@@ -275,6 +328,8 @@ export class WorldSim {
     let hit = false, contactPain=0;
     const impactSpeed=Math.abs(kart.speed);
     for (const o of world.obstacles) {
+      // A compound prop's radius bounds its near-floor parts, so far-away props are skipped without looking at their parts.
+      if(o.parts&&Math.hypot(kart.x-o.x,kart.y-o.y)>o.radius+KART_RADIUS+2)continue;
       for(const b of solids(o)){
         const c=contact(b,kart.x,kart.y,KART_RADIUS);if(!c)continue;
         const push=movable(o)?Math.min(c.depth,impactSpeed*STEP*.65):0;
@@ -300,7 +355,7 @@ export class WorldSim {
     status.distanceToGoal = distance; status.score += (before - distance) * 0.05 - 0.002;
     const reached=this.goals.findIndex(g=>Math.hypot(g.x-kart.x,g.y-kart.y)<this.goalRadius);
     if (reached>=0&&!status.crashed&&this.arrivalEnabled) { const g=this.goals[reached];this.collectGoal(reached,noseArrivalBonus(this.goalRewards,kart.heading,kart.speed,g.x-arrivalFrom.x,g.y-arrivalFrom.y)); }
-    kart.action = { steer: action.steer, throttle: action.throttle, brake: action.brake, reverse: action.reverse ?? 0 };
+    kart.action = { steer: commanded.steer, throttle: commanded.throttle, brake: commanded.brake, reverse: commanded.reverse ?? 0 };
     if (status.ticks >= this.deadline) status.timedOut = true;
   }
 }

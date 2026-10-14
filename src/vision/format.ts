@@ -112,7 +112,7 @@ export function importFile(text: string): Imported {
     if(file.version!==1)throw new Error('Unsupported vision brain version.');
     const domain=file.controller?.domain??'track';
     if(!['track','world'].includes(domain)||typeof file.name!=='string')throw new Error('Invalid vision brain name or domain.');
-    const controller = parseBrainFile(JSON.stringify(file.controller), { allowSonar: true });
+    const controller = parseBrainFile(JSON.stringify(file.controller), { allowSonar: true, allowLarge: true });
     if(file.roomMemoryEnabled!==undefined&&typeof file.roomMemoryEnabled!=="boolean")throw Error("Invalid room memory enabled setting.");
   if(file.observerSettings!==undefined)validateObserverSettings(file.observerSettings);if(file.progressJudge!==undefined)validateSearchJudge(file.progressJudge);
     if(file.profile!==undefined&&!['kart','robot'].includes(file.profile))throw Error('Invalid sensor profile.');
@@ -137,13 +137,13 @@ export function importFile(text: string): Imported {
       vision: file.vision ?? null, fusion: file.fusion, memory: file.memory ?? null,worldMemory:file.worldMemory??null,worldArena:file.worldArena?validateArena(file.worldArena):null,worldTraining:file.worldTraining?validateRoomTraining(file.worldTraining):undefined,
       experiment: file.experiment === undefined ? undefined : validateRacingSettings(file.experiment),
       worldSetup:file.worldSetup?validateWorldSetup(file.worldSetup):undefined,trackSetup:file.trackSetup?validateTrackSetup(file.trackSetup):undefined,worldScan:file.worldScan,trackScan:file.trackScan,
-      racer:file.racer?{controller:parseBrainFile(JSON.stringify(file.racer.controller),{allowSonar:true}),vision:file.racer.vision??null,memory:file.racer.memory??null,trainingRecipe:file.racer.controller.trainingRecipe?validateRecipe(file.racer.controller.trainingRecipe):undefined}:undefined,
-      world: file.world ? { controller: parseBrainFile(JSON.stringify(file.world.controller), { allowSonar: true }), vision: file.world.vision,trainingRecipe:file.world.controller.trainingRecipe===undefined?undefined:validateRecipe(file.world.controller.trainingRecipe) } : null,
+      racer:file.racer?{controller:parseBrainFile(JSON.stringify(file.racer.controller),{allowSonar:true,allowLarge:true}),vision:file.racer.vision??null,memory:file.racer.memory??null,trainingRecipe:file.racer.controller.trainingRecipe?validateRecipe(file.racer.controller.trainingRecipe):undefined}:undefined,
+      world: file.world ? { controller: parseBrainFile(JSON.stringify(file.world.controller), { allowSonar: true, allowLarge: true }), vision: file.world.vision,trainingRecipe:file.world.controller.trainingRecipe===undefined?undefined:validateRecipe(file.world.controller.trainingRecipe) } : null,
       warnings,
     };
   }
   // Anything else must be an original FlyKart brain (or a bare network snapshot): parseBrainFile explains if it is not.
-  const brain = parseBrainFile(text, { allowSonar: true });
+  const brain = parseBrainFile(text, { allowSonar: true, allowLarge: true });
   if(object.domain!==undefined&&!['track','world'].includes(String(object.domain)))throw new Error('Invalid controller domain.');
   const domain = object.domain === "world" ? "world" : "track";
   const warnings: string[] = [];

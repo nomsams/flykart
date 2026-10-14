@@ -416,11 +416,15 @@ export type BrainSnapshot = {
 export class SpikingNetwork {
   /** 17 for the original sensor vector; 19 when a sonar's two extra inputs are appended (see FlyKart Vision). */
   readonly inputCount: number;
-  readonly hiddenCount = 48;
-  private readonly inputWeights: number[];
-  private readonly recurrentWeights: number[];
-  private readonly outputWeights: number[];
-  private readonly bias: number[];
+  /** 48 for every brain the racer, Vision and the 3D habitat know; FlyKart Evolve may grow it (8 to 512). */
+  readonly hiddenCount: number;
+  // Typed arrays: same doubles, same arithmetic, but flat memory the JIT can keep in registers.
+  private readonly inputWeights: Float64Array;
+  private readonly recurrentWeights: Float64Array;
+  private readonly outputWeights: Float64Array;
+  private readonly bias: Float64Array;
+  /** Indices of the neurons that spiked last tick; spikes are 0/1, so only these contribute to the next sums. */
+  private readonly active: Int32Array;
   private voltage: number[];
   private spikes: number[];
   private nextSpikes: number[];
@@ -428,15 +432,17 @@ export class SpikingNetwork {
   private mutationSigma = 1;
   private readonly snapshot: NeuronSnapshot;
 
-  constructor(seed = Math.random(), inputCount = 17) {
+  constructor(seed = Math.random(), inputCount = 17, hiddenCount = 48) {
     this.inputCount = inputCount;
+    this.hiddenCount = hiddenCount;
     const random = () => hash(seed += 1.234567) * 2 - 1;
-    this.inputWeights = Array.from({ length: this.hiddenCount * this.inputCount }, () => random() * 0.8);
-    this.recurrentWeights = Array.from({ length: this.hiddenCount * this.hiddenCount }, () => random() * 0.16);
+    this.active = new Int32Array(this.hiddenCount);
+    this.inputWeights = Float64Array.from({ length: this.hiddenCount * this.inputCount }, () => random() * 0.8);
+    this.recurrentWeights = Float64Array.from({ length: this.hiddenCount * this.hiddenCount }, () => random() * 0.16);
     // Four outputs: steer, throttle, brake, and a gated reverse request.
     // fromJSON still accepts the original three-output checkpoints.
-    this.outputWeights = Array.from({ length: 4 * this.hiddenCount }, () => random() * 0.5);
-    this.bias = Array.from({ length: this.hiddenCount }, () => random() * 0.06);
+    this.outputWeights = Float64Array.from({ length: 4 * this.hiddenCount }, () => random() * 0.5);
+    this.bias = Float64Array.from({ length: this.hiddenCount }, () => random() * 0.06);
     this.voltage = new Array(this.hiddenCount).fill(0);
     this.spikes = new Array(this.hiddenCount).fill(0);
     this.nextSpikes = new Array(this.hiddenCount).fill(0);
@@ -445,11 +451,11 @@ export class SpikingNetwork {
   }
 
   clone(): SpikingNetwork {
-    const result = new SpikingNetwork(0.5, this.inputCount);
-    result.inputWeights.splice(0, result.inputWeights.length, ...this.inputWeights);
-    result.recurrentWeights.splice(0, result.recurrentWeights.length, ...this.recurrentWeights);
-    result.outputWeights.splice(0, result.outputWeights.length, ...this.outputWeights);
-    result.bias.splice(0, result.bias.length, ...this.bias);
+    const result = new SpikingNetwork(0.5, this.inputCount, this.hiddenCount);
+    result.inputWeights.set(this.inputWeights);
+    result.recurrentWeights.set(this.recurrentWeights);
+    result.outputWeights.set(this.outputWeights);
+    result.bias.set(this.bias);
     result.mutationSigma = this.mutationSigma;
     return result;
   }
@@ -463,7 +469,7 @@ export class SpikingNetwork {
       return Math.sqrt(-2 * Math.log(Math.max(0.0001, (a + 1) / 2))) * Math.cos(TAU * (b + 1) / 2);
     };
     result.mutationSigma = clamp(this.mutationSigma * Math.exp(noise() * 0.06), 0.5, 2);
-    const change = (weights: number[], layerScale: number, limit: number) => weights.forEach((value, index) => {
+    const change = (weights: Float64Array, layerScale: number, limit: number) => weights.forEach((value, index) => {
       if (hash(cursor += 1) < rate) weights[index] = clamp(value + noise() * amount * result.mutationSigma * layerScale, -limit, limit);
     });
     change(result.inputWeights, 1, 3); change(result.recurrentWeights, 0.45, 1.5); change(result.outputWeights, 0.75, 3); change(result.bias, 0.25, 0.8);
@@ -479,9 +485,9 @@ export class SpikingNetwork {
     for (let neuron = 0; neuron < this.hiddenCount; neuron += 1) {
       if (!partnerNeuron[neuron]) continue;
       const inputStart = neuron * this.inputCount;
-      result.inputWeights.splice(inputStart, this.inputCount, ...partner.inputWeights.slice(inputStart, inputStart + this.inputCount));
+      result.inputWeights.set(partner.inputWeights.subarray(inputStart, inputStart + this.inputCount), inputStart);
       const recurrentStart = neuron * this.hiddenCount;
-      result.recurrentWeights.splice(recurrentStart, this.hiddenCount, ...partner.recurrentWeights.slice(recurrentStart, recurrentStart + this.hiddenCount));
+      result.recurrentWeights.set(partner.recurrentWeights.subarray(recurrentStart, recurrentStart + this.hiddenCount), recurrentStart);
       result.bias[neuron] = partner.bias[neuron];
       for (let output = 0; output < 4; output += 1) result.outputWeights[output * this.hiddenCount + neuron] = partner.outputWeights[output * this.hiddenCount + neuron];
     }
@@ -495,10 +501,15 @@ export class SpikingNetwork {
 
   step(inputs: Sensors): Action {
     if (inputs.length !== this.inputCount || inputs.some((value) => !Number.isFinite(value))) throw new Error("invalid neural input vector");
-    for (let neuron = 0; neuron < this.hiddenCount; neuron += 1) {
+    const hidden = this.hiddenCount, count = this.inputCount, weights = this.inputWeights, recurrent = this.recurrentWeights, active = this.active;
+    // Spikes are exactly 0 or 1: adding w * 0 never changes a sum, so only last tick's spikers are visited (same result, in the same order).
+    let spiking = 0;
+    for (let previous = 0; previous < hidden; previous += 1) if (this.spikes[previous] !== 0) active[spiking++] = previous;
+    for (let neuron = 0; neuron < hidden; neuron += 1) {
       let current = this.bias[neuron];
-      for (let input = 0; input < this.inputCount; input += 1) current += this.inputWeights[neuron * this.inputCount + input] * inputs[input];
-      for (let previous = 0; previous < this.hiddenCount; previous += 1) current += this.recurrentWeights[neuron * this.hiddenCount + previous] * this.spikes[previous];
+      const inputBase = neuron * count, recurrentBase = neuron * hidden;
+      for (let input = 0; input < count; input += 1) current += weights[inputBase + input] * inputs[input];
+      for (let k = 0; k < spiking; k += 1) current += recurrent[recurrentBase + active[k]] * this.spikes[active[k]];
       const voltage = this.voltage[neuron] * 0.86 + current * 0.22;
       this.nextSpikes[neuron] = voltage > 0.42 ? 1 : 0;
       this.voltage[neuron] = this.nextSpikes[neuron] === 1 ? 0 : voltage;
@@ -506,7 +517,7 @@ export class SpikingNetwork {
     const previousSpikes = this.spikes; this.spikes = this.nextSpikes; this.nextSpikes = previousSpikes;
     for (let output = 0; output < this.readout.length; output += 1) {
       let instantaneous = 0;
-      for (let neuron = 0; neuron < this.hiddenCount; neuron += 1) instantaneous += this.outputWeights[output * this.hiddenCount + neuron] * this.spikes[neuron];
+      for (let neuron = 0; neuron < this.hiddenCount; neuron += 1) { const spike = this.spikes[neuron]; if (spike !== 0) instantaneous += this.outputWeights[output * this.hiddenCount + neuron] * spike; }
       this.readout[output] = this.readout[output] * 0.72 + Math.tanh(instantaneous) * 0.28;
     }
     for (let neuron = 0; neuron < this.hiddenCount; neuron += 1) this.snapshot.spikes[neuron] = this.spikes[neuron];
@@ -549,22 +560,22 @@ export class SpikingNetwork {
     const arrays = [snapshot.inputWeights, snapshot.recurrentWeights, snapshot.outputWeights, snapshot.bias];
     const legacyInputCount = 9;
     const supportedInputCount = snapshot.version === 1 ? legacyInputCount : snapshot.inputCount === 19 ? 19 : 17;
-    if (![1, 2].includes(snapshot.version) || snapshot.inputCount !== supportedInputCount || snapshot.hiddenCount !== 48 || arrays.some((value) => !Array.isArray(value) || value.some((item) => !Number.isFinite(item)))) throw new Error("checkpoint format does not match this FlyKart build");
+    if (![1, 2].includes(snapshot.version) || snapshot.inputCount !== supportedInputCount || !Number.isInteger(snapshot.hiddenCount) || snapshot.hiddenCount < 8 || snapshot.hiddenCount > 512 || (snapshot.version === 1 && snapshot.hiddenCount !== 48) || arrays.some((value) => !Array.isArray(value) || value.some((item) => !Number.isFinite(item)))) throw new Error("checkpoint format does not match this FlyKart build");
     const legacyOutputLength = snapshot.hiddenCount * 3;
     const currentOutputLength = snapshot.hiddenCount * 4;
     if (snapshot.inputWeights.length !== snapshot.inputCount * snapshot.hiddenCount || snapshot.recurrentWeights.length !== snapshot.hiddenCount ** 2 || (snapshot.outputWeights.length !== legacyOutputLength && snapshot.outputWeights.length !== currentOutputLength) || snapshot.bias.length !== snapshot.hiddenCount) throw new Error("checkpoint dimensions are invalid");
-    const result = new SpikingNetwork(0.5, snapshot.version === 1 ? 17 : snapshot.inputCount);
-    if (snapshot.inputCount === result.inputCount) result.inputWeights.splice(0, result.inputWeights.length, ...snapshot.inputWeights);
+    const result = new SpikingNetwork(0.5, snapshot.version === 1 ? 17 : snapshot.inputCount, snapshot.hiddenCount);
+    if (snapshot.inputCount === result.inputCount) result.inputWeights.set(snapshot.inputWeights);
     else {
       result.inputWeights.fill(0);
       for (let neuron = 0; neuron < result.hiddenCount; neuron += 1) {
         for (let input = 0; input < legacyInputCount; input += 1) result.inputWeights[neuron * result.inputCount + input] = snapshot.inputWeights[neuron * legacyInputCount + input];
       }
     }
-    result.recurrentWeights.splice(0, result.recurrentWeights.length, ...snapshot.recurrentWeights);
+    result.recurrentWeights.set(snapshot.recurrentWeights);
     const outputWeights = snapshot.outputWeights.length === legacyOutputLength ? [...snapshot.outputWeights, ...new Array(result.hiddenCount).fill(0)] : snapshot.outputWeights;
-    result.outputWeights.splice(0, result.outputWeights.length, ...outputWeights);
-    result.bias.splice(0, result.bias.length, ...snapshot.bias);
+    result.outputWeights.set(outputWeights);
+    result.bias.set(snapshot.bias);
     result.mutationSigma = clamp(snapshot.mutationSigma ?? 1, 0.5, 2);
     result.reset(); return result;
   }

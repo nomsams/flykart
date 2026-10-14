@@ -87,7 +87,7 @@ const finiteOrNull = (value: unknown): number | null => (typeof value === "numbe
 /** Accepts a downloaded "flykart-brain" checkpoint, the wrapper stored in
  * localStorage, or a bare network snapshot. Older 9-sensor brains are upgraded
  * exactly as the simulator does it. */
-export function parseBrainFile(text: string, options: { allowSonar?: boolean } = {}): BrainFile {
+export function parseBrainFile(text: string, options: { allowSonar?: boolean; /** Vision and the 3D habitat run any hidden size; the racer and the inspector are laid out for 48. */ allowLarge?: boolean } = {}): BrainFile {
   let raw: unknown;
   try { raw = JSON.parse(text); } catch { throw new Error("That file is not valid JSON."); }
   if (typeof raw !== "object" || raw === null || Array.isArray(raw)) throw new Error("Expected a JSON object with a FlyKart network in it.");
@@ -99,6 +99,7 @@ export function parseBrainFile(text: string, options: { allowSonar?: boolean } =
   let network: SpikingNetwork;
   try { network = SpikingNetwork.fromJSON(source); } catch (error) { throw new Error(error instanceof Error ? error.message : "The network weights could not be read."); }
   if (network.inputCount !== INPUT_COUNT && !options.allowSonar) throw new Error("This brain reads a sonar as well as the 17 usual sensors; open it in FlyKart Vision.");
+  if (network.hiddenCount !== HIDDEN_COUNT && !options.allowLarge) throw new Error(`This brain has ${network.hiddenCount} hidden neurons (grown in FlyKart Evolve). The racer, Vision and the 3D habitat run ${HIDDEN_COUNT}-neuron brains; use "Export 48-neuron brain" in FlyKart Evolve.`);
   const provenance = Array.isArray(object.provenance) ? (object.provenance.filter(entry=>entry && typeof entry === "object" && !Array.isArray(entry)) as Record<string, unknown>[]) : [];
   const lineage = typeof object.lineage === "object" && object.lineage !== null ? (object.lineage as { name?: unknown; generation?: unknown; parents?: unknown }) : null;
   return {
@@ -112,7 +113,7 @@ export function parseBrainFile(text: string, options: { allowSonar?: boolean } =
       track: typeof object.track === "string" ? object.track : null,
       sources: provenance.map((entry) => (typeof entry.source === "string" ? entry.source : "")).filter(Boolean),
       lineage: lineage && typeof lineage.name === "string" ? { name: lineage.name, generation: finiteOrNull(lineage.generation) ?? 0, parents: Array.isArray(lineage.parents) ? lineage.parents.map(String) : [] } : null,
-      upgradedFromLegacy: source.version === 1 || source.inputCount === 9 || (Array.isArray(source.outputWeights) && source.outputWeights.length !== HIDDEN_COUNT * READOUT_COUNT),
+      upgradedFromLegacy: source.version === 1 || source.inputCount === 9 || (Array.isArray(source.outputWeights) && source.outputWeights.length !== network.hiddenCount * READOUT_COUNT),
     },
   };
 }

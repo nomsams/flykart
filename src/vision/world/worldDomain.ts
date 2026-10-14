@@ -75,7 +75,7 @@ export function worldExpert(s: ArrayLike<number>): Action {
   return { steer, throttle, brake, reverse: 0 };
 }
 
-export type WorldEpisodeOptions = {goalRewards?:import("./goal-rewards").GoalRewards; sonarFeedback?:SonarFeedback;speedFeedback?:SpeedFeedback; seed: number; density?: number; styleStrength?: number; maxTicks?: number; camera?: CameraConfig; headless?: boolean; sonar?: SonarSpec | null; scanSonar?: SonarSpec; profile?: SensorProfile;cameraNoise?:number;cameraBrightness?:number; world?:WorldDef; start?:{x:number;y:number;heading:number}; goal?:GoalPoint; goals?:GoalPoint[]; goalPreset?:GoalPreset; goalCount?:GoalCount; goalRadius?:number; goalLimit?:number; hiddenGoalAngle?:number };
+export type WorldEpisodeOptions = {plant?:import("./world").PlantSpec|null;goalRewards?:import("./goal-rewards").GoalRewards; sonarFeedback?:SonarFeedback;speedFeedback?:SpeedFeedback; seed: number; density?: number; styleStrength?: number; maxTicks?: number; camera?: CameraConfig; headless?: boolean; sonar?: SonarSpec | null; scanSonar?: SonarSpec; profile?: SensorProfile;cameraNoise?:number;cameraBrightness?:number; world?:WorldDef; start?:{x:number;y:number;heading:number}; goal?:GoalPoint; goals?:GoalPoint[]; goalPreset?:GoalPreset; goalCount?:GoalCount; goalRadius?:number; goalLimit?:number; hiddenGoalAngle?:number };
 
 export class WorldEpisode implements VisionEpisode {
   readonly sim: WorldSim;
@@ -92,7 +92,7 @@ export class WorldEpisode implements VisionEpisode {
   private readonly fixedTargets: SonarTarget[] = [];
 
   constructor(readonly options: WorldEpisodeOptions) {
-    this.sim = new WorldSim(options.seed, {goalRewards:options.goalRewards, density: options.density, maxTicks: options.maxTicks,world:options.world,start:options.start,goal:options.goal,goals:options.goals,goalPreset:options.goalPreset,goalCount:options.goalCount,goalRadius:options.goalRadius,goalLimit:options.goalLimit,hiddenGoalAngle:options.hiddenGoalAngle });
+    this.sim = new WorldSim(options.seed, {plant:options.plant,goalRewards:options.goalRewards, density: options.density, maxTicks: options.maxTicks,world:options.world,start:options.start,goal:options.goal,goals:options.goals,goalPreset:options.goalPreset,goalCount:options.goalCount,goalRadius:options.goalRadius,goalLimit:options.goalLimit,hiddenGoalAngle:options.hiddenGoalAngle });
     this.random = mulberry32(options.seed * 31 + 3);
     this.camera = options.profile?.worldCamera ?? options.camera ?? WORLD_CAMERA;
     this.style = (options.styleStrength ?? 0) > 0 ? randomStyle(this.random, options.styleStrength ?? 0) : { ...DEFAULT_STYLE };
@@ -105,9 +105,9 @@ export class WorldEpisode implements VisionEpisode {
     this.scanSonarUnit = this.sonarUnit ?? (options.scanSonar ? new Sonar(options.scanSonar, mulberry32(options.seed * 104729 + 11)) : null);
     const { world } = this.sim;
     // Trunks and rocks are solid; ponds, sand and mud lie flat and cannot be heard. The fence is a low wall all round.
-    const h = world.half;
-    this.fixedTargets.push({ kind: "box", x: 0, y: -h, heading: 0, halfLength: h, halfWidth: FENCE_HALF_THICKNESS, z0: 0, z1: 11 }, { kind: "box", x: 0, y: h, heading: 0, halfLength: h, halfWidth: FENCE_HALF_THICKNESS, z0: 0, z1: 11 },
-      { kind: "box", x: -h, y: 0, heading: Math.PI / 2, halfLength: h, halfWidth: FENCE_HALF_THICKNESS, z0: 0, z1: 11 }, { kind: "box", x: h, y: 0, heading: Math.PI / 2, halfLength: h, halfWidth: FENCE_HALF_THICKNESS, z0: 0, z1: 11 });
+    const h = world.half, top = world.boundary === "wall" ? 120 : 11, surface = world.boundary === "wall" ? "smooth" as const : undefined;
+    this.fixedTargets.push({ surface, kind: "box", x: 0, y: -h, heading: 0, halfLength: h, halfWidth: FENCE_HALF_THICKNESS, z0: 0, z1: top }, { surface, kind: "box", x: 0, y: h, heading: 0, halfLength: h, halfWidth: FENCE_HALF_THICKNESS, z0: 0, z1: top },
+      { surface, kind: "box", x: -h, y: 0, heading: Math.PI / 2, halfLength: h, halfWidth: FENCE_HALF_THICKNESS, z0: 0, z1: top }, { surface, kind: "box", x: h, y: 0, heading: Math.PI / 2, halfLength: h, halfWidth: FENCE_HALF_THICKNESS, z0: 0, z1: top });
     this.ping();
   }
 
@@ -120,10 +120,25 @@ export class WorldEpisode implements VisionEpisode {
     this.scanSonarUnit.update(this.tick, { x: kart.x, y: kart.y, heading: kart.heading }, this.targets(),true);
   }
 
-  targets():SonarTarget[]{
-    const targets=[...this.fixedTargets];
+  private propTargets:SonarTarget[]|null=null;
+  /** Compound props never move, so their echo targets are built once per episode. */
+  private staticPropTargets():SonarTarget[]{
+    if(this.propTargets)return this.propTargets;
+    const targets:SonarTarget[]=[];
     for(const o of this.sim.world.obstacles){
-      if(floorItem(o))continue;
+      if(!o.parts)continue;
+      for(const p of o.parts){
+        if(p.z1<1.5)continue; // paint, thresholds, cables: below the sonar's floor level
+        targets.push(p.shape==='cyl'?{surface:p.sonarSurface??o.sonarSurface,kind:'circle',x:p.x,y:p.y,radius:p.halfLength,z0:p.z0,z1:p.z1}:{surface:p.sonarSurface??o.sonarSurface,kind:'box',x:p.x,y:p.y,heading:p.heading??0,halfLength:p.halfLength,halfWidth:p.halfWidth,z0:p.z0,z1:p.z1});
+      }
+    }
+    return this.propTargets=targets;
+  }
+
+  targets():SonarTarget[]{
+    const targets=[...this.fixedTargets,...this.staticPropTargets()];
+    for(const o of this.sim.world.obstacles){
+      if(floorItem(o)||o.parts)continue;
       if(furniture(o)){
         targets.push({surface:o.sonarSurface,kind:'box',x:o.x,y:o.y,heading:0,halfLength:o.radius,halfWidth:o.radius*.65,z0:clearance(o),z1:o.height});
         for(const b of legs(o))targets.push({surface:o.sonarSurface,kind:'circle',x:b.x,y:b.y,radius:b.radius,z0:0,z1:clearance(o)});
@@ -133,9 +148,13 @@ export class WorldEpisode implements VisionEpisode {
   }
 
   private ping(): void {
-    if (!this.scanSonarUnit) return;
+    const unit = this.scanSonarUnit;
+    if (!unit) return;
+    const tick = this.sim.status.ticks;
+    // Same schedule as Sonar.update, checked first so the target list is only built when a ping happens.
+    if (tick === unit.lastTick || tick % unit.spec.cycleTicks !== 0) return;
     const { kart } = this.sim;
-    this.scanSonarUnit.update(this.sim.status.ticks, { x: kart.x, y: kart.y, heading: kart.heading }, this.targets());
+    unit.update(tick, { x: kart.x, y: kart.y, heading: kart.heading }, this.targets());
   }
 
   get done(): boolean { return this.sim.done; }

@@ -12,6 +12,7 @@ export default defineConfig({
         vision: fileURLToPath(new URL("./vision.html", import.meta.url)),
         robot: fileURLToPath(new URL("./robot.html", import.meta.url)),
         parking: fileURLToPath(new URL("./parking.html", import.meta.url)),
+        evolve: fileURLToPath(new URL("./evolve.html", import.meta.url)),
       },
     },
   },
