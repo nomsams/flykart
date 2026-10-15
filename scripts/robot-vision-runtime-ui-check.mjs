@@ -13,12 +13,15 @@ try{
   assert.match(await page.locator('#brain-file-status').innerText(),/assets\/flykart-brain-racer.json/);
   const source=JSON.parse(await readFile('assets/flykart-brain-racer.json','utf8'));
   assert.deepEqual(await page.evaluate(()=>window.flykartVision.imported.snapshot),source.network);
-  await page.locator('#tab-btn-world').click();await page.locator('#world-scan-status').filter({hasText:'Diagnostic HC-SR04'}).waitFor();
+  await page.locator('#tab-btn-world').click();await page.locator('#world-scan-status').filter({hasText:'remembered pings'}).waitFor();
   await page.locator('#brain-project-choice').selectOption('visual');await page.locator('#brain-load-project').click();
   await page.waitForFunction(()=>window.flykartVision.world?.settings.task==='explore'&&window.flykartVision.profile==='kart');
   const visual=JSON.parse(await readFile('assets/flykart-visual.json','utf8'));
   assert.equal(await page.locator('#profile').inputValue(),'kart');
-  assert.deepEqual(await page.evaluate(()=>window.flykartVision.world.controller.toJSON()),visual.controller.network);
+  {const actual=await page.evaluate(()=>window.flykartVision.world.controller.toJSON()),saved=visual.controller.network;
+    // Older 17-input brains are loaded with the newer inputs appended at zero weight; everything else is unchanged.
+    const extra=actual.inputCount-saved.inputCount;assert.ok(extra>=0);
+    for(const key of Object.keys(saved)){if(key==='inputCount')continue;if(key==='inputWeights'){const rows=saved.hiddenCount??actual.hiddenCount,from=saved.inputCount,to=actual.inputCount;for(let j=0;j<rows;j++){assert.deepEqual(actual.inputWeights.slice(j*to,j*to+from),saved.inputWeights.slice(j*from,(j+1)*from));assert.ok(actual.inputWeights.slice(j*to+from,(j+1)*to).every(v=>v===0));}}else assert.deepEqual(actual[key],saved[key],key);}}
   assert.equal(await page.locator('#world-sonar-map').evaluate(c=>c.closest('.view-box')?.contains(document.getElementById('world-eye'))),true);
   assert.equal(await page.locator('#world-train-adopt').evaluate(b=>b.closest('.brain-file-bar')?.contains(document.getElementById('brain-import-always'))),true);
   assert.equal(await page.locator('#world-virtual-eyes').evaluate(g=>Boolean(g.closest('#world-eye-settings'))),true);
@@ -26,14 +29,15 @@ try{
   await page.locator('#world-driver').selectOption('expert');
   const arena={format:'flykart-world',version:1,world:{seed:7,half:150,obstacles:[{x:80,y:0,radius:12,height:30,tone:.5,kind:'rock'}],patches:[]},start:{x:0,y:0,heading:0},goals:[{x:-80,y:30}],exercise:{task:'forage',searchWin:'reach',goalPreset:'near'}};
   await scene(arena);await page.waitForFunction(()=>window.flykartVision.world.sonarMap.cells.size>0);
-  assert.match(await page.locator('#world-scan-status').innerText(),/Diagnostic HC-SR04.*echoes/);
-  assert.equal(await page.evaluate(()=>window.flykartVision.world.episode.sonar()),null);
-  assert.equal(await page.evaluate(()=>window.flykartVision.world.episode.proprioception().sonarCloseness),undefined);
+  assert.match(await page.locator('#world-scan-status').innerText(),/remembered pings.*echoes/);
+  // With the sonar switch on, the world brain hears the HC-SR04 (switching it off drives the same brain deaf).
+  assert.equal((await page.evaluate(()=>window.flykartVision.world.episode.sonar()))?.echo,true);
+  assert.equal(typeof await page.evaluate(()=>window.flykartVision.world.episode.proprioception().sonarCloseness),'number');
   await page.locator('#world-scan-settings>summary').click();
   const diagnosticMap=await download('world-scan-export');assert.ok(diagnosticMap.cells.some(([,v])=>v<0));assert.ok(diagnosticMap.cells.some(([,v])=>v>0));
   const colours=await page.locator('#world-sonar-map').evaluate(c=>{const data=c.getContext('2d').getImageData(0,0,c.width,c.height).data;let green=0,yellow=0;for(let i=0;i<data.length;i+=4){if(data[i+1]>data[i]*1.2&&data[i+1]>data[i+2]*1.2)green++;if(data[i]>100&&data[i+1]>70&&data[i+2]<data[i+1]*.75)yellow++;}return{green,yellow};});
   assert.ok(colours.green>5&&colours.yellow>5,'Scanned approaches and echoes must produce coloured pixels');
-  await page.locator('#world-scan-enable').click();assert.equal(await page.locator('#profile').inputValue(),'robot');
+  await page.locator('#profile').selectOption('robot');assert.equal(await page.locator('#profile').inputValue(),'robot');
   assert.equal(await page.evaluate(()=>window.flykartVision.world.episode.scanSonarUnit===window.flykartVision.world.episode.sonarUnit),true);
   await page.locator('#world-driver').selectOption('expert');await scene(arena);
   // Approach, contact and retreat using the real episode/sonar/map pipeline.

@@ -22,7 +22,7 @@ try{
   // Inject repeatable camera telemetry and known sent motor commands, not
   // simulator contact/pose labels. The observer must drive real scoring.
   const stall=await page.evaluate(()=>{const s=window.flykartVision.world,n=48*24,f=new Float32Array(n*3);for(let c=0;c<3;c++)for(let y=0;y<24;y++)for(let x=0;x<48;x++)f[c*n+y*48+x]=(Math.floor(x/6)+Math.floor(y/6))%2?.8:.2;s.episode.render=()=>f;s.controller.step=()=>({steer:0,throttle:1,brake:0,reverse:0});for(let i=0;i<75&&!s.done;i++)s.step();return{bit:s.driver.stall.bit,pain:s.stallPain,rate:s.driver.stall.rate,seconds:s.driver.stall.seconds,inputs:s.driver.sensors.length,radius:s.episode.sim.goalRadius};});
-  assert.equal(stall.bit,1);assert.ok(stall.pain>0);assert.ok(stall.rate>.08);assert.equal(stall.inputs,17);assert.equal(stall.radius,10);
+  assert.equal(stall.bit,1);assert.ok(stall.pain>0);assert.ok(stall.rate>.08);assert.equal(stall.inputs,19);assert.equal(stall.radius,10);
   await page.locator('#vision-refresh').click();await page.locator('#world-stall-status').filter({hasText:'Stall bit 1'}).waitFor();
   await page.locator('#world-run').click();await page.waitForFunction(()=>document.querySelector('#world-sensor-log').value.includes('STALL bit=1'));await page.locator('#world-run').click();
   const brain=await download('brain-export-always');assert.equal(brain.experiment.stall.enabled,true);assert.equal(brain.experiment.stall.delaySeconds,.5);assert.equal(brain.worldSetup.goalRadius,10);

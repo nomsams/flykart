@@ -45,7 +45,8 @@ try{
   // Processing changes only the fly input, not the raw camera capture.
   await page.waitForTimeout(200);const raw=await hash("camera");await page.locator("#vision-layout").selectOption("circle3");await page.locator("#vision-temporal").selectOption("4");await page.locator("#vision-normalize").check();await page.locator("#kenyon-count").selectOption("10000");await page.locator("#apply-vision").click();await page.locator("#swarm-views canvas").first().waitFor();
   assert.equal(await page.locator("#swarm-views canvas").count(),3);assert.equal(await hash("camera"),raw);assert.notDeepEqual(await page.locator("#swarm-views canvas").nth(1).evaluate(c=>c.toDataURL()),await page.locator("#swarm-views canvas").nth(2).evaluate(c=>c.toDataURL()));
-  await page.locator("#step-size").selectOption("1");await page.locator("#step").click();assert.match(await page.locator("#kenyon-status").textContent(),/100 active/);
+  await page.locator("#step-size").selectOption("1");for(let i=0;i<4;i++)await page.locator("#step").click(); // learning happens inside simulation ticks, at the camera rate (15 Hz = every second tick)
+  assert.match(await page.locator("#kenyon-status").textContent(),/100 active/);
   const combined=await download("export-fly");assert.equal(combined.robotLearning.memorySettings.count,10000);assert.equal(combined.robotLearning.visionSettings.layout,"circle3");assert.ok(combined.robotLearning.memory.counts.some(v=>v>0));
   await page.locator("#brain-file").setInputFiles({name:"robot-fly.json",mimeType:"application/json",buffer:Buffer.from(JSON.stringify(combined))});await page.locator("#brain-name").filter({hasText:combined.name}).waitFor();assert.equal(await page.locator("#kenyon-count").inputValue(),"10000");
   // Evaluation rewards are included while live reward weights stay frozen.
