@@ -1,5 +1,5 @@
 import { chromium } from "@playwright/test";
-import { spawn } from "node:child_process";
+import { execSync, spawn } from "node:child_process";
 import { mkdir, readFile } from "node:fs/promises";
 import assert from "node:assert/strict";
 
@@ -120,6 +120,47 @@ try {
   await page.locator("#g-3d").check();
   await page.waitForTimeout(1500);
   await page.screenshot({ path: `${shots}/5-gallery-3d.png`, fullPage: true });
+  // A run that stopped at a stage it could not master (built by a small script): the banner, goals, sorting, the stage
+  // filter on table and map, and a rerun of an earlier stage.
+  execSync("npx vite-node scripts/evolve-make-stalled-state.ts .cache/stalled-state.json", { stdio: "inherit" });
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.locator("#evo-play").waitFor({ timeout: 60000 });
+  await page.locator("#evo-import-file").setInputFiles(".cache/stalled-state.json");
+  await page.waitForFunction(() => !document.getElementById("evo-stalled").hidden, null, { timeout: 60000 });
+  assert.match((await page.locator("#evo-stalled-text").textContent()) ?? "", /Stage 2 stopped at \d+% of flags found, against a goal of 200%/);
+  assert.equal(await page.locator("#evo-more").isVisible(), true);
+  assert.equal(await page.locator("#evo-moveon").isVisible(), true);
+  assert.equal(await page.locator("#evo-stages li").count(), 6);
+  assert.match((await page.locator("#evo-stages li").nth(0).textContent()) ?? "", /moved on without mastering/);
+  assert.match((await page.locator("#evo-stages li").nth(1).textContent()) ?? "", /stopped at \d+%/);
+  assert.equal(await page.locator("#evo-maxima tbody tr").count(), 4, "the best two maxima of each of the two stages are kept");
+  assert.match((await page.locator("#evo-retired").textContent()) ?? "", /4 kept · \d+ weaker ones retired · the best 2/);
+  // Sorting by exam score, then showing one stage on the table and on the map.
+  await page.locator("#evo-maxima th[data-sort=exam]").click();
+  assert.equal(await page.locator("#evo-maxima th[data-sort=exam]").getAttribute("aria-sort"), "descending");
+  const exams = await page.locator("#evo-maxima tbody tr td:nth-child(5)").allTextContents();
+  const values = exams.map((t) => Number(t.split("±")[0]));
+  assert.deepEqual(values, [...values].sort((a, b) => b - a), "sorted by exam, best first");
+  await page.locator("#evo-stage-filter").selectOption("1");
+  assert.equal(await page.locator("#evo-maxima tbody tr").count(), 2);
+  assert.deepEqual([...new Set(await page.locator("#evo-maxima tbody tr td:nth-child(2)").allTextContents())], ["2"]);
+  assert.equal(await page.locator("#evo-stage-filter-map").inputValue(), "1", "the map follows the same filter");
+  await page.locator("#evo-stage-filter").selectOption("all");
+  assert.equal(await page.locator("#evo-maxima tbody tr").count(), 4);
+  // A lower goal is shown at once; the banner follows it.
+  await page.locator("#evo-stages input[data-goal='1']").fill("60");
+  await page.locator("#evo-stages input[data-goal='1']").dispatchEvent("change");
+  await page.waitForFunction(() => /goal of 60%/.test(document.getElementById("evo-stalled-text")?.textContent ?? ""));
+  // Rerun stage 1 from its best brain with a higher goal.
+  await page.locator("#evo-stages input[data-goal='0']").fill("95");
+  await page.locator("#evo-stages input[data-goal='0']").dispatchEvent("change");
+  page.once("dialog", (dialog) => { assert.match(dialog.message(), /Rerun stage 1 .* goal of 95% of flags/); void dialog.accept(); });
+  await page.locator("#evo-stages button[data-rerun='0']").click();
+  await page.waitForFunction(() => /Stage 1 will be climbed again/.test(document.getElementById("evo-status")?.textContent ?? ""));
+  assert.equal(await page.locator("#evo-stalled").isHidden(), true, "the stop is cleared by the rerun");
+  assert.equal(await page.locator("#evo-stages li").nth(0).getAttribute("data-state"), "current");
+  assert.match((await page.locator("#s-stage").textContent()) ?? "", /^1 of 6/);
+  await page.screenshot({ path: `${shots}/6-stages.png`, fullPage: true });
   assert.deepEqual(errors, [], "no page errors");
   assert.deepEqual(missing.filter((u) => !/favicon/.test(u)), [], "no missing files");
   console.log("FlyKart Evolve UI check passed.");

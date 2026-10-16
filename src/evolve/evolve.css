@@ -73,6 +73,15 @@ canvas { max-width: 100%; border-radius: 8px; background: #0c131b; border: 1px s
 .evo-stages li[data-state="current"] { border-color: #72b8ff; background: #12233a; }
 .evo-stages li[data-state="done"] { border-color: #2f6f58; }
 .evo-stages small { color: #8fa0b6; grid-column: 1 / -1; }
+.evo-stage-tools { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; font-size: .74rem; color: #98a8bd; }
+.evo-stage-tools input { width: 62px; background: #0d1520; color: #e5ebf4; border: 1px solid #364962; border-radius: 6px; padding: 3px 6px; font: inherit; }
+.evo-stage-tools button { cursor: pointer; }
+.evo-stalled { border: 1px solid #c98a3a; background: #2a1f10; border-radius: 9px; padding: 10px 12px; margin: 8px 0; }
+.evo-stalled p { margin: 0 0 8px; color: #f3dcb8; font-size: .84rem; }
+.evo-fields .evo-wide { grid-column: 1 / -1; flex-direction: row; align-items: center; gap: 8px; }
+.evo-fields .evo-wide input { width: auto; }
+.evo-table th[data-sort] { cursor: pointer; user-select: none; }
+.evo-table th[data-sort]:hover { color: #e5ebf4; }
 .evo-watch-grid { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 14px; margin-top: 12px; align-items: start; }
 #w-top, #w-3d-canvas { width: 100%; height: auto; aspect-ratio: 1; }
 #w-eye { width: 100%; height: auto; image-rendering: pixelated; aspect-ratio: 2; }

@@ -7,6 +7,15 @@
 //   npm run evolve -- --name=night3 --from=bundled,visual,mybrains/            (several founders: "bundled", "visual", files, folders)
 //   npm run evolve -- --name=night4 --from=bundled,https://github.com/owner/repo/blob/main/brain.json   (GitHub links work too)
 //
+// A stage is mastered before the next begins. When one cannot be (40 climbs, or 8 in a row with no better result) the run
+// stops and says so. Decide, then run the same command again with one of:
+//   --more-climbs=6            allow 6 more climbs on that stage
+//   --goals=2:60,3:50          set goals (stage:percent of flags); a lowered goal that was already reached moves on
+//   --move-on                  take the stage's best brain as it is and begin the next stage
+//   --rerun-stage=2 [--rerun-from=L7]   climb stage 2 again from its best brain (or from L7), dropping later stages' results
+// Other switches: --keep-per-stage=3 (best maxima kept per stage), --max-climbs=40, --stage-stall=8, --advance-anyway
+// (the older rule: a couple more climbs, then on regardless).
+//
 // It writes runs/<name>/{state.json, progress.json, best-brain.json, best-brain-48.json, log.txt} and keeps going
 // until the time budget is spent, the last stage is finished, or a file called STOP appears in that folder.
 // Open evolve.html and choose "Load run" (or let it poll runs/<name>/progress.json) to watch without disturbing it.
@@ -39,9 +48,10 @@ if (profile.lowPriority && args.get("normal-priority") !== "true") { try { setPr
 const hours = Number(args.get("hours") ?? 8);
 const from = args.get("from") ?? "public/vision/robot/world-controller.json";
 const config: Partial<EngineConfig> = { ...profile.config };
-const numeric: [string, keyof EngineConfig][] = [["seed", "runSeed"], ["pop", "population"], ["parents", "parents"], ["battery", "battery"], ["exam", "examSize"], ["exam-every", "examEvery"], ["tournament", "tournamentSize"], ["patience", "patience"], ["branches", "branchesPerStage"], ["max-gens", "maxGenerationsPerBranch"], ["grow-by", "growBy"], ["max-hidden", "maxHidden"], ["last-stage", "lastStage"], ["ray-step", "rayStepDeg"], ["layer-per-stage", "layerPerStage"], ["layer-from-stage", "layerFromStage"], ["protect", "protect"], ["hard-share", "hardShare"], ["pocket-share", "pocketShare"]];
+const numeric: [string, keyof EngineConfig][] = [["seed", "runSeed"], ["pop", "population"], ["parents", "parents"], ["battery", "battery"], ["exam", "examSize"], ["exam-every", "examEvery"], ["tournament", "tournamentSize"], ["patience", "patience"], ["branches", "branchesPerStage"], ["max-gens", "maxGenerationsPerBranch"], ["keep-per-stage", "keepPerStage"], ["max-climbs", "maxClimbsPerStage"], ["stage-stall", "stageStall"], ["grow-by", "growBy"], ["max-hidden", "maxHidden"], ["last-stage", "lastStage"], ["ray-step", "rayStepDeg"], ["layer-per-stage", "layerPerStage"], ["layer-from-stage", "layerFromStage"], ["protect", "protect"], ["hard-share", "hardShare"], ["pocket-share", "pocketShare"]];
 for (const [flag, key] of numeric) if (args.has(flag)) (config as Record<string, number>)[key] = Number(args.get(flag));
 if (args.get("two-phase") === "false") config.twoPhase = false;
+if (args.get("advance-anyway") === "true") config.advanceAnyway = true;
 // Switches for the long-run helpers (all on by default): --no-polish, --no-qd, --no-extra-trials.
 if (args.get("no-polish") === "true") config.polish = false;
 if (args.get("no-qd") === "true") config.qd = false;
@@ -88,6 +98,7 @@ let engine: EvolutionEngine;
 if (existsSync(statePath)) {
   const state = JSON.parse(readFileSync(statePath, "utf8")) as EngineState;
   engine = new EvolutionEngine(state, backend);
+  engine.tidyArchive();
   log(`Resuming ${name}: generation ${state.generation}, stage ${state.stage + 1}, ${state.archive.length} local maxima, ${(state.counters.elapsedMs / 3600000).toFixed(2)} h already used.`);
 } else {
   // --from takes one or several comma-separated brains: files, folders of .json files, or the words bundled / visual.
@@ -116,6 +127,25 @@ if (existsSync(statePath)) {
   const seed: BrainSnapshot = founders.seed;
   engine = EvolutionEngine.fresh(seed, { ...DEFAULT_CONFIG, ...config }, backend, founders.others);
   log(`Starting ${name} from ${1 + founders.others.length} brain(s) (${seed.inputCount} inputs, ${seed.hiddenCount} neurons) on ${workers} worker(s) for ${hours} h · profile ${profile.id}, ${Math.round(duty * 100)}% duty.`);
+}
+
+// What the person decided about a stopped or finished stage (see the header). Applied to a resumed run, in this order.
+{
+  const off = engine.on((event) => { if (event.type === "log") log(event.text); });
+  const state = engine.state;
+  for (const [flag, key] of [["keep-per-stage", "keepPerStage"], ["max-climbs", "maxClimbsPerStage"], ["stage-stall", "stageStall"]] as const) if (args.has(flag)) state.config[key] = Number(args.get(flag));
+  if (args.get("advance-anyway") === "true") state.config.advanceAnyway = true;
+  for (const part of (args.get("goals") ?? "").split(",").filter(Boolean)) {
+    const [stage, percent] = part.split(":").map(Number);
+    engine.setGoal(stage - 1, percent / 100);
+  }
+  if (args.has("rerun-stage")) engine.rerunStage(Number(args.get("rerun-stage")) - 1, { fromId: args.get("rerun-from") });
+  if (state.stalled) {
+    if (args.get("move-on") === "true") engine.moveOn();
+    else if (args.has("more-climbs")) engine.continueStage(Number(args.get("more-climbs")));
+    else if (state.stalled.reach >= engine.goalFor(state.stalled.stage)) engine.moveOn(); // the goal was lowered to what was already reached
+  }
+  off();
 }
 
 engine.on((event) => {
@@ -150,7 +180,10 @@ while (!engine.state.finished && !stop()) {
   if (Date.now() - saved > 60_000 || engine.state.generation % 10 === 0) save();
 }
 save();
-if (engine.state.finished) {
+if (engine.state.stalled) {
+  const st = engine.state.stalled;
+  log(`Stage ${st.stage + 1} stopped at ${(st.reach * 100).toFixed(0)}% of flags, goal ${(st.goal * 100).toFixed(0)}% (${st.why}). Run the same command again with --more-climbs=6, --goals=${st.stage + 1}:${Math.max(5, Math.floor(st.reach * 100))}, --move-on or --rerun-stage=${st.stage + 1}.`);
+} else if (engine.state.finished) {
   log("All requested stages finished. Comparing every local maximum on one fresh battery…");
   const table = await engine.finalComparison(6);
   for (const row of table.slice(0, 8)) log(`  ${row.id.padEnd(14)} score ${row.score.toFixed(1)} · flags ${(row.reach * 100).toFixed(0)}%`);

@@ -37,6 +37,8 @@ const app = {
   seedBrain: null as BrainSnapshot | null,
   /** Brain files chosen from the computer (valid ones), and the reasons the others were refused. */
   uploads: [] as Founder[], refused: [] as string[],
+  /** Which stage the table and the map show (null = all), and how the table is sorted. */
+  stageFilter: null as number | null, sort: { key: "stage", dir: 1 } as { key: string; dir: 1 | -1 },
   running: false, stopRequested: false,
   mode: "headless" as Mode,
   log: [] as string[],
@@ -68,7 +70,7 @@ function currentState(): EngineState | null { return app.engine?.state ?? null; 
 function renderSummary(): void {
   const p = app.progress, s = currentState();
   if (!p) return;
-  $("s-stage").textContent = `${p.stage + 1} of ${p.stages.length}`;
+  $("s-stage").textContent = `${p.stage + 1} of ${p.stages.length}${p.stalled ? " · stopped" : ""}`;
   $("s-branch").textContent = `${p.branch + 1} · ${p.branchType}${p.emphasis !== "balanced" ? ` · ${p.emphasis}` : ""}`;
   $("s-gen").textContent = String(p.generation);
   $("s-max").textContent = String(p.maxima.length);
@@ -90,27 +92,89 @@ function renderStages(): void {
   const list = $("evo-stages"); list.innerHTML = "";
   p.stages.forEach((st, i) => {
     const result = p.stageResults.find((r) => r.stage === i);
+    const stopped = p.stalled?.stage === i;
     const li = document.createElement("li");
-    li.dataset.state = result ? "done" : i === p.stage && !p.finished ? "current" : "todo";
+    li.dataset.state = result ? "done" : i === p.stage && (!p.finished || stopped) ? "current" : "todo";
     const maxima = p.maxima.filter((m) => m.stage === i);
     const best = maxima.length ? Math.max(...maxima.map((m) => m.exam.reach)) : null;
-    li.innerHTML = `<span><strong style="color:${stageColor(i)}">${st.title}</strong></span><span>${result ? `${result.mastered ? "mastered" : "moved on"} · winner ${result.winner} · ${pct(result.reach)} flags` : i === p.stage && !p.finished ? `climbing · ${maxima.length} local maxima` : "waiting"}</span><small>Goal ${pct(st.mastery)} of flags found on fresh trials. ${best !== null ? `Best exam so far ${pct(best)}.` : ""} ${STAGES[i]?.blurb ?? ""}</small>`;
+    const status = result ? `${result.mastered ? "mastered" : "moved on without mastering"} · winner ${result.winner} · ${pct(result.reach)} flags`
+      : stopped ? `stopped at ${pct(p.stalled!.reach)} · goal ${pct(p.stalled!.goal)}`
+      : i === p.stage && !p.finished ? `climbing · ${maxima.length} local maxima kept` : "waiting";
+    li.innerHTML = `<span><strong style="color:${stageColor(i)}">${st.title}</strong></span><span>${status}</span><small>Goal ${pct(st.mastery)} of flags found on fresh trials. ${best !== null ? `Best exam so far ${pct(best)}.` : ""} ${STAGES[i]?.blurb ?? ""}</small>`;
+    const tools = document.createElement("span"); tools.className = "evo-stage-tools";
+    tools.innerHTML = `<label>Goal <input type="number" min="5" max="100" step="5" value="${Math.round(st.mastery * 100)}" data-goal="${i}" aria-label="Goal for stage ${i + 1}, percent of flags" ${app.engine ? "" : "disabled"} /> %</label><button type="button" data-rerun="${i}" ${app.engine && maxima.length ? "" : "disabled"}>Rerun this stage</button>`;
+    tools.querySelector("input")!.addEventListener("change", (e) => setStageGoal(i, Number((e.target as HTMLInputElement).value)));
+    tools.querySelector("button")!.addEventListener("click", () => rerunStage(i));
+    li.append(tools);
     list.append(li);
   });
+}
+
+/** The banner shown when a stage could not be mastered and the run stopped to ask. */
+function renderStalled(): void {
+  const st = app.progress?.stalled, box = $("evo-stalled");
+  box.hidden = !st || app.viewOnly;
+  if (!st) return;
+  $("evo-stalled-text").textContent = `Stage ${st.stage + 1} stopped at ${pct(st.reach)} of flags found, against a goal of ${pct(st.goal)} (${st.why}). Nothing is carried to the next stage until you choose: carry on with more climbs, lower the goal in the list below and carry on, or move on with this brain.`;
+}
+
+function refreshProgress(): void {
+  const engine = app.engine;
+  if (!engine) return;
+  app.progress = toProgress(engine.state, $<HTMLInputElement>("evo-name").value.trim() || "run", app.log);
+  void saveRun($<HTMLInputElement>("evo-name").value.trim() || "run", engine.state).catch(() => undefined);
+  renderAll();
+}
+
+function setStageGoal(stage: number, percent: number): void {
+  if (!app.engine) return;
+  try { app.engine.setGoal(stage, percent / 100); refreshProgress(); setStatus(`The goal of stage ${stage + 1} is now ${Math.round(percent)}% of flags.`); }
+  catch (error) { setStatus(error instanceof Error ? error.message : String(error)); refreshProgress(); }
+}
+
+function rerunStage(stage: number, fromId?: string): void {
+  const engine = app.engine;
+  if (app.running) { setStatus("Pause the run first, then rerun the stage."); return; }
+  if (!engine) { setStatus("Open or start a run first."); return; }
+  const goal = Math.round(engine.goalFor(stage) * 100);
+  if (!window.confirm(`Rerun stage ${stage + 1} from ${fromId ?? "its best brain"}, with a goal of ${goal}% of flags?\n\nThe results of this stage and of later ones are dropped; later stages are rebuilt from the new winner.`)) return;
+  try { engine.rerunStage(stage, { fromId }); refreshProgress(); $("evo-play").textContent = "▶ Continue"; setStatus(`Stage ${stage + 1} will be climbed again. Press Continue.`); }
+  catch (error) { setStatus(error instanceof Error ? error.message : String(error)); }
+}
+
+function sortValue(m: Progress["maxima"][number], key: string): number | string {
+  switch (key) {
+    case "id": return Number(m.id.replace(/\D/g, ""));
+    case "stage": return m.stage;
+    case "how": return `${m.branchType} ${m.emphasis}`;
+    case "hidden": return m.hidden;
+    case "exam": return m.exam.score;
+    case "reach": return m.exam.reach;
+    case "tournament": return m.tournament?.score ?? -1e9;
+    default: return 0;
+  }
 }
 
 function renderTable(): void {
   const p = app.progress;
   const body = document.querySelector<HTMLTableSectionElement>("#evo-maxima tbody")!;
   body.innerHTML = "";
+  document.querySelectorAll<HTMLElement>("#evo-maxima th[data-sort]").forEach((th) => { th.setAttribute("aria-sort", th.dataset.sort === app.sort.key ? (app.sort.dir === 1 ? "ascending" : "descending") : "none"); });
   if (!p) return;
-  for (const m of p.maxima) {
+  const rows = p.maxima.filter((m) => app.stageFilter === null || m.stage === app.stageFilter).sort((a, b) => {
+    const x = sortValue(a, app.sort.key), y = sortValue(b, app.sort.key), d = x < y ? -1 : x > y ? 1 : 0;
+    // Ties: earlier stage first, then the better brain.
+    return d !== 0 ? d * app.sort.dir : a.stage - b.stage || (b.tournament?.score ?? b.exam.score) - (a.tournament?.score ?? a.exam.score);
+  });
+  for (const m of rows) {
     const tr = document.createElement("tr");
     tr.dataset.selected = String(m.id === app.selected);
     tr.innerHTML = `<td style="color:${stageColor(m.stage)}">${m.id}</td><td>${m.stage + 1}</td><td>${m.branchType}${m.emphasis !== "balanced" ? ` · ${m.emphasis}` : ""}</td><td>${m.hidden}</td><td>${m.exam.score.toFixed(0)} ± ${m.exam.se.toFixed(0)}</td><td>${pct(m.exam.reach)}</td><td>${m.tournament ? `${m.tournament.score.toFixed(0)} · ${pct(m.tournament.reach)}` : "—"}</td>`;
     tr.addEventListener("click", () => select(m.id));
     body.append(tr);
   }
+  const retired = p.retired ?? 0;
+  $("evo-retired").textContent = `${p.maxima.length} kept${retired ? ` · ${retired} weaker ones retired` : ""} · the best ${p.config.keepPerStage ?? 3} of each stage are kept.`;
 }
 
 function select(id: string | null): void {
@@ -121,8 +185,9 @@ function select(id: string | null): void {
   box.hidden = false;
   const bars = TRAIT_NAMES.map((t) => `<span>${t}</span><span class="evo-bar"><i style="width:${Math.round((m.traits[t] ?? 0) * 100)}%"></i></span>`).join("")
     + m.descriptor.map((v, k) => `<span>${DESCRIPTOR_NAMES[k]}</span><span class="evo-bar"><i style="width:${Math.round(v * 100)}%;background:#c4a2ff"></i></span>`).join("");
-  box.innerHTML = `<strong>${m.id}</strong> · stage ${m.stage + 1} · ${m.note}<div class="evo-bars">${bars}</div><div class="evo-run-row"><button id="sel-watch" type="button">Watch it</button><button id="sel-dl" type="button">Download this brain</button></div>`;
+  box.innerHTML = `<strong>${m.id}</strong> · stage ${m.stage + 1} · ${m.note}<div class="evo-bars">${bars}</div><div class="evo-run-row"><button id="sel-watch" type="button">Watch it</button><button id="sel-dl" type="button">Download this brain</button><button id="sel-rerun" type="button">Rerun stage ${m.stage + 1} from this brain</button></div>`;
   $("sel-watch").addEventListener("click", () => { setMode("watch"); ($("w-brain") as HTMLSelectElement).value = m.id; runWatch(); });
+  $("sel-rerun").addEventListener("click", () => rerunStage(m.stage, m.id));
   $("sel-dl").addEventListener("click", () => { const brain = brainOf(m.id); if (brain) download(`flykart-evolve-${m.id}.json`, brainFile(brain, { fitness: m.exam.score, generation: m.generation, label: m.note, run: $<HTMLInputElement>("evo-name").value })); });
 }
 
@@ -143,11 +208,11 @@ function download(name: string, text: string): void {
 function drawMap(): void {
   if (app.mode !== "watch" && app.running) return;
   drawProgress($<HTMLCanvasElement>("evo-progress"), app.progress);
-  app.picks = drawLandscape($<HTMLCanvasElement>("evo-landscape"), app.progress, app.view, app.selected, app.progress?.champion?.id ?? null);
+  app.picks = drawLandscape($<HTMLCanvasElement>("evo-landscape"), app.progress, app.view, app.selected, app.progress?.champion?.id ?? null, app.stageFilter);
 }
 
 function renderAll(): void {
-  renderSummary(); renderTable(); renderStages(); renderNotes(); populateWatchBrains();
+  renderSummary(); renderTable(); renderStages(); renderStalled(); renderNotes(); populateWatchBrains();
   drawMap();
 }
 
@@ -293,6 +358,8 @@ function engineConfig(): Partial<typeof DEFAULT_CONFIG> {
     battery: Math.max(2, Number($<HTMLInputElement>("evo-battery").value) || profile.config.battery || 6),
     layerPerStage: Math.max(0, Number($<HTMLInputElement>("evo-layer").value) || 0),
     lastStage: last, runSeed: (Date.now() % 100000) + 1,
+    keepPerStage: Math.max(1, Math.min(5, Math.round(Number($<HTMLInputElement>("evo-keep-stage").value) || 3))),
+    advanceAnyway: $<HTMLInputElement>("evo-advance").checked,
   };
 }
 
@@ -316,6 +383,9 @@ async function ensureEngine(): Promise<EvolutionEngine> {
   if (app.backend && app.workers !== workers) { app.backend.close(); app.backend = null; }
   if (!app.backend) { app.backend = makeBackend(workers); app.workers = workers; }
   if (app.engine) {
+    // The two settings that may change while a run exists apply from the next generation.
+    app.engine.state.config.keepPerStage = Math.max(1, Math.min(5, Math.round(Number($<HTMLInputElement>("evo-keep-stage").value) || 3)));
+    app.engine.state.config.advanceAnyway = $<HTMLInputElement>("evo-advance").checked;
     // Keep the engine's state but point it at the current pool.
     app.engine = new EvolutionEngine(app.engine.state, app.backend);
     attach(app.engine);
@@ -369,7 +439,7 @@ async function play(): Promise<void> {
   app.progress = toProgress(engine.state, name, app.log);
   void saveRun(name, engine.state).catch(() => undefined);
   renderAll();
-  setStatus(engine.state.finished ? "Finished. Every requested stage is done; the champion is ready to download." : `Paused at generation ${engine.state.generation}. Saved in this browser.`);
+  setStatus(engine.state.stalled ? `Stopped: stage ${engine.state.stalled.stage + 1} is at ${pct(engine.state.stalled.reach)} of flags, goal ${pct(engine.state.stalled.goal)}. See the curriculum below for what to do.` : engine.state.finished ? "Finished. Every requested stage is done; the champion is ready to download." : `Paused at generation ${engine.state.generation}. Saved in this browser.`);
 }
 
 /* ------------------------------------------------------------------ */
@@ -540,6 +610,7 @@ function adopt(state: EngineState, name: string): void {
   if (app.running) { setStatus("Pause the current run first."); return; }
   if (!app.backend) app.backend = makeBackend(app.workers);
   app.engine = new EvolutionEngine(state, app.backend); attach(app.engine);
+  app.engine.tidyArchive(); // an older run may hold dozens of maxima; keep the best few of each stage
   app.viewOnly = false; $<HTMLInputElement>("evo-name").value = name;
   app.seedBrain = state.stageEntry ?? app.seedBrain;
   app.progress = toProgress(state, name, app.log);
@@ -613,6 +684,21 @@ function wire(): void {
   });
   $("evo-export-run").addEventListener("click", () => { const s = currentState(); if (s) download(`flykart-evolve-${$<HTMLInputElement>("evo-name").value}-run.json`, JSON.stringify(s)); });
   $("evo-final").addEventListener("click", () => void finalComparison());
+  const applyFilter = (value: string): void => {
+    app.stageFilter = value === "all" ? null : Number(value);
+    $<HTMLSelectElement>("evo-stage-filter").value = value; $<HTMLSelectElement>("evo-stage-filter-map").value = value;
+    renderTable(); drawMap();
+  };
+  $("evo-stage-filter").addEventListener("change", (e) => applyFilter((e.target as HTMLSelectElement).value));
+  $("evo-stage-filter-map").addEventListener("change", (e) => applyFilter((e.target as HTMLSelectElement).value));
+  document.querySelectorAll<HTMLElement>("#evo-maxima th[data-sort]").forEach((th) => th.addEventListener("click", () => {
+    const key = th.dataset.sort!;
+    if (app.sort.key === key) app.sort.dir = app.sort.dir === 1 ? -1 : 1;
+    else app.sort = { key, dir: ["exam", "reach", "tournament", "hidden"].includes(key) ? -1 : 1 };
+    renderTable();
+  }));
+  $("evo-more").addEventListener("click", () => { if (!app.engine || app.running) return; app.engine.continueStage(6); refreshProgress(); void play(); });
+  $("evo-moveon").addEventListener("click", () => { if (!app.engine || app.running) return; app.engine.moveOn(); refreshProgress(); void play(); });
   $("evo-gauntlet").addEventListener("click", () => void runGauntlet());
   $("w-run").addEventListener("click", () => void runWatch());
   $("w-next").addEventListener("click", () => { const el = $<HTMLInputElement>("w-seed"); el.value = String((Number(el.value) || 1) + 1); void runWatch(); });

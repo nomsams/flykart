@@ -223,7 +223,7 @@ describe("brain size", () => {
 
 describe("the evolution engine", () => {
   const seed = new SpikingNetwork(21, 19).toJSON();
-  const config = { population: 6, parents: 3, elites: 1, battery: 2, examSize: 2, examEvery: 1, patience: 2, tournamentSize: 2, branchesPerStage: 2, maxGenerationsPerBranch: 3, lastStage: 0, runSeed: 5 };
+  const config = { population: 6, parents: 3, elites: 1, battery: 2, examSize: 2, examEvery: 1, patience: 2, tournamentSize: 2, advanceAnyway: true, branchesPerStage: 2, maxGenerationsPerBranch: 3, lastStage: 0, runSeed: 5 };
 
   it("scores a trial deterministically", () => {
     const spec = caseFor(0, 123);
@@ -289,7 +289,7 @@ describe("layered brains", () => {
 
   it("are added at the start of a later stage by the engine, as one ordinary brain", async () => {
     const seed = new SpikingNetwork(21, 19).toJSON();
-    const engine = EvolutionEngine.fresh(seed, { population: 6, parents: 3, elites: 1, battery: 2, examSize: 2, examEvery: 1, patience: 2, tournamentSize: 2, branchesPerStage: 2, maxGenerationsPerBranch: 3, lastStage: 1, runSeed: 5, layerFromStage: 0, layerPerStage: 8 }, new InlineBackend());
+    const engine = EvolutionEngine.fresh(seed, { population: 6, parents: 3, elites: 1, battery: 2, examSize: 2, examEvery: 1, patience: 2, tournamentSize: 2, advanceAnyway: true, branchesPerStage: 2, maxGenerationsPerBranch: 3, lastStage: 1, runSeed: 5, layerFromStage: 0, layerPerStage: 8 }, new InlineBackend());
     await engine.run(() => engine.state.stage >= 1 || engine.state.generation > 40);
     expect(engine.state.stage).toBe(1);
     expect(engine.state.plan!.layers.length).toBe(2);
@@ -310,7 +310,7 @@ describe("genetic screening and the inbreeding guard", () => {
 
   it("are applied by the engine, recorded per generation, and bred around", async () => {
     const seed = new SpikingNetwork(21, 19).toJSON();
-    const engine = EvolutionEngine.fresh(seed, { population: 8, parents: 3, elites: 1, battery: 2, examSize: 2, examEvery: 2, patience: 2, tournamentSize: 2, branchesPerStage: 1, maxGenerationsPerBranch: 4, lastStage: 0, runSeed: 7 }, new InlineBackend());
+    const engine = EvolutionEngine.fresh(seed, { population: 8, parents: 3, elites: 1, battery: 2, examSize: 2, examEvery: 2, patience: 2, tournamentSize: 2, advanceAnyway: true, branchesPerStage: 1, maxGenerationsPerBranch: 4, lastStage: 0, runSeed: 7 }, new InlineBackend());
     for (let g = 0; g < 3; g += 1) await engine.generation();
     const last = engine.state.history[engine.state.history.length - 1];
     expect(last.screened).toBeGreaterThan(0);
@@ -376,7 +376,7 @@ describe("long-run improvements", () => {
 
   it("fills the behaviour archive and the hard pool while it runs", async () => {
     const seed = new SpikingNetwork(21, 19).toJSON();
-    const engine = EvolutionEngine.fresh(seed, { population: 8, parents: 3, elites: 1, battery: 3, examSize: 2, examEvery: 2, patience: 2, tournamentSize: 2, branchesPerStage: 1, maxGenerationsPerBranch: 8, lastStage: 0, runSeed: 3 }, new InlineBackend());
+    const engine = EvolutionEngine.fresh(seed, { population: 8, parents: 3, elites: 1, battery: 3, examSize: 2, examEvery: 2, patience: 2, tournamentSize: 2, advanceAnyway: true, branchesPerStage: 1, maxGenerationsPerBranch: 8, lastStage: 0, runSeed: 3 }, new InlineBackend());
     for (let g = 0; g < 4; g += 1) await engine.generation();
     expect(Object.keys(engine.state.qd ?? {}).length).toBeGreaterThan(0);
     expect((engine.state.hard ?? []).length).toBeGreaterThan(0);

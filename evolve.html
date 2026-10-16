@@ -57,6 +57,8 @@
           <label>Population<input id="evo-pop" type="number" min="6" max="64" value="12" /></label>
           <label>Trials per generation<input id="evo-battery" type="number" min="2" max="16" value="4" /></label>
           <label>Neurons added per stage (from stage 3)<input id="evo-layer" type="number" min="0" max="32" step="4" value="8" /></label>
+          <label>Best maxima kept per stage<input id="evo-keep-stage" type="number" min="1" max="5" value="3" /></label>
+          <label class="evo-check evo-wide"><input id="evo-advance" type="checkbox" /> Move on even when a stage's goal is not reached (off: each stage is mastered before the next begins)</label>
         </div>
         <div class="evo-run-row evo-small">
           <button id="evo-resume" type="button">Resume a saved run…</button>
@@ -92,13 +94,16 @@
       <section class="evo-grid-2">
         <div class="evo-panel" aria-label="Map of generations">
           <div class="evo-title"><div><span class="evo-kicker">3D MAP</span><strong>Generations, hills and flags</strong></div>
-            <div class="evo-inline"><label class="evo-check"><input id="evo-spin" type="checkbox" checked /> turn</label><button id="evo-view-reset" type="button">Reset view</button></div></div>
+            <div class="evo-inline"><label class="evo-check">Show <select id="evo-stage-filter-map" aria-label="Show one stage on the map"><option value="all">All stages</option><option value="0">Stage 1</option><option value="1">Stage 2</option><option value="2">Stage 3</option><option value="3">Stage 4</option><option value="4">Stage 5</option><option value="5">Stage 6</option></select></label><label class="evo-check"><input id="evo-spin" type="checkbox" checked /> turn</label><button id="evo-view-reset" type="button">Reset view</button></div></div>
           <canvas id="evo-landscape" width="720" height="460" aria-label="Three dimensional map of the evolution: generations as points, local maxima as flags"></canvas>
           <p class="evo-note">Drag to turn, wheel to zoom, click a flag to select its local maximum. A gold flag is the current champion.</p>
         </div>
         <div class="evo-panel" aria-label="Local maxima">
-          <div class="evo-title"><div><span class="evo-kicker">ARCHIVE</span><strong>Local maxima, filed when a climb stalls</strong></div></div>
-          <div class="evo-table-wrap"><table id="evo-maxima" class="evo-table"><thead><tr><th>#</th><th>Stage</th><th>How found</th><th>Neurons</th><th>Exam</th><th>Flags</th><th>Tournament</th></tr></thead><tbody></tbody></table></div>
+          <div class="evo-title"><div><span class="evo-kicker">ARCHIVE</span><strong>The best local maxima of each stage</strong></div>
+            <div class="evo-inline"><label class="evo-check">Show <select id="evo-stage-filter" aria-label="Show one stage in the table"><option value="all">All stages</option><option value="0">Stage 1</option><option value="1">Stage 2</option><option value="2">Stage 3</option><option value="3">Stage 4</option><option value="4">Stage 5</option><option value="5">Stage 6</option></select></label></div></div>
+          <p id="evo-retired" class="evo-note"></p>
+          <div class="evo-table-wrap"><table id="evo-maxima" class="evo-table"><thead><tr><th data-sort="id">#</th><th data-sort="stage">Stage</th><th data-sort="how">How found</th><th data-sort="hidden">Neurons</th><th data-sort="exam">Exam</th><th data-sort="reach">Flags</th><th data-sort="tournament">Tournament</th></tr></thead><tbody></tbody></table></div>
+          <p class="evo-note">Click a column to sort. Only the best few maxima of each stage are kept; weaker ones are retired as new ones are found.</p>
           <div id="evo-selected" class="evo-selected" hidden></div>
           <div class="evo-run-row evo-small">
             <button id="evo-export-best" type="button">Download best brain</button>
@@ -111,8 +116,13 @@
       </section>
 
       <section class="evo-panel" aria-label="Stages">
-        <div class="evo-title"><div><span class="evo-kicker">CURRICULUM</span><strong>Six stages, each starting from the previous stage's winner</strong></div></div>
+        <div class="evo-title"><div><span class="evo-kicker">CURRICULUM</span><strong>Six stages: each is mastered before the next begins</strong></div></div>
+        <div id="evo-stalled" class="evo-stalled" role="alert" hidden>
+          <p id="evo-stalled-text"></p>
+          <div class="evo-run-row evo-small"><button id="evo-more" type="button">Carry on: 6 more climbs (or move on if the goal was lowered to what was reached)</button><button id="evo-moveon" type="button">Move on to the next stage anyway</button></div>
+        </div>
         <ol id="evo-stages" class="evo-stages"></ol>
+        <p class="evo-note">Change a stage's goal at any time (it counts from the next comparison). "Rerun this stage" goes back to that stage's best brain and climbs again with the goal shown; the results of later stages are dropped and rebuilt from the new winner.</p>
       </section>
 
       <section class="evo-panel" id="evo-watch" aria-label="Watch a trial" hidden>

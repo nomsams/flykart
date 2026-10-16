@@ -191,6 +191,21 @@ sonar still hears them). Speed is the brain's own commanded speed (the ESP32 has
 None of these has been run for a full night yet. The mechanics are tested (draws unchanged when a helper is off, the pocket is closed ahead and open behind, the polish only moves
 the readout, resume is exact); whether each one pays for its trials is something a long run has to show, and the generation record (`hard`, `qdCells`, `extra`) is there to look at.
 
+### Mastering each stage before the next, and keeping only the best maxima
+
+A one-hour-forty run of the earlier engine (1,080 generations) showed the problem plainly: stage 2 was still climbing (21 % of flags found on early exams, 40 % on late ones, best 50 %) when the engine moved on after five climbs, and every later stage inherited a brain that had not learned the one before. Now:
+
+| What | How it works |
+|---|---|
+| Mastery gate | A stage ends only when its winner finds the stage's goal share of flags on fresh trials. Until then the climbs go on, each from a different direction (kick, crossbreed, ancestor, grow). |
+| Stopping instead of drifting on | After 40 climbs, or 8 in a row without a better tournament result (by more than 2 points), the run stops and says so on the page and in the log. Nothing is carried to the next stage. |
+| What you can then do | **Carry on** with 6 more climbs; **lower the goal** in the curriculum list and carry on (a goal lowered to what was already reached moves on at once); **move on anyway** with the stage's best brain; or **rerun** the stage. |
+| Rerun with a higher goal | Each stage has a goal box and a "Rerun this stage" button (and the selected maximum has "Rerun stage N from this brain"). The stage is climbed again from its best brain, or from the chosen one, with the goal shown. The results of that stage and of later ones are dropped and rebuilt from the new winner. |
+| Top maxima only | Only the best `--keep-per-stage` (default 3, at most 5) local maxima of each stage are kept, ranked by tournament score, else exam score; weaker ones are retired as new ones are found, so the table, the map and the breeding pool stay small. The stage winner is never retired. |
+| Sorting and filtering | The archive table sorts by any column; a stage filter on the table and on the 3D map shows one stage at a time (the map's axes stay fitted to the whole run, so it does not jump). |
+
+The older rule (a couple more climbs, then on regardless) is still there as "Move on even when a stage's goal is not reached" on the page and `--advance-anyway` in the runner. The runner's new switches: `--keep-per-stage`, `--max-climbs`, `--stage-stall`, and, to answer a stop by running the same command again, `--more-climbs=6`, `--goals=2:60,3:50`, `--move-on`, `--rerun-stage=2 [--rerun-from=L7]`. A stage stopping is a result in itself: it means the goal, the curriculum step or the search needs a look, not more of the same night.
+
 ### Starting from several brains
 
 The page and the runner both take any number of founders, not one. Every founder is scored as it is in the first

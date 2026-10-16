@@ -48,6 +48,14 @@ export type EngineConfig = {
   hardShare: number; pocketShare: number;
   /** Give close contenders extra trials; keep a best-per-behaviour archive; polish the best brain of a climb by lifetime learning. */
   extraTrials: boolean; qd: boolean; polish: boolean;
+  /** Local maxima kept per stage (the best by tournament score, else exam score); weaker ones are retired so the archive and the map stay readable. */
+  keepPerStage: number;
+  /**
+   * A stage is mastered before the next one begins. When it cannot be (this many climbs, or `stageStall` climbs in a row
+   * without a better result), the run stops and says so, and a person decides: more climbs, a lower goal, or move on.
+   * `advanceAnyway` brings back the older behaviour: a couple more climbs, then on to the next stage regardless.
+   */
+  maxClimbsPerStage: number; stageStall: number; advanceAnyway: boolean;
   /** Flaw ranges measured on a real robot (replaces the plausible defaults). */
   realityRanges?: RealityRanges;
 };
@@ -56,6 +64,7 @@ export const DEFAULT_CONFIG: EngineConfig = {
   runSeed: 1, population: 20, parents: 5, elites: 2, battery: 6, examSize: 16, examEvery: 4, tournamentSize: 36,
   patience: 5, minGain: 1.5, branchesPerStage: 4, maxGenerationsPerBranch: 150, replayShare: 0.3,
   growBy: 8, maxHidden: 96, mutationRate: 0.1, mutationSize: 0.16, twoPhase: true, lastStage: -1, rayStepDeg: 2, layerPerStage: 8, layerFromStage: 2, protect: 0.25, hardShare: 0.3, pocketShare: 0.15, extraTrials: true, qd: true, polish: true,
+  keepPerStage: 3, maxClimbsPerStage: 40, stageStall: 8, advanceAnyway: false,
 };
 
 export type BranchType = "seed" | "kick" | "ancestor" | "crossbreed" | "grow" | "scout";
@@ -101,6 +110,8 @@ export type GenerationRecord = {
 
 export type StageResult = { stage: number; winner: string; score: number; se: number; reach: number; mastered: boolean; ranking: { id: string; score: number; reach: number; retention: number }[]; generation: number };
 
+export type StallInfo = { stage: number; reach: number; goal: number; climbs: number; why: string; winnerId: string; brain: BrainSnapshot; plan?: BrainPlan; traits: Traits; score: number; se: number };
+
 export type EngineState = {
   version: 1; config: EngineConfig;
   generation: number; stage: number; stageGeneration: number; branch: number; branchGeneration: number;
@@ -114,6 +125,12 @@ export type EngineState = {
   staleExams: number;
   archive: LocalMax[]; stageResults: StageResult[];
   stageEntry: BrainSnapshot | null; stageEntryId: string | null;
+  /** Mastery goals set by the person (share of flags found, 0..1), by stage; a stage without one uses its default. */
+  goals?: Record<number, number>;
+  /** Set when the run stopped because the stage could not be mastered; carries what is needed to move on. */
+  stalled?: StallInfo | null;
+  /** Best tournament reach of this stage, climbs since it last improved, and extra climbs granted by the person. */
+  stageBest?: number; stageStale?: number; climbBonus?: number;
   /** Layers of the population now being bred, and of the brain the stage began with. */
   plan?: BrainPlan; stageEntryPlan?: BrainPlan;
   /** Trials the leader failed (drawn again for a while), and the best brain found per behaviour cell in this stage. */
@@ -121,7 +138,7 @@ export type EngineState = {
   qd?: Record<string, { score: number; id: string; brain: BrainSnapshot; gen: number }>; qdStage?: number;
   champion: { id: string; stage: number; score: number; brain: BrainSnapshot; note: string } | null;
   history: GenerationRecord[];
-  counters: { episodes: number; evaluations: number; elapsedMs: number; maxima: number; tournaments: number; kicks: number };
+  counters: { episodes: number; evaluations: number; elapsedMs: number; maxima: number; tournaments: number; kicks: number; retired?: number };
   nextId: number; usedEmphasis: string[]; branchesThisStage: number; extraBranches: number;
   finished: boolean;
 };
@@ -132,6 +149,7 @@ export type EngineEvent =
   | { type: "branch"; stage: number; branch: number; branchType: BranchType; emphasis: string; from: string | null }
   | { type: "tournament"; stage: number; ranking: StageResult["ranking"] }
   | { type: "stage"; result: StageResult }
+  | { type: "stalled"; stage: number; reach: number; goal: number; why: string }
   | { type: "log"; text: string }
   | { type: "finished" };
 
@@ -151,6 +169,11 @@ export class EvolutionEngine {
   readonly backend: EvalBackend;
   constructor(state: EngineState, backend: EvalBackend) {
     this.state = state;
+    // A run saved before the stage gate existed has none of its settings: give it the defaults (without them a resumed run
+    // would never reach its climb limit and could climb one stage for ever).
+    for (const key of ["keepPerStage", "maxClimbsPerStage", "stageStall", "advanceAnyway"] as const) {
+      if (state.config[key] === undefined) (state.config as Record<string, unknown>)[key] = DEFAULT_CONFIG[key];
+    }
     // Every trial the engine asks for is stamped with the run's echo-model setting, so exams and tournaments agree with training.
     this.backend = {
       get size() { return backend.size; },
@@ -482,7 +505,7 @@ export class EvolutionEngine {
     this.log(`Local maximum ${max.id} · stage ${s.stage + 1} · ${max.branchType}/${max.emphasis} · exam ${max.exam.score.toFixed(1)} ± ${max.exam.se.toFixed(1)} · flags ${(max.exam.reach * 100).toFixed(0)}% · ${max.hidden} neurons`);
     const stageMaxima = s.archive.filter((m) => m.stage === s.stage);
     const budget = c.branchesPerStage + s.extraBranches;
-    if (stageMaxima.length >= budget) await this.holdTournament();
+    if (s.branchesThisStage >= budget) await this.holdTournament();
     else this.startBranch(stageMaxima);
     return `local maximum ${max.id}`;
   }
@@ -581,40 +604,145 @@ export class EvolutionEngine {
     const ranking = rows.map((r) => ({ id: r.entry.id, score: mixed(r), reach: r.a.reach, retention: r.retention }));
     for (const r of rows) if (r.entry.max) r.entry.max.tournament = { score: r.a.score, se: r.a.se, reach: r.a.reach, crash: r.a.crash, retention: r.retention };
     const winner = rows[0];
-    const stage = STAGES[s.stage];
-    const mastered = winner.a.reach >= stage.mastery;
+    const goal = this.goalFor(s.stage);
+    const mastered = winner.a.reach >= goal;
     s.counters.tournaments += 1;
     this.emit({ type: "tournament", stage: s.stage, ranking });
     const result: StageResult = { stage: s.stage, winner: winner.entry.id, score: winner.a.score, se: winner.a.se, reach: winner.a.reach, mastered, ranking, generation: s.generation };
     this.log(`Tournament, stage ${s.stage + 1}: winner ${winner.entry.id} · ${winner.a.score.toFixed(1)} ± ${winner.a.se.toFixed(1)} · flags ${(winner.a.reach * 100).toFixed(0)}% · retention ${(winner.retention * 100).toFixed(0)}%${mastered ? " · MASTERED" : ""}`);
-    // Not mastered yet: give the stage a couple more climbs before moving on.
+    this.tidyArchive();
+    const win = { id: winner.entry.id, brain: winner.entry.brain, plan: winner.entry.max?.plan, traits: winner.a.traits, score: winner.a.score, se: winner.a.se, reach: winner.a.reach };
+    if (!mastered && !c.advanceAnyway) {
+      // A stage is mastered before the next one begins: keep climbing until it is, or until it is plain that it will not be.
+      if (win.reach > (s.stageBest ?? -1) + 0.02) { s.stageBest = win.reach; s.stageStale = 0; } else s.stageStale = (s.stageStale ?? 0) + 1;
+      const cap = c.maxClimbsPerStage + (s.climbBonus ?? 0), stuck = (s.stageStale ?? 0) >= c.stageStall;
+      if (s.branchesThisStage >= cap || stuck) {
+        const why = stuck ? `no better result for ${s.stageStale} climbs in a row` : `${s.branchesThisStage} climbs without reaching it`;
+        s.stalled = { stage: s.stage, reach: win.reach, goal, climbs: s.branchesThisStage, why, winnerId: win.id, brain: win.brain, plan: win.plan, traits: win.traits, score: win.score, se: win.se };
+        s.finished = true;
+        if (!s.champion || s.stage >= s.champion.stage) s.champion = { id: win.id, stage: s.stage, score: win.score, brain: win.brain, note: `stage ${s.stage + 1} best so far (not mastered)` };
+        this.log(`Stage ${s.stage + 1} stopped: best ${(win.reach * 100).toFixed(0)}% of flags against a goal of ${(goal * 100).toFixed(0)}% (${why}). The run waits for you: more climbs, a lower goal, or move on.`);
+        this.emit({ type: "stalled", stage: s.stage, reach: win.reach, goal, why });
+        return;
+      }
+      this.log(`Stage ${s.stage + 1} not mastered (${(win.reach * 100).toFixed(0)}% < ${(goal * 100).toFixed(0)}%): another climb (${s.branchesThisStage} so far, best ${((s.stageBest ?? win.reach) * 100).toFixed(0)}%).`);
+      this.startBranch(s.archive.filter((m) => m.stage === s.stage));
+      return;
+    }
+    // The older rule, for anyone who asks for it (advanceAnyway): two more climbs, then on to the next stage regardless.
     if (!mastered && s.extraBranches < 2 && c.branchesPerStage > 0) {
       s.extraBranches += 1;
-      this.log(`Stage ${s.stage + 1} not mastered (${(winner.a.reach * 100).toFixed(0)}% < ${(stage.mastery * 100).toFixed(0)}%): ${s.extraBranches === 1 ? "one" : "two"} more climb(s).`);
+      this.log(`Stage ${s.stage + 1} not mastered (${(win.reach * 100).toFixed(0)}% < ${(goal * 100).toFixed(0)}%): ${s.extraBranches === 1 ? "one" : "two"} more climb(s).`);
       this.startBranch(s.archive.filter((m) => m.stage === s.stage));
       return;
     }
     s.stageResults.push(result);
     this.emit({ type: "stage", result });
-    const bestBrain = winner.entry.brain;
-    const challenger = { id: winner.entry.id, stage: s.stage, score: winner.a.score, brain: bestBrain, note: `stage ${s.stage + 1} tournament winner` };
+    this.moveToNext(win.id, win.brain, win.plan, win.traits, win.score);
+  }
+
+  /** The stage is done: its winner starts the next one, with a new layer on top from the configured stage on. */
+  private moveToNext(winnerId: string, bestBrain: BrainSnapshot, winnerPlan: BrainPlan | undefined, traits: Traits, score: number): void {
+    const s = this.state, c = s.config;
+    const challenger = { id: winnerId, stage: s.stage, score, brain: bestBrain, note: `stage ${s.stage + 1} tournament winner` };
     if (!s.champion || s.stage >= s.champion.stage) s.champion = challenger;
     if (s.stage >= this.lastStage) { s.finished = true; this.emit({ type: "finished" }); return; }
-    // Next stage: the winner and its mutants.
-    s.stage += 1; s.stageGeneration = 0; s.branch = 0; s.branchGeneration = 0; s.branchType = "seed"; s.emphasis = "balanced"; s.usedEmphasis = ["balanced"];
-    s.exams = []; s.bestExam = null; s.staleExams = 0; s.hall = []; s.bestMean = -1e9; s.branchesThisStage = 0; s.extraBranches = 0;
+    s.stage += 1; this.resetStageCounters();
     let startBrain = bestBrain;
-    let startPlan = validatePlan(winner.entry.max?.plan ?? singleLayer(bestBrain.hiddenCount), bestBrain.hiddenCount);
+    let startPlan = validatePlan(winnerPlan ?? singleLayer(bestBrain.hiddenCount), bestBrain.hiddenCount);
     // Afterwards, a more advanced layer: the winner keeps what it can do (made stiffer) and a new layer on top learns the next skill.
     if (c.layerPerStage > 0 && s.stage >= c.layerFromStage && bestBrain.hiddenCount + c.layerPerStage <= c.maxHidden) {
       const layered = addLayer(startPlan, bestBrain, c.layerPerStage, hashSeed(c.runSeed, s.stage, 91), c.protect, `stage ${s.stage + 1} layer`);
       startBrain = layered.brain; startPlan = layered.plan;
     }
     s.plan = startPlan; s.stageEntryPlan = startPlan;
-    s.stageEntry = startBrain; s.stageEntryId = winner.entry.id;
-    const base: Individual = { id: this.newId("c"), brain: startBrain, parent: winner.entry.id, mate: null, origin: "stage winner", born: s.generation, fit: -Infinity, fitNow: -Infinity, age: 0, traits: winner.a.traits, crashRate: 0, reach: 0, partial: false };
+    s.stageEntry = startBrain; s.stageEntryId = winnerId;
+    const base: Individual = { id: this.newId("c"), brain: startBrain, parent: winnerId, mate: null, origin: "stage winner", born: s.generation, fit: -Infinity, fitNow: -Infinity, age: 0, traits, crashRate: 0, reach: 0, partial: false };
     s.population = [base];
     this.log(`Stage ${s.stage + 1} begins: ${STAGES[s.stage].title} · brain ${describePlan(startPlan)}`);
+  }
+
+  private resetStageCounters(): void {
+    const s = this.state;
+    s.stageGeneration = 0; s.branch = 0; s.branchGeneration = 0; s.branchType = "seed"; s.emphasis = "balanced"; s.usedEmphasis = ["balanced"];
+    s.exams = []; s.bestExam = null; s.staleExams = 0; s.hall = []; s.bestMean = -1e9; s.branchesThisStage = 0; s.extraBranches = 0;
+    s.stageBest = undefined; s.stageStale = 0; s.climbBonus = 0; s.stalled = null;
+  }
+
+  /**
+   * Keep the best `keepPerStage` local maxima of every stage (by tournament score when it has one, else exam score) and
+   * retire the rest. Runs after every tournament, and when an older run is opened. Returns how many were retired.
+   */
+  tidyArchive(): number {
+    const s = this.state, keep = Math.max(1, s.config.keepPerStage ?? DEFAULT_CONFIG.keepPerStage);
+    const winners = new Set(s.stageResults.map((r) => r.winner));
+    const value = (m: LocalMax): number => m.tournament?.score ?? m.exam.score;
+    const drop = new Set<string>();
+    for (let st = 0; st < STAGES.length; st += 1) {
+      const mine = s.archive.filter((m) => m.stage === st);
+      if (mine.length <= keep) continue;
+      for (const m of [...mine].sort((a, b) => value(b) - value(a)).slice(keep)) if (!winners.has(m.id)) drop.add(m.id);
+    }
+    if (!drop.size) return 0;
+    s.archive = s.archive.filter((m) => !drop.has(m.id));
+    s.counters.retired = (s.counters.retired ?? 0) + drop.size;
+    this.log(`Retired ${drop.size} weaker local maxima (the best ${keep} of each stage are kept).`);
+    return drop.size;
+  }
+
+  /** The share of flags a stage's winner has to find on fresh trials before the next stage begins. */
+  goalFor(stage: number): number { return this.state.goals?.[stage] ?? STAGES[stage]?.mastery ?? 1; }
+
+  setGoal(stage: number, goal: number): void {
+    if (!Number.isInteger(stage) || stage < 0 || stage >= STAGES.length) throw new Error("There is no such stage.");
+    if (!Number.isFinite(goal) || goal < 0.05 || goal > 1) throw new Error("A goal is a share of flags between 5 % and 100 %.");
+    (this.state.goals ??= {})[stage] = goal;
+    this.log(`Goal of stage ${stage + 1} set to ${(goal * 100).toFixed(0)}% of flags.`);
+  }
+
+  /** After a stop: grant more climbs and carry on (or, if the goal was lowered to what was reached, move on at once). */
+  continueStage(climbs = 6): void {
+    const s = this.state, st = s.stalled;
+    if (!st) return;
+    if (st.reach >= this.goalFor(st.stage)) { this.moveOn(); return; }
+    s.climbBonus = (s.climbBonus ?? 0) + Math.max(1, climbs); s.stageStale = 0; s.stalled = null; s.finished = false;
+    this.log(`Stage ${s.stage + 1}: ${Math.max(1, climbs)} more climbs allowed.`);
+    this.startBranch(s.archive.filter((m) => m.stage === s.stage));
+  }
+
+  /** After a stop: take the best brain of the stage as it is and begin the next stage from it. */
+  moveOn(): void {
+    const s = this.state, st = s.stalled;
+    if (!st) return;
+    const result: StageResult = { stage: st.stage, winner: st.winnerId, score: st.score, se: st.se, reach: st.reach, mastered: st.reach >= this.goalFor(st.stage), ranking: [], generation: s.generation };
+    s.stalled = null; s.finished = false;
+    s.stageResults.push(result);
+    this.emit({ type: "stage", result });
+    this.log(`Stage ${st.stage + 1}: moving on with ${(st.reach * 100).toFixed(0)}% of flags found.`);
+    this.moveToNext(st.winnerId, st.brain, st.plan, st.traits, st.score);
+  }
+
+  /**
+   * Go back to a stage and climb it again, starting from its best brain (or from the local maximum `fromId`), optionally
+   * with a new goal. The results of this stage and of later ones are dropped: later stages are rebuilt from the new winner.
+   */
+  rerunStage(stage: number, o: { goal?: number; fromId?: string } = {}): void {
+    const s = this.state;
+    if (!Number.isInteger(stage) || stage < 0 || stage >= STAGES.length) throw new Error("There is no such stage.");
+    const value = (m: LocalMax): number => m.tournament?.score ?? m.exam.score;
+    const mine = s.archive.filter((m) => m.stage === stage);
+    const winnerId = s.stageResults.find((r) => r.stage === stage)?.winner;
+    let pick: LocalMax | undefined;
+    if (o.fromId) { pick = s.archive.find((m) => m.id === o.fromId); if (!pick) throw new Error(`There is no saved maximum called ${o.fromId}.`); }
+    else pick = mine.find((m) => m.id === winnerId) ?? [...mine].sort((a, b) => value(b) - value(a))[0];
+    if (!pick) throw new Error(`Stage ${stage + 1} has no saved brain to start again from.`);
+    if (o.goal !== undefined) this.setGoal(stage, o.goal);
+    s.stageResults = s.stageResults.filter((r) => r.stage < stage);
+    s.stage = stage; this.resetStageCounters(); s.finished = false;
+    const plan = validatePlan(pick.plan ?? singleLayer(pick.hidden), pick.hidden);
+    s.plan = plan; s.stageEntryPlan = plan; s.stageEntry = null; s.stageEntryId = null;
+    s.population = [{ id: this.newId("c"), brain: pick.brain, parent: pick.id, mate: null, origin: "rerun", born: s.generation, fit: -Infinity, fitNow: -Infinity, age: 0, traits: pick.traits, crashRate: 0, reach: 0, partial: false }];
+    this.log(`Stage ${stage + 1} again, from ${pick.id}, goal ${(this.goalFor(stage) * 100).toFixed(0)}% of flags.`);
   }
 
   /** Run until `shouldStop` or the final stage is finished. */

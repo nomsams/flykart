@@ -130,7 +130,7 @@ export type LandscapePick = { id: string; x: number; y: number }[];
  * directions; height: score as a fraction of a perfect trial), the climb as a line, a surface fitted through the
  * points, and each local maximum as a flag. Returns the screen positions of the flags for picking.
  */
-export function drawLandscape(canvas: HTMLCanvasElement, progress: Progress | null, view: LandscapeView, selected: string | null, championId: string | null): LandscapePick {
+export function drawLandscape(canvas: HTMLCanvasElement, progress: Progress | null, view: LandscapeView, selected: string | null, championId: string | null, stage: number | null = null): LandscapePick {
   const { ctx, w, h } = setup(canvas);
   const picks: LandscapePick = [];
   ctx.font = "10px system-ui";
@@ -158,7 +158,11 @@ export function drawLandscape(canvas: HTMLCanvasElement, progress: Progress | nu
     return { sx: w / 2 + rx * k, sy: h / 2 + 24 - vz * k * 1.0, depth: d };
   };
   // Surface: inverse-distance average of the leaders' heights, drawn as a wireframe.
-  const pts = records.map((r) => { const [x, y] = norm(r.proj); return { x, y, z: height(r.champion), gen: r.gen, stage: r.stage }; });
+  // One stage at a time, when asked: the axes above were fitted to the whole run, so the picture does not jump when the filter changes.
+  const shown = stage === null ? records : records.filter((r) => r.stage === stage);
+  const shownMaxima = stage === null ? maxima : maxima.filter((m) => m.stage === stage);
+  if (shown.length < 2) { ctx.fillStyle = "#7f8ca0"; ctx.fillText(`No generations of stage ${(stage ?? 0) + 1} yet.`, 18, 28); return picks; }
+  const pts = shown.map((r) => { const [x, y] = norm(r.proj); return { x, y, z: height(r.champion), gen: r.gen, stage: r.stage }; });
   const N = 22, grid: number[][] = [];
   for (let i = 0; i <= N; i += 1) { grid.push([]); for (let j = 0; j <= N; j += 1) {
     const gx = -1 + (2 * i) / N, gy = -1 + (2 * j) / N; let sw = 0, sz = 0;
@@ -195,7 +199,7 @@ export function drawLandscape(canvas: HTMLCanvasElement, progress: Progress | nu
   }
   ctx.globalAlpha = 1;
   // Local maxima as flags on poles.
-  const flags = maxima.map((m) => { const [x, y] = norm(m.proj); return { m, x, y, z: height(m.exam.score) * 0.9 }; }).sort((a, b) => toScreen(b.x, b.y, 0).depth - toScreen(a.x, a.y, 0).depth);
+  const flags = shownMaxima.map((m) => { const [x, y] = norm(m.proj); return { m, x, y, z: height(m.exam.score) * 0.9 }; }).sort((a, b) => toScreen(b.x, b.y, 0).depth - toScreen(a.x, a.y, 0).depth);
   for (const f of flags) {
     const base = toScreen(f.x, f.y, 0), tip = toScreen(f.x, f.y, f.z + 0.08);
     const chosen = f.m.id === selected, isChampion = championId !== null && f.m.id === championId.replace(/^champion:/, "");
