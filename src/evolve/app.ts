@@ -101,8 +101,9 @@ function renderStages(): void {
       : stopped ? `stopped at ${pct(p.stalled!.reach)} · goal ${pct(p.stalled!.goal)}`
       : i === p.stage && !p.finished ? `climbing · ${maxima.length} local maxima kept` : "waiting";
     li.innerHTML = `<span><strong style="color:${stageColor(i)}">${st.title}</strong></span><span>${status}</span><small>Goal ${pct(st.mastery)} of flags found on fresh trials. ${best !== null ? `Best exam so far ${pct(best)}.` : ""} ${STAGES[i]?.blurb ?? ""}</small>`;
+    const live = Boolean(app.engine) && !app.viewOnly;
     const tools = document.createElement("span"); tools.className = "evo-stage-tools";
-    tools.innerHTML = `<label>Goal <input type="number" min="5" max="100" step="5" value="${Math.round(st.mastery * 100)}" data-goal="${i}" aria-label="Goal for stage ${i + 1}, percent of flags" ${app.engine ? "" : "disabled"} /> %</label><button type="button" data-rerun="${i}" ${app.engine && maxima.length ? "" : "disabled"}>Rerun this stage</button>`;
+    tools.innerHTML = `<label>Goal <input type="number" min="5" max="100" step="5" value="${Math.round(st.mastery * 100)}" data-goal="${i}" aria-label="Goal for stage ${i + 1}, percent of flags" ${live ? "" : "disabled"} /> %</label><button type="button" data-rerun="${i}" ${live && maxima.length ? "" : "disabled"}>Rerun this stage</button>`;
     tools.querySelector("input")!.addEventListener("change", (e) => setStageGoal(i, Number((e.target as HTMLInputElement).value)));
     tools.querySelector("button")!.addEventListener("click", () => rerunStage(i));
     li.append(tools);
@@ -127,7 +128,7 @@ function refreshProgress(): void {
 }
 
 function setStageGoal(stage: number, percent: number): void {
-  if (!app.engine) return;
+  if (!app.engine || app.viewOnly) return;
   try { app.engine.setGoal(stage, percent / 100); refreshProgress(); setStatus(`The goal of stage ${stage + 1} is now ${Math.round(percent)}% of flags.`); }
   catch (error) { setStatus(error instanceof Error ? error.message : String(error)); refreshProgress(); }
 }
@@ -135,7 +136,7 @@ function setStageGoal(stage: number, percent: number): void {
 function rerunStage(stage: number, fromId?: string): void {
   const engine = app.engine;
   if (app.running) { setStatus("Pause the run first, then rerun the stage."); return; }
-  if (!engine) { setStatus("Open or start a run first."); return; }
+  if (!engine || app.viewOnly) { setStatus("Open a saved run or start one first: this page is only showing a progress file."); return; }
   const goal = Math.round(engine.goalFor(stage) * 100);
   if (!window.confirm(`Rerun stage ${stage + 1} from ${fromId ?? "its best brain"}, with a goal of ${goal}% of flags?\n\nThe results of this stage and of later ones are dropped; later stages are rebuilt from the new winner.`)) return;
   try { engine.rerunStage(stage, { fromId }); refreshProgress(); $("evo-play").textContent = "▶ Continue"; setStatus(`Stage ${stage + 1} will be climbed again. Press Continue.`); }
@@ -697,8 +698,8 @@ function wire(): void {
     else app.sort = { key, dir: ["exam", "reach", "tournament", "hidden"].includes(key) ? -1 : 1 };
     renderTable();
   }));
-  $("evo-more").addEventListener("click", () => { if (!app.engine || app.running) return; app.engine.continueStage(6); refreshProgress(); void play(); });
-  $("evo-moveon").addEventListener("click", () => { if (!app.engine || app.running) return; app.engine.moveOn(); refreshProgress(); void play(); });
+  $("evo-more").addEventListener("click", () => { if (!app.engine || app.running || app.viewOnly) return; app.engine.continueStage(6); refreshProgress(); void play(); });
+  $("evo-moveon").addEventListener("click", () => { if (!app.engine || app.running || app.viewOnly) return; app.engine.moveOn(); refreshProgress(); void play(); });
   $("evo-gauntlet").addEventListener("click", () => void runGauntlet());
   $("w-run").addEventListener("click", () => void runWatch());
   $("w-next").addEventListener("click", () => { const el = $<HTMLInputElement>("w-seed"); el.value = String((Number(el.value) || 1) + 1); void runWatch(); });

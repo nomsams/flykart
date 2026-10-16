@@ -165,7 +165,7 @@ const topBy = <T extends { weight: number }>(items: T[], count: number): T[] => 
 
 export function analyseBrain(snapshot: BrainSnapshot): BrainAnalysis {
   const { inputWeights, recurrentWeights, outputWeights, bias } = snapshot;
-  const N = HIDDEN_COUNT, I = INPUT_COUNT;
+  const N = snapshot.hiddenCount, I = INPUT_COUNT;
   const effect = (j: number) => ({ steer: outputWeights[j], drive: outputWeights[N + j] - outputWeights[2 * N + j], reverse: outputWeights[3 * N + j] });
   const pathway: Record<OutputKey, number[]> = { steer: new Array(I).fill(0), drive: new Array(I).fill(0), reverse: new Array(I).fill(0) };
   const sensorAbs = new Array(I).fill(0); let totalAbs = 0;
@@ -220,9 +220,10 @@ export function analyseBrain(snapshot: BrainSnapshot): BrainAnalysis {
 export function silenceNeurons(snapshot: BrainSnapshot, ids: number[]): BrainSnapshot {
   const copy: BrainSnapshot = { ...snapshot, inputWeights: [...snapshot.inputWeights], recurrentWeights: [...snapshot.recurrentWeights], outputWeights: [...snapshot.outputWeights], bias: [...snapshot.bias] };
   ids.forEach((id) => {
-    if (id < 0 || id >= HIDDEN_COUNT) return;
-    for (let output = 0; output < READOUT_COUNT; output += 1) copy.outputWeights[output * HIDDEN_COUNT + id] = 0;
-    for (let target = 0; target < HIDDEN_COUNT; target += 1) copy.recurrentWeights[target * HIDDEN_COUNT + id] = 0;
+    const n = snapshot.hiddenCount;
+    if (id < 0 || id >= n) return;
+    for (let output = 0; output < READOUT_COUNT; output += 1) copy.outputWeights[output * n + id] = 0;
+    for (let target = 0; target < n; target += 1) copy.recurrentWeights[target * n + id] = 0;
   });
   return copy;
 }
@@ -251,7 +252,7 @@ export class Probe {
       const frame = this.step(sensors);
       if (tick >= ticks - average) { steer += frame.steer; drive += frame.drive; reverse += frame.reverse; spikes += frame.spikes.reduce((sum, value) => sum + value, 0); }
     }
-    return { steer: steer / average, drive: drive / average, reverse: reverse / average, spikeFraction: spikes / (average * HIDDEN_COUNT) };
+    return { steer: steer / average, drive: drive / average, reverse: reverse / average, spikeFraction: spikes / (average * this.network.hiddenCount) };
   }
 }
 

@@ -32,10 +32,21 @@ const STEP = 8;
 const kinds: HabitatKind[] = ["lawn", "street", "apartment"];
 
 /** Breadth-first walking distance (px) from a start over cells the kart's body fits through. */
+const fitGrids = new WeakMap<SolidIndex, Uint8Array>();
+/** Which cells the kart's body fits in. Depends only on the world, so each index computes it once. */
+function fitGrid(index: SolidIndex, half: number): Uint8Array {
+  let free = fitGrids.get(index);
+  if (!free) {
+    const n = Math.floor((half * 2) / STEP) + 1;
+    free = new Uint8Array(n * n);
+    for (let cy = 0; cy < n; cy += 1) for (let cx = 0; cx < n; cx += 1) free[cy * n + cx] = index.free(-half + cx * STEP, -half + cy * STEP, KART_RADIUS + 1.5) ? 1 : 0;
+    fitGrids.set(index, free);
+  }
+  return free;
+}
+
 function walkingDistance(index: SolidIndex, half: number, sx: number, sy: number): { n: number; dist: Float32Array; free: Uint8Array } {
-  const n = Math.floor((half * 2) / STEP) + 1, dist = new Float32Array(n * n).fill(-1), free = new Uint8Array(n * n);
-  const at = (cx: number, cy: number): [number, number] => [-half + cx * STEP, -half + cy * STEP];
-  for (let cy = 0; cy < n; cy += 1) for (let cx = 0; cx < n; cx += 1) { const [x, y] = at(cx, cy); free[cy * n + cx] = index.free(x, y, KART_RADIUS + 1.5) ? 1 : 0; }
+  const n = Math.floor((half * 2) / STEP) + 1, dist = new Float32Array(n * n).fill(-1), free = fitGrid(index, half);
   const startX = Math.round((sx + half) / STEP), startY = Math.round((sy + half) / STEP);
   const queue = new Int32Array(n * n); let head = 0, tail = 0;
   if (free[startY * n + startX]) { dist[startY * n + startX] = 0; queue[tail++] = startY * n + startX; }

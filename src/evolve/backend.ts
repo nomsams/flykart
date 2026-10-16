@@ -36,8 +36,11 @@ export class PoolBackend implements EvalBackend {
       this.idle.push(w);
       w.onReply((reply) => {
         const task = this.busy.get(w);
+        if (!task) return; // nothing was asked of this worker: a stray message must not put it in the idle list twice
         this.busy.delete(w); this.idle.push(w);
-        if (task && (task.id === reply.id || reply.id === -1)) { if (reply.error) task.reject(new Error(reply.error)); else task.resolve(reply.outcomes ?? []); }
+        if (reply.error) task.reject(new Error(reply.error));
+        else if (reply.id === task.id) task.resolve(reply.outcomes ?? []);
+        else task.reject(new Error("A worker answered a different job than the one it was given."));
         this.pump();
       });
     }

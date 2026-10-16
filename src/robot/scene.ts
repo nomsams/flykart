@@ -76,7 +76,7 @@ export class HabitatScene {
         for (const part of o.parts) {
           const height = Math.max(.002, part.top - part.bottom);
           const geometry = part.shape === "cyl" ? new THREE.CylinderGeometry(part.width / 2, part.width / 2, height, part.surface === "foliage" ? 9 : 14) : new THREE.BoxGeometry(part.width, height, part.depth);
-          const mesh = this.mesh(geometry, part.colour ?? 0x9a9a9a, group, o.x * Math.cos(o.yaw) * 0 + this.partX(o, part), (part.bottom + part.top) / 2, this.partZ(o, part));
+          const mesh = this.mesh(geometry, part.colour ?? 0x9a9a9a, group, this.partX(o, part), (part.bottom + part.top) / 2, this.partZ(o, part));
           mesh.rotation.y = -(o.yaw + part.yaw);
           if (o.kind === "floor") { mesh.castShadow = false; (mesh.material as THREE.MeshStandardMaterial).roughness = .85; }
           if (part.surface === "foliage") (mesh.material as THREE.MeshStandardMaterial).flatShading = true;

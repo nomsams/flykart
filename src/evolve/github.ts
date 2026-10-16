@@ -60,7 +60,7 @@ export function defaultRepo(location?: { hostname: string; pathname: string }): 
   const host = location?.hostname ?? "";
   if (host.endsWith(".github.io")) {
     const repo = (location?.pathname ?? "").split("/").filter(Boolean)[0];
-    if (repo && SEGMENT.test(repo)) return { owner: host.slice(0, -".github.io".length), repo };
+    if (repo && SEGMENT.test(repo) && !/\.html?$/i.test(repo)) return { owner: host.slice(0, -".github.io".length), repo };
   }
   return { owner: "nomsams", repo: "flykart" };
 }
