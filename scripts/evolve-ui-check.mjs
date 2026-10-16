@@ -1,6 +1,6 @@
 import { chromium } from "@playwright/test";
 import { spawn } from "node:child_process";
-import { mkdir } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import assert from "node:assert/strict";
 
 // Integration check for FlyKart Evolve against an isolated, hot-reload-free Vite server and a headless browser.
@@ -34,6 +34,24 @@ try {
   assert.ok(drawn > 6, `habitat preview has colour variety (${drawn})`);
   await page.screenshot({ path: `${shots}/1-idle.png`, fullPage: true });
 
+  // Starting brains: the bundled one is ticked; add two files from "the computer" (one a perturbed copy, one the
+  // repository's 17-input explorer) and a file that is not a brain, then remove one again.
+  const bundled = JSON.parse(await readFile("public/vision/robot/world-controller.json", "utf8"));
+  const copy = structuredClone(bundled);
+  copy.network.bias = copy.network.bias.map((v, k) => v + (k % 5 === 0 ? 0.05 : 0));
+  await page.locator("#evo-file").setInputFiles([
+    { name: "mine-a.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(copy)) },
+    { name: "visual.json", mimeType: "application/json", buffer: await readFile("assets/flykart-visual.json") },
+    { name: "notes.json", mimeType: "application/json", buffer: Buffer.from("{\"hello\": 1}") },
+  ]);
+  await page.waitForFunction(() => document.querySelectorAll("#evo-founder-list li").length === 3);
+  assert.equal(await page.locator("#evo-founder-list li[data-bad=true]").count(), 1, "the file that is not a brain is refused, with a reason");
+  assert.match((await page.locator("#evo-founder-list li[data-bad=true]").textContent()) ?? "", /notes\.json/);
+  assert.match((await page.locator("#evo-founder-list li").nth(1).textContent()) ?? "", /widened from 17 to 19/);
+  await page.locator("#evo-founder-list li").nth(1).locator("button").click();
+  assert.equal(await page.locator("#evo-founder-list li:not([data-bad=true])").count(), 1, "one valid upload remains after removing one");
+  await page.screenshot({ path: `${shots}/1b-founders.png`, fullPage: true });
+
   // A short headless run: small population, two workers, stage 1 only.
   await page.locator("#evo-workers").fill("2");
   await page.locator("#evo-pop").fill("8");
@@ -42,6 +60,10 @@ try {
   await page.locator("#evo-last").selectOption("0");
   await page.locator("#evo-play").click();
   await page.waitForFunction(() => Number(document.getElementById("s-gen")?.textContent) >= 3, null, { timeout: 120000 });
+  const startLog = (await page.locator("#evo-log").textContent()) ?? "";
+  assert.match(startLog, /Run started from 2 brain\(s\)/, "the run began from the bundled brain and the uploaded one");
+  assert.match(startLog, /Start: mine-a\.json/);
+  await page.waitForFunction(() => /^back \d+%/.test(document.getElementById("s-overseer")?.textContent ?? ""), null, { timeout: 120000 });
   const headlessStatus = await page.locator("#evo-status").textContent();
   assert.match(headlessStatus ?? "", /Headless/);
   assert.equal(await page.locator("#evo-watch").isHidden(), true, "no watch panel while headless");

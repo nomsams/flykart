@@ -50,6 +50,12 @@ export type EpisodeResult = {
   judgePenalty: number; cells: number; loopSeconds: number; jitterSeconds: number; blindReverseSeconds: number;
   reverseTicks: number; idleTicks: number; path: number; net: number; turn: number; meanSpeed: number;
   firstSeenTick: number | null; visibleTicks: number; bestSize: number;
+  /** Overseer: ticks spent moving within `WALL_GAP` of a wall or furniture (away from any flag it is approaching). */
+  wallTicks: number;
+  /** Delayed pain: seconds spent pinned (against something, going nowhere) past the grace period, how many times, and the pain they cost. */
+  pinSeconds: number; pinEvents: number; pinPain: number;
+  /** Times it was stuck for a second or more and then got itself out. */
+  recoveries: number;
   /** Where the kart was every so often (x, y, heading), when requested. */
   trace?: number[];
   goalsAt?: { x: number; y: number }[];
@@ -59,6 +65,18 @@ export type EpisodeResult = {
 
 export type FlagCue = { visible: boolean; bearing: number; size: number; pixels: number; forward: number };
 const NO_CUE: FlagCue = { visible: false, bearing: 0, size: 0, pixels: 0, forward: 0 };
+/**
+ * The overseer's yardsticks, in world pixels (1 px = 1.1 cm; the kart's body radius is 8 px).
+ * Driving with less than WALL_GAP of free space beside the body is "very close to the walls".
+ * Being pinned means touching something (less than PIN_NEAR of free space) without leaving a PIN_ESCAPE disc.
+ */
+export const WALL_GAP = 6, PIN_NEAR = 4, PIN_ESCAPE = 14, PIN_GRACE_SECONDS = 1.5, PIN_RAMP_SECONDS = 6, PIN_GIVE_UP_SECONDS = 8;
+/** Pain units for a pin of `seconds`: nothing inside the grace period, then growing with the square of how long it stays (capped). */
+export function pinCost(seconds: number): number {
+  if (seconds <= PIN_GRACE_SECONDS) return 0;
+  const t = (seconds - PIN_GRACE_SECONDS) / PIN_RAMP_SECONDS;
+  return Math.min(1.5, t * t);
+}
 /** What the controller reads when the sonar is not answering. */
 const DEAD_ECHO = { range: 400 / 1.1, echo: false, strength: 0, validityOnly: true };
 
@@ -113,11 +131,20 @@ export function runEpisode(brain: SpikingNetwork, scenario: Scenario, reality: R
   const result: EpisodeResult = {
     goals: 0, goalTarget: scenario.goals.length, ticks: 0, maxTicks, goalTicks: [], crashed: false, collisions: 0, pain: 0, judgePenalty: 0, cells: 0,
     loopSeconds: 0, jitterSeconds: 0, blindReverseSeconds: 0, reverseTicks: 0, idleTicks: 0, path: 0, net: 0, turn: 0, meanSpeed: 0, firstSeenTick: null, visibleTicks: 0, bestSize: 0,
+    wallTicks: 0, pinSeconds: 0, pinEvents: 0, pinPain: 0, recoveries: 0,
   };
   if (options.trace) { result.trace = []; result.goalsAt = scenario.goals.map((g) => ({ ...g })); }
   const traceEvery = options.traceEvery ?? 3, stallCutoff = options.stallCutoffSeconds ?? 25;
   const start = { x: kart.x, y: kart.y };
   let goalsBefore = 0, speedSum = 0, previousHeading = kart.heading, idleRun = 0;
+  // Pinned streak: ticks since the kart first touched something at `anchor`, and how long it has been clear of it.
+  let pinTicks = 0, pinFree = 0, anchorX = 0, anchorY = 0;
+  const endPin = (escaped: boolean): void => {
+    const seconds = pinTicks / 30;
+    if (seconds > PIN_GRACE_SECONDS) { result.pinSeconds += seconds; result.pinEvents += 1; result.pinPain = Math.min(3, result.pinPain + pinCost(seconds)); }
+    if (escaped && seconds >= 1) result.recoveries += 1;
+    pinTicks = 0; pinFree = 0;
+  };
   while (!episode.done) {
     const tick = sim.status.ticks;
     // The camera delivers a frame every `camEvery` ticks; between frames the controller holds the last estimate.
@@ -148,6 +175,18 @@ export function runEpisode(brain: SpikingNetwork, scenario: Scenario, reality: R
     const dh = Math.atan2(Math.sin(kart.heading - previousHeading), Math.cos(kart.heading - previousHeading)); result.turn += Math.abs(dh); previousHeading = kart.heading;
     if ((action.reverse ?? 0) > action.throttle + 0.1 || kart.speed < -0.5) result.reverseTicks += 1;
     idleRun = Math.abs(kart.speed) < 2 ? idleRun + 1 : 0; if (idleRun > 0) result.idleTicks += 1;
+    // Overseer. Free space beside the body decides both questions: is it hugging the wall, and is it stuck against it?
+    const gap = index.gap(kart.x, kart.y, 24);
+    const touching = gap < PIN_NEAR;
+    if (pinTicks > 0 && Math.hypot(kart.x - anchorX, kart.y - anchorY) > PIN_ESCAPE) { endPin(true); }
+    if (touching) { if (pinTicks === 0) { anchorX = kart.x; anchorY = kart.y; } pinTicks += 1; pinFree = 0; }
+    else if (pinTicks > 0) { pinTicks += 1; pinFree += 1; if (pinFree > 10) endPin(true); }
+    if (pinTicks === 0 && gap < WALL_GAP && Math.abs(kart.speed) > 8) {
+      // A flag that happens to stand near a wall is not the robot's fault: no charge within 45 px of one.
+      let approaching = false;
+      for (const g of sim.goals) if (Math.hypot(g.x - kart.x, g.y - kart.y) < 45) { approaching = true; break; }
+      if (!approaching) result.wallTicks += 1;
+    }
     const feedback = judge.observe(kart.x, kart.y, sim.status.ticks, cue.size, goalsNow, goalsNow >= scenario.goals.length, sim.status.collisions, {
       visualSearch: true, reverse: kart.speed < -0.5 || (action.reverse ?? 0) > action.throttle + 0.1, targetVisible: cue.visible, heading: kart.heading, drive: action.throttle - (action.reverse ?? 0),
     });
@@ -156,10 +195,13 @@ export function runEpisode(brain: SpikingNetwork, scenario: Scenario, reality: R
     if (options.inputs && sim.status.ticks === 1) void 0;
     // A robot that has stopped for ten seconds and is not reaching anything is out of the running: end the trial.
     if (idleRun > 300) break;
+    // Pinned for good: it is not going to back out, and the pain it has earned is the lesson.
+    if (pinTicks / 30 >= PIN_GIVE_UP_SECONDS) break;
     // Likewise one that has covered no new ground and not neared the flag for a long time (circling, rocking): the judge
     // has already charged it, and the rest of the trial would only repeat the same loop.
     if (stallCutoff > 0 && judge.seconds >= stallCutoff && goalsNow < scenario.goals.length) break;
   }
+  if (pinTicks > 0) endPin(false);
   const status = sim.status;
   result.ticks = status.ticks; result.goals = status.goals; result.crashed = status.crashed; result.crashReason = status.crashReason;
   result.collisions = status.collisions; result.pain = status.pain;

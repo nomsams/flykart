@@ -8,6 +8,7 @@ import { brainCost } from "./brain-size";
 import { STAGES, aggregate, caseFor, runCase, type CaseSpec } from "./cases";
 import { DEFAULT_VIEW, drawLandscape, drawProgress, stageColor, type LandscapeView } from "./charts";
 import { DEFAULT_CONFIG, EvolutionEngine, type EngineState } from "./engine";
+import { MAX_FOUNDERS, prepareFounders, readFounder, type Founder } from "./founders";
 import { DEFAULT_PROFILE, PROFILES, type ProfileId } from "./profiles";
 import { generateHabitat, HABITATS, type HabitatKind } from "./habitats";
 import { TRAIT_NAMES, DESCRIPTOR_NAMES, BASE_OBJECTIVE } from "./objective";
@@ -33,6 +34,8 @@ const app = {
   backend: null as PoolBackend | null,
   progress: null as Progress | null,
   seedBrain: null as BrainSnapshot | null,
+  /** Brain files chosen from the computer (valid ones), and the reasons the others were refused. */
+  uploads: [] as Founder[], refused: [] as string[],
   running: false, stopRequested: false,
   mode: "headless" as Mode,
   log: [] as string[],
@@ -73,6 +76,8 @@ function renderSummary(): void {
   const hidden = last?.hidden ?? p.history[p.history.length - 1]?.hidden ?? 48, cost = brainCost(hidden);
   const layers = p.layers?.length > 1 ? ` · layers ${p.layers.map((l) => `${l[1]}${l[2] < 1 ? `@${l[2].toFixed(2)}` : ""}`).join(" + ")}` : "";
   $("s-brain").textContent = `${hidden} neurons · ${(cost.weightBytes / 1024).toFixed(0)} KB${layers}`;
+  $("s-overseer").textContent = last?.exam && last.exam.reverse !== undefined
+    ? `back ${pct(last.exam.reverse)} · walls ${pct(last.exam.wall ?? 0)} · stuck ${(last.exam.pinned ?? 0).toFixed(1)} s` : "—";
   $("s-trials").textContent = p.episodes.toLocaleString();
   $("s-time").textContent = fmtTime(p.elapsedMs);
   void s;
@@ -113,7 +118,7 @@ function select(id: string | null): void {
   const box = $("evo-selected"), m = app.progress?.maxima.find((x) => x.id === id);
   if (!m) { box.hidden = true; return; }
   box.hidden = false;
-  const bars = TRAIT_NAMES.map((t) => `<span>${t}</span><span class="evo-bar"><i style="width:${Math.round(m.traits[t] * 100)}%"></i></span>`).join("")
+  const bars = TRAIT_NAMES.map((t) => `<span>${t}</span><span class="evo-bar"><i style="width:${Math.round((m.traits[t] ?? 0) * 100)}%"></i></span>`).join("")
     + m.descriptor.map((v, k) => `<span>${DESCRIPTOR_NAMES[k]}</span><span class="evo-bar"><i style="width:${Math.round(v * 100)}%;background:#c4a2ff"></i></span>`).join("");
   box.innerHTML = `<strong>${m.id}</strong> · stage ${m.stage + 1} · ${m.note}<div class="evo-bars">${bars}</div><div class="evo-run-row"><button id="sel-watch" type="button">Watch it</button><button id="sel-dl" type="button">Download this brain</button></div>`;
   $("sel-watch").addEventListener("click", () => { setMode("watch"); ($("w-brain") as HTMLSelectElement).value = m.id; runWatch(); });
@@ -183,17 +188,44 @@ async function loadBundledBrain(): Promise<BrainSnapshot> {
   return (JSON.parse(text) as { network: BrainSnapshot }).network;
 }
 
-async function readSeedBrain(): Promise<BrainSnapshot> {
-  if ($<HTMLSelectElement>("evo-from").value === "file") {
-    const file = $<HTMLInputElement>("evo-file").files?.[0];
-    if (!file) throw new Error("Choose a brain file first.");
-    const raw = JSON.parse(await file.text());
-    const network = (raw.network ?? raw.controller?.network ?? raw) as BrainSnapshot;
-    SpikingNetwork.fromJSON(network); // validates
-    if (network.inputCount !== 19) throw new Error("This brain has no sonar inputs. FlyKart Evolve breeds 19-input (camera + sonar) brains; widen it in FlyKart Vision first.");
-    return network;
+/** Every brain the person has ticked or added, in the order shown (the first one leads until the exams say otherwise). */
+async function collectFounders(): Promise<Founder[]> {
+  const out: Founder[] = [];
+  if ($<HTMLInputElement>("evo-use-bundled").checked) out.push({ name: "Bundled robot world brain", brain: await loadBundledBrain(), note: "" });
+  if ($<HTMLInputElement>("evo-use-visual").checked) {
+    const text = (await import("../../assets/flykart-visual.json?raw")).default as string;
+    out.push(readFounder(text, "Repository: Visual explorer brain"));
   }
-  return loadBundledBrain();
+  out.push(...app.uploads);
+  if (!out.length) throw new Error("Choose at least one brain to start from: tick one above or add a file.");
+  return out;
+}
+
+function renderFounders(): void {
+  const list = $("evo-founder-list"); list.innerHTML = "";
+  app.uploads.forEach((f, k) => {
+    const li = document.createElement("li");
+    li.innerHTML = "<span></span><small></small><button type=\"button\">Remove</button>";
+    li.children[0].textContent = f.name;
+    li.children[1].textContent = f.brain.inputCount + " → " + f.brain.hiddenCount + " → 4" + (f.note ? " · " + f.note : "");
+    li.querySelector("button")!.addEventListener("click", () => { app.uploads.splice(k, 1); renderFounders(); });
+    list.append(li);
+  });
+  for (const why of app.refused) {
+    const li = document.createElement("li"); li.dataset.bad = "true"; li.textContent = "Not used: " + why; list.append(li);
+  }
+}
+
+async function addFounderFiles(files: FileList | null): Promise<void> {
+  app.refused = [];
+  for (const file of Array.from(files ?? [])) {
+    try {
+      if (app.uploads.length >= MAX_FOUNDERS) throw new Error(file.name + ": at most " + MAX_FOUNDERS + " brains can start a run.");
+      app.uploads.push(readFounder(await file.text(), file.name));
+    } catch (error) { app.refused.push(error instanceof Error ? error.message : String(error)); }
+  }
+  $<HTMLInputElement>("evo-file").value = ""; // the same file can be chosen again after removing it
+  renderFounders();
 }
 
 function engineConfig(): Partial<typeof DEFAULT_CONFIG> {
@@ -233,11 +265,13 @@ async function ensureEngine(): Promise<EvolutionEngine> {
     attach(app.engine);
     return app.engine;
   }
-  const seed = await readSeedBrain();
+  const founders = prepareFounders(await collectFounders());
+  const seed = founders.seed;
   app.seedBrain = seed;
-  app.engine = EvolutionEngine.fresh(seed, engineConfig(), app.backend);
+  app.engine = EvolutionEngine.fresh(seed, engineConfig(), app.backend, founders.others);
   attach(app.engine);
-  log(`Run started from ${seed.inputCount} → ${seed.hiddenCount} → 4 brain, ${workers} worker(s), population ${app.engine.config.population}.`);
+  for (const line of founders.report) log(`Start: ${line}`);
+  log(`Run started from ${1 + founders.others.length} brain(s), ${seed.inputCount} → ${seed.hiddenCount} → 4, ${workers} worker(s), population ${app.engine.config.population}.`);
   return app.engine;
 }
 
@@ -501,7 +535,8 @@ function wire(): void {
   $("evo-play").addEventListener("click", () => void play());
   $("evo-mode-headless").addEventListener("click", () => setMode("headless"));
   $("evo-mode-watch").addEventListener("click", () => setMode("watch"));
-  $("evo-from").addEventListener("change", () => { $("evo-file-wrap").hidden = $<HTMLSelectElement>("evo-from").value !== "file"; });
+  $<HTMLInputElement>("evo-file").addEventListener("change", (e) => void addFounderFiles((e.target as HTMLInputElement).files));
+  renderFounders();
   $("evo-resume").addEventListener("click", () => void resumeSaved());
   $("evo-save").addEventListener("click", () => { const s = currentState(); if (s) { void saveRun($<HTMLInputElement>("evo-name").value, s).then(() => setStatus("Saved in this browser.")); } else setStatus("Nothing to save yet."); });
   $("evo-import").addEventListener("click", () => $<HTMLInputElement>("evo-import-file").click());

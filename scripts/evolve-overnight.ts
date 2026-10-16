@@ -4,11 +4,12 @@
 //   npm run evolve -- --name=night1 --hours=8                (the same command resumes where it stopped)
 //   npm run evolve -- --name=night1 --profile=standard       (or thorough; --duty=1 --workers=3 override individually)
 //   npm run evolve -- --name=night2 --from=public/vision/robot/world-controller.json --last-stage=3
+//   npm run evolve -- --name=night3 --from=bundled,visual,mybrains/            (several founders: "bundled", "visual", files, folders)
 //
 // It writes runs/<name>/{state.json, progress.json, best-brain.json, best-brain-48.json, log.txt} and keeps going
 // until the time budget is spent, the last stage is finished, or a file called STOP appears in that folder.
 // Open evolve.html and choose "Load run" (or let it poll runs/<name>/progress.json) to watch without disturbing it.
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync, appendFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync, writeFileSync, appendFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { Worker } from "node:worker_threads";
 import { spawn } from "node:child_process";
@@ -18,6 +19,7 @@ import { validateRanges } from "../src/evolve/reality";
 import type { BrainSnapshot } from "../src/core";
 import { EvolutionEngine, DEFAULT_CONFIG, type EngineConfig, type EngineState } from "../src/evolve/engine";
 import { PoolBackend, type WorkerHandle, type WorkerJob, type WorkerReply } from "../src/evolve/backend";
+import { prepareFounders, readFounder, type Founder } from "../src/evolve/founders";
 import { brainFile, brainFile48, toProgress } from "../src/evolve/persist";
 import { bundleWorker } from "./pool";
 
@@ -86,16 +88,30 @@ if (existsSync(statePath)) {
   engine = new EvolutionEngine(state, backend);
   log(`Resuming ${name}: generation ${state.generation}, stage ${state.stage + 1}, ${state.archive.length} local maxima, ${(state.counters.elapsedMs / 3600000).toFixed(2)} h already used.`);
 } else {
-  const seed = JSON.parse(readFileSync(from, "utf8")).network as BrainSnapshot;
-  engine = EvolutionEngine.fresh(seed, { ...DEFAULT_CONFIG, ...config }, backend);
-  log(`Starting ${name} from ${from} (${seed.inputCount} inputs, ${seed.hiddenCount} neurons) on ${workers} worker(s) for ${hours} h · profile ${profile.id}, ${Math.round(duty * 100)}% duty.`);
+  // --from takes one or several comma-separated brains: files, folders of .json files, or the words bundled / visual.
+  const shortcuts: Record<string, string> = { bundled: "public/vision/robot/world-controller.json", visual: "assets/flykart-visual.json" };
+  const paths: string[] = [];
+  for (const part of from.split(",").map((p) => p.trim()).filter(Boolean)) {
+    const path = shortcuts[part] ?? part;
+    if (existsSync(path) && statSync(path).isDirectory()) for (const f of readdirSync(path).sort()) { if (f.toLowerCase().endsWith(".json")) paths.push(resolve(path, f)); }
+    else paths.push(path);
+  }
+  const found: Founder[] = [];
+  for (const path of paths) {
+    try { found.push(readFounder(readFileSync(path, "utf8"), path)); } catch (error) { log(`Skipped ${path}: ${error instanceof Error ? error.message : String(error)}`); }
+  }
+  const founders = prepareFounders(found);
+  for (const line of founders.report) log(`Founder: ${line}`);
+  const seed: BrainSnapshot = founders.seed;
+  engine = EvolutionEngine.fresh(seed, { ...DEFAULT_CONFIG, ...config }, backend, founders.others);
+  log(`Starting ${name} from ${1 + founders.others.length} brain(s) (${seed.inputCount} inputs, ${seed.hiddenCount} neurons) on ${workers} worker(s) for ${hours} h · profile ${profile.id}, ${Math.round(duty * 100)}% duty.`);
 }
 
 engine.on((event) => {
   if (event.type === "log") log(event.text);
   if (event.type === "generation") {
     const r = event.record;
-    if (r.gen % 5 === 0 || r.event) log(`gen ${r.gen} · stage ${r.stage + 1} climb ${r.branch + 1} (${r.branchType}) · best ${r.best.toFixed(1)} mean ${r.mean.toFixed(1)} leader ${r.champion.toFixed(1)}${r.exam ? ` · exam ${r.exam.score.toFixed(1)} ± ${r.exam.se.toFixed(1)} flags ${(r.exam.reach * 100).toFixed(0)}%` : ""}${r.event ? ` · ${r.event}` : ""}`);
+    if (r.gen % 5 === 0 || r.event) log(`gen ${r.gen} · stage ${r.stage + 1} climb ${r.branch + 1} (${r.branchType}) · best ${r.best.toFixed(1)} mean ${r.mean.toFixed(1)} leader ${r.champion.toFixed(1)}${r.exam ? ` · exam ${r.exam.score.toFixed(1)} ± ${r.exam.se.toFixed(1)} flags ${(r.exam.reach * 100).toFixed(0)}%${r.exam.reverse !== undefined ? ` · back ${(r.exam.reverse * 100).toFixed(0)}% walls ${((r.exam.wall ?? 0) * 100).toFixed(0)}% stuck ${(r.exam.pinned ?? 0).toFixed(1)}s` : ""}` : ""}${r.event ? ` · ${r.event}` : ""}`);
   }
 });
 

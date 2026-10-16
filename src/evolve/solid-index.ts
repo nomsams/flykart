@@ -216,6 +216,26 @@ export class SolidIndex {
     return true;
   }
 
+  /**
+   * Free space (px) between the kart's body and the nearest wall or solid thing within `range`, 0 meaning touching.
+   * Ponds are not walls and are left out; the overseer judges how the robot treats walls and furniture, not water.
+   */
+  gap(x: number, y: number, range: number): number {
+    let best = Math.min(range, this.world.half - Math.abs(x) - KART_RADIUS, this.world.half - Math.abs(y) - KART_RADIUS);
+    for (const i of this.collect(x, y, range + KART_RADIUS, SolidIndex.COLLIDES)) {
+      if (this.flags[i] & SolidIndex.WATER) continue;
+      let distance: number;
+      if (this.kind[i] === 0) distance = Math.hypot(x - this.x[i], y - this.y[i]) - this.a[i];
+      else {
+        const c = this.cs[i], s = this.sn[i], rx = x - this.x[i], ry = y - this.y[i];
+        const lx = rx * c + ry * s, ly = -rx * s + ry * c;
+        distance = Math.hypot(lx - Math.max(-this.a[i], Math.min(this.a[i], lx)), ly - Math.max(-this.b[i], Math.min(this.b[i], ly)));
+      }
+      if (distance - KART_RADIUS < best) best = distance - KART_RADIUS;
+    }
+    return Math.max(0, best);
+  }
+
   /** The solid's footprint circle list, for sonar targets and drawing. */
   describe(i: number): { kind: "circle" | "box"; x: number; y: number; a: number; b: number; heading: number; z0: number; z1: number } {
     return { kind: this.kind[i] === 0 ? "circle" : "box", x: this.x[i], y: this.y[i], a: this.a[i], b: this.b[i], heading: Math.atan2(this.sn[i], this.cs[i]), z0: this.z0[i], z1: this.z1[i] };

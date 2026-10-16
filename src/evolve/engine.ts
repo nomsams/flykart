@@ -18,7 +18,7 @@ import { GATING, SCREENS, type ScreenKind } from "./screen";
 import { STAGES, aggregate, examBattery, trainingBattery, caseFor, type Aggregate, type CaseOutcome, type CaseSpec, type HardCase } from "./cases";
 import { polish } from "./polish";
 import type { RealityRanges } from "./reality";
-import { BASE_OBJECTIVE, EMPHASES, TRAIT_NAMES, objectiveWith, type Traits } from "./objective";
+import { BASE_OBJECTIVE, EMPHASES, NO_TRAITS, TRAIT_NAMES, objectiveWith, type Traits } from "./objective";
 
 export interface EvalBackend {
   readonly size: number;
@@ -90,8 +90,11 @@ export type GenerationRecord = {
   kinship?: number; defective?: number; screened?: number;
   /** Hard cases in the pool, filled cells of the behaviour archive, and trials spent on close contenders. */
   hard?: number; qdCells?: number; extra?: number;
-  /** Exam of the leader, when one was held this generation. */
-  exam?: { score: number; se: number; reach: number; crash: number };
+  /**
+   * Exam of the leader, when one was held this generation, with what the overseer saw in it: share of time spent
+   * reversing and along walls, seconds pinned per trial, and times it freed itself from a pin per trial.
+   */
+  exam?: { score: number; se: number; reach: number; crash: number; reverse?: number; wall?: number; pinned?: number; recovered?: number };
   proj: number[]; hidden: number; elapsed: number; evals: number;
   event?: string;
 };
@@ -158,12 +161,18 @@ export class EvolutionEngine {
     };
   }
 
-  static fresh(seedBrain: BrainSnapshot, config: Partial<EngineConfig> = {}, backend: EvalBackend): EvolutionEngine {
+  /**
+   * A new run. `founders` are further brains that start beside the seed in the first population (the caller makes them
+   * the same size and shape; see founders.ts): each is scored as it is and then bred from, so the run begins from the
+   * best of them and the others stay available as mates.
+   */
+  static fresh(seedBrain: BrainSnapshot, config: Partial<EngineConfig> = {}, backend: EvalBackend, founders: BrainSnapshot[] = []): EvolutionEngine {
     const cfg: EngineConfig = { ...DEFAULT_CONFIG, ...config };
-    const first: Individual = { id: "g0", brain: seedBrain, parent: null, mate: null, origin: "seed", born: 0, fit: -Infinity, fitNow: -Infinity, age: 0, traits: { search: 0, safety: 0, speed: 0, smooth: 0 }, crashRate: 0, reach: 0, partial: false };
+    const first: Individual = { id: "g0", brain: seedBrain, parent: null, mate: null, origin: "seed", born: 0, fit: -Infinity, fitNow: -Infinity, age: 0, traits: { ...NO_TRAITS }, crashRate: 0, reach: 0, partial: false };
+    const more: Individual[] = founders.slice(0, Math.max(0, cfg.population - 1)).map((brain, k) => ({ ...first, id: `g${k + 1}`, brain, origin: "founder" }));
     const state: EngineState = {
       version: 1, config: cfg, generation: 0, stage: 0, stageGeneration: 0, branch: 0, branchGeneration: 0, branchType: "seed", emphasis: "balanced",
-      population: [first], exams: [], bestMean: -1e9, hall: [], bestExam: null, staleExams: 0, archive: [], stageResults: [], stageEntry: seedBrain, stageEntryId: "g0", plan: singleLayer(seedBrain.hiddenCount), stageEntryPlan: singleLayer(seedBrain.hiddenCount), champion: null, history: [],
+      population: [first, ...more], exams: [], bestMean: -1e9, hall: [], bestExam: null, staleExams: 0, archive: [], stageResults: [], stageEntry: seedBrain, stageEntryId: "g0", plan: singleLayer(seedBrain.hiddenCount), stageEntryPlan: singleLayer(seedBrain.hiddenCount), champion: null, history: [],
       counters: { episodes: 0, evaluations: 0, elapsedMs: 0, maxima: 0, tournaments: 0, kicks: 0 }, nextId: 1, usedEmphasis: ["balanced"], branchesThisStage: 0, extraBranches: 0, finished: false,
     };
     return new EvolutionEngine(state, backend);
@@ -194,7 +203,8 @@ export class EvolutionEngine {
     // Eugenics: lines that crash most of the time, or twitch, do not breed while there are better parents.
     // Screened-clean first; then the older rules (crash rate, twitching); the pool never falls below two parents.
     const clean = (i: Individual): boolean => !(i.screens ?? []).some((k) => GATING.includes(k));
-    let pool = ranked.filter((i) => !i.partial && i.crashRate <= 0.5 && i.traits.smooth > 0.2 && clean(i)).slice(0, c.parents);
+    // Lines that mostly reverse, hug the walls or sit pinned in corners (tidy near 0) do not breed while there are better parents.
+    let pool = ranked.filter((i) => !i.partial && i.crashRate <= 0.5 && i.traits.smooth > 0.2 && (i.traits.tidy ?? 1) > 0.15 && clean(i)).slice(0, c.parents);
     if (pool.length < 2) pool = ranked.filter((i) => !i.partial && clean(i)).slice(0, c.parents);
     if (pool.length < 2) pool = ranked.slice(0, Math.max(2, Math.min(c.parents, ranked.length)));
     const related = (x: Individual, y: Individual): number => {
@@ -226,7 +236,7 @@ export class EvolutionEngine {
         if (m.id === a.id) continue;
         // Avoid mating close relatives while any other partner exists.
         let gain = random() * 0.15 - (related(a, m) > 0.5 ? 1 : 0);
-        for (const t of TRAIT_NAMES) gain += Math.max(0, m.traits[t] - a.traits[t]);
+        for (const t of TRAIT_NAMES) gain += Math.max(0, (m.traits[t] ?? 0) - (a.traits[t] ?? 0));
         if (gain > bestGain) { bestGain = gain; best = m; }
       }
       return best;
@@ -389,7 +399,7 @@ export class EvolutionEngine {
       const agg = await this.exam(leader, 10 + s.generation);
       const exam = { gen: s.generation, score: agg.score, se: agg.se, reach: agg.reach };
       s.exams.push(exam);
-      record.exam = { score: agg.score, se: agg.se, reach: agg.reach, crash: agg.crash };
+      record.exam = { score: agg.score, se: agg.se, reach: agg.reach, crash: agg.crash, reverse: agg.watch.reverse, wall: agg.watch.wall, pinned: agg.watch.pinSeconds, recovered: agg.watch.recoveries };
       const entry = { ...exam, crash: agg.crash, brain: leader.brain, id: leader.id, traits: agg.traits, descriptor: agg.descriptor };
       s.hall.push(entry); if (s.hall.length > 12) s.hall.shift();
       if (!s.bestExam || agg.score > s.bestExam.score) s.bestExam = entry;
@@ -429,11 +439,12 @@ export class EvolutionEngine {
     return proj.reduce((a, p) => a + projectionDistance(p, mean), 0) / proj.length;
   }
 
-  /** Spread a single seed brain into a first population. */
+  /** Spread the seed (and any founders) into a first population: each founder as it is, then mutants dealt out among them. */
   private seedPopulation(): Individual[] {
-    const s = this.state, c = s.config, base = s.population[0];
-    const out: Individual[] = [{ ...base }];
-    for (let k = 1; k < c.population; k += 1) {
+    const s = this.state, c = s.config, founders = s.population;
+    const out: Individual[] = founders.map((f) => ({ ...f }));
+    for (let k = out.length; k < c.population; k += 1) {
+      const base = founders[k % founders.length];
       const brain = constrain(this.net(base).mutate(Math.min(0.5, c.mutationRate * (1 + (k % 4) * 0.5)), c.mutationSize * (1 + (k % 3) * 0.5), hashSeed(c.runSeed, 1, k)).toJSON(), base.brain, this.plan(base.brain.hiddenCount));
       out.push({ id: this.newId("c"), brain, parent: base.id, mate: null, origin: "mutant", born: 1, fit: -Infinity, fitNow: -Infinity, age: 0, traits: base.traits, crashRate: 0, reach: 0, partial: false });
     }

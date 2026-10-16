@@ -11,17 +11,19 @@ export type Objective = {
   /** New ground covered while still looking (cells of the judge's coarse grid, capped). */
   explore: number;
   crash: number; pain: number; judge: number; reverse: number; idle: number;
+  /** Overseer: driving mostly backwards, driving along walls, and being pinned in a corner (delayed pain). */
+  backwards: number; wall: number; pin: number;
 };
 
-export const BASE_OBJECTIVE: Objective = { reach: 100, speed: 35, sight: 12, explore: 15, crash: 45, pain: 5, judge: 1, reverse: 8, idle: 10 };
+export const BASE_OBJECTIVE: Objective = { reach: 100, speed: 35, sight: 12, explore: 15, crash: 45, pain: 5, judge: 1, reverse: 8, idle: 10, backwards: 40, wall: 18, pin: 30 };
 
 /** Variations used to climb out of a local maximum in a different direction. */
 export const EMPHASES: { id: string; label: string; patch: Partial<Objective> }[] = [
   { id: "balanced", label: "balanced", patch: {} },
   { id: "search", label: "search harder", patch: { explore: 28, sight: 18, idle: 14 } },
-  { id: "careful", label: "careful", patch: { crash: 70, pain: 9, speed: 20 } },
+  { id: "careful", label: "careful", patch: { crash: 70, pain: 9, speed: 20, wall: 30, pin: 40 } },
   { id: "fast", label: "fast", patch: { speed: 60, explore: 10 } },
-  { id: "smooth", label: "no jitter, no reversing", patch: { reverse: 18, judge: 1.6, idle: 18 } },
+  { id: "smooth", label: "no jitter, no reversing", patch: { reverse: 18, judge: 1.6, idle: 18, backwards: 60 } },
 ];
 
 export function objectiveWith(emphasis: string | undefined): Objective {
@@ -31,29 +33,49 @@ export function objectiveWith(emphasis: string | undefined): Objective {
 
 const clamp01 = (v: number): number => Math.max(0, Math.min(1, v));
 
+/** The overseer's three questions about a trial, each as a share or amount (see drive.ts for the yardsticks). */
+export function overseer(r: EpisodeResult): { reverse: number; wall: number; pinSeconds: number; backwards: boolean } {
+  const ticks = Math.max(1, r.ticks), reverse = r.reverseTicks / ticks;
+  return { reverse, wall: (r.wallTicks ?? 0) / ticks, pinSeconds: r.pinSeconds ?? 0, backwards: reverse > 0.5 };
+}
+
+/**
+ * Flags that count as found. A trial driven backwards for most of its time is not a good run even if it got there:
+ * its flags are worth half, both in the score and in the "flags found" share the stage goals are judged by.
+ */
+export function creditedGoals(r: EpisodeResult): number {
+  return overseer(r).backwards ? r.goals * 0.5 : r.goals;
+}
+
 export function scoreEpisode(r: EpisodeResult, o: Objective): number {
   const target = Math.max(1, r.goalTarget), limit = Math.max(1, r.maxTicks);
-  const reach = r.goals / target;
+  const reach = creditedGoals(r) / target;
+  const watch = overseer(r);
   const speed = r.goalTicks.reduce((s, t) => s + Math.max(0, 1 - t / limit), 0) / target;
   const sight = clamp01(0.6 * Math.min(1, r.bestSize * 2.5) + (r.firstSeenTick === null ? 0 : 0.4 * (1 - r.firstSeenTick / limit)));
   const explore = clamp01(r.cells / 40);
   return o.reach * reach + o.speed * speed + o.sight * sight * (1 - reach) + o.explore * explore * (1 - reach)
     - o.crash * (r.crashed ? 1 : 0) - o.pain * Math.min(6, r.pain) - o.judge * Math.min(40, r.judgePenalty)
-    - o.reverse * (r.reverseTicks / Math.max(1, r.ticks)) - o.idle * (r.idleTicks / Math.max(1, r.ticks));
+    - o.reverse * (r.reverseTicks / Math.max(1, r.ticks)) - o.idle * (r.idleTicks / Math.max(1, r.ticks))
+    - o.backwards * clamp01((watch.reverse - 0.25) / 0.35) - o.wall * clamp01((watch.wall - 0.08) / 0.4) - o.pin * Math.min(3, r.pinPain ?? 0);
 }
 
 /** Skills a breeder can reason about separately from the single score (each 0..1). */
-export type Traits = { search: number; safety: number; speed: number; smooth: number };
-export const TRAIT_NAMES: (keyof Traits)[] = ["search", "safety", "speed", "smooth"];
+export type Traits = { search: number; safety: number; speed: number; smooth: number; tidy: number };
+export const TRAIT_NAMES: (keyof Traits)[] = ["search", "safety", "speed", "smooth", "tidy"];
+export const NO_TRAITS: Traits = { search: 0, safety: 0, speed: 0, smooth: 0, tidy: 0 };
 
 export function episodeTraits(r: EpisodeResult): Traits {
-  const target = Math.max(1, r.goalTarget), limit = Math.max(1, r.maxTicks), reach = r.goals / target;
+  const target = Math.max(1, r.goalTarget), limit = Math.max(1, r.maxTicks), reach = creditedGoals(r) / target;
   const sight = clamp01(0.6 * Math.min(1, r.bestSize * 2.5) + (r.firstSeenTick === null ? 0 : 0.4 * (1 - r.firstSeenTick / limit)));
+  const watch = overseer(r);
   return {
     search: clamp01(0.75 * reach + 0.15 * sight + 0.1 * clamp01(r.cells / 40)),
     safety: clamp01(1 - 0.6 * (r.crashed ? 1 : 0) - 0.4 * Math.min(1, r.pain / 6)),
     speed: clamp01(r.goalTicks.reduce((s, t) => s + Math.max(0, 1 - t / limit), 0) / target),
     smooth: clamp01(1 - r.jitterSeconds / 8 - 2 * (r.reverseTicks / Math.max(1, r.ticks)) - r.loopSeconds / 10 - r.idleTicks / Math.max(1, r.ticks)),
+    // Manners: not backwards, not along the walls, not stuck. 1 is a robot that never needs the overseer.
+    tidy: clamp01(1 - 1.2 * watch.reverse - 1.5 * watch.wall - watch.pinSeconds / 6),
   };
 }
 
