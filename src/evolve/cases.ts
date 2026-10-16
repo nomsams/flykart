@@ -90,7 +90,18 @@ export type BatteryExtras = {
   hard?: HardCase[]; hardShare?: number;
   /** Share of current-or-later-stage trials that start in a dead-end pocket. */
   pocketShare?: number;
+  /** Relative chance of each earlier stage being the one rehearsed (index = stage); omitted means all equal. */
+  replayWeights?: number[];
 };
+/** Which earlier stage to rehearse: uniformly, or in proportion to `weights` (the stage that is being forgotten most comes up most). */
+function pickStage(u: number, stageIndex: number, weights?: number[]): number {
+  if (!weights || weights.length < stageIndex) return Math.floor(u * stageIndex);
+  const total = weights.slice(0, stageIndex).reduce((a, w) => a + Math.max(0, w), 0);
+  if (!(total > 0)) return Math.floor(u * stageIndex);
+  let x = u * total;
+  for (let st = 0; st < stageIndex; st += 1) { x -= Math.max(0, weights[st]); if (x <= 0) return st; }
+  return stageIndex - 1;
+}
 export function trainingBattery(stageIndex: number, generation: number, runSeed: number, size: number, objective: Objective, replayShare = 0.3, extras: BatteryExtras = {}): CaseSpec[] {
   const r = mulberry32(hash(runSeed, generation, 9));
   const cases: CaseSpec[] = [];
@@ -98,7 +109,7 @@ export function trainingBattery(stageIndex: number, generation: number, runSeed:
   const rh = mulberry32(hash(runSeed, generation, 21));
   for (let i = 0; i < size; i += 1) {
     const replay = stageIndex > 0 && r() < replayShare;
-    const stage = replay ? Math.floor(r() * stageIndex) : stageIndex;
+    const stage = replay ? pickStage(r(), stageIndex, extras.replayWeights) : stageIndex;
     const pocket = stageIndex >= 1 && (extras.pocketShare ?? 0) > 0 && rh() < (extras.pocketShare ?? 0);
     const useHard = (extras.hard?.length ?? 0) > 0 && rh() < (extras.hardShare ?? 0);
     if (useHard) {

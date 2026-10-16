@@ -100,7 +100,9 @@ function renderStages(): void {
     const status = result ? `${result.mastered ? "mastered" : "moved on without mastering"} · winner ${result.winner} · ${pct(result.reach)} flags`
       : stopped ? `stopped at ${pct(p.stalled!.reach)} · goal ${pct(p.stalled!.goal)}`
       : i === p.stage && !p.finished ? `climbing · ${maxima.length} local maxima kept` : "waiting";
-    li.innerHTML = `<span><strong style="color:${stageColor(i)}">${st.title}</strong></span><span>${status}</span><small>Goal ${pct(st.mastery)} of flags found on fresh trials. ${best !== null ? `Best exam so far ${pct(best)}.` : ""} ${STAGES[i]?.blurb ?? ""}</small>`;
+    const kept = p.stage > i ? p.retention?.[i] : undefined;
+    const keeping = kept ? ` <b style="color:${kept.reach >= kept.target ? "#6bd0a0" : "#ff9d7a"}">Kept now: ${pct(kept.reach)} (needs ${pct(kept.target)}).</b>` : "";
+    li.innerHTML = `<span><strong style="color:${stageColor(i)}">${st.title}</strong></span><span>${status}</span><small>Goal ${pct(st.mastery)} of flags found on fresh trials. ${best !== null ? `Best exam so far ${pct(best)}.` : ""}${keeping} ${STAGES[i]?.blurb ?? ""}</small>`;
     const live = Boolean(app.engine) && !app.viewOnly;
     const tools = document.createElement("span"); tools.className = "evo-stage-tools";
     tools.innerHTML = `<label>Goal <input type="number" min="5" max="100" step="5" value="${Math.round(st.mastery * 100)}" data-goal="${i}" aria-label="Goal for stage ${i + 1}, percent of flags" ${live ? "" : "disabled"} /> %</label><button type="button" data-rerun="${i}" ${live && maxima.length ? "" : "disabled"}>Rerun this stage</button>`;
@@ -360,6 +362,8 @@ function engineConfig(): Partial<typeof DEFAULT_CONFIG> {
     layerPerStage: Math.max(0, Number($<HTMLInputElement>("evo-layer").value) || 0),
     lastStage: last, runSeed: (Date.now() % 100000) + 1,
     keepPerStage: Math.max(1, Math.min(5, Math.round(Number($<HTMLInputElement>("evo-keep-stage").value) || 3))),
+    retainShare: Math.max(0, Math.min(1, Number($<HTMLInputElement>("evo-retain").value) / 100)),
+    kenyonShare: Math.max(0, Math.min(1, Number($<HTMLInputElement>("evo-kenyon").value) / 100)),
     advanceAnyway: $<HTMLInputElement>("evo-advance").checked,
   };
 }
@@ -387,6 +391,8 @@ async function ensureEngine(): Promise<EvolutionEngine> {
     // The two settings that may change while a run exists apply from the next generation.
     app.engine.state.config.keepPerStage = Math.max(1, Math.min(5, Math.round(Number($<HTMLInputElement>("evo-keep-stage").value) || 3)));
     app.engine.state.config.advanceAnyway = $<HTMLInputElement>("evo-advance").checked;
+    app.engine.state.config.retainShare = Math.max(0, Math.min(1, Number($<HTMLInputElement>("evo-retain").value) / 100));
+    app.engine.state.config.kenyonShare = Math.max(0, Math.min(1, Number($<HTMLInputElement>("evo-kenyon").value) / 100));
     // Keep the engine's state but point it at the current pool.
     app.engine = new EvolutionEngine(app.engine.state, app.backend);
     attach(app.engine);

@@ -13,7 +13,9 @@
 //   --goals=2:60,3:50          set goals (stage:percent of flags); a lowered goal that was already reached moves on
 //   --move-on                  take the stage's best brain as it is and begin the next stage
 //   --rerun-stage=2 [--rerun-from=L7]   climb stage 2 again from its best brain (or from L7), dropping later stages' results
-// Other switches: --keep-per-stage=3 (best maxima kept per stage), --max-climbs=40, --stage-stall=8, --advance-anyway
+// Other switches: --keep-per-stage=3 (best maxima kept per stage), --max-climbs=40, --stage-stall=8, --advance-anyway,
+// --retain=0.8 (a stage counts as mastered only if the earlier ones are kept at 80 %; 0 = do not check),
+// --kenyon=0.5 (share of each new layer's neurons that are Kenyon-style: sparse, quiet, pattern-detecting)
 // (the older rule: a couple more climbs, then on regardless).
 //
 // It writes runs/<name>/{state.json, progress.json, best-brain.json, best-brain-48.json, log.txt} and keeps going
@@ -48,7 +50,7 @@ if (profile.lowPriority && args.get("normal-priority") !== "true") { try { setPr
 const hours = Number(args.get("hours") ?? 8);
 const from = args.get("from") ?? "public/vision/robot/world-controller.json";
 const config: Partial<EngineConfig> = { ...profile.config };
-const numeric: [string, keyof EngineConfig][] = [["seed", "runSeed"], ["pop", "population"], ["parents", "parents"], ["battery", "battery"], ["exam", "examSize"], ["exam-every", "examEvery"], ["tournament", "tournamentSize"], ["patience", "patience"], ["branches", "branchesPerStage"], ["max-gens", "maxGenerationsPerBranch"], ["keep-per-stage", "keepPerStage"], ["max-climbs", "maxClimbsPerStage"], ["stage-stall", "stageStall"], ["grow-by", "growBy"], ["max-hidden", "maxHidden"], ["last-stage", "lastStage"], ["ray-step", "rayStepDeg"], ["layer-per-stage", "layerPerStage"], ["layer-from-stage", "layerFromStage"], ["protect", "protect"], ["hard-share", "hardShare"], ["pocket-share", "pocketShare"]];
+const numeric: [string, keyof EngineConfig][] = [["seed", "runSeed"], ["pop", "population"], ["parents", "parents"], ["battery", "battery"], ["exam", "examSize"], ["exam-every", "examEvery"], ["tournament", "tournamentSize"], ["patience", "patience"], ["branches", "branchesPerStage"], ["max-gens", "maxGenerationsPerBranch"], ["keep-per-stage", "keepPerStage"], ["max-climbs", "maxClimbsPerStage"], ["stage-stall", "stageStall"], ["retain", "retainShare"], ["kenyon", "kenyonShare"], ["grow-by", "growBy"], ["max-hidden", "maxHidden"], ["last-stage", "lastStage"], ["ray-step", "rayStepDeg"], ["layer-per-stage", "layerPerStage"], ["layer-from-stage", "layerFromStage"], ["protect", "protect"], ["hard-share", "hardShare"], ["pocket-share", "pocketShare"]];
 for (const [flag, key] of numeric) if (args.has(flag)) (config as Record<string, number>)[key] = Number(args.get(flag));
 if (args.get("two-phase") === "false") config.twoPhase = false;
 if (args.get("advance-anyway") === "true") config.advanceAnyway = true;
@@ -133,7 +135,7 @@ if (existsSync(statePath)) {
 {
   const off = engine.on((event) => { if (event.type === "log") log(event.text); });
   const state = engine.state;
-  for (const [flag, key] of [["keep-per-stage", "keepPerStage"], ["max-climbs", "maxClimbsPerStage"], ["stage-stall", "stageStall"]] as const) if (args.has(flag)) state.config[key] = Number(args.get(flag));
+  for (const [flag, key] of [["keep-per-stage", "keepPerStage"], ["max-climbs", "maxClimbsPerStage"], ["stage-stall", "stageStall"], ["retain", "retainShare"], ["kenyon", "kenyonShare"]] as const) if (args.has(flag)) state.config[key] = Number(args.get(flag));
   if (args.get("advance-anyway") === "true") state.config.advanceAnyway = true;
   for (const part of (args.get("goals") ?? "").split(",").filter(Boolean)) {
     const [stage, percent] = part.split(":").map(Number);

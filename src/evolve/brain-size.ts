@@ -9,20 +9,45 @@ import { mulberry32 } from "../vision/rng";
 
 const clone = (s: BrainSnapshot): BrainSnapshot => ({ ...s, inputWeights: [...s.inputWeights], recurrentWeights: [...s.recurrentWeights], outputWeights: [...s.outputWeights], bias: [...s.bias] });
 
-/** Add `extra` hidden neurons that start with no influence on anything (function preserving). */
-export function growBrain(snapshot: BrainSnapshot, extra: number, seed: number): BrainSnapshot {
+/** How many inputs each Kenyon-style neuron listens to (a fly's Kenyon cell has about six dendritic claws). */
+export const KENYON_CLAWS = 4;
+
+/**
+ * Add `extra` hidden neurons that start with no influence on anything (function preserving). The first `kenyon` of them
+ * are Kenyon-style: each listens to only a few inputs (with a mix of signs, so it is a small pattern detector), hears
+ * nothing from the older neurons, and sits below threshold unless most of its pattern is present at once. Few of them
+ * fire at any moment, so what a new layer learns about one kind of situation does not leak into the others, which is
+ * how an insect's mushroom body keeps one memory from overwriting another. The rest are the ordinary dense neurons.
+ */
+export function growBrain(snapshot: BrainSnapshot, extra: number, seed: number, kenyon = 0): BrainSnapshot {
   if (extra <= 0) return clone(snapshot);
   const H = snapshot.hiddenCount, I = snapshot.inputCount, G = H + extra, random = mulberry32(seed);
   const gauss = (): number => (random() + random() + random() - 1.5) * 2;
+  const sparse = Math.max(0, Math.min(extra, Math.round(kenyon)));
   const inputWeights: number[] = [], recurrentWeights: number[] = [], outputWeights: number[] = [], bias: number[] = [];
-  for (let n = 0; n < G; n += 1) for (let i = 0; i < I; i += 1) inputWeights.push(n < H ? snapshot.inputWeights[n * I + i] : gauss() * 0.3);
+  const kenyonBias: number[] = [];
+  for (let n = 0; n < G; n += 1) {
+    if (n < H) { for (let i = 0; i < I; i += 1) inputWeights.push(snapshot.inputWeights[n * I + i]); continue; }
+    if (n - H >= sparse) { for (let i = 0; i < I; i += 1) inputWeights.push(gauss() * 0.3); continue; }
+    // A pattern over a few inputs: the positive claws want their input high, the negative ones low.
+    const claws = new Set<number>(); while (claws.size < Math.min(KENYON_CLAWS, I)) claws.add(Math.floor(random() * I));
+    let positive = 0;
+    for (let i = 0; i < I; i += 1) {
+      if (!claws.has(i)) { inputWeights.push(0); continue; }
+      const w = (0.25 + 0.3 * random()) * (random() < 0.6 ? 1 : -1);
+      if (w > 0) positive += w;
+      inputWeights.push(w);
+    }
+    kenyonBias[n] = -0.25 * positive;
+  }
   for (let n = 0; n < G; n += 1) for (let p = 0; p < G; p += 1) {
     if (n < H && p < H) recurrentWeights.push(snapshot.recurrentWeights[n * H + p]);
     else if (n < H) recurrentWeights.push(0); // new neurons do not drive old ones yet
-    else recurrentWeights.push(gauss() * 0.05); // old neurons feed new ones
+    else if (n - H < sparse) recurrentWeights.push(0); // a Kenyon-style neuron hears only its inputs
+    else recurrentWeights.push(gauss() * 0.05); // old neurons feed the dense new ones
   }
   for (let o = 0; o < (snapshot.outputCount ?? 4); o += 1) for (let n = 0; n < G; n += 1) outputWeights.push(n < H ? snapshot.outputWeights[o * H + n] : 0);
-  for (let n = 0; n < G; n += 1) bias.push(n < H ? snapshot.bias[n] : random() * 0.04);
+  for (let n = 0; n < G; n += 1) bias.push(n < H ? snapshot.bias[n] : kenyonBias[n] ?? random() * 0.04);
   return { ...snapshot, hiddenCount: G, inputWeights, recurrentWeights, outputWeights, bias };
 }
 

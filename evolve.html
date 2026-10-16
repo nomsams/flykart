@@ -58,6 +58,8 @@
           <label>Trials per generation<input id="evo-battery" type="number" min="2" max="16" value="4" /></label>
           <label>Neurons added per stage (from stage 3)<input id="evo-layer" type="number" min="0" max="32" step="4" value="8" /></label>
           <label>Best maxima kept per stage<input id="evo-keep-stage" type="number" min="1" max="5" value="3" /></label>
+          <label title="A stage is only mastered if the brain still finds at least this share of what each earlier stage's winner found. 0 = do not check.">Keep earlier skills (% of what they were)<input id="evo-retain" type="number" min="0" max="100" step="5" value="80" /></label>
+          <label title="Share of each new layer's neurons that are Kenyon-style: few inputs each, quiet, so what they learn does not spill into old behaviour.">Kenyon-style neurons in new layers (%)<input id="evo-kenyon" type="number" min="0" max="100" step="10" value="50" /></label>
           <label class="evo-check evo-wide"><input id="evo-advance" type="checkbox" /> Move on even when a stage's goal is not reached (off: each stage is mastered before the next begins)</label>
         </div>
         <div class="evo-run-row evo-small">

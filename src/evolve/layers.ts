@@ -30,8 +30,8 @@ export function validatePlan(plan: BrainPlan, hidden: number): BrainPlan {
 }
 
 /** Add a layer of `extra` neurons on top; every older layer becomes at most `protect` times as plastic as it was. */
-export function addLayer(plan: BrainPlan, brain: BrainSnapshot, extra: number, seed: number, protect: number, name?: string): { plan: BrainPlan; brain: BrainSnapshot } {
-  const hidden = brain.hiddenCount, grown = growBrain(brain, extra, seed);
+export function addLayer(plan: BrainPlan, brain: BrainSnapshot, extra: number, seed: number, protect: number, name?: string, kenyonShare = 0): { plan: BrainPlan; brain: BrainSnapshot } {
+  const hidden = brain.hiddenCount, grown = growBrain(brain, extra, seed, Math.round(extra * Math.max(0, Math.min(1, kenyonShare))));
   const layers = validatePlan(plan, hidden).layers.map((l) => ({ ...l, plasticity: l.plasticity * protect }));
   layers.push({ name: name ?? `layer ${layers.length}`, start: hidden, end: hidden + extra, plasticity: 1 });
   return { plan: { layers }, brain: constrain(grown, grown, { layers }) };

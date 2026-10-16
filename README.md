@@ -191,6 +191,37 @@ sonar still hears them). Speed is the brain's own commanded speed (the ESP32 has
 None of these has been run for a full night yet. The mechanics are tested (draws unchanged when a helper is off, the pocket is closed ahead and open behind, the polish only moves
 the readout, resume is exact); whether each one pays for its trials is something a long run has to show, and the generation record (`hard`, `qdCells`, `extra`) is there to look at.
 
+### What the controller senses in Evolve (and what it does not)
+
+The 19 inputs of the brain are: the pink flag's bearing and apparent size, **only when the 48 x 24 camera picture shows it** (0 and 0 otherwise); nine camera-estimated clearance sectors and the surface ahead; its own commanded speed and last two pedals (no encoders); two derived hints (the most open heading, a suggested speed); and the HC-SR04 echo's closeness and strength, which is silent on a bad day. There is **no compass, no flag position or distance, no pose, and no collision or vibration input**: bumping and getting stuck only cost points afterwards (impact pain, the overseer, delayed pain), they are not something the brain feels. So the robot searches by what it sees and hears, steers to the flag once it sees it, and loses sight of it for the last stretch (a 50 cm flag leaves the picture inside about 65 px). Adding a collision input, or a memory of the last bearing, would change the 19-input contract that every brain file and page shares; it is deliberately not done yet.
+
+### Not forgetting: rehearsal, retention and sparse new layers
+
+Your first run lost most of what it learned: the tournaments reported 25-33 % retention of earlier stages at stages 4 and 5. Three things now work against that, each taken from how animals keep skills:
+
+| Idea from biology | What it is here |
+|---|---|
+| **Rehearsal, as in sleep replay** | Each exam also tries the leader on 3 fresh trials of every earlier stage. A stage whose result has fallen below what it must keep gets most of the rehearsal: the share of training trials drawn from earlier stages rises from 30 % towards 70 %, and the most-forgotten stage is picked about sixteen times as often as one that is fine. |
+| **Consolidation as a condition** | A stage counts as mastered only if its winner finds at least `--retain` (default 80 %) of what each earlier stage's winner found (measured against the goal or the result it left with, whichever is lower) on 8 fresh trials per earlier stage. A brain that reaches the new goal but has forgotten an old stage does not move on: the log says which stage it forgot and by how much, and the run keeps climbing with that stage rehearsed. If it cannot do both, the run stops and says so. |
+| **Sparse coding, as in the mushroom body** | Half of every new layer's neurons (`--kenyon`, default 0.5) are Kenyon-style: each listens to 4 inputs with a mix of signs, hears nothing from the older neurons, and sits below threshold unless its pattern is present, so it fires on about 2 % of ticks. Dense new neurons, which every layer used to be made of, fire on 6-8 %. |
+
+The Kenyon-style claim was measured, not assumed (`retention.test.ts`, on recorded stage-1 trial inputs, with random output weights standing in for "the new layer has learned something"): old-stage actions moved by 0.056 on average with dense new neurons, 0.032 with half Kenyon-style, 0.018 with all Kenyon-style (and about 0.001 at a firing rate so low the neurons would never be used). Whether that turns into better *retention in a real run* is something a night will have to show; it is the reason for the default of one half, which keeps some dense capacity to learn with.
+
+What this is **not**: the brain has no fast within-trial memory (a Kenyon-cell memory that learns during a trial, as in the Vision lab's room memory, would need new inputs or a learning rule inside the controller; see the note on inputs above). The Kenyon-style neurons are structure, not learning.
+
+### Breeding like a stock breeder
+
+| Practice | In the engine |
+|---|---|
+| **Estimated breeding value** | Parents are ranked by a value that combines the brain's own score, its parents' values (the pedigree, half weight) and how the offspring it has already sired scored against their generation (up to twice that weight), instead of by one noisy score. A parent that scores well by luck, whose children do not, is demoted; an average one that keeps siring good children is promoted. This is a simple index, not a full BLUP: the weights are choices. |
+| **Culling** | Unchanged: screened-out and defective candidates, lines that mostly reverse, hug walls or sit stuck (the tidy trait) and lines that crash do not breed while better parents exist. |
+| **Outcrossing and line breeding** | Unchanged: relatedness is tracked so close relatives are not mated while others exist, and gene flow brings in brains from other local maxima and behaviour cells. |
+| **Lifetime learning handed on** | Unchanged: at the end of each climb the best brain is polished on its own successful trials and takes part in the confirmation round, and it is adopted only if it wins there. Handing learned changes on to children (Lamarckian inheritance) is not what happens in nature; here it is allowed only when it measurably helps. |
+
+### More neurons: when, and how
+
+New capacity comes in two ways, both function-preserving (the new neurons start with no influence): a layer of 8 at the start of each stage from stage 3, with the older layers made less plastic, and a "grow" climb in the rotation. New: when a stage has stopped improving, the run tries one growth climb before it gives up, with a fresh window of patience, since adding capacity is the one thing that cannot have been tried yet. The cap is now 128 neurons (160 for the thorough profile): your first run hit 80 and could not grow at stage 6. The cost is small (a 128-neuron brain is about 19,000 multiply-adds per 33 ms tick and 76 KB of weights). In that first run growth did not help (the grown brains averaged 20 points against 25 for the same climbs at the old size), which is why it is not done at every plateau: size is rarely the bottleneck; the search and the curriculum are.
+
 ### Mastering each stage before the next, and keeping only the best maxima
 
 A one-hour-forty run of the earlier engine (1,080 generations) showed the problem plainly: stage 2 was still climbing (21 % of flags found on early exams, 40 % on late ones, best 50 %) when the engine moved on after five climbs, and every later stage inherited a brain that had not learned the one before. Now:
@@ -258,7 +289,7 @@ a mating cannot break that, a layer at plasticity 0 does not move at all). A "gr
 ### Resource-sparse mode (the default)
 
 `--profile=sparse` (also the page's "Resources" selector) runs one worker at low priority with about 60 % duty, 12 candidates, 4 trials per generation, exams of 12, a 3-degree echo beam and layers
-capped at 80 neurons, so the laptop stays usable and cool. `standard` and `thorough` use more of the machine; any single flag (`--workers`, `--duty`, `--pop`, ...) overrides the profile.
+capped at 128 neurons, so the laptop stays usable and cool. `standard` and `thorough` use more of the machine; any single flag (`--workers`, `--duty`, `--pop`, ...) overrides the profile.
 
 ### Using it
 

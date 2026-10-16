@@ -24,6 +24,8 @@ export type Progress = {
   stalled?: { stage: number; reach: number; goal: number; climbs: number; why: string } | null;
   /** Local maxima retired so far (only the best few of each stage are kept). */
   retired?: number;
+  /** What the leader keeps of each earlier stage (latest measurement) and what it has to keep. */
+  retention?: Record<number, { reach: number; target: number }>;
 };
 
 export function toProgress(state: EngineState, name: string, log: string[] = []): Progress {
@@ -36,6 +38,7 @@ export function toProgress(state: EngineState, name: string, log: string[] = [])
     layers: (state.plan?.layers ?? []).map((l) => [l.name, l.end - l.start, l.plasticity] as [string, number, number]), log: log.slice(-200), stages: STAGES.map((s, i) => ({ id: s.id, title: s.title, mastery: state.goals?.[i] ?? s.mastery })),
     stalled: state.stalled ? { stage: state.stalled.stage, reach: state.stalled.reach, goal: state.goals?.[state.stalled.stage] ?? STAGES[state.stalled.stage]?.mastery ?? state.stalled.goal, climbs: state.stalled.climbs, why: state.stalled.why } : null,
     retired: state.counters.retired ?? 0,
+    retention: state.retention ?? {},
   };
 }
 

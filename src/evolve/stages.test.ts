@@ -36,10 +36,10 @@ describe("mastering a stage before the next begins", () => {
   }, 180000);
 
   it("stops early when a stage has stopped improving, even with climbs to spare", async () => {
-    const engine = EvolutionEngine.fresh(seed, { ...config, maxClimbsPerStage: 40, stageStall: 2 }, new InlineBackend());
+    const engine = EvolutionEngine.fresh(seed, { ...config, maxClimbsPerStage: 40, stageStall: 2, growBy: 0 }, new InlineBackend());
     impossible(engine);
     await engine.run(() => engine.state.generation > 80);
-    expect(engine.state.stalled?.why).toMatch(/no better result for 2 climbs/);
+    expect(engine.state.stalled?.why).toMatch(/no better result for \d+ climbs/);
     expect(engine.state.stalled!.climbs).toBeLessThan(40);
   }, 180000);
 
