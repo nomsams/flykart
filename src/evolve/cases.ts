@@ -2,7 +2,7 @@
 import { SpikingNetwork, type BrainSnapshot } from "../core";
 import { mulberry32 } from "../vision/rng";
 import { runEpisode, type EpisodeResult } from "./drive";
-import { BASE_OBJECTIVE, episodeDescriptor, episodeTraits, scoreEpisode, type Objective, type Traits } from "./objective";
+import { BASE_OBJECTIVE, NO_TRAITS, creditedGoals, episodeDescriptor, episodeTraits, overseer, scoreEpisode, type Objective, type Traits } from "./objective";
 import { sampleReality } from "./reality";
 import { runScreen } from "./screen";
 import { buildScenario, type ScenarioSpec } from "./scenario";
@@ -60,6 +60,8 @@ export type CaseOutcome = {
   stage: number; score: number; traits: Traits; descriptor: number[];
   goals: number; goalTarget: number; ticks: number; crashed: boolean; collisions: number; pain: number;
   reachFrac: number; kind: HabitatKind; trace?: number[]; goalsAt?: { x: number; y: number }[];
+  /** The overseer's findings: share of time reversing, share of time along walls, seconds pinned, and times it got out of a pin. */
+  watch?: { reverse: number; wall: number; pinSeconds: number; recoveries: number };
   /** Present when the case was a genetic screen. */
   screen?: { kind: import("./screen").ScreenKind; failed: boolean; note: string };
 };
@@ -119,7 +121,7 @@ export function examBattery(stageIndex: number, size: number, tag = 0): CaseSpec
 export function runCase(snapshot: BrainSnapshot, spec: CaseSpec): CaseOutcome {
   if (spec.screen) {
     const r = runScreen(snapshot, spec.screen, spec.seed);
-    return { stage: spec.stage, score: r.failed ? -1 : 0, traits: { search: 0, safety: 0, speed: 0, smooth: 0 }, descriptor: [], goals: 0, goalTarget: 0, ticks: 0, crashed: false, collisions: 0, pain: 0, reachFrac: 0, kind: "lawn", screen: r };
+    return { stage: spec.stage, score: r.failed ? -1 : 0, traits: { ...NO_TRAITS }, descriptor: [], goals: 0, goalTarget: 0, ticks: 0, crashed: false, collisions: 0, pain: 0, reachFrac: 0, kind: "lawn", screen: r };
   }
   const brain = SpikingNetwork.fromJSON(snapshot);
   const scenario = buildScenario(spec.scenario);
@@ -129,7 +131,8 @@ export function runCase(snapshot: BrainSnapshot, spec: CaseSpec): CaseOutcome {
   return {
     stage: spec.stage, score: scoreEpisode(result, spec.objective), traits: episodeTraits(result), descriptor: episodeDescriptor(result),
     goals: result.goals, goalTarget: result.goalTarget, ticks: result.ticks, crashed: result.crashed, collisions: result.collisions, pain: result.pain,
-    reachFrac: result.goals / Math.max(1, result.goalTarget), kind: scenario.kind, trace: result.trace, goalsAt: result.goalsAt,
+    reachFrac: creditedGoals(result) / Math.max(1, result.goalTarget), kind: scenario.kind, trace: result.trace, goalsAt: result.goalsAt,
+    watch: (() => { const w = overseer(result); return { reverse: w.reverse, wall: w.wall, pinSeconds: w.pinSeconds, recoveries: result.recoveries }; })(),
   };
 }
 
@@ -140,6 +143,8 @@ export function runCases(snapshot: BrainSnapshot, specs: CaseSpec[]): CaseOutcom
 
 export type Aggregate = {
   n: number; score: number; se: number; reach: number; crash: number; pain: number; traits: Traits; descriptor: number[];
+  /** Overseer means over the trials: share reversing, share along walls, seconds pinned per trial, recoveries per trial. */
+  watch: { reverse: number; wall: number; pinSeconds: number; recoveries: number };
   perStage: Record<number, { n: number; score: number; reach: number }>;
 };
 
@@ -148,7 +153,8 @@ export function aggregate(outcomes: CaseOutcome[]): Aggregate {
   const n = Math.max(1, outcomes.length), mean = (f: (o: CaseOutcome) => number): number => outcomes.reduce((s, o) => s + f(o), 0) / n;
   const score = mean((o) => o.score);
   const variance = outcomes.reduce((s, o) => s + (o.score - score) ** 2, 0) / Math.max(1, n - 1);
-  const traits: Traits = { search: mean((o) => o.traits.search), safety: mean((o) => o.traits.safety), speed: mean((o) => o.traits.speed), smooth: mean((o) => o.traits.smooth) };
+  const traits: Traits = { search: mean((o) => o.traits.search), safety: mean((o) => o.traits.safety), speed: mean((o) => o.traits.speed), smooth: mean((o) => o.traits.smooth), tidy: mean((o) => o.traits.tidy ?? 0) };
+  const watch = { reverse: mean((o) => o.watch?.reverse ?? 0), wall: mean((o) => o.watch?.wall ?? 0), pinSeconds: mean((o) => o.watch?.pinSeconds ?? 0), recoveries: mean((o) => o.watch?.recoveries ?? 0) };
   const descriptor = outcomes[0]?.descriptor.map((_, k) => mean((o) => o.descriptor[k])) ?? [];
   const perStage: Aggregate["perStage"] = {};
   for (const o of outcomes) {
@@ -156,5 +162,5 @@ export function aggregate(outcomes: CaseOutcome[]): Aggregate {
     e.n += 1; e.score += o.score; e.reach += o.reachFrac;
   }
   for (const e of Object.values(perStage)) { e.score /= e.n; e.reach /= e.n; }
-  return { n: outcomes.length, score, se: Math.sqrt(variance / n), reach: mean((o) => o.reachFrac), crash: mean((o) => (o.crashed ? 1 : 0)), pain: mean((o) => o.pain), traits, descriptor, perStage };
+  return { n: outcomes.length, score, se: Math.sqrt(variance / n), reach: mean((o) => o.reachFrac), crash: mean((o) => (o.crashed ? 1 : 0)), pain: mean((o) => o.pain), traits, descriptor, watch, perStage };
 }

@@ -220,9 +220,10 @@ export function preset(name: string): WorldObject[] {
   if (evolved) return habitatPreset(evolved[1] as "apartment" | "lawn" | "street", evolved[2] ? Number(evolved[2]) : 3, 0.55);
   const add = (kind: ObjectKind, x: number, z: number, config: Partial<WorldObject> = {}) => items.push({ ...makeObject(kind, x, z), ...config });
   if (name !== "empty") {
-    add("wall", 0, -2.3, { width: 5, height: .6 }); add("wall", 2.5, 0, { width: 4.6, yaw: Math.PI / 2, height: .6 });
+    // Walls are .09 m thick. The north and south walls run out to the outer faces of the side walls so the corners are closed.
+    add("wall", 0, -2.3, { width: 5.09, height: .6 }); add("wall", 2.5, 0, { width: 4.6, yaw: Math.PI / 2, height: .6 });
     add("wall", -2.5, 0, { width: 4.6, yaw: Math.PI / 2, height: .6 });
-    add("wall", -1.6, 2.3, { width: 1.8, height: .6 }); add("wall", 1.6, 2.3, { width: 1.8, height: .6 });
+    add("wall", -1.6225, 2.3, { width: 1.845, height: .6 }); add("wall", 1.6225, 2.3, { width: 1.845, height: .6 });
   }
   if (name === "room") { add("table", .4, -.2); add("chair", 1.2, .45); add("chair", -.5, -.55, { yaw: Math.PI }); add("wall", .9, -1.7, { width: 1.2, yaw: Math.PI / 2 }); add("rock", -1.7, -1.2, { width: .18, depth: .18, height: .13 }); }
   if (name === "garden") { add("tree", .6, -.6); add("tree", -1.2, -1.6); add("bush", -.2, 1); add("rock", 1.2, 1.2); add("water", 1.4, -1.4); add("stone", -.7, -.5); add("stone", .1, -.9); }

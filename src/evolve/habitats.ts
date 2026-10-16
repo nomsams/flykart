@@ -212,8 +212,13 @@ export function generateApartment(seed: number, difficulty = 0.5): WorldDef {
   const pick = <T,>(items: T[]): T => items[Math.floor(random() * items.length)];
   const wall = px(10);
   // Two partitions with door gaps carve the flat into a living room, a kitchen and a bedroom/hall.
-  const vx = Math.round(between(random, -50, 70)), doorY = between(random, -150, 150), hy = Math.round(between(random, -70, 70)), doorX = between(random, vx + 90, half - 90);
+  const vx = Math.round(between(random, -50, 70)), doorY = between(random, -150, 150), hy0 = Math.round(between(random, -70, 70)), doorX = between(random, vx + 90, half - 90);
   const gap = px(48 + random() * 12);
+  // The second partition starts at the first one's centre line, so it must start on solid wall and not in the doorway
+  // (where its end would hang in the air, not flush with anything): if it would, move it just clear of the door.
+  const clear = gap + wall;
+  let hy = hy0;
+  if (Math.abs(hy0 - doorY) < clear) { const up = doorY + clear, down = doorY - clear; hy = Math.round(up <= 70 ? up : down >= -70 ? down : hy0 >= doorY ? up : down); }
   const parts: Obstacle[] = [
     wallSegment(vx, -half, vx, doorY - gap, wall), wallSegment(vx, doorY + gap, vx, half, wall),
     wallSegment(vx, hy, doorX - gap, hy, wall), wallSegment(doorX + gap, hy, half, hy, wall),

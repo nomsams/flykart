@@ -36,11 +36,21 @@
               <option value="standard">Standard · most cores</option>
               <option value="thorough">Thorough · all but one core, bigger batteries</option>
             </select></label>
-          <label>Start from<select id="evo-from">
-              <option value="bundled">Bundled robot world brain (19 → 48 → 4)</option>
-              <option value="file">A brain file I choose…</option>
-            </select></label>
-          <label class="evo-file" hidden id="evo-file-wrap">Brain file<input id="evo-file" type="file" accept=".json,application/json" /></label>
+          <fieldset class="evo-founders" id="evo-founders-box">
+            <legend>Start from: any number of brains</legend>
+            <label class="evo-check"><input id="evo-use-bundled" type="checkbox" checked /> Bundled robot world brain <small>19 → 48 → 4</small></label>
+            <label class="evo-check"><input id="evo-use-visual" type="checkbox" /> Repository: Visual explorer brain <small>17 inputs, widened to 19</small></label>
+            <label class="evo-file">Add brain files from this computer (choose several at once, or add more later)<input id="evo-file" type="file" accept=".json,application/json" multiple /></label>
+            <div class="evo-github">
+              <input id="evo-github-url" type="text" spellcheck="false" autocomplete="off" aria-label="GitHub link to a brain file or a folder of brains" placeholder="Paste a GitHub link to a trained brain, or to a folder of them" />
+              <button id="evo-github-add" type="button">Import from GitHub</button>
+              <button id="evo-github-browse" type="button">Browse this repository's brains</button>
+            </div>
+            <ul id="evo-github-list" class="evo-founder-list" aria-live="polite"></ul>
+            <small id="evo-github-status" role="status"></small>
+            <ul id="evo-founder-list" class="evo-founder-list" aria-live="polite"></ul>
+            <small id="evo-founder-note">Every brain chosen here is scored in the first generation. The best one leads; the others stay in the breeding pool as mates and gene donors, so everything you have trained so far can be combined. Different sizes are fine: the smaller ones are grown to the size of the biggest without changing what they do.</small>
+          </fieldset>
           <label>Workers<input id="evo-workers" type="number" min="1" max="16" value="3" /></label>
           <label>Stop after (hours, 0 = never)<input id="evo-hours" type="number" min="0" max="48" step="0.5" value="8" /></label>
           <label>Last stage<select id="evo-last"></select></label>
@@ -68,6 +78,7 @@
         <div class="evo-stat"><span>Local maxima</span><strong id="s-max">0</strong></div>
         <div class="evo-stat"><span>Leader (flags found)</span><strong id="s-reach">—</strong></div>
         <div class="evo-stat"><span>Brain</span><strong id="s-brain">48 neurons</strong></div>
+        <div class="evo-stat"><span title="Leader's last exam: share of time driving backwards, share of time within 6 px of a wall, seconds stuck per trial">Overseer</span><strong id="s-overseer">—</strong></div>
         <div class="evo-stat"><span>Trials run</span><strong id="s-trials">0</strong></div>
         <div class="evo-stat"><span>Elapsed</span><strong id="s-time">0:00:00</strong></div>
       </section>
