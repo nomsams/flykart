@@ -99,12 +99,18 @@ export function buildWorldGroup(world: WorldDef): THREE.Group {
     else parts.push({ shape: "box", x: o.x, y: o.y, halfLength: o.radius, halfWidth: o.radius * 0.8, z0: 0, z1: o.height, color: [0.55, 0.4, 0.25] });
     for (const part of parts) group.add(partMesh(part, materials));
   }
-  // The boundary the camera sees: wall, kerb or fence.
-  const style = world.boundary ?? "fence", top = style === "wall" ? 130 : style === "kerb" ? 12 : 11;
-  for (const [x, y, hl, hw] of [[0, -h, h, 1.5], [0, h, h, 1.5], [-h, 0, 1.5, h], [h, 0, 1.5, h]] as const) {
-    group.add(partMesh({ shape: "box", x, y, halfLength: hl, halfWidth: hw, z0: 0, z1: top, color: style === "wall" ? [0.93, 0.92, 0.88] : style === "kerb" ? [0.76, 0.76, 0.74] : [0.9, 0.9, 0.86] }, materials));
-  }
+  for (const part of boundaryParts(world)) group.add(partMesh(part, materials));
   return group;
+}
+
+/**
+ * The boundary the camera sees (wall, kerb or fence) as four strips. The north and south strips run out to the outer
+ * faces of the side strips, so the four corners are closed and the strips meet flush.
+ */
+export function boundaryParts(world: WorldDef): PropPart[] {
+  const h = world.half, style = world.boundary ?? "fence", top = style === "wall" ? 130 : style === "kerb" ? 12 : 11, t = 1.5;
+  const color: [number, number, number] = style === "wall" ? [0.93, 0.92, 0.88] : style === "kerb" ? [0.76, 0.76, 0.74] : [0.9, 0.9, 0.86];
+  return ([[0, -h, h + t, t], [0, h, h + t, t], [-h, 0, t, h], [h, 0, t, h]] as const).map(([x, y, halfLength, halfWidth]) => ({ shape: "box" as const, x, y, halfLength, halfWidth, z0: 0, z1: top, color }));
 }
 
 /** A small stand-in for the 26 x 17 cm robot with its camera and sonar, in metres. */

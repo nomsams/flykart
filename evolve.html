@@ -41,6 +41,13 @@
             <label class="evo-check"><input id="evo-use-bundled" type="checkbox" checked /> Bundled robot world brain <small>19 → 48 → 4</small></label>
             <label class="evo-check"><input id="evo-use-visual" type="checkbox" /> Repository: Visual explorer brain <small>17 inputs, widened to 19</small></label>
             <label class="evo-file">Add brain files from this computer (choose several at once, or add more later)<input id="evo-file" type="file" accept=".json,application/json" multiple /></label>
+            <div class="evo-github">
+              <input id="evo-github-url" type="text" spellcheck="false" autocomplete="off" aria-label="GitHub link to a brain file or a folder of brains" placeholder="Paste a GitHub link to a trained brain, or to a folder of them" />
+              <button id="evo-github-add" type="button">Import from GitHub</button>
+              <button id="evo-github-browse" type="button">Browse this repository's brains</button>
+            </div>
+            <ul id="evo-github-list" class="evo-founder-list" aria-live="polite"></ul>
+            <small id="evo-github-status" role="status"></small>
             <ul id="evo-founder-list" class="evo-founder-list" aria-live="polite"></ul>
             <small id="evo-founder-note">Every brain chosen here is scored in the first generation. The best one leads; the others stay in the breeding pool as mates and gene donors, so everything you have trained so far can be combined. Different sizes are fine: the smaller ones are grown to the size of the biggest without changing what they do.</small>
           </fieldset>

@@ -9,6 +9,7 @@ import { STAGES, aggregate, caseFor, runCase, type CaseSpec } from "./cases";
 import { DEFAULT_VIEW, drawLandscape, drawProgress, stageColor, type LandscapeView } from "./charts";
 import { DEFAULT_CONFIG, EvolutionEngine, type EngineState } from "./engine";
 import { MAX_FOUNDERS, prepareFounders, readFounder, type Founder } from "./founders";
+import { browseRepository, defaultRepo, fetchBrainText, listFolder, parseGithubLink, type RemoteFile } from "./github";
 import { DEFAULT_PROFILE, PROFILES, type ProfileId } from "./profiles";
 import { generateHabitat, HABITATS, type HabitatKind } from "./habitats";
 import { TRAIT_NAMES, DESCRIPTOR_NAMES, BASE_OBJECTIVE } from "./objective";
@@ -214,6 +215,61 @@ function renderFounders(): void {
   for (const why of app.refused) {
     const li = document.createElement("li"); li.dataset.bad = "true"; li.textContent = "Not used: " + why; list.append(li);
   }
+}
+
+/** One brain's text, from the computer or from GitHub, into the list of founders; a refusal goes to the list with its reason. */
+function addFounderText(text: string, name: string): boolean {
+  try {
+    if (app.uploads.length >= MAX_FOUNDERS) throw new Error(name + ": at most " + MAX_FOUNDERS + " brains can start a run.");
+    app.uploads.push(readFounder(text, name));
+    return true;
+  } catch (error) { app.refused.push(error instanceof Error ? error.message : String(error)); return false; }
+}
+
+function githubStatus(text: string): void { $("evo-github-status").textContent = text; }
+
+/** The files found on GitHub, each with a button that fetches it and adds it to the founders. */
+function showRemote(files: RemoteFile[]): void {
+  const list = $("evo-github-list"); list.innerHTML = "";
+  if (!files.length) { githubStatus("No .json files were found there."); return; }
+  githubStatus(files.length + " file(s) found. Add the ones that are trained brains; other files are refused with a reason.");
+  for (const f of files) {
+    const li = document.createElement("li");
+    li.innerHTML = "<span></span><small></small><button type=\"button\">Add</button>";
+    li.children[0].textContent = f.name;
+    li.children[1].textContent = f.path + " · " + Math.max(1, Math.round(f.size / 1024)) + " KB";
+    const button = li.querySelector("button")!;
+    button.addEventListener("click", () => void importRemote(f.name, f.url, button));
+    list.append(li);
+  }
+}
+
+async function importRemote(name: string, url: string, button?: HTMLButtonElement): Promise<void> {
+  app.refused = [];
+  if (button) button.disabled = true;
+  githubStatus("Fetching " + name + "…");
+  try {
+    const ok = addFounderText(await fetchBrainText(url), "GitHub: " + name);
+    githubStatus(ok ? name + " added." : "");
+    if (button) button.textContent = ok ? "Added" : "Refused";
+  } catch (error) { app.refused.push(error instanceof Error ? error.message : String(error)); githubStatus(""); if (button) { button.disabled = false; } }
+  renderFounders();
+}
+
+async function importFromLink(): Promise<void> {
+  app.refused = []; renderFounders();
+  try {
+    const target = parseGithubLink($<HTMLInputElement>("evo-github-url").value);
+    if (target.kind === "file") { await importRemote(target.name, target.url); return; }
+    githubStatus("Looking in the folder…");
+    showRemote(await listFolder(target));
+  } catch (error) { githubStatus(error instanceof Error ? error.message : String(error)); }
+}
+
+async function browseGithub(): Promise<void> {
+  const { owner, repo } = defaultRepo(location);
+  githubStatus("Looking through " + owner + "/" + repo + "…");
+  try { showRemote(await browseRepository(owner, repo)); } catch (error) { githubStatus(error instanceof Error ? error.message : String(error)); }
 }
 
 async function addFounderFiles(files: FileList | null): Promise<void> {
@@ -536,6 +592,9 @@ function wire(): void {
   $("evo-mode-headless").addEventListener("click", () => setMode("headless"));
   $("evo-mode-watch").addEventListener("click", () => setMode("watch"));
   $<HTMLInputElement>("evo-file").addEventListener("change", (e) => void addFounderFiles((e.target as HTMLInputElement).files));
+  $("evo-github-add").addEventListener("click", () => void importFromLink());
+  $("evo-github-browse").addEventListener("click", () => void browseGithub());
+  $<HTMLInputElement>("evo-github-url").addEventListener("keydown", (e) => { if (e.key === "Enter") void importFromLink(); });
   renderFounders();
   $("evo-resume").addEventListener("click", () => void resumeSaved());
   $("evo-save").addEventListener("click", () => { const s = currentState(); if (s) { void saveRun($<HTMLInputElement>("evo-name").value, s).then(() => setStatus("Saved in this browser.")); } else setStatus("Nothing to save yet."); });

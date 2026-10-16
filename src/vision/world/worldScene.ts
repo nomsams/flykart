@@ -67,15 +67,18 @@ export class WorldScene implements Scene {
     const half = world.half;
     this.palette = floorPalette(style);
     const boundary = world.boundary ?? "fence";
+    const thick = boundary === "fence" ? 3 : boundary === "wall" ? 4 : 6;
     for (let side = 0; side < 4; side += 1) {
-      for (let at = -half; at <= half; at += 30) {
-        const along = at + 15; if (Math.abs(along) > half) continue;
+      const horizontal = side % 2 === 0, span = horizontal ? 2 * half + thick : 2 * half - thick;
+      const pieces = Math.max(1, Math.ceil(span / 30)), length = span / pieces;
+      for (let k = 0; k < pieces; k += 1) {
+        const along = -span / 2 + length * (k + 0.5);
         const x = side === 0 ? along : side === 1 ? half : side === 2 ? along : -half;
         const y = side === 0 ? -half : side === 1 ? along : side === 2 ? half : along;
-        const heading = side % 2 === 0 ? 0 : Math.PI / 2;
-        if (boundary === "fence") this.fixed.push({ x, y, heading, width: 3, length: 30, z0: 0, z1: 11, color: style.kerbB, shape: "wall" });
-        else if (boundary === "wall") this.fixed.push({ x, y, heading, width: 4, length: 30, z0: 0, z1: 120, color: mix([0.93, 0.92, 0.88], style.skyHorizon, 0.08), shape: "oriented-box" });
-        else this.fixed.push({ x, y, heading, width: 6, length: 30, z0: 0, z1: 11, color: mix(style.asphaltWorn, [0.78, 0.78, 0.76], 0.5), shape: "oriented-box" });
+        const heading = horizontal ? 0 : Math.PI / 2;
+        if (boundary === "fence") this.fixed.push({ x, y, heading, width: thick, length, z0: 0, z1: 11, color: style.kerbB, shape: "wall" });
+        else if (boundary === "wall") this.fixed.push({ x, y, heading, width: thick, length, z0: 0, z1: 120, color: mix([0.93, 0.92, 0.88], style.skyHorizon, 0.08), shape: "oriented-box" });
+        else this.fixed.push({ x, y, heading, width: thick, length, z0: 0, z1: 11, color: mix(style.asphaltWorn, [0.78, 0.78, 0.76], 0.5), shape: "oriented-box" });
       }
     }
     // Compound props never move, so their boxes are built once.

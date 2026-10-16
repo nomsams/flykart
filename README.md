@@ -202,6 +202,8 @@ far can be combined instead of choosing one.
 | Page | Tick the bundled brain and/or the repository's Visual explorer brain, and add any number of files from the computer (several at once, or more later; each can be removed). A file that is not a usable brain is listed with the reason. |
 | Runner | `--from=bundled,visual,my-brains/,other.json`: files, folders of `.json` files, and the words `bundled` and `visual`. One path behaves as before. |
 
+Brains can also come from GitHub, without downloading anything first: paste a link to one file (a github.com "blob" link, a raw link, or the short form `owner/repo/path/brain.json`) or to a folder of them (the `.json` files in it are listed, each with an Add button), or press "Browse this repository's brains" to look through the `assets/`, `public/vision/robot/` and `brains/` folders of the repository the page was served from. Only public repositories are read, with plain requests to `raw.githubusercontent.com` and `api.github.com`; the anonymous API allows about 60 listings an hour, and a link straight to a file does not use it. The runner takes the same links in `--from` (`--from=bundled,https://github.com/owner/repo/blob/main/brain.json`). To keep a trained brain where others can import it, commit its download to the repository, for instance into a `brains/` folder.
+
 Accepted files: Evolve downloads, original and Vision brain files, repository checkpoints and bare networks. A 17-input brain gets the two sonar inputs appended at zero weight (so it behaves as it did until evolution finds a use for them); a brain trained for the race track is accepted with a warning, because its inputs mean different things in the open world. Different sizes are fine: smaller brains are grown with inert neurons to the size of the biggest, which does not change what they do. Identical brains are kept once, and at most 12 founders are used so the first population is not all founders. The first one listed leads until the exams say otherwise.
 
 ### The overseer, and delayed pain
@@ -217,6 +219,10 @@ Three things a good score can hide are watched in every trial and charged for, w
 The pain is delayed in two senses: it is charged when the pin ends rather than at contact, and it escalates the longer the robot stays, so a robot that gets out is barely touched and one that sits there loses a great deal. Impact pain from the world is unchanged and still small for a slow shove, which is why this was needed. A fifth trait, `tidy`, summarises all three for the breeder: lines that mostly reverse, hug walls or sit pinned (tidy below 0.15) do not breed while there are better parents. The "careful" and "no jitter, no reversing" emphases weigh these costs more. Runs saved before this change resume, but their scores were earned under a different objective and are not comparable with new ones.
 
 The weights (backwards 40, wall 18, pin 30 against 100 for reaching the flags) are choices, not measurements; `BASE_OBJECTIVE` in `objective.ts` is the one place to change them.
+
+### Walls that meet flush
+
+Three 3D builds had open corners where one wall stopped at the centre line of the wall it met, leaving the outer corner square empty: the open-world scene (also 2 px short at the end of every side, because the half-width 316 is not a multiple of the 30 px pieces), the robot habitat's room (a 4.5 cm notch at each corner) and the Evolve 3D view. Each side now overlaps the next by the wall's thickness, and `corners.test.ts` checks every point along and across the walls. The apartment's second partition used to start at the first one's centre line even when that fell inside the doorway, leaving its end hanging in the air; it now starts on solid wall. Apartments for the same seed therefore differ from earlier runs in roughly one case in four.
 
 ### Why not just 48 neurons? Layered brains, built afterwards
 

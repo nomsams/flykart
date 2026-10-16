@@ -34,6 +34,10 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .evo-founders legend { color: #c8d4e4; font-size: .76rem; padding: 0 6px; }
 .evo-fields .evo-check { flex-direction: row; align-items: center; gap: 8px; font-size: .82rem; color: #d4deec; }
 .evo-fields .evo-check input { width: auto; }
+.evo-github { display: flex; flex-wrap: wrap; gap: 6px; }
+.evo-fields .evo-github input { flex: 1 1 280px; min-width: 0; }
+.evo-github button, .evo-founder-list button { cursor: pointer; }
+.evo-fields #evo-github-status { color: #9fb2cc; font-size: .74rem; min-height: 1em; }
 .evo-founder-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
 .evo-founder-list li { display: flex; gap: 8px; align-items: baseline; font-size: .78rem; color: #c8d4e4; }
 .evo-founder-list li small { color: #8798b0; flex: 1 1 auto; }

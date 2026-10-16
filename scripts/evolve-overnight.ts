@@ -5,6 +5,7 @@
 //   npm run evolve -- --name=night1 --profile=standard       (or thorough; --duty=1 --workers=3 override individually)
 //   npm run evolve -- --name=night2 --from=public/vision/robot/world-controller.json --last-stage=3
 //   npm run evolve -- --name=night3 --from=bundled,visual,mybrains/            (several founders: "bundled", "visual", files, folders)
+//   npm run evolve -- --name=night4 --from=bundled,https://github.com/owner/repo/blob/main/brain.json   (GitHub links work too)
 //
 // It writes runs/<name>/{state.json, progress.json, best-brain.json, best-brain-48.json, log.txt} and keeps going
 // until the time budget is spent, the last stage is finished, or a file called STOP appears in that folder.
@@ -20,6 +21,7 @@ import type { BrainSnapshot } from "../src/core";
 import { EvolutionEngine, DEFAULT_CONFIG, type EngineConfig, type EngineState } from "../src/evolve/engine";
 import { PoolBackend, type WorkerHandle, type WorkerJob, type WorkerReply } from "../src/evolve/backend";
 import { prepareFounders, readFounder, type Founder } from "../src/evolve/founders";
+import { fetchBrainText, listFolder, parseGithubLink } from "../src/evolve/github";
 import { brainFile, brainFile48, toProgress } from "../src/evolve/persist";
 import { bundleWorker } from "./pool";
 
@@ -98,7 +100,16 @@ if (existsSync(statePath)) {
   }
   const found: Founder[] = [];
   for (const path of paths) {
-    try { found.push(readFounder(readFileSync(path, "utf8"), path)); } catch (error) { log(`Skipped ${path}: ${error instanceof Error ? error.message : String(error)}`); }
+    try {
+      if (/^https:\/\//.test(path)) {
+        // A GitHub link to one brain, or to a folder of them (the .json files in it are all tried).
+        const target = parseGithubLink(path);
+        const files = target.kind === "file" ? [{ name: target.name, url: target.url }] : await listFolder(target);
+        for (const file of files) {
+          try { found.push(readFounder(await fetchBrainText(file.url), `GitHub: ${file.name}`)); } catch (error) { log(`Skipped ${file.name}: ${error instanceof Error ? error.message : String(error)}`); }
+        }
+      } else found.push(readFounder(readFileSync(path, "utf8"), path));
+    } catch (error) { log(`Skipped ${path}: ${error instanceof Error ? error.message : String(error)}`); }
   }
   const founders = prepareFounders(found);
   for (const line of founders.report) log(`Founder: ${line}`);

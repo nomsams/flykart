@@ -50,6 +50,30 @@ try {
   assert.match((await page.locator("#evo-founder-list li").nth(1).textContent()) ?? "", /widened from 17 to 19/);
   await page.locator("#evo-founder-list li").nth(1).locator("button").click();
   assert.equal(await page.locator("#evo-founder-list li:not([data-bad=true])").count(), 1, "one valid upload remains after removing one");
+  // GitHub, mocked: browsing the repository lists brain files; "Add" fetches one into the founders; a pasted link works too.
+  const other = structuredClone(bundled);
+  other.network.bias = other.network.bias.map((v, k) => v + (k % 7 === 0 ? 0.08 : 0));
+  const cors = { "access-control-allow-origin": "*" };
+  const entry = (name, dir) => ({ name, path: `${dir}/${name}`, type: "file", size: 90_000, download_url: `https://raw.githubusercontent.com/nomsams/flykart/main/${dir}/${name}` });
+  await page.route("https://api.github.com/**", (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith("/contents/assets")) return route.fulfill({ status: 200, headers: cors, contentType: "application/json", body: JSON.stringify([entry("trained-a.json", "assets"), entry("readme.md", "assets")]) });
+    if (path.endsWith("/contents/public/vision/robot")) return route.fulfill({ status: 200, headers: cors, contentType: "application/json", body: JSON.stringify([entry("trained-b.json", "public/vision/robot")]) });
+    return route.fulfill({ status: 200, headers: cors, contentType: "application/json", body: "[]" }); // brains/: none here
+  });
+  await page.route("https://raw.githubusercontent.com/**", (route) => route.fulfill({ status: 200, headers: cors, contentType: "text/plain", body: JSON.stringify(route.request().url().endsWith("trained-a.json") ? other : copy) }));
+  await page.locator("#evo-github-browse").click();
+  await page.waitForFunction(() => document.querySelectorAll("#evo-github-list li").length === 2);
+  assert.match((await page.locator("#evo-github-list li").first().textContent()) ?? "", /trained-a\.json.*assets\/trained-a\.json/);
+  await page.locator("#evo-github-list li").first().locator("button").click();
+  await page.waitForFunction(() => [...document.querySelectorAll("#evo-founder-list li span")].some((s) => /GitHub: trained-a\.json/.test(s.textContent ?? "")));
+  assert.equal(await page.locator("#evo-github-list li").first().locator("button").textContent(), "Added");
+  await page.locator("#evo-github-url").fill("https://example.com/not-github.json");
+  await page.locator("#evo-github-add").click();
+  await page.waitForFunction(() => /Only github\.com/.test(document.getElementById("evo-github-status")?.textContent ?? ""));
+  await page.locator("#evo-github-url").fill("https://github.com/nomsams/flykart/blob/main/assets/mine-a.json");
+  await page.locator("#evo-github-add").click();
+  await page.waitForFunction(() => [...document.querySelectorAll("#evo-founder-list li span")].some((s) => /GitHub: mine-a.json/.test(s.textContent ?? "")));
   await page.screenshot({ path: `${shots}/1b-founders.png`, fullPage: true });
 
   // A short headless run: small population, two workers, stage 1 only.
@@ -61,8 +85,11 @@ try {
   await page.locator("#evo-play").click();
   await page.waitForFunction(() => Number(document.getElementById("s-gen")?.textContent) >= 3, null, { timeout: 120000 });
   const startLog = (await page.locator("#evo-log").textContent()) ?? "";
-  assert.match(startLog, /Run started from 2 brain\(s\)/, "the run began from the bundled brain and the uploaded one");
+  // bundled + the uploaded copy + trained-a from GitHub + the copy fetched by link (identical to the upload, kept once).
+  assert.match(startLog, /Run started from 3 brain\(s\)/, "the run began from the bundled brain, the upload and the GitHub brain");
   assert.match(startLog, /Start: mine-a\.json/);
+  assert.match(startLog, /Start: GitHub: trained-a\.json/);
+  assert.match(startLog, /identical to an earlier brain/);
   await page.waitForFunction(() => /^back \d+%/.test(document.getElementById("s-overseer")?.textContent ?? ""), null, { timeout: 120000 });
   const headlessStatus = await page.locator("#evo-status").textContent();
   assert.match(headlessStatus ?? "", /Headless/);
